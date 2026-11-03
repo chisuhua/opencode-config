@@ -1,0 +1,19 @@
+# Plan agent 产物（与 opencode 引擎自身的 .opencode/ 命名空间隔离）
+.plans/
+
+node_modules
+package.json
+package-lock.json
+bun.lock
+
+# Environment & secrets — never commit API keys
+.env
+
+# Backup files / snapshots — never commit (some hold plaintext API keys)
+*.backup-*
+*.bak
+*.bak-*
+backup*/
+
+# Generated snapshots
+.snapshot/

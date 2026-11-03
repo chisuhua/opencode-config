@@ -1,0 +1,35 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "clangd": {
+      "enabled": true,
+      "command": "clangd",
+      "args": [
+        "--background-index",
+        "--clang-tidy",
+        "--completion-style=detailed",
+        "--function-arg-placeholders",
+        "--header-insertion=iwyu",
+        "--pch-storage=memory"
+      ],
+      "filetypes": ["c", "cpp", "cc", "cxx", "c++", "h", "hpp", "hh", "hxx", "h++", "cu", "cuh"],
+      "rootPatterns": [
+        "compile_commands.json",
+        "compile_flags.txt",
+        ".git",
+        "CMakeLists.txt"
+      ],
+      "offsetEncoding": "utf-8",
+      "settings": {
+        "clangd": {
+          "compilationDatabase": "compile_commands.json",
+          "fallbackFlags": [
+            "-std=c++20",
+            "-xc++",
+            "-I/workspace/project/opt/cuda/include"
+          ]
+        }
+      }
+    }
+  }
+}

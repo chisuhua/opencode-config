@@ -1,0 +1,890 @@
+# Multi-Agent 系统设计参考
+
+> **状态**: v1.8 (2026-10-28)
+> **范围**: `~/.config/opencode/` 用户配置级 multi-agent orchestration
+> **下游**: `opencode.jsonc`（符号链接 → `opencode.jsonc.openstarry`）+ `prompts/*.md` + `commands/*.md` + `scripts/*.sh`
+
+本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
+
+> **本版（v1.8）变更**：本文档改为「当前态单写」——按版本切分的增量内容（权限加固史、各版本验证记录、已完成改动台账、演进日志）全部外移到 [`docs/CHANGELOG.md`](CHANGELOG.md)；新增 §2.5「architect 产出形态契约」与 critic `arch` 档的聚焦判据（§2.3）。历史内容见 CHANGELOG。
+
+---
+
+## 1. 设计原则
+
+### 1.1 核心思想
+
+**"Specialist > Generalist"** —— 每个 agent 在自己的领域内最大化深度，跨领域任务通过委派完成。
+
+- **少而精**：10 个 agent（3 primary：build / plan / title + 7 subagent），每个有明确边界
+- **单职责**：每个 agent 的 prompt 中明确"什么是我做的、什么不是"
+- **可验证**：所有 agent 配置 schema 合规（v2 归一化 0 错误 0 警告，`opencode debug config` 可复核）
+- **可演进**：所有 prompt 走 file 引用，修改 prompt 不动 JSON
+
+### 1.2 决策依据
+
+- **上游 oh-my-openagent v5.0.0-beta** 的 11-agent 设计是参考蓝本
+- **OpenCode V2 schema**（https://opencode.ai/config.json）是字段约束
+- **本地 provider 池**（3 个 provider、12 个 model）是模型选择硬约束
+- **AGENTS.md 仍叠加**：所有 agent 的 system prompt = `[agent prompt] + [AGENTS.md] + [环境信息]`。因 AGENTS.md 会注入**所有** agent，**build 专属的角色矩阵放在 `prompts/build.md` 而非 AGENTS.md**（v1.4 迁移）——放 AGENTS.md 时其余 agent 也会读到「每回合输出开场报告」，与它们各自 prompt 的「只输出固定小节」直接冲突。
+
+### 1.3 非目标
+
+- ❌ 不是"AI 智能体框架"——只做用户配置级别的 agent orchestration
+- ❌ 不修改 OpenCode 内部代码
+- ❌ 不引入外部依赖（plugin、MCP 等已被精简）
+- ❌ 不追求完全自动化——保留 build agent 的人工触发能力
+
+---
+
+## 2. Agent 体系（10 个）
+
+### 2.1 总览
+
+| Agent | Mode | 角色 | Model | Temperature | Context |
+|---|---|---|---|---|---|
+| **build** | primary | 严谨代码工程师 | `minimax-cn/MiniMax-M3.1-Flash` | 0.1 | 1,000,000 |
+| **plan** | primary | 设计者+只读规划 | `minimax-cn/MiniMax-M3.1-Flash` | —（未设） | 1,000,000 |
+| **explore** | subagent | 本地代码搜索 | `minimax-cn/MiniMax-M3.1-Flash` | 0.1 | 1,000,000 |
+| **librarian** | subagent | 外部文档/依赖调研 | `opencode-go/deepseek-v4.1-flash` | 0.1 | 524,288 |
+| **oracle** | subagent | 架构咨询 | `kimi-code/k3-256k` | —（未设） | 262,144 |
+| **metis** | subagent | 计划前差距分析 | `kimi-code/k3-256k` | 0.3 | 262,144 |
+| **general** | subagent | 多面手 fallback | `minimax-cn/MiniMax-M3.1-Flash` | 0.2 | 1,000,000 |
+| **critic** | subagent | 对抗式审稿 | `minimax-cn/MiniMax-M3.1-Flash` | 0.1 | 1,000,000 |
+| **context-builder** | subagent | critic prompt 组装器 | `opencode-go/deepseek-v4.1-flash` | 0.1 | 524,288 |
+| **title** | primary（hidden）| 会话标题/摘要生成 | `opencode-go/deepseek-v4.1-flash` | —（未设） | 524,288 |
+
+> **本表以 `opencode.jsonc.openstarry` 为真源**，改动配置后必须同步本表（§11「修改后必做」）。
+>
+> **`temperature` 一栏为 `—` 的含义**：配置里**未设**该字段——`oracle`（k3-256k）因模型 `capabilities.temperature=false` 不能设，设了也被上游忽略；`plan` / `title` 是主动不设。
+>
+> **`Context` 一栏是配置里的 `providers.<id>.models.<model>.limit.context`**，不是上游标称值 —— 修正依据与证据强度见 §5.1。
+
+### 2.2 Primary Agents（2 个，用户直接交互）
+
+#### `build` —— 主对话 agent
+- **职责**：代码编写、修改、调试、提交
+- **核心 prompt**：`prompts/build.md`（含 critic 委派规则 + subagent 返回结构表 + 工具调用纪律 + v1.4 迁入、v1.6 加固的角色矩阵 + v1.8 新增的「architect 产出形态契约」，见 §2.5）
+- **权限**：几乎全 allow（read/edit/grep/glob/list/bash/task/webfetch/websearch/lsp/skill/question）；bash 的 19 条危险命令 ask；`.env` 读取 ask；MCP 4 个写工具 ask；`external_directory: ask`
+- **典型 workflow**：
+  1. 接收用户任务
+  2. 委派 subagent 收集信息（explore / librarian / oracle / metis / critic）
+  3. 整合 subagent 输出
+  4. 执行代码改动
+  5. 验证（测试/lint）
+  6. **大改动前置审稿**：满足 §3.2 "何时调 critic" 条件时，先调 critic 拿到 4 段式结论再 commit
+
+#### `plan` —— 设计者 agent
+- **职责**：只读探索、评估取舍、产出可验证的计划
+- **核心 prompt**：`prompts/plan.md`（3932 字节，103 行）
+- **权限**：严格只读 + `edit` 仅 `.plans/*.md` / `docs/adr/draft-*.md` / `openspec/changes/*/design.md` 允许 + bash 仅允许安全只读子集（`.env` 读取 deny）
+- **典型 workflow**：
+  1. 用户切到 plan（Tab 键）
+  2. 阅读需求
+  3. 优先委派 `metis` 做 gap 分析
+  4. 委派 `explore` 摸清现状
+  5. 写 `<project-root>/.plans/YYYYMMDD-<slug>.md` 计划文件
+  6. 给用户选择题（不替用户拍板）
+
+### 2.3 Subagents（7 个，subagent 工具调用）
+
+#### `explore` —— 本地代码 grep
+- **核心 prompt**：`prompts/explore.md`
+- **权限**：read-only allowlist（read/grep/glob/list/bash 安全子集/webfetch/websearch）
+- **不能**写、不能委派
+- **输出**：Markdown 四节（匹配文件 / 直接答案 / 下一步），路径必须绝对
+
+#### `librarian` —— 外部文档/依赖源码 ⭐有特殊委派规则
+- **核心 prompt**：`prompts/librarian.md`（3601 字节，82 行）
+- **权限**：read-only + 宽松 bash（curl/wget/git clone 到 /tmp）
+- **特殊规则**：
+  - 本地代码搜索 → **委派给 `explore`**
+  - 外部 API/库文档 → 自己 `webfetch`
+  - 付费墙 → 走 fallback 链（websearch → GitHub raw → Wayback → 放弃）
+- **不能**写项目文件
+- **只能**委派 `explore`
+- **输出**：Markdown 五节（文档 / 上游实现 / 获取失败 / 直接回答 / 下一步）
+
+#### `oracle` —— 架构咨询
+- **核心 prompt**：`prompts/oracle.md`
+- **权限**：read-only + bash 需 ask
+- **输出**：Markdown 四节（根因 / 建议 / 已排除的替代方案 / 下一步）
+
+#### `metis` —— 计划前 gap 分析
+- **核心 prompt**：`prompts/metis.md`
+- **温度 0.3**（最高）—— 创造性发散
+- **权限**：read-only + bash 需 ask
+- **输入**：计划草稿 OR 准备规划的 prompt
+- **输出**：Markdown 六节（隐藏意图 / 歧义 / AI slop 风险 / 缺失的验收标准 / 边界情况 / 建议修改）
+
+#### `general` —— 多面手 fallback
+- **核心 prompt**：`prompts/general.md`
+- **职责**：处理跨领域、没专门 agent 覆盖的杂活
+- **权限**：**严格 read-only**（v1.1 起砍掉 `npx *` / `node *` / `npm test *`——与 prompt 第 36/48 行 "Read-only" 自洽）
+- **关键约束**：**不能委派子 agent**（它是兜底）
+- **典型场景**：
+  - 复现 bug（看日志、提报告，不跑测试——测试交给 build）
+  - 一次性多步研究
+- **输出**：Markdown 四节（任务概述 / 发现 / 结论 / 下一步）
+
+#### `critic` —— 架构与决策审稿 ⭐v1.2 新增 / v1.5 收窄
+- **核心 prompt**：`prompts/critic.md`（强制 4 段式输出 + `mergeable` / `scope_exceeded` 信号）
+- **职责**：审**架构方向与关键决策**——与 ADR 是否一致、决策是否有据、有没有会让 change 目标场景失败的设计缺陷。不审执行细节（文档计数、格式、测试边角、护栏绕过面）
+- **模型选择动机**：`minimax-cn/MiniMax-M3.1-Flash`（长 diff 扫描 + 全仓文件读取，1M 上下文优先于单价；历史选型轨迹见 CHANGELOG）
+- **权限**：**最严格 read-only**
+  - `edit / webfetch / websearch / task / question` 全部 deny
+  - MCP：**10 个只读图谱工具 allow**（`search_graph` / `get_code_snippet` / `trace_path` / `get_architecture` / `get_graph_schema` / `query_graph` / `search_code` / `detect_changes` / `list_projects` / `index_status`），4 个写工具 deny（§4.4.2）
+  - bash 白名单：与其它只读 agent 同级的只读子集（rg/grep/find/ls/cat/head/tail + git 只读子命令 + 文本工具），**不含** `curl / wget / git clone`——critic 不联网、不下源码
+  - `.env` 读取 deny（read → ask）
+- **关键约束**：
+  - **不写代码**——只 review；改了就不是 review
+  - **不跑构建 / 测试 / 变异测试**，不写 scratch fixture（v1.5；实跑验证交给 build/verifier）
+  - **不联网**——webfetch/websearch 严格 deny
+  - **不委派**——task deny
+  - **不问用户**——question deny；遇到不确定返回"我不确定 + 看了什么"给 parent
+- **BLOCKER 通用兜底（v1.5，profile 专用清单未覆盖时）**：① 会让 change 的验收场景直接失败；② 会把错误契约冻进主 spec / 公开 API / 持久化格式；③ 与已签批 ADR 或架构立场直接冲突
+- **审稿档位（v1.6，`review_profile`）**：按**产物路径**判，不按 `role.json` 判（角色是权限边界，会中途切换且可能不存在）。跨档时分别出结论：
+
+  | profile | 审什么 | 该档位内的 BLOCKER |
+  |---|---|---|
+  | `arch` | ADR / 架构文档 / roadmap 决策 | 冲突已签批 ADR 未走取代流程；决策缺备选/回滚；文档内同一决策二义；未决写成已决 |
+  | `plan` | proposal / design / tasks / spec delta | AC 不可验收；tasks 的 verify 与 delta 矛盾或不可能通过；范围/顺序与 roadmap 冲突；delta 与实现矛盾会冻错主 spec |
+  | `build` | 源码 / 测试 / 脚本 | 与 spec/公开契约不一致；目标场景失败；未经 ADR 改架构决策 |
+  | `archive` | 归档前 | 只判上轮 BLOCKER 闭合 + delta 与实现一致 |
+
+  路径映射：`.rddf/config/arch-docs.json` 的 `arch_paths[]`（缺失时 `docs/adr|docs/architecture|docs/architecture/adr|docs/designs|docs/design`）→ `arch`；`openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements` → `plan`；`src|include|tests|scripts|tools` → `build`。
+- **`arch` 档的聚焦判据（v1.8 新增）**：BLOCKER 仍是上表四类；另设一组 **SHOULD_FIX** 判据专治「决策文档写成了设计规格 / 流程台账」——决策陈述被稀释（正文超长且决策+后果+备选不足一半）、过程日志混入（审稿轮次与 BLOCKER 清单、台账 Entry / KPI 计数、逐版修订史）、缺独立「后果 / 代价」章、Verification 只写实测日志而无前瞻判据、Status 单行承载整条版本史、一篇 ADR 承载多个独立决策点。**边界**：计数漂移 / 悬空引用 / 索引缺项属 L1 一致性脚本（`docs/review-automation-backlog.md` §1），不进 critic。完整判据见 `prompts/critic.md` 的「arch — SHOULD_FIX 的聚焦判据」。
+- **结论判定（v1.5）**：有 BLOCKER → REJECT（`mergeable: no`）；只有 SHOULD_FIX → `APPROVE_WITH_CONDITIONS`；都没有 → `APPROVE`。**禁止用 NITS 凑 REJECT**
+- **输出格式（强制）**：
+  ```
+  profile: <arch | plan | build | archive | mixed>
+  # 审查结论：<REJECT | APPROVE_WITH_CONDITIONS | APPROVE>
+  mergeable: <yes | no>
+  scope_exceeded: <true | false>
+
+  ## 1. 必须修复 (BLOCKERS)
+  - <file:line 或 ADR 编号> <一句话描述> — 属于 BLOCKER 的哪一类
+
+  ## 2. 应该修复 (SHOULD_FIX)
+  - <file:line> <描述> — <为什么值得改，但不阻断>
+
+  ## 3. 建议 (NITS)
+  - <file:line> <小问题>
+
+  ## 4. 验证建议
+  - <具体命令或场景，交给 build/verifier 执行>
+  ```
+- **build agent 收到 critic 输出后的协议（v1.5）**：
+  - 有 BLOCKERS → 修；**同一 change 最多 2 轮评审**，第 3 轮起需用户明确批准
+  - 无 BLOCKERS + 有 SHOULD_FIX → 记录到 notes/backlog，放行
+  - `scope_exceeded: true` 的条目 → 记 backlog，不返工
+  - APPROVE → 进入下一步（commit / PR）
+  - 复审只提交「上一轮 BLOCKER 闭合证据 + 本轮新增 diff」，禁止全量重审
+
+#### `context-builder` —— critic prompt 组装器 ⭐v1.3 新增
+- **核心 prompt**：`prompts/context-builder.md`（8825 字节，180 行）
+- **职责**：把 build agent 给的原始材料（diff / intent / focus / 路径 / ADR）组装成 critic 能直接用的 **7 字段 prompt**
+- **模型**：`opencode-go/deepseek-v4.1-flash`（纯机械组装，不需深度推理；524k 足够）
+- **权限**：严格只读——`edit / webfetch / websearch / task / question` 全 deny；MCP 只读工具 allow、4 个写工具 deny；bash 只读子集；`.env` deny
+- **关键约束**：
+  - **不评审**——只组装，不给结论（评审是 critic 的活）
+  - **不写代码、不联网、不委派**
+  - 输出的 prompt 必须**字段齐全**：`intent` 与 `focus` 不允许含混
+- **输出**：可直接喂给 critic 的 7 字段 prompt 文本（`changes_summary` / `intent` / `focus` / `review_profile` / `diff_or_paths` / `context` / `expected_format`）
+- **调用方式**：`/critic-review` slash command（`commands/critic-review.md`）默认走它；脚本 `scripts/build_critic_prompt.sh` 只做骨架预填
+- **`hidden: true`（v1.4）**：它只该被 build 用 `/critic-review` 或显式 `subagent` 调用，不该出现在用户手选的 agent 列表里混淆选择
+
+#### `title` —— 会话标题/摘要生成 ⭐v1.4 新增
+- **职责**：opencode 内部为会话生成标题/摘要，调用频率高、单次很短
+- **模型**：`opencode-go/deepseek-v4.1-flash` —— 高频短任务，轻量档足够
+- **配置**：`agent.title`（`mode: primary` + `hidden: true`，与 opencode 内建的 Title agent 同形）
+- **为什么不设 `small_model`**：v2 已 deprecated；等价的原生写法是定义 `title` agent
+- **思考变体的取舍**：`capabilities.reasoning.supported` 只影响 opencode 是否生成 reasoning 变体与是否展示思考内容（客户端降噪），**不是**省 token 的手段
+### 2.4 critic 启动机制
+
+critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显式调用时运行。3 条触发路径：
+
+| 路径 | 触发机制 | 触发频率 |
+|---|---|---|
+| **A. build agent 主动调** | `prompts/build.md` §"何时调 critic" + §"评审预算与循环规则" | 公开 API / 跨模块契约 / ADR 冲突 / 用户明示 / 归档前（增量）；每 change ≤2 轮 |
+| **B. 用户在 build 里说** | "过 critic" / "审一下" / "找问题" | 你说的时候 |
+| **C. slash command** | `/critic-review`（`commands/critic-review.md`）| 你打 `/critic-review` 的时候 |
+
+**不触发场景**（避免噪音）：单文件 typo、注释/import 调整、格式化、重命名局部变量、测试/脚本/文档计数类改动——这些走 verifier 或 CI 校验。
+
+详细委派触发规则见 §3.2。
+
+### 2.5 architect 产出形态契约（v1.8 新增）
+
+架构文档范围（`arch_paths`）只管「写哪里」；产出形态契约管「写成什么形状」。完整定义在 `prompts/build.md` 的「architect 产出形态契约」，要点：
+
+- **决策文档只回答三件事**：定什么、为什么这么定、代价是什么。
+- **对齐已有样板**：向项目内形态达标的既有 ADR 收敛（如六段骨架 + 选项对比表 + checkbox 验证的 ADR），不凭空发明规范。
+- **一文档一决策**：出现第二个独立决策点 → 拆篇，或降级为架构文档的「已知残留」条目。
+- **正文三层分离**：正文 = 决策本身（目标 ≤ 250 行）；推导与证据（时序推导、trace、覆盖率、逐文件裁决表、可枚举改动清单）→ 移出正文到 design.md / tasks.md / 主题文档；过程日志（立项/归档/队列号/台账 Entry/KPI 计数、审稿轮次与 BLOCKER 清单、oracle 复核记录）→ 落治理台账或审稿报告，**不进决策文档**。
+- **必备四要素**：元数据（Status / Date / Author / Parent / 关联 change）+ 选项对比表（≥ 3 行，每行含「结论 + 理由」）+ 独立「后果 / 代价」章 + Verification 章（**前瞻方法**，不是已跑完的实测日志）。
+- **落点路由**：决策与取舍 → ADR；当前态快照与模块关系 → 架构主题文档；实现步骤与验收 → `openspec/changes/*/design.md`；可枚举改动 → `tasks.md`。
+- **不追溯存量**：约束只管本次新写/改写的文档；既有 ADR 越界 → 记 backlog 单独立项。
+
+> 背景：近期多个项目的 ADR 出现形态漂移（决策陈述占比低至 22%、ADR 内混入过程日志与实测台账、缺独立后果章），而当时的约束只界定了「写哪里」，没有任何「写什么形状」的判据。详见 §2.3 的 `arch` 档聚焦判据与 CHANGELOG。
+
+---
+
+## 3. 委派拓扑
+
+```
+                              build (primary)
+                             /  |   |   |   \   \
+                            ↓   ↓   ↓   ↓    ↓   ↓
+                      explore librarian oracle metis critic
+                        ↑        ↑                    (自己写 <project>/.plans/*.md)
+                        |        |
+                        |        └─ librarian 可调 explore（本地代码搜索）
+                        |
+                      general (subagent, 独立分支，不能被任何 agent 调，也不能调别人)
+
+                    context-builder (subagent，只被 build 调；不委派任何人)
+                            ↑
+                            └── 只在 build 需要组装 critic 7 字段上下文时调用
+```
+
+> **v1.2 变更**：critic 是 build 的直接下游，与 explore/librarian/oracle/metis 平级；不接 plan（plan agent 不需要审稿——它本来就在规划阶段）；不接 librarian/oracle/metis（这些是"先于 build 调"的 agent，自身不应被 critic 审）。
+
+### 3.1 委派矩阵
+
+| 调用方 ↓ \ 被调方 → | build | plan | explore | librarian | oracle | metis | general | critic | context-builder |
+|---|---|---|---|---|---|---|---|---|---|
+| **build** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（条件）| ✅ |
+| **plan** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅✅（优先）| ❌ | ❌ | ❌ |
+| **explore** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **librarian** | ❌ | ❌ | ✅✅（本地搜索）| ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **oracle** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **metis** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **general** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **critic** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **context-builder** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+> build → critic 是"条件 ✅"：仅在 §3.2 "何时调 critic" 5 个条件命中时调用；其它情况不调。critic 自己不调任何 agent（task deny）。
+> **context-builder** 只能被 build 调，且不委派任何 agent——它只做上下文组装。
+### 3.2 委派触发规则
+
+| 场景 | build 委派给 | rationale |
+|---|---|---|
+| "在项目里找 X" | `explore` | 纯本地搜索 |
+| "查 React 19 API" | `librarian` | 外部文档 |
+| "这个架构选型对吗" | `oracle` | 架构咨询 |
+| "在动手前我有什么遗漏" | `metis` | 计划前 gap |
+| "这个项目怎么 build 起来" | `general` | 跨领域多步 |
+| 改动 ≥3 文件 / 跨 API / 跨模块 / 开 PR 前 | `critic` | 对抗式审稿（4 段式） |
+| 用户说"过 critic"/"审一下"/"找问题" | `critic` | 显式触发 |
+| 复杂改动的 critic 上下文（7 字段）| `context-builder`（优先，改动 ≥3 文件 / 跨 ≥2 模块时必用）| 手填容易漏 intent/focus |
+
+| 场景 | plan 委派给 | rationale |
+|---|---|---|
+| 设计前差距分析 | `metis`（**优先**）| 质量门 |
+| 查代码现状 | `explore` | 本地搜索 |
+| 查 API 文档 | `librarian` | 外部文档 |
+| 评估架构方案 | `oracle` | 架构咨询 |
+
+| 场景 | librarian 委派给 | rationale |
+|---|---|---|
+| "找项目里用了 X API 的地方" | `explore` | 本地代码搜索 |
+
+| 场景 | build 委派给 | rationale |
+|---|---|---|
+| 复杂改动要过 critic，但上下文不好手填 | `context-builder` | 组装 7 字段 critic prompt |
+
+#### 3.2.1 build 调 critic 的 5 个条件
+
+`prompts/build.md` "何时调 critic" 段落的对应规则：
+
+| # | 条件 | 举例 | 不调的反例 |
+|---|---|---|---|
+| 1 | 改动 **≥3 个文件** | 改 `foo.cpp` + `foo.h` + `foo_test.cpp` | 单文件 typo / 改一行 |
+| 2 | 改动触及**公开 API / 函数签名 / 序列化格式 / 持久化 schema** | 加 `virtual` 方法、改 protobuf | 改 private 实现细节 |
+| 3 | **跨模块**改动（2+ 目录 / 2+ 子系统）| 改 `core/` + `app/` | 单目录内改 |
+| 4 | 用户明确说"审一下"/"过 review"/"找问题"/"过 critic" | 用户说 "过 critic" | — |
+| 5 | 准备**开 PR / 合并 / 归档**之前 | "提 PR" / "merge" | 中间态 |
+
+**不调 critic 的 5 类场景**（避免噪音）：
+
+- 单文件 typo
+- 注释 / import 调整
+- 格式化
+- 重命名局部变量
+- 1-2 文件的局部改动
+
+**协议**：
+
+1. build agent 调 `subagent(agent="critic", prompt=<diff + 预期行为 + 已知风险>)`
+2. critic 读 git diff + 文件，**独立判断**（不确认 build agent 预期——预期本身就是错的也说）
+3. 返回 4 段式
+4. build agent 按 §2.3 critic 输出格式协议处理（BLOCKERS → 必修 / SHOULD_FIX → 建议 / APPROVE → 继续）
+
+### 3.3 被权限拒绝后的纪律
+
+权限模型（§4）只在**被请求的那一刻**生效。如果 agent 被拒绝后换一种写法再来一次，边界等于不存在——典型绕法：
+
+| 想做的事 | 会被拒的写法 | agent 可能改用的绕法 |
+|---|---|---|
+| 读密钥 | `cat .env`（deny）| `awk '{print}' .env`、`env`、`printenv`、`jq -r .KEY file.env` |
+| 枚举并执行 | `find . -exec grep -r key {} \;`（deny）| 换成 `xargs` / 管道组合 |
+| 联网 | `webfetch`（只读 agent deny）| `curl` / `wget` / `git clone` |
+
+因此 6 个只读 subagent + plan 的 prompt 统一加入（`prompts/*.md` 的「工具使用纪律」段）：
+
+> **被权限拒绝时**：如实报告「权限拒绝 + 你想做什么」，不要重试、不要换写法绕过、不要改用别的工具达成同一目的。一次拒绝就是最终答案，写进输出里。
+
+配合两类配置收敛（§4.4.3 / §4.4.4）：
+
+- `awk` / `env` / `printenv` / `jq` 从只读白名单**移除** → 落到 catch-all `ask`（需要人放行）；
+- `find * -exec *` / `find * -delete *` 显式 `deny`。
+
+**build agent 的对应义务**：subagent 报告「被权限拒绝」时，**不要用同一请求重复委派**——先读它的说明，要么自己（有权限）去做，要么向用户申请放宽。
+
+---
+
+## 4. 权限模型
+
+### 4.1 权限体系（v2 真实语义）
+
+```
+┌────────────────────────────────────────────┐
+│  Layer 1: OpenCode 内置默认                │  (read/grep/glob/list = allow; *.env = ask)
+│  Layer 2: 全局 config.permission           │  (本文件的 "permission" 块)
+│  Layer 3: agent.<id>.permission            │  (每个 agent 自己的块)
+└────────────────────────────────────────────┘
+        ↓ 三层合并成一条 ruleset，按顺序 last-match-wins
+```
+
+**顺序即策略**：Layer 3 在后 → **agent 规则覆盖全局规则**，全局规则覆盖内置默认。
+
+**两个必须记住的坑**：
+
+1. agent 里的 `"read": "allow"` 会**覆盖**内置的 `*.env → ask`（它在链子更后面）。要保 `.env` 保护，必须写成对象形式并把 `.env` 规则放在 `*` 之后（§4.4.3）。
+2. v2 的 MCP 权限只认扁平 `<server>_<tool>` 键；嵌套对象**不报错、不生效**，只是永远匹配不上（§4.4.5）。
+
+### 4.2 permission schema 字段（v2）
+
+OpenCode v2 的 `permission` 可以是单个 action，也可以是「工具 → action」的对象；对象形式下再按**输入参数**（路径 / 命令串 / 正则 / URL）细分。
+
+| 字段 | 控制的工具 | shorthand | object 模式 |
+|---|---|---|---|
+| `read` | read | `allow/ask/deny` | 文件路径 → action |
+| `edit` | write/edit/patch | `allow/ask/deny` | 文件路径 → action |
+| `glob` | glob | `allow/ask/deny` | glob → action |
+| `grep` | grep | `allow/ask/deny` | 正则 → action |
+| `list` | list | `allow/ask/deny` | - |
+| `bash`（v2 内部叫 `shell`）| shell 命令 | `allow/ask/deny` | **命令串 → action** |
+| `task`（v2 内部叫 `subagent`）| subagent 委派 | `allow/ask/deny` | subagent 名 → action |
+| `external_directory` | 项目外目录访问 | `allow/ask/deny` | 路径 → action |
+| `webfetch` | webfetch | `allow/ask/deny` | URL → action |
+| `websearch` | websearch | `allow/ask/deny` | - |
+| `lsp` | LSP 调用 | `allow/ask/deny` | - |
+| `skill` | skill 加载 | `allow/ask/deny` | skill 名 → action |
+| `question` | question 工具 | `allow/ask/deny` | - |
+| `todowrite` | todowrite | `allow/ask/deny` | - |
+| `doom_loop` | 循环卡死恢复 | `allow/ask/deny` | - |
+| `<server>_<tool>` | 任意 MCP 工具 | `allow/ask/deny` | - |
+
+**匹配规则（v2）**：
+
+- **last-match-wins**：规则按"内置默认 → 全局 config → agent 专属"合并成一条链，**最后命中的规则生效**。所以 catch-all `"*"` 必须放最前，具体规则放后面。
+- 通配：`*` 匹配任意长度、`?` 匹配单字符，其余按字面量。
+- shell 匹配的是**整条命令串**：`cd /tmp && ls` 不匹配 `ls *` → 落回 catch-all。所以 prompt 里要求用 `workdir` 参数切目录，不要写 `cd X && ...`（§2.3 各 prompt 的"工具使用纪律"段）。
+- MCP 工具的 action 名 = `<server>_<tool>`（`.` 与非法字符替换为 `_`），如 `codebase-memory-mcp_search_graph`。
+
+### 4.3 各 agent 权限对比
+
+下表是 **v2 运行时实测值**（`opencode debug agents` + 按 last-match-wins 复算），不是配置字面值。
+
+| 工具 | build | plan | explore | librarian | oracle | metis | general | critic | context-builder |
+|---|---|---|---|---|---|---|---|---|---|
+| read | allow | allow | allow | allow | allow | allow | allow | allow | allow |
+| edit | allow | ask（限 `.plans/` 等）| deny | deny | deny | deny | deny | deny | deny |
+| grep/glob/list | allow | allow | allow | allow | allow | allow | allow | allow | allow |
+| bash | allow\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\*\* | 只读子集\*\* |
+| task（subagent 委派）| allow | allow | deny | allow | deny | deny | deny | deny | deny |
+| webfetch | allow | allow | allow | allow | allow | allow | allow | deny | deny |
+| websearch | allow | allow | deny | allow | allow | allow | allow | deny | deny |
+| question | allow | allow | deny | deny | deny | deny | deny | deny | deny |
+| external_directory | ask | ask | (默认 ask) | (默认 ask) | ask | ask | ask | (默认 ask) | (默认 ask) |
+| MCP 写工具（4 个）| ask | ask | deny | deny | deny | deny | deny | deny | deny |
+| MCP 读工具（10 个）| allow | allow | allow | allow | allow | allow | allow | allow | allow |
+| `.env` 读取（read）| ask | ask | ask | ask | ask | ask | ask | ask | ask |
+| `.env` 读取（shell）| ask | deny | deny | deny | deny | deny | deny | deny | deny |
+| doom_loop | (默认) | (默认) | deny | deny | (默认) | (默认) | (默认) | (默认) | (默认) |
+
+\* build 唯一可改代码的 agent；bash 默认 allow，但 19 条危险命令 ask（git push/reset --hard/clean/checkout --/restore/branch -D/stash drop/stash clear/rm -rf|fr|r|f/sudo）
+
+\*\* bash 只读子集：`rg / grep / find / ls / cat / head / tail` + `git log / show / diff / status / blame / ls-files / rev-parse / ls-tree / cat-file / show-ref / config --get / remote -v / stash list / worktree list / shortlog / count-objects / verify-commit` + 文本工具 `wc / sort / uniq / diff / file / stat / du / df / which / tree / basename / dirname / readlink / realpath / tr / cut / printf / date / test / expr / seq / nl / column`。plan 额外 `mkdir`；librarian 额外 `curl / wget / git clone`。**不含** `awk / env / printenv / jq`（§4.4.4）。
+
+\*\*\* critic 的白名单与其它只读 agent 同级，额外 deny `webfetch / websearch / task / question`（§4.4.2）
+
+MCP 写工具：`codebase-memory-mcp_index_repository` / `_ingest_traces` / `_manage_adr` / `_delete_project`
+
+MCP 读工具：`codebase-memory-mcp_search_graph` / `_get_code_snippet` / `_trace_path` / `_get_architecture` / `_get_graph_schema` / `_query_graph` / `_search_code` / `_detect_changes` / `_list_projects` / `_index_status`
+
+### 4.4 当前权限加固要点
+
+本节只陈述**当前生效**的加固项。每一项的发现过程、修复理由与修复轮次见 [`CHANGELOG.md`](CHANGELOG.md) 的「权限加固记录」。
+
+#### 4.4.1 build 的 shell 边界
+
+bash 采 `* + 危险命令 ask` 模式（catch-all 在前、具体规则在后，last-match-wins），拦截 19 条不可逆模式：
+
+| 类别 | 拦截模式 |
+|---|---|
+| git 推送 | `git push` / `git push *` |
+| git 丢工作区 | `git reset --hard` / `git clean -fd*` / `git clean -fdx*` / `git checkout --` / `git checkout .` / `git restore *` |
+| git 丢分支/栈 | `git branch -D *` / `git stash drop *` / `git stash clear *` |
+| 删文件 | `rm -rf *` / `rm -fr *` / `rm -r *` / `rm -f *` |
+| 提权 | `sudo *` |
+
+#### 4.4.2 MCP 工具权限
+
+- **写工具**（`index_repository` / `ingest_traces` / `manage_adr` / `delete_project` / `query_graph`）：build = `ask`，只读 agent = `deny`。`query_graph` 依 2026-10-21 的用户决定保持**全局 allow**（该 server 的 `query_graph` 实际只用于读查询；残余风险由 §8.2「服务端 Cypher 写检查」兜底）。
+- **只读图谱工具**（10 个）：全部 agent `allow`——**含 critic**（`prompts/critic.md` 要求它先调 `list_projects`，与权限必须自洽）。
+- critic 额外 deny `webfetch / websearch / task / question`（唯一四项全 deny 的 subagent，见 §4.3）。
+
+#### 4.4.3 `.env` 保护
+
+agent 级 `read` **必须**写成对象形式并把 `.env` 规则放在 `*` 之后，否则会覆盖 opencode 内置的 `*.env → ask` 保护：
+
+```jsonc
+"read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" }
+```
+
+shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`）。**已知残留**：shell 是整串前缀匹配，`git show HEAD:.env > /tmp/x` 这类重定向仍会绕过——权限模型的固有限制，不是配置问题。
+
+#### 4.4.4 只读白名单的排除项
+
+只读 agent 的 bash 白名单**不含** `awk`（可 `system()` 任意命令 / 写文件）、`env` / `printenv`（把密钥打进 transcript → 第三方模型）、`jq`（配合重定向写文件）；并 deny `find * -exec *` / `find * -execdir *` / `find * -delete`。这些命令落回 catch-all `"*": "ask"`，人工放行。
+
+#### 4.4.5 v2 schema 的两条硬约束
+
+1. MCP 权限只认扁平 `<server>_<tool>` 键；嵌套对象**不报错、不生效**（永远匹配不上，落回默认 ask）。
+2. 字段改名：`provider` → `providers`、`npm` → `package`、`options` → `settings`、顶层 `subagent_depth` → `experimental.subagent_depth`（顶层写法在 v2 下被**静默丢弃**、只留一条 WARN，限深形同失效）。
+---
+
+## 5. Provider 路由
+
+### 5.1 可用 provider 池
+
+| Provider | Models 数 | 当前 agent 用途 |
+|---|---|---|
+| `minimax-cn`（厂商直连）| 2 | build / plan / explore / general / critic（`MiniMax-M3.1-Flash`）；`MiniMax-M3` 在池内但无 agent 使用 |
+| `opencode-go` | 1 | librarian / context-builder / title（`deepseek-v4.1-flash`）|
+| `kimi-code`（厂商直连）| 2 | oracle / metis（`k3-256k`）；`kimi-for-coding` 在池内但无 agent 使用 |
+| `openstarry`（中转网关）| 7 | 当前无 agent 使用（`glm-5.3-flash` / `deepseek-v4.1-flash` / `deepseek-v4.1-flash-1017` / `kimi-k2.7-code` / `kimi-k2.6` / `qwen3.7-plus` / `MiniMax-M2.7-highspeed`）|
+
+> **v1.3 变更**：provider 段迁到 v2 的 `providers` 形态（`package` / `settings` / `models[].limit`）；模型 id 已用 `opencode models` 与上游核对一致。
+>
+> **v1.4 变更**：每个模型补 `capabilities`（`tools` / `temperature` / `reasoning`）；`limit.context` 按证据强度分级修正（见下表）；`mimo-v2.5-pro` 无 agent 使用已从池中移除。
+>
+> **v1.8 订正**：本表与 §2.1 / §5.2 已按当前 `opencode.jsonc.openstarry` 重算——`opencode-go` provider 与 `deepseek-v4.1-flash` 的 agent 归属、`openstarry/deepseek-v4.1-flash` 的 context（262,144 → 524,288）此前与配置不符。
+>
+> | 模型 | 原 `context` | 现 `context` | 依据 |
+> |---|---|---|---|
+> | `minimax-cn/MiniMax-M3.1-Flash` | 524,288 | **1,000,000** | 厂商直连 + models.dev 权威（build 主模型，收益最大）|
+> | `openstarry/deepseek-v4.1-flash` | 131,072 | **524,288** | 上游众数 524,288；实测 210,074 token 输入被接受 |
+| `opencode-go/deepseek-v4.1-flash` | — | **524,288** | 与 `openstarry` 同型号同上限；当前 librarian / context-builder / title 使用 |
+> | `openstarry/qwen3.7-plus` | 262,144 | **1,000,000** | 上游 1M（models.dev 各 provider 一致）|
+> | `openstarry/glm-5.3-flash` | 524,288 | 524,288 | 上游众数 1M，但有 provider 报 327,680；中转未验证 → 保留现值 |
+> | `minimax-cn/MiniMax-M3` | 524,288 | 524,288 | 无 agent 使用，且 models.dev 各 provider 差异极大（262k~1M）→ 不动 |
+> | `openstarry/kimi-k2.6` 等 | 262,144 | 不变 | 已与上游一致 |
+> | `kimi-code/*` | 1,048,576 / 262,144 | 不变 | 已与上游一致 |
+>
+> **为什么不把 openstarry 的全都填上游值**：openstarry 是**中转网关**，`/v1/models` 不返回 limit 元数据，1.5M token 的探测请求被网关路由层直接拒（不是上下文错误）。虚报过大的后果是超长会话直接 400（会话崩），虚报过小的后果只是提前压缩 —— 风险不对称，所以只按实测证据升。
+>
+> **不填 `limit.output` 的理由**：`limit.output` 未声明时 opencode 用 `OUTPUT_TOKEN_FALLBACK = 32,000` 作为 `max_tokens` 上限（`session/model-request.ts:92`），既安全又够用；声明错误的上限反而会制造 400。
+
+### 5.2 模型选择策略
+
+| Agent | 选用 model | rationale |
+|---|---|---|
+| build | `minimax-cn/MiniMax-M3.1-Flash` | 主对话最强模型，1M 上下文吃得下长会话 |
+| plan | `minimax-cn/MiniMax-M3.1-Flash` | 与 build 同款：规划要读大量代码与文档，1M 上下文优先于成本 |
+| explore | `minimax-cn/MiniMax-M3.1-Flash` | 速度优先、本地搜索 token 少 |
+| librarian | `opencode-go/deepseek-v4.1-flash` | 纯外部检索，轻量 flash 档够用；524k 吃得下长文档页 |
+| oracle | `kimi-code/k3-256k` | 256k 上下文，吃得下大量文件做架构分析 |
+| metis | `kimi-code/k3-256k` | 创造性发散任务，温度 0.3 配合 |
+| general | `minimax-cn/MiniMax-M3.1-Flash` | 多面手 fallback，与 build/explore 同款 |
+| critic | `minimax-cn/MiniMax-M3.1-Flash` | 长 PR diff + 文件全扫；1M 上下文吃得下全仓扫描 |
+| context-builder | `opencode-go/deepseek-v4.1-flash` | 纯机械的 prompt 组装，成本优先 |
+| title | `opencode-go/deepseek-v4.1-flash` | 高频短任务，轻量档足够 |
+
+> **v1.8 订正**：上表此前与配置不符（8/10 个 agent 的 model 记错）。现按 `opencode.jsonc.openstarry` 逐项核对重写；rationale 反映的是**当前**选型理由，历史选型理由见 CHANGELOG。
+
+### 5.3 关键决策
+
+- **不引入 Anthropic / OpenAI provider**——本地网络限制 + 成本考虑
+- **主链路（build / plan / explore / general / critic）统一用 `minimax-cn/MiniMax-M3.1-Flash`**——1M 上下文；这些 agent 的共同特征是「要读很多」，上下文比单价更决定可用性
+- **轻量链路（librarian / context-builder / title）用 `opencode-go/deepseek-v4.1-flash`**——检索与机械组装不需要长上下文，524k 足够
+- **oracle / metis 用 `kimi-code/k3-256k`**——长上下文 + 可调温度（metis 发散用 0.3）
+- **套餐可用性先于型号新旧（v1.4 实测教训）**——`deepseek-v4-flash` 与 `glm-5.1` 虽在 models.dev 存在，但**不在本套餐**（`model_price_error`）。选型前必须先打 `/v1/models` + 实测一次调用
+- **不给 oracle 设 temperature**——k3-256k 的 `capabilities.temperature=false`，设了也被上游忽略；plan / title 是主动不设
+- **模型上下文 limit 写在配置里**（`providers.<id>.models.<model>.limit.context`），需与上游实际值核对（§8.2）
+---
+
+## 6. 文件结构
+
+```
+~/.config/opencode/
+├── opencode.jsonc -> opencode.jsonc.openstarry  # 符号链接：指向当前生效配置
+├── opencode.jsonc.openstarry   # 配置真源（agent/provider/mcp/permission）
+├── opencode.jsonc.minimax      # 另一份 provider 变体（注意与真源漂移）
+├── docs/
+│   ├── MULTI-AGENT-DESIGN.md   # 本文件（当前态）
+│   ├── CHANGELOG.md            # 历史增量（权限加固史 / 各版本验证记录 / 已完成台账 / 演进日志）
+│   └── review-automation-backlog.md  # 评审自动化迁移清单（L0/L1/L2/L3 分层）
+├── prompts/                     # agent prompt 文件（9 个）
+│   ├── build.md                 # 委派规则 + subagent 返回结构表 + critic SOP（7 字段 + 评审预算）+ 角色矩阵
+│   ├── plan.md                  # 106 行
+│   ├── explore.md               # 54 行（Markdown 四节输出）
+│   ├── librarian.md             # 95 行（Markdown 五节输出）
+│   ├── oracle.md                # 59 行（Markdown 四节输出）
+│   ├── metis.md                 # 70 行（Markdown 六节输出）
+│   ├── general.md               # 84 行（Markdown 四节输出）
+│   ├── critic.md                # 154 行（4 段式审稿输出）
+│   └── context-builder.md       # 180 行（critic prompt 组装器）
+├── commands/                    # opencode 自定义 slash command
+│   ├── plans-init.md            # /plans-init [path]：初始化项目 .gitignore
+│   ├── role-init.md             # /role-init：写 .rddf/state/role.json
+│   ├── role-show.md             # /role-show：查看当前角色
+│   ├── arch-docs-init.md        # /arch-docs-init：梳理架构文档结构 → .rddf/config/arch-docs.json
+│   └── critic-review.md         # /critic-review：7 字段上下文契约调 critic
+├── scripts/                     # opencode 命令调用的 shell 脚本
+│   ├── plans-init.sh            # 幂等 .gitignore 配置（首次/重复均安全）
+│   ├── role-init.sh
+│   ├── role-show.sh
+│   ├── arch-docs-init.sh        # 架构文档结构梳理（读写项目配置）
+│   └── build_critic_prompt.sh   # 生成 critic prompt 骨架（自动填 3/7 字段，读 arch-docs.json）
+├── skills/                      # 启用的 skills
+│   └── cpp-pro/
+├── skills.disable/              # 禁用的 skills（superpowers）
+├── superpowers/                 # 完整目录（保留但未启用）
+├── cli.json                     # CLI 行为（diffs wrap, session, theme）
+├── tui.json                     # TUI 插件（空 plugin 数组）
+├── lsp.json                     # LSP（仅 clangd）
+├── lsp-install-decisions.json   # LSP 安装决策
+├── service.json                 # 服务密码
+├── package.json                 # 仅声明 @opencode-ai/plugin 依赖
+├── AGENTS.md                    # 全局 AGENTS 规则（叠加到所有 agent；**不含角色矩阵**，v1.4 移入 build.md）
+├── .gitignore                   # 忽略 .plans/node_modules/package.*/.env/*.bak*/backup*/
+├── .env                         # KIMI/OPENSTARRY/MINIMAX_API_KEY（已被 .gitignore 保护）
+├── node_modules/
+└── .git/                        # git 仓库（尚无 commit）
+```
+
+> **备份文件策略**：`*.backup-*` / `*.bak` / `*.bak-*` / `backup*/` 全部进 `.gitignore`——历史备份里出现过**明文 API key**（`backup_v1/opencode.jsonc`），这类文件永远不进仓库。密钥轮换见 §8.1 P0。
+
+### 6.1 plan agent 产物路径
+
+| 旧（v1.0） | 新（v1.1） |
+|---|---|
+| `<project>/.opencode/plan/*.md` | `<project>/.plans/*.md` |
+
+**命名空间动机**：opencode 引擎自身用 `.opencode/` 存会话/快照，plan agent 的草稿与引擎内部状态**不应共用命名空间**，否则后续 opencode 升级易冲突。
+
+**首次使用流程**：
+1. 在项目根跑 `scripts/plans-init.sh <project-root>`（或 `~/.config/opencode/scripts/plans-init.sh <project-root>`）
+2. 幂等：`.plans/` 条目已存在则跳过
+3. 之后 plan agent 产出的设计草稿会写到 `<project>/.plans/<slug>.md`，不入库
+
+**自动入口**：在 opencode TUI 中输入 `/plans-init` 或 `/plans-init /path/to/project`，触发 `commands/plans-init.md` 调 shell 脚本。
+
+### 6.2 配置顶层结构（v2 schema）
+
+真源是 `opencode.jsonc.openstarry`；`opencode.jsonc` 是指向它的符号链接（git 以 mode 120000 记录）。`opencode.jsonc.minimax` 是另一份变体。
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",   // 强制 schema
+  "snapshot": false,                              // 关闭文件系统快照
+  "model": "minimax-cn/MiniMax-M3.1-Flash",       // 全局默认 model
+  "default_agent": "build",                       // 默认主 agent
+  "experimental": {                                // v2：实验特性统一入口
+    "subagent_depth": 2                           // 允许 subagent 嵌套 2 层（默认 1）
+  },
+  "mcp": {                                        // MCP servers
+    "codebase-memory-mcp": {
+      "type": "local",
+      "command": ["/home/ubuntu/.local/bin/codebase-memory-mcp"],
+      "timeout": 30000
+    }
+  },
+  "permission": {                                 // 全局权限（v2 扁平键）
+    "codebase-memory-mcp_*": "deny",              // MCP 工具默认全禁
+    "codebase-memory-mcp_search_graph": "allow", // 逐个放行只读图谱工具
+    "codebase-memory-mcp_get_code_snippet": "allow",
+    "codebase-memory-mcp_trace_path": "allow",
+    "codebase-memory-mcp_get_architecture": "allow",
+    "codebase-memory-mcp_get_graph_schema": "allow",
+    "codebase-memory-mcp_query_graph": "allow",
+    "codebase-memory-mcp_search_code": "allow",
+    "codebase-memory-mcp_detect_changes": "allow",
+    "codebase-memory-mcp_list_projects": "allow",
+    "codebase-memory-mcp_index_status": "allow"
+  },
+  "agent": {                                      // 10 个 agent 定义（含 title）
+    "build": { "permission": { "bash": { "*": "allow", "git push *": "ask", ... } } },
+    "plan": { ... },
+    "explore": { ... },
+    "librarian": { ... },
+    "oracle": { ... },
+    "metis": { ... },
+    "general": { ... },
+    "critic": { ... },
+    "context-builder": { ... }
+  },
+  "providers": {                                  // v2：provider 段（package/settings/models）
+    "openstarry": {
+      "package": "@ai-sdk/openai-compatible",
+      "settings": { "baseURL": "https://api.openstarry.com/v1", "apiKey": "{env:OPENSTARRY_API_KEY}" },
+      "models": { "kimi-k2.6": { "name": "Kimi-K2.6", "limit": { "context": 262144 } } }
+    },
+    "minimax-cn": { ... },
+    "kimi-code": { ... }
+  }
+}
+```
+
+**v1 → v2 字段对照**：
+
+| v1 写法 | v2 写法 |
+|---|---|
+| `provider.<id>` | `providers.<id>` |
+| `provider.<id>.npm` | `providers.<id>.package` |
+| `provider.<id>.options` | `providers.<id>.settings` |
+| `permission: { "codebase-memory-mcp": { "search_graph": "allow" } }` | `permission: { "codebase-memory-mcp_search_graph": "allow" }` |
+| 顶层 `subagent_depth` | `experimental.subagent_depth` |
+| `agent.<id>.permission`（对象） | 仍可用；v2 原生字段名是 `permissions`（规则数组）|
+| `agent.<id>.prompt` | `agent.<id>.system`（`prompt` 走 v1 迁移）|
+
+---
+
+## 7. 验证状态
+
+### 7.1 已完成验证（当前态汇总）
+
+下表只保留**当前配置仍然成立**的验证结论；按版本切分的完整验证记录见 [`CHANGELOG.md`](CHANGELOG.md) 的「各版本验证记录」。
+
+| 测试 | 状态 |
+|---|---|
+| JSON / JSONC 合法性 + `opencode debug config` 归一化诊断 | ✅ 0 错误 0 警告 |
+| 10 个 agent 全部注册 + 全部 `{file:...}` 引用解析 | ✅ |
+| permission schema 字段合法；v2 扁平键生效 | ✅ 10 只读 allow、4 写 deny |
+| `experimental.subagent_depth: 2` 生效；顶层 `subagent_depth` 已移除 | ✅ |
+| `.env`：read → ask（全部 agent）；shell `cat/head/tail` → deny（只读）/ ask（build） | ✅ |
+| `awk` / `env` / `printenv` / `jq` → ask（只读 agent）；`find * -exec *` → deny | ✅ |
+| critic `list_projects` 不再被 deny；critic 额外 4 项全 deny | ✅ |
+| `capabilities` 字段被接受；`title` / `context-builder.hidden` 生效 | ✅ 0 错误 0 警告 |
+| `plan` / `oracle` 不含 `temperature`（模型不支持该参数） | ✅ |
+| 角色矩阵移出 `AGENTS.md` 后 build prompt 仍完整 | ✅ |
+| provider 模型 id 与上游一致（`opencode models` 核对） | ✅ `mimo-v2.5-pro` / `deepseek-v4.1-flash` / `kimi-k2.6` 均存在 |
+| 备份文件全部进 `.gitignore`，明文 API key 已隔离出索引 | ✅（key 本身仍需轮换） |
+| `deepseek-v4.1-flash` 工具调用 + 210,074 token 输入 | ✅ 接受 → 声明的 262,144 有实测支撑 |
+| `glm-5.3-flash` 不思考 | ✅ 成为 `title` / `context-builder` 选型依据 |
+| `deepseek-v4.1-flash` 关思考 | ❌ 三种参数全被网关忽略，思考关不掉 |
+| openstarry `/v1/models` 返回 limit 元数据 | ❌ 不返回（只有 id + supported_endpoint_types） |
+| `deepseek-v4-flash` / `glm-5.1` 可用性 | ❌ 不在套餐（`model_price_error`） |
+### 7.2 未做真实运行时验证
+
+- ❌ 未在真实运行的 OpenCode session 中实测委派（各 subagent 是否真按 Markdown 小节输出）
+- ❌ 未实测 LLM 是否真的按 prompt 行为（如 librarian 是否真的会先调 explore）
+- ❌ v1.1 的 19 条 build ask 规则未在真实场景中触发观察（需真实任务驱动）
+- ❌ v1.1 的 MCP `query_graph: ask/deny` 未在真实场景验证（Cypher 写操作是否真被服务端阻断需实跑确认）
+- ❌ **v1.2 新增**：critic 是否真的按 4 段式输出（BLOCKERS / SHOULD_FIX / NITS / 验证建议）
+- ❌ **v1.2 新增**：build agent 看到 ≥3 文件改动是否真的主动调 critic
+- ❌ **v1.3 新增**：`experimental.subagent_depth` 是否真的限制嵌套委派深度
+- ❌ **v1.3 新增**：critic 恢复只读图谱工具后是否仍保持 REJECT 立场
+- ❌ **v1.3 新增**：shell 层 `.env` deny 是否会被 `git show * > f` 这类重定向绕过（**已知会绕**——shell 是整串前缀匹配，权限模型固有限制）
+
+### 7.3 实测建议
+
+下次启动 OpenCode session 时：
+1. 在 build agent 中输入：`@librarian 查一下 React 19 useEffect 清理函数新行为` —— 观察 librarian 是否先 task 调 explore 看本地代码
+2. 在 build agent 中输入：`@explore 找 opencode.jsonc 中所有包含 librarian 的行` —— 验证 explore 返回 Markdown 四节（匹配文件 / 直接答案 / 下一步）
+3. 切到 plan agent：输入设计任务，验证 plan 是否优先委派 metis
+4. **v1.1 验证**：在 build agent 中输入 `git status`，确认 allow；输入 `git push`，确认弹 ask 对话框
+5. **v1.1 验证**：在 build agent 中委派 explore，观察 explore 是否会尝试 `websearch`——按当前配置应被 deny
+6. **v1.2 验证（critic）**：在 build agent 中做一个故意带 bug 的小重构，事后说"过 critic"——验证 critic 是否输出 4 段式 + 找到 bug
+7. **v1.2 验证（自动触发）**：在 build agent 中做一个 ≥3 文件改动，验证 build agent 是否**主动**调 critic（不需用户说"过 critic"）
+8. **v1.2 验证（权限）**：在 build agent 中委派 critic，让 critic 尝试 `webfetch`——按当前配置应被 deny
+9. **v1.3 验证（.env）**：让任一只读 subagent 尝试 `cat ~/.config/opencode/.env`——应被 deny；让 build 试同一命令——应弹 ask
+10. **v1.3 验证（图谱工具）**：委派 critic，让它调 `list_projects`——应成功（v1.3 修复项）
+---
+
+## 8. 改进 TODO
+
+按优先级排序（**P0 紧急 → P3 长期**）。
+
+### 8.1 P0: 必做
+
+1. **`codebase-memory-mcp_query_graph` 权限归属 —— 已决定保持 `allow`**（v1.4，2026-10-21，用户拍板）
+   - CHANGELOG「v1.1 权限加固 §4.4.2」判定 `query_graph` 是**写工具**（Cypher 支持 `CREATE/SET/DELETE`），对只读 agent 一律 deny
+   - v1.3 迁移后它进了**全局** allow → 8 个只读 agent 都能调
+   - **结论**：保持 allow。逐个 agent 加 deny 会让每次图谱查询都弹 ask，破坏只读 agent 的可用性；且该 server 的 `query_graph` 实际用于读查询。残余风险由 §8.2「服务端 Cypher 写检查」兜底
+
+2. **实测 critic 恢复只读图谱工具后的行为**
+   - critic 现在能查 `search_graph` / `get_code_snippet` / `trace_path` / `list_projects` 等 10 个只读工具（§4.4.2）
+   - 需实测是否仍保持 REJECT 立场、是否被图谱信息带偏
+
+3. **build agent 的 `.env` 读取策略确认**
+   - 当前 build 的 `cat/head/tail *.env` 是 `ask`（人工放行），其余只读 agent 是 `deny`
+   - 需确认 build 是否应该完全 deny（避免密钥进入 transcript → 第三方模型）
+
+**已实施但需运行时验证**：
+
+- ❌ critic 是否真的按 4 段式输出（build agent 委派后实测）
+- ❌ build agent 看到 ≥3 文件改动是否主动调 critic（自驱触发）
+
+### 8.2 P1: 短期（1-2 周）
+
+1. **真实运行时验证**
+   - 启动 session 实测 **10 个 agent**（v1.4 含 title + context-builder）
+   - 观察 LLM 实际行为是否符合 prompt 预期（尤其 XML→Markdown 后各 subagent 的输出结构是否稳定）
+   - 必要时微调 prompt 措辞
+   - **v1.1 专项**：实测 build 的 19 条 ask 规则是否真的在目标命令上触发
+   - **v1.2 专项**：实测 critic 4 段式输出（§7.3 实测建议）
+   - **v1.3 专项**：实测 `experimental.subagent_depth: 2` 是否真的限制嵌套委派深度
+
+2. **librarian `subagent` 权限验证**
+   - 当前 `librarian.permission.subagent = "allow"`
+   - 需实测 librarian 真的会调 `agent: "explore"`
+   - 必要时考虑改回 `"ask"`（方案 A）作为兜底
+
+3. **codebase-memory-mcp 服务端 Cypher 写检查**
+   - v1.3 全局放行了 `codebase-memory-mcp_query_graph`（见 §8.1 P0-2）
+   - 实测确认服务端是否强制只读 Cypher（`CREATE` / `SET` / `DELETE` 应被拒）
+   - 若服务端未强制，需在 MCP server 端补强（不在本仓库范围内）
+
+4. **critic 实际行为调优**
+   - 跑过 3-5 个真实 PR 后，统计 critic 是否漏掉明显 bug
+   - 如漏掉，§3.2.1 5 条件可能过严（建一个简单 diff 就不调）；如噪音过多，条件收窄
+   - 可能需要给 critic 加 few-shot 示例（放 `prompts/critic-examples.md`，prompt 引用）
+### 8.3 P2: 中期（1-2 月）
+
+1. **添加 `category` 系统**
+   - 上游 omo 的 `quick` / `deep` / `visual-engineering` / `unspecified-high` 等 category
+   - 允许 build agent 在 task 委派时不指定 agent，只指定 category
+
+2. **添加更多 slash command**
+   - v1.1 已加 `/plans-init`
+   - 候选：
+     - `/review` 一键调 critic 审当前 git diff（v1.2 已在 §2.4 列出但未实现）
+     - `/plan` 切到 plan agent
+     - `/commit` 提交 workflow（先过 critic）
+
+3. **添加 `references`（命名引用）**
+   - 集中管理外部文档源（React 官方、TypeScript handbook 等）
+   - librarian 可直接引用
+
+4. **plan agent 输出格式增强**
+   - 当前用 markdown 模板，可考虑加 JSON Schema 校验
+
+5. **critic 评估矩阵**
+   - 建立 critic 输出质量的回归测试集（10+ 个 known-bug 样本）
+   - 跑新 critic 看是否能找出 80%+ 的 known-bug
+   - 低于阈值则需要扩展 prompt（§2.3 4 段式）或加 examples
+
+### 8.4 P3: 长期（3+ 月）
+
+1. **multi-model 测试**
+   - 验证不同模型组合下的委派行为
+   - 测 fallback chain
+
+2. **LSP 配置扩展**
+   - 当前只有 clangd（来自旧 lsp.json）
+   - 考虑加 gopls / pyright / tsserver
+
+3. **AGENTS.md 重构**
+   - 当前与本文件有些重叠
+   - 考虑把"代码规范"移到 .editorconfig 等
+   - AGENTS.md 只保留"项目指令 + 跨 agent 通用规则"
+
+4. **commit/push workflow 自动化**
+   - 当前 build agent 不主动 commit/push（v1.1 加了 19 条 ask 兜底）
+   - 考虑加一个 `commit` agent 专门做这个
+   - 或加 `git_master` skill
+
+5. **MCP 扩展**
+   - 当前只用了 codebase-memory-mcp
+   - 考虑加 context7（库文档）/ websearch（Tavily）等
+
+---
+
+## 9. 演进日志
+
+版本演进记录已移至 [`CHANGELOG.md`](CHANGELOG.md)；本文档只维护当前态。
+
+---
+
+## 10. 参考资料
+
+### 上游参考
+
+- **oh-my-openagent** (https://github.com/code-yeongyu/oh-my-openagent)
+  - v5.0.0-beta（11 agent 设计）
+  - 我们的设计是该项目的"用户配置级"实现
+
+- **OpenCode 官方文档** (https://opencode.ai/docs/agents/)
+  - Agent 模式、permission 字段、file 引用语法
+
+- **OpenCode V2 schema** (https://opencode.ai/config.json)
+  - 配置字段约束
+
+### 内部参考
+
+- `opencode.jsonc` —— 主配置
+- `prompts/*.md` —— 9 个 agent prompt（v1.3 +context-builder.md）
+- `AGENTS.md` —— 跨 agent 通用规则
+- `~/.config/opencode/backup/` —— 历史快照
+
+### 外部参考（critic 设计来源）
+
+- `/workspace/main/oh-my-openagent` —— 本次 critic agent 设计的灵感来源
+  - OmO 的 `momus` 是审稿类角色（需 team mode）
+  - 我们的 critic 是 subagent 模式实现，零 team-mode 依赖
+  - 调研结论：OmO 的 67 KB AGENTS.md 是"plugin 工程师手册"模式，**不适合多项目用户**——我们保留"全局极简 + 项目丰富"模式
+
+---
+## 11. 维护者备忘
+
+### 修改 prompt 的正确姿势
+
+1. **不要修改 `opencode.jsonc` 中的 prompt 字段**——已经是 file 引用
+2. 直接编辑 `prompts/<name>.md`
+3. 如果是新增 prompt 字段或修改权限，需要动配置真源：`opencode.jsonc.openstarry`（`opencode.jsonc` 是指向它的符号链接；另有 `opencode.jsonc.minimax` 变体，注意三份副本会漂移）
+
+### 修改后必做
+
+```bash
+# 1. JSON 合法性（纯 JSON 风格，python 即可）
+python3 -c "import json;json.load(open('opencode.jsonc.openstarry'));print('OK')"
+
+# 2. v2 schema 归一化 + 诊断（0 错误 0 警告）
+opencode debug config | jq '.[]?.info | {permissions, agents: (.agents|keys)}'
+
+# 3. 运行时生效的 agent 权限（用 v2 的 last-match-wins 规则复算）
+opencode debug agents > /tmp/agents.json
+```
+
+- 重启 OpenCode session 重新加载配置
+- 在 session 中输入 `@<agent> ...` 实测行为
+- **v1.3 新增**：改了 `permission` 后必须跑 `opencode debug agents` 复算——嵌套权限对象在 v2 下**不生效**（action 名对不上，见 §4.4.5）
+- **v1.3 新增**：如改了 critic 触发规则，跑一次 ≥3 文件改动观察 build agent 是否主动调 critic
+- **v1.8 新增**：改了 `agent.*.model` 或 `providers.*.models.*.limit.context` 后，**必须同步本文件的 §2.1 / §5.1 / §5.2 / §5.3**（本文件以 `opencode.jsonc.openstarry` 为真源；配置漂移过一次，8/10 个 agent 的 model 记错）
+
+### 不要做
+
+- ❌ 不要在配置里写 JSON 注释（`.jsonc` 允许但我们用纯 JSON 风格避免 parser 混淆）
+- ❌ 不要把 prompt 改回内联字符串（破坏 file 引用解耦）
+- ❌ 不要修改 provider 段的 `apiKey` 引用方式（保持 `{env:...}` 环境变量）
+- ❌ 不要把 MCP 权限写成嵌套对象（v2 只认扁平 `<server>_<tool>` 键）
+- ❌ 不要在 agent 块里写 `"read": "allow"`——它会覆盖 opencode 内置的 `.env` → ask 保护（见 §4.4.3）
+
+---
+
+**文档结束**

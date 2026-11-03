@@ -1,0 +1,21 @@
+{
+  "diffs": {
+    "wrap": "word"
+  },
+  "session": {
+    "sidebar": "hide",
+    "scrollbar": false,
+    "thinking": "show",
+    "permissions": "autoaccept",
+    "markdown": "rendered",
+    "verbosity": "medium"
+  },
+  "animations": true,
+  "theme": {
+    "name": "opencode",
+    "mode": "dark"
+  },
+  "tabs": {
+    "mode": "auto"
+  }
+}
