@@ -9,6 +9,9 @@ bun.lock
 # Environment & secrets — never commit API keys
 .env
 
+# opencode 运行时凭据 — 含真实 auth password，绝不入库
+service.json
+
 # Backup files / snapshots — never commit (some hold plaintext API keys)
 *.backup-*
 *.bak
@@ -17,3 +20,13 @@ backup*/
 
 # Generated snapshots
 .snapshot/
+
+# 第三方技能包：嵌套 git clone（origin=github.com/obra/superpowers）
+# 如需引用请以 submodule 方式显式引入，勿直接纳入本仓历史
+superpowers/
+
+# 本机绝对路径 symlink 集合，clone 到别的机器必然断链
+skills.disable/
+
+# 误重定向产物（`> ~` 生成），非配置文件
+/~

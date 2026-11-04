@@ -1,0 +1,5 @@
+allowBuilds:
+  '@ast-grep/cli': true
+  '@code-yeongyu/comment-checker': true
+  msgpackr-extract: true
+  oh-my-openagent: true

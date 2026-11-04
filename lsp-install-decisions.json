@@ -1,0 +1,14 @@
+{
+  "bash": {
+    "decision": "declined",
+    "decidedAt": "2026-07-24T05:27:12.733Z"
+  },
+  "biome": {
+    "decision": "declined",
+    "decidedAt": "2026-07-26T17:06:50.336Z"
+  },
+  "yaml-ls": {
+    "decision": "declined",
+    "decidedAt": "2026-08-04T07:25:02.742Z"
+  }
+}
