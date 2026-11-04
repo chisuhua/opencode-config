@@ -1,11 +1,13 @@
 # Multi-Agent 系统设计参考
 
-> **状态**: v1.8 (2026-10-28)
+> **状态**: v1.9 (2026-11-03)
 > **范围**: `~/.config/opencode/` 用户配置级 multi-agent orchestration
 > **下游**: `opencode.jsonc`（符号链接 → `opencode.jsonc.openstarry`）+ `prompts/*.md` + `commands/*.md` + `scripts/*.sh`
 
 本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
 
+> **本版（v1.9）变更**：角色矩阵与 rdd-workflow 解耦——角色矩阵改为**自足内核**，rdd-workflow 降为**可选增强层**（§2.6）。新增 `scripts/rdd-skills.sh`（增强层探测）。角色权限边界不变。
+>
 > **本版（v1.8）变更**：本文档改为「当前态单写」——按版本切分的增量内容（权限加固史、各版本验证记录、已完成改动台账、演进日志）全部外移到 [`docs/CHANGELOG.md`](CHANGELOG.md)；新增 §2.5「architect 产出形态契约」与 critic `arch` 档的聚焦判据（§2.3）。历史内容见 CHANGELOG。
 
 ---
@@ -227,6 +229,30 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 - **不追溯存量**：约束只管本次新写/改写的文档；既有 ADR 越界 → 记 backlog 单独立项。
 
 > 背景：近期多个项目的 ADR 出现形态漂移（决策陈述占比低至 22%、ADR 内混入过程日志与实测台账、缺独立后果章），而当时的约束只界定了「写哪里」，没有任何「写什么形状」的判据。详见 §2.3 的 `arch` 档聚焦判据与 CHANGELOG。
+
+### 2.6 rdd-workflow 增强层（可选，v1.9 新增）
+
+角色矩阵与 rdd-workflow **解耦**：角色矩阵是**自足内核**，rdd-workflow 是**可选增强层**。完整定义在 `prompts/build.md` 的「rdd-workflow 增强层」，要点：
+
+- **角色矩阵自足**：四个角色的权限、产出契约、切换机制与 rdd-workflow 是否安装无关。没装 → 角色按内置流程完整工作；装了 → 额外可用对应 skill。**没装不是降级**。
+- **skill 只在前置条件满足时被调用**：每个 rdd-* skill 的 frontmatter 自带 `Invoke when canonical preconditions hold`；不满足就不调，走内置流程。不得为走流程而伪造前置条件。
+- **agent 不代替 workflow 推进阶段**：调用 skill 时遵守其 handoff 契约（不手写 handoff 文件、不跳阶段、不改 skill 的状态文件）。
+- **懒探测**：仅在准备调用某个 rdd-* skill 时跑 `~/.config/opencode/scripts/rdd-skills.sh`（`--json` 输出 `installed` / `available[]` / `sources[]` / `rddf_cli`）。探测顺序对齐 rdd-workflow 的 `resolve_rdd_skill_dir`（项目 `.opencode/skills/` → 全局 `~/.agents/skills/` → `$RDD_WORKFLOW_SRC`）。**脚本只是预筛**——它的 skill 名单是上游镜像，实际可加载性以 `skill` 工具为准。
+- **pause / commit 契约**：`rdd-builder` 的 P0 / P2.5 是 HARD pause（agent 不替用户拍板）；P2 的 COMMIT GATE 与全局「不主动 commit，等用户确认」冲突时**全局规则优先**；`rdd-quick` 只在 builder P0 已 dispatch 后调用，agent 不自行判定进入。
+- **权限不收窄**：增强层启用**不改变**角色列表的权限边界；冲突只在**工件层**解决——见下条。
+- **工件归属规则**：同一工件在同一路径上只允许一个写入者。skill 在本路径上 → 由 skill 写；skill 是下游阶段 → agent 写它的**输入工件**而非产物（planner 写 `.rddf/improvements/<name>.md`，由 `rdd-builder` P0 生成 `proposal.md`）；skill 不可用/不在路径上 → 走内置流程并注明「本路径未启用 `<skill>`」。
+
+角色 ↔ 可选增强映射（前置条件为 skill frontmatter 原文）：
+
+| 角色 | 可选增强 |
+|---|---|
+| `architect` | `rdd-arch` |
+| `planner` | `rdd-planner`、`add-improve`、`rdd-workflow-brainstorm` |
+| `builder` | `rdd-builder`、`execute`、`rdd-quick`、`rdd-workflow-writing-plans`、`openspec-gate`、`deps` |
+| `verifier` | `rdd-verifier`、`contract-check` |
+| `general` | `guide` |
+
+> 该增强层**不**做阶段自动跟随：workflow 阶段由 handoff 链推进，agent 角色由用户口令切换，两者是正交的两套状态（详见 CHANGELOG 的调研结论）。
 
 ---
 
@@ -539,7 +565,7 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 │   ├── CHANGELOG.md            # 历史增量（权限加固史 / 各版本验证记录 / 已完成台账 / 演进日志）
 │   └── review-automation-backlog.md  # 评审自动化迁移清单（L0/L1/L2/L3 分层）
 ├── prompts/                     # agent prompt 文件（9 个）
-│   ├── build.md                 # 委派规则 + subagent 返回结构表 + critic SOP（7 字段 + 评审预算）+ 角色矩阵
+│   ├── build.md                 # 委派规则 + subagent 返回结构表 + critic SOP（7 字段 + 评审预算）+ 角色矩阵 + rdd-workflow 增强层
 │   ├── plan.md                  # 106 行
 │   ├── explore.md               # 54 行（Markdown 四节输出）
 │   ├── librarian.md             # 95 行（Markdown 五节输出）
@@ -559,7 +585,8 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 │   ├── role-init.sh
 │   ├── role-show.sh
 │   ├── arch-docs-init.sh        # 架构文档结构梳理（读写项目配置）
-│   └── build_critic_prompt.sh   # 生成 critic prompt 骨架（自动填 3/7 字段，读 arch-docs.json）
+│   ├── build_critic_prompt.sh   # 生成 critic prompt 骨架（自动填 3/7 字段，读 arch-docs.json）
+│   └── rdd-skills.sh            # rdd-workflow 增强层探测（installed / available[] / sources[] / rddf_cli）
 ├── skills/                      # 启用的 skills
 │   └── cpp-pro/
 ├── skills.disable/              # 禁用的 skills（superpowers）

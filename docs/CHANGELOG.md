@@ -10,6 +10,8 @@
 
 > 本节内的 § 引用为**当时的**章节编号；原 §4.4–§4.6 / §7.1–§7.3.1 / §8.1–§8.1.3 现位于本文件后续小节，原 §9 演进日志位于文末。
 
+> **v1.9 变更摘要**：角色矩阵与 rdd-workflow **解耦**——角色矩阵改为**自足内核**（权限/产出契约/切换机制不依赖 rdd-workflow 是否安装），rdd-workflow 降为**可选增强层**；新增 `scripts/rdd-skills.sh`（懒探测：installed / available[] / sources[] / rddf_cli）；角色 ↔ 可选增强映射 + 工件归属规则（同一路径上单一写入者）写入 `prompts/build.md`（§2.6）。
+>
 > **v1.7 变更摘要**：新增项目级架构文档配置 `.rddf/config/arch-docs.json`（`arch_paths` / `exclude_paths`），**architect 可写范围**与 critic `arch` 档判据改为读配置；新增 `/arch-docs-init`（首次梳理写入、`--refresh` 更新、`--check` 查漂移）；`build_critic_prompt.sh` 按配置推断档位。
 >
 > **v1.6 变更摘要**：critic 引入**审稿档位** `review_profile`（`arch` / `plan` / `build` / `archive`），BLOCKER 判据按产物而不是按角色；上下文契约从 6 字段扩为 7 字段（§2.3、§2.4）；`build_critic_prompt.sh` 按改动路径自动推断档位；build 角色矩阵补齐 cwd 变更重解析、非法角色值、verifier 评审预算、builder 改 ADR 决策的边界（§2.2）。
@@ -344,6 +346,26 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 | `critic.md` 补「无法验证必须说明」 | §2.3 | 避免未验证结论被当成 PASS |
 | `build.md` 补 subagent 返回结构表 + context-builder 触发条件 + 委派带 project 名 | §3.2 / §3.3 | 减少空转工具调用 |
 
+### 8.1.4 v1.9 已完成（2026-11-03）
+
+| 改动 | 章节 | 备注 |
+|---|---|---|
+| `build.md` 新增「rdd-workflow 增强层（可选）」节 | §2.6 | 角色矩阵自足；skill 只在前置条件满足时调用 |
+| 角色 ↔ 可选增强映射表（architect/planner/builder/verifier/general）| §2.6 | 前置条件取自各 skill frontmatter 原文 |
+| 工件归属规则（同一路径上单一写入者 + 下游阶段写输入工件）| §2.6 | 解 `proposal.md` 双写风险 |
+| 内置流程降级细节（openspec CLI / rddf CLI 缺失 / skill 调用失败）| §2.6 | 增强层故障不阻塞交付 |
+| 新增 `scripts/rdd-skills.sh`（探测 + `--json`）| §6 | 探测顺序对齐 rdd-workflow `resolve_rdd_skill_dir` |
+| verifier 产出契约的 `rdd-verifier` 分流条件 3 增补脚本判定路径 | §2.6 | 与增强层判定口径一致 |
+| 角色矩阵自查清单增 2 项（探测 / 单一写入者）| §2.6 | 防止"装了 workflow 就乱调 skill" |
+| 协作审计：统一 verifier 判定口径（以 skill frontmatter 为权威）| §2.6 | 消除「分流三条件」与增强层前置条件两套标准 |
+| 协作审计：planner/builder 角色列表标注 `proposal.md` 归属 | §2.6 | 角色权限与工件归属规则不再自相矛盾 |
+| 协作审计：补 `deps` / `execute` 的完整前置条件 | §2.6 | 映射表此前缺 2 个 skill 的可判定条件 |
+| 协作审计：新增 pause / commit 契约（HARD pause 优先、commit 全局确认优先、`rdd-quick` 不自行进入）| §2.6 | `rdd-builder` P2 COMMIT GATE 与全局"不主动 commit"直接冲突 |
+| 协作审计：可用性以 `skill` 工具为准，脚本仅作预筛 | §2.6 | 脚本 skill 名单是上游镜像，会漏判新增 skill |
+| 协作审计：`design.md` 实际归属（`rdd-builder` P1 只生成 `tasks.md`）| §2.6 | owns 声明与 `phase1_plan.sh` 实现不一致 |
+| `role-init.sh` 增 `.gitignore` 提示 | §6 | `role.json` 是个人状态，rdd-workflow 的 gitignore 守卫只覆盖 `openspec/` |
+| 明确 `design.md` 定稿责任：`plan` agent 产出为草稿，`builder` 角色定稿 | §2.6 | 权限保持不动（方案 a），只消除"谁定稿"的模糊 |
+
 
 ---
 
@@ -351,6 +373,7 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 
 | 日期 | 版本 | 变更 | 原因 |
 |---|---|---|---|
+| 2026-11-03 | v1.9 | 角色矩阵与 rdd-workflow 解耦（自足内核 + 可选增强层）+ `scripts/rdd-skills.sh` | 调研发现两套角色模型零耦合：agent 角色不读 workflow 状态、workflow 不读 agent 角色；`proposal.md` 存在双写风险（agent planner 可写 / rdd-planner not_owns / rdd-builder owns）；且 `rddf guide` 的阶段检测仍认 v3 handoff 文件名，不能作为阶段真值 |
 | 2026-10-13 | v1.0 | 初始设计 | 从 0 个 agent 演进到 7 个 agent |
 | 2026-10-13 | v1.1 | 权限加固 4 项 + 路径修正 1 项 + slash command 1 项 | oracle 后审发现 3 类真问题（bash 无界 / MCP 写工具无界 / 描述-权限矛盾）+ plan 写入路径不一致 |
 | 2026-10-15 | v1.2 | 新增 critic subagent + 权限最严化 + build.md 触发规则 | oh-my-openagent 调研发现"build 之后无审稿环节"是质量门禁缺失；critic 用 k3-256k 长上下文扫 PR diff；4 段式输出强制对抗立场 |

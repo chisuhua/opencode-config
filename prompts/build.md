@@ -249,22 +249,25 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 
 **分流：何时委托 `rdd-verifier` skill**
 
-三个条件**全中**才走 skill（它自带状态机、SHA 指纹缓存、失败分类、3 次重试上限、审计日志）：
+> 本节是「rdd-workflow 增强层」在 verifier 角色上的具体化。**判定以 skill frontmatter 的 canonical preconditions 为唯一权威**，本节只把它翻译成可检测的信号——两处不要各写一套条件。
+
+满足全部条件**才走 skill**（它自带状态机、SHA 指纹缓存、失败分类、3 次重试上限、审计日志）：
 
 1. `openspec/changes/<name>/` 存在，且 `proposal.md` 含 `## 验收标准` 或 `## Acceptance Criteria` 段
-2. 该 change 在 `.rddf/state/iteration.json` 中 `tasks_done == tasks_total > 0`
-3. `skill` 工具能加载 `rdd-verifier`
+2. `rdd-builder` 的 P3 archive gate 已触发（可检测信号：`.rddf/state/builder/<name>.json` 的 `current_phase == "phase-3"`）
+3. `skill` 工具能加载 `rdd-verifier`（脚本 `~/.config/opencode/scripts/rdd-skills.sh --json` 的 `available[]` 含 `rdd-verifier` **且** `skill` 工具实际能加载；两者不一致时以 `skill` 工具的实际加载结果为准）
 
 检测：
 
 ```bash
 grep -lE '^## (验收标准|Acceptance Criteria)[[:space:]]*$' openspec/changes/*/proposal.md
 rddf rdd-verify --dry-run    # scan + 建议，不改状态
+~/.config/opencode/scripts/rdd-skills.sh --json | grep -o '"rdd-verifier"'
 ```
 
 命中 → 调 `skill({id: "rdd-verifier"})`（或 `rddf rdd-verify` 准备上下文），**按其 LLM Verification Protocol 执行判定**。**结果以它写出的 `.rddf/state/.ac-verdict-<change>.json` 为准**，本节报告只引用它 + 补它不覆盖的项（第 5 步遗留清扫）。不要另写一份重复的 verdict。
 
-未命中（无 openspec change / 无 AC 段 / `rddf` 或 skill 不可用）→ 走上面 1–5 步本地验收，判据取自「判据来源」。
+未命中（无 openspec change / 无 AC 段 / P3 gate 未触发 / skill 不可加载）→ 走上面 1–5 步本地验收，判据取自「判据来源」。**本地验收的额外门**：`.rddf/state/iteration.json` 中 `tasks_done == tasks_total > 0`——任务没做完不判通过。
 
 > `rddf rdd-verify --dry-run` 输出 `not a rdd-workflow project` 或 `No eligible changes` 时，即视为未命中，直接走本地验收。
 
@@ -276,13 +279,79 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 
 **报告落点**：`.rddf/reviews/<change-or-task>-verify.md`，必含判据来源、逐条判定 + 证据、失败项与路由建议、遗留清扫结果、已用轮次。
 
+### rdd-workflow 增强层（可选）
+
+角色矩阵**自带完整流程，不依赖 rdd-workflow 是否安装**。本节只定义「装上之后能额外调用什么」，以及工件归属规则，避免 agent 与 skill 抢同一个文件。
+
+**不变式（不可违反）**：
+
+1. **角色矩阵自足** —— 四个角色的权限、产出契约、切换机制与 rdd-workflow 无关。**没装** → 角色按下方「内置流程」完整工作；**装了** → 额外可用对应 skill。没装不是降级，是正常形态。
+2. **skill 只在前置条件满足时被调用** —— 每个 rdd-* skill 的 frontmatter 自带 `Invoke when canonical preconditions hold`。前置条件**不满足就不调**，走内置流程。**不得为走流程而伪造前置条件**（例如手写 `.planner-handoff.json` 去凑 rdd-builder 的条件）。
+3. **agent 不代替 workflow 推进阶段** —— 调用 skill 时遵守它的 handoff 契约：不手写 handoff 文件、不跳阶段、不改 skill 的状态文件。
+
+**探测（懒探测）**：只在**准备调用某个 rdd-* skill 时**执行一次，结论在本回合内复用。
+
+```bash
+~/.config/opencode/scripts/rdd-skills.sh            # 人类可读摘要
+~/.config/opencode/scripts/rdd-skills.sh --json     # 机读：installed / available[] / sources[] / rddf_cli
+```
+
+- 退出码 1 / `installed: false` → **增强层关闭**，全部走内置流程。
+- `installed: true` → 逐角色按下表增强；**某 skill 不在 `available[]` 里 → 视为不可用，走内置流程**（不是报错）。
+- 脚本同时查全局 `~/.agents/skills/` 与项目 `.opencode/skills/rdd-workflow/skills/`，项目装与全局装都能识别。
+- **可用性的最终裁决在 `skill` 工具**：脚本是预筛（它的 skill 名单是 rdd-workflow 官方集的镜像，上游新增会漏判），`skill` 工具实际能加载才算可调用。两者不一致时**以 `skill` 工具为准**，不因脚本漏判就断言 skill 不存在。
+
+**角色 → 可选增强映射**：
+
+| 角色 | 内置流程（永远可用，不依赖 rdd-workflow） | 可选增强（装了 + 前置条件满足时） | 前置条件（skill frontmatter 原文） |
+|---|---|---|---|
+| `architect` | 调研（`explore`/`oracle`/`librarian`/`metis`）；写 `arch_paths` 命中的架构文档（见「architect 产出形态契约」）；用 critic `arch` 档审稿 | `rdd-arch` | 项目有 ADR 目录 + 需新建/复审 ADR 或同步主题文档 |
+| `planner` | 写 `.rddf/roadmap/**`、`.rddf/improvements/<name>.md`（5 段草稿）；`metis` 做 gap 分析；起草 `openspec/changes/<name>/proposal.md` | `rdd-planner`；`add-improve`；`rdd-workflow-brainstorm` | `rdd-planner`：`.rddf/state/.arch-handoff.json` 存在 + 有新 improvement 或待审 improvement；`add-improve`：尚无 `.rddf/improvements/<name>.md`；`brainstorm`：草稿未定、需 5 段探索 |
+| `builder` | 创建 openspec change（`proposal.md`/`design.md`/`tasks.md`）；写 `.rddf/plans/<name>.md`（TDD 5 步）；worktree 或轻量执行；跑测试；commit（先确认） | `rdd-builder`；`execute`；`rdd-quick`；`rdd-workflow-writing-plans`；`openspec-gate`；`deps` | `rdd-builder`：`.rddf/improvements/<change>.md` + `.rddf/state/.planner-handoff.json` **均存在**；`execute`：`.rddf/plans/<name>.md` 已存在 + worktree context 已设（或 lightweight 模式）；`writing-plans`：该 plan 尚不存在；`openspec-gate`：commit 时且有 staged 文件；`deps`：P1.5 已达（或用户要依赖可视化）+ `openspec/changes/` 下存在多个 change；`rdd-quick`：小改动，无需 openspec change / worktree |
+| `verifier` | 「verifier 产出契约」的 1–5 步本地验收；报告落 `.rddf/reviews/` | `rdd-verifier`；`contract-check` | `rdd-verifier`：change 有 `## 验收标准`/`## Acceptance` 段 + P3 archive gate 触发；`contract-check`：疑似契约漂移 + 已给出契约路径与实现路径 |
+| `general` | 通用读写；调 subagent；直接调 rdd-workflow skill（前置条件满足时） | `guide`（推荐下一 skill） | 用户问「下一步做什么」或新 session，且无进行中的 builder/verifier |
+| `no-role` | 仅读 + 轻量讨论 | 无（不调用任何写类 skill） | — |
+
+**工件归属规则（同一工件在同一路径上只允许一个写入者）**
+
+某工件既在 agent 角色允许范围内、又被某个 rdd-* skill `owns` 时，按顺序判定：
+
+1. 该 skill **在本次路径上**（前置条件已满足、或本角色正在执行该阶段）→ **由 skill 写**，agent 不手写（skill 带 handoff / 状态机 / 审计，绕过会丢契约）。
+2. 该 skill 是**下游阶段**（尚未轮到，如 planner 阶段的 rdd-builder）→ agent 写该 skill 的**输入工件**而非产物（例：planner 阶段写 `.rddf/improvements/<name>.md`，由 rdd-builder P0 生成 `proposal.md`），**不手写下游产物**。
+3. 该 skill 不可用或不在本路径上 → agent 走内置流程写，并在**结论 / 验收报告**里注明「本路径未启用 `<skill>`」（开场报告格式不变，不塞额外字段）。
+
+**调用 rdd-* skill 时的 pause 与 commit 契约**：
+
+- **HARD pause 优先于 skill 内部的自动决策** —— `rdd-builder` 的 P0 / P2.5 是 HARD pause（用户必须显式选择，不能跳过）。agent **不替用户拍板**：触发 pause 时把选项交给用户，不要按自己的判断选一个继续。
+- **commit 仍受全局规则约束** —— 全局「不要主动 commit，等用户确认」**优先**：先向用户确认 → commit → 再继续。注：`rdd-builder` 的 P2 **没有** commit gate（v5 起已删除；commit 语义由 `archive.sh::check_worktree_commits` 在归档前强制）—— 所以 P2 不会再因工作区脏而中止，但**这不代表可以跳过 commit 确认**。
+- **`rdd-quick` 不由 agent 自行判定进入** —— 它是 `rdd-builder` P0 选项 5 的下游（entry mode a）；只有 builder P0 已做出 dispatch 决策时才调用，agent 不自行判定「这个改动小，走 quick」。
+
+常见重叠工件：
+
+| 工件 | agent 侧 | rdd-workflow 侧 |
+|---|---|---|
+| `openspec/changes/<name>/proposal.md` | `planner` 内置起草；增强层路径下不手写 | `rdd-planner` **not_owns**；`rdd-builder` **owns**（P0 approve 生成） |
+| `openspec/changes/<name>/tasks.md` | `builder` 内置起草 | `rdd-builder` **owns**；`rdd-quick` 在 mode a 最小化生成 |
+| `openspec/changes/<name>/design.md` | `builder` 角色可写并负责**定稿**；opencode `plan` agent 的产出视为**草稿** | **无 skill owns** —— `rdd-builder` 的 owns 已移除该条目（P1 `phase1_plan.sh` 只补 `tasks.md`，从不生成 `design.md`）；`rdd-planner` / `rdd-quick` 均 not_owns → 由执行该 change 的 agent 写 |
+| `docs/adr/ADR-*.md` | `architect`（受「architect 产出形态契约」约束） | `rdd-arch` **owns** |
+| `.rddf/state/verifier/*` | `verifier` 不写 | `rdd-verifier` **owns**（agent 只写 `.rddf/reviews/`） |
+| `.rddf/state/.planner-handoff.json` | 任何角色都不手写 | `rdd-planner` **owns** |
+
+**内置流程的降级细节**：
+
+- `openspec` CLI 不可用 → 手写 `openspec/changes/<name>/{proposal.md,design.md,tasks.md}` + `.openspec.yaml`，**不因缺 CLI 停下**。
+- `rddf` CLI 不可用 → 只影响 rdd-* skill 内部脚本调用，**不影响角色矩阵本身**。
+- skill 调用失败 → **回落内置流程**并说明原因，不让失败阻塞交付。
+
 ### 角色列表
+
+> 各角色的 rdd-workflow 可选增强、工件归属规则见上文「rdd-workflow 增强层」；**装了增强层不改变下表的权限边界**。
 
 | 角色 | 允许 | 禁止 | 开场报告格式 |
 |------|------|-------|--------------|
 | `architect` | 读代码；web 调研；调 `explore` / `oracle` / `librarian` / `metis` 调研；起草、编辑 `.rddf/config/arch-docs.json` 中 `arch_paths` 命中的架构文档（受上方「architect 产出形态契约」约束）；讨论方案 | edit `src/**`；创建 openspec change；起草 `.rddf/plans/**`；`git commit`（实施类）；edit `arch_paths` 之外的文档 | `【角色: architect \| source: <state-file\|user>】我可调研与讨论架构；不会写实施代码或实施计划。` |
-| `planner` | 起草、讨论 `.rddf/roadmap/**`、`.rddf/improvements/**`；读一切；调 `metis` 做 gap 分析；创建 change 目录并起草 `proposal.md` | edit `src/**`；写 `design.md` / `tasks.md`（builder 的活）；`git commit`（实施类） | `【角色: planner \| source: <...>】我可起草路线图与实施讨论；不直接写代码。` |
-| `builder` | 全部：创建 openspec change（`proposal.md` / `design.md` / `tasks.md`）；edit；shell；commit（默认先确认） | 单方面改**已签批 ADR 的决策内容**（编辑 ADR 文字可以；变更决策需切 `architect`） | `【角色: builder \| change: <名或无>】我可实施代码修改。` |
+| `planner` | 起草、讨论 `.rddf/roadmap/**`、`.rddf/improvements/**`；读一切；调 `metis` 做 gap 分析；创建 change 目录并起草 `proposal.md`（**增强层路径下不手写**，由 `rdd-builder` P0 生成——见工件归属规则） | edit `src/**`；写 `design.md` / `tasks.md`（builder 的活）；`git commit`（实施类） | `【角色: planner \| source: <...>】我可起草路线图与实施讨论；不直接写代码。` |
+| `builder` | 全部：创建 openspec change（`proposal.md` / `design.md` / `tasks.md`——**增强层路径下由 `rdd-builder` 写**，见工件归属规则）；edit；shell；commit（默认先确认） | 单方面改**已签批 ADR 的决策内容**（编辑 ADR 文字可以；变更决策需切 `architect`） | `【角色: builder \| change: <名或无>】我可实施代码修改。` |
 | `verifier` | 读；运行任意 shell（验证用）；调 `critic`（同样受每 change 2 轮评审预算约束）；满足分流三条件时调 `rdd-verifier` skill；写验收报告到 `.rddf/reviews/` | edit `src/**`（验收时改实现 = 角色污染）；重构；实施类 commit；写 `.rddf/state/verifier/*`（那是 rdd-verifier skill 的 owns） | `【角色: verifier \| source: <...>】我负责验收：可运行测试与检查，不修改实现代码。` |
 | `no-role` | 读；**询问用户角色**；轻量讨论 | 一切 edit；会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等）；创建 openspec change；调写类 subagent | `【角色: 未设定】未读取到角色且用户未指定。请告诉我本次以什么角色工作：architect / planner / builder / verifier。` |
 | `general` | **全部**：edit、shell、commit、subagent、openspec change、skill | 无额外禁止 | `【角色: general \| source: <...>】build agent 处于通用模式。如需限制请说"切换到 X"。` |
@@ -359,6 +428,8 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 - [ ] 写架构文档时逐条对照了「architect 产出形态契约」（一决策一文档 / 三层分离 / 必备四要素 / 落点路由）？
 - [ ] 以 verifier 角色验收时，对照了「verifier 产出契约」？判过 `rdd-verifier` 分流三条件（change 存在 / 有 AC 段 / skill 可加载）？
 - [ ] 验收报告落在 `.rddf/reviews/`，且每条判据都有工具证据（不是凭 AC 文本推断）？
+- [ ] 调用 rdd-* skill 前，跑过 `~/.config/opencode/scripts/rdd-skills.sh`（懒探测）并核对了该 skill 的 canonical preconditions？
+- [ ] 同一工件在同一路径上只有一个写入者（skill `owns` 的工件没被 agent 手写；下游阶段的产物没被提前手写）？
 - [ ] 没有用当前角色去推 critic 的 `review_profile`？
 
 ## 输出
