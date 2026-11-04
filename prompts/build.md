@@ -254,7 +254,8 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 满足全部条件**才走 skill**（它自带状态机、SHA 指纹缓存、失败分类、3 次重试上限、审计日志）：
 
 1. `openspec/changes/<name>/` 存在，且 `proposal.md` 含 `## 验收标准` 或 `## Acceptance Criteria` 段
-2. `rdd-builder` 的 P3 archive gate 已触发（可检测信号：`.rddf/state/builder/<name>.json` 的 `current_phase == "phase-3"`）
+2. `rdd-builder` 的 P3 archive gate 已触发 —— **可检测信号**：`iteration.json` 中该 change 的 `status ∈ {in_worktree, completed}`、`tasks_done == tasks_total > 0`、且未归档（权威口径 = `_lib/verifier/discovery.py::discover_eligible()`，即 `rddf rdd-verify` 实际使用的判据）。
+   > ⚠️ **不要**用 `.rddf/state/builder/<name>.json` 的 `current_phase == "phase-3"` 作判据：`phase-3` 只在**归档成功之后**（`phase3_archive.sh` 的成功路径）或**归档失败**时才写入，而 archive gate 是**归档之前**跑的检查 —— 用 `phase-3` 会得到「该验证时不委托、已归档时反而命中」的反向结果。
 3. `skill` 工具能加载 `rdd-verifier`（脚本 `~/.config/opencode/scripts/rdd-skills.sh --json` 的 `available[]` 含 `rdd-verifier` **且** `skill` 工具实际能加载；两者不一致时以 `skill` 工具的实际加载结果为准）
 
 检测：
