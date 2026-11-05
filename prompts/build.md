@@ -192,15 +192,15 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 
 ### 状态来源
 
-- **状态文件**：`<cwd>/.rddf/state/role.json`（项目级优先）
+- **状态文件**：`<cwd>/.rddf/state/role.json`（项目级优先）；**双 session pair 已登记时**，按 canonical 仓库路径解析（`git rev-parse --git-common-dir` 归一）；单 session 场景维持 cwd 相对解析不变。
 - **fallback**：项目级不存在时读 `~/.rddf/state/role.json`（全局）；两个都没有则视为 `general`（等价默认 build 行为）
-- **字段**：`current_role` / `updated_at` / `updated_by` / `session_id` / `history[]` / `auto_switch_window`（可选，无窗口时为 `null`）
+- **字段**：`current_role` / `updated_at` / `updated_by` / `session_id` / `history[]` / `auto_switch_window`（可选，无窗口时为 `null`）；**role-v2**：新增 `sessions: { <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区，顶层 `current_role` 降级为展示镜像，不作权限判据。
 - **读取时机**：每回合开始时先确认 cwd，再按「项目级 → 全局 fallback → general」解析 `current_role`
-- **cwd 变更必须重解析**：进入 worktree、`session_move`、切换仓库目录后，项目级 `role.json` 可能不同，不得沿用上一轮的缓存值
+- **cwd 变更必须重解析**：进入 worktree、`session_move`、切换仓库目录后，项目级 `role.json` 可能不同，不得沿用上一轮的缓存值；**双 session pair 已登记时**，worktree → canonical 归一，不重解析。
 - **异常值**：`current_role` 不在合法集合内，或 JSON 解析失败 → 按 `no-role` 处理并提示修复，**不要**静默 fallback 到 `general`（会放大权限）
 - **history 上限**：只保留最近 20 条，避免文件无限增长
 - **初始化**：`/role-init`（幂等）；**查看**：`/role-show`
-- **写入**：角色切换时写**项目级** `<cwd>/.rddf/state/role.json`（全局路径只读，仅作 fallback）
+- **写入**：角色切换时写**canonical 仓库路径** `<cwd>/.rddf/state/role.json`（双 session pair 已登记时）；**全局路径只读，仅作 fallback**；单 session 场景维持 `<cwd>/.rddf/state/role.json`。
 
 ### 架构文档范围（arch-docs.json）
 

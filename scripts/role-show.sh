@@ -34,11 +34,30 @@ show_role() {
   # 优先用 jq 输出（如果可用），否则回退到 cat
   if command -v jq >/dev/null 2>&1; then
     jq -r '
-      "current_role:  \(.current_role)",
-      "updated_at:    \(.updated_at // "(never)")",
-      "updated_by:    \(.updated_by // "(never)")",
+      "session_id:    \(env.OPENCODE_SESSION_ID // "(not set)")",
+      "current_role:  \(
+        if .schema_version == "role-v2" then
+          (if env.OPENCODE_SESSION_ID != null and .sessions[env.OPENCODE_SESSION_ID] != null then
+            .sessions[env.OPENCODE_SESSION_ID].current_role // .current_role // "(none)"
+          else
+            .current_role // "(none)"
+          end)
+        else
+          .current_role // "(none)"
+        end
+      )",
       "schema:        \(.schema_version)",
-      "window:        \(if .auto_switch_window then ((.auto_switch_window.roles | join(" ↔ ")) + " used " + (.auto_switch_window.used | tostring) + "/" + (.auto_switch_window.max_rounds | tostring)) else "(none)" end)",
+      "window:        \(
+        if .schema_version == "role-v2" then
+          (if env.OPENCODE_SESSION_ID != null and .sessions[env.OPENCODE_SESSION_ID] != null and .sessions[env.OPENCODE_SESSION_ID].auto_switch_window != null then
+            ((.sessions[env.OPENCODE_SESSION_ID].auto_switch_window.roles | join(" ↔ ")) + " used " + (.sessions[env.OPENCODE_SESSION_ID].auto_switch_window.used | tostring) + "/" + (.sessions[env.OPENCODE_SESSION_ID].auto_switch_window.max_rounds | tostring))
+          else
+            "(none)"
+          end)
+        else
+          (if .auto_switch_window then ((.auto_switch_window.roles | join(" ↔ ")) + " used " + (.auto_switch_window.used | tostring) + "/" + (.auto_switch_window.max_rounds | tostring)) else "(none)" end)
+        end
+      )",
       "history (tail 5):",
       (.history | .[-5:] | .[] | "  - \(.role) at \(.at // "?") by \(.by // "?")")
     ' "$file"

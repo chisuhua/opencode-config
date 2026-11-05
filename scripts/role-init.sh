@@ -33,17 +33,18 @@ init_role_file() {
 
   cat > "$file" <<'JSON'
 {
-  "schema_version": "role-v1",
-  "current_role": "general",
+  "schema_version": "role-v2",
+  "current_role": null,
   "updated_at": null,
   "updated_by": null,
   "session_id": null,
   "auto_switch_window": null,
-  "history": []
+  "history": [],
+  "sessions": {}
 }
 JSON
 
-  echo "add:  ${root} (created .rddf/state/role.json with current_role=general; use 'switch to <role>' to change)"
+  echo "add:  ${root} (created .rddf/state/role.json with schema role-v2; use 'switch to <role>' to change)"
 
   # role.json 是个人状态（history / 授权窗口），不应进版本库。
   # rdd-workflow 的 gitignore 守卫只覆盖 openspec/，不覆盖 .rddf/（见

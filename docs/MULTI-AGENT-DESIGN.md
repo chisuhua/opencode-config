@@ -349,9 +349,10 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 | `session_id` | 会话标识 |
 | `auto_switch_window` | 授权窗口（见 2.8.4），无窗口时为 `null` |
 | `history[]` | 切换历史（**上限 20 条**，超出丢最旧） |
+| `sessions` | **role-v2**：`{ <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区，顶层 `current_role` 降级为展示镜像，不作权限判据 |
 
-- **项目级优先**：`<cwd>/.rddf/state/role.json`；不存在时读全局 `~/.rddf/state/role.json`（**只作 fallback**）；两者都没有 → `general`。
-- **cwd 变更必须重解析**（进 worktree / `session_move` / 换仓 → 项目级文件可能不同，不得沿用上一轮缓存）。
+- **项目级优先**：`<cwd>/.rddf/state/role.json`；不存在时读全局 `~/.rddf/state/role.json`（**只作 fallback**）；两者都没有 → `general`。**双 session pair 已登记时**，按 canonical 仓库路径解析（`git rev-parse --git-common-dir` 归一）；单 session 场景维持 cwd 相对解析。
+- **cwd 变更必须重解析**（进 worktree / `session_move` / 换仓 → 项目级文件可能不同，不得沿用上一轮缓存）。**双 session pair 已登记时**，worktree → canonical 归一，不重解析。
 - **异常值处理**：`current_role` 不在合法集合内或 JSON 解析失败 → 按 `no-role` 处理并提示修复（**不静默降级为 `general`**，那会放大权限）。
 - `role.json` 是**个人状态**，不应进版本库（本仓用 `.git/info/exclude` 排除）。
 
