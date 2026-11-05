@@ -414,7 +414,7 @@
     },
     "oracle": {
       "model": "kimi-code/kimi-for-coding",
-      "variant": "max",
+      "variant": "high",
       "mode": "subagent",
       "hidden": false,
       "description": "Read-only architecture consultant. Advises on architecture decisions and complex debugging without modifying files.",
@@ -1038,7 +1038,7 @@
       }
     },
     "kimi-code": {
-      "package": "@ai-sdk/openai-compatible",
+      "package": "@opencode/ai/providers/openai-compatible",
       "name": "kimi-code",
       "settings": {
         "baseURL": "https://api.kimi.com/coding/v1",
@@ -1048,12 +1048,23 @@
         "kimi-for-coding": {
           "name": "kimi-for-coding",
           "limit": { "context": 1048576 },
-          "capabilities": {"tools":true,"temperature":true,"reasoning":{"supported":true}}
+          "capabilities": {"tools":true,"temperature":true,"reasoning":{"supported":true}},
+          "variants": [
+            { "id": "none", "body": { "reasoning_effort": "off" } },
+            { "id": "low", "body": { "reasoning_effort": "low" } },
+            { "id": "high", "body": { "reasoning_effort": "high" } },
+            { "id": "max", "body": { "reasoning_effort": "max" } }
+          ]
         },
         "k3-256k": {
           "name": "k3-256k",
           "limit": { "context": 262144 },
-          "capabilities": {"tools":true,"temperature":true,"reasoning":{"supported":true}}
+          "capabilities": {"tools":true,"temperature":true,"reasoning":{"supported":true}},
+          "variants": [
+            { "id": "low", "body": { "reasoning_effort": "low" } },
+            { "id": "high", "body": { "reasoning_effort": "high" } },
+            { "id": "max", "body": { "reasoning_effort": "max" } }
+          ]
         }
       }
     }
