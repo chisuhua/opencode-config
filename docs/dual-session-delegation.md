@@ -144,7 +144,23 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 | 新增/修改插件后不生效 | 同上（插件在 location 激活时加载） | `opencode service restart` |
 | `ServiceUnavailableError: Location plugins did not finish activating` | ① 插件构建失败 ② MCP 启动阻塞 ③ 插件 setup 迟迟不 settle | 先看 `--print-logs` 的 `failed to load plugin`；再查 MCP；最后怀疑插件 API |
 
-## 7. 相关文档
+## 7. 代码布局与测试
+
+```
+plugins/delegate.ts      插件入口（只负责把工具注册进 opencode 的工具表，11 行）
+lib/delegate-core.ts     工具的纯逻辑内核 + 工具定义工厂（无宿主依赖，可独立单测）
+tests/delegate-core.test.ts   纯逻辑单元测试
+tests/delegate-tool.test.ts   假 ctx 端到端单元测试
+```
+
+```bash
+cd ~/.config/opencode && bun test tests/     # 63 项单元测试，不依赖 opencode 运行时
+```
+
+被委托的**示例工程 = `rdd-workflow-e2e`**：单元测试复制其工作树到临时目录作 fixture
+（只复制工作树、不复制 `.git`），不污染该仓库。
+
+## 8. 相关文档
 
 - 架构决策：`.rddf/state/adr-front-agent-redesign.md`
 - 实施路径与验收：`.rddf/improvements/front-agent-redesign.md`

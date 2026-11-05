@@ -205,7 +205,9 @@ git stash list  git worktree list
 | 路径 | 动作 |
 |---|---|
 | `opencode.jsonc.opencode-go` | 改：front shell 三段式 / `external_directory` 按路径 allow / `delegate` 门控 |
-| `plugins/delegate.ts` | 新建 |
+| `plugins/delegate.ts` | 新建（后拆为「插件壳」+ `lib/delegate-core.ts` 纯逻辑内核，见实施结果）|
+| `lib/delegate-core.ts` | 新建：工具的纯逻辑内核 + 工具定义工厂（无宿主依赖，可独立单测）|
+| `tests/delegate-core.test.ts`、`tests/delegate-tool.test.ts` | 新建：63 项单元测试（假 ctx 端到端 + 纯逻辑）|
 | `prompts/front.md` | 重写（六项工作；删代答安全边界节） |
 | `prompts/build.md` | 改：role.json 写盘契约定用 `.role.lock` |
 | `<canonical_root>/.rddf/state/pair.json` | 新建 / 升级 `pair-v2`（每工程仓库一份） |

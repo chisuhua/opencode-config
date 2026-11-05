@@ -924,6 +924,7 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 | `delegate` 门控：仅 front 可见（front `[{*,deny},{*,allow}]`，其余 agent 仅 `[{*,deny}]`）| ✅ `opencode debug agents` 实测 |
 | `delegate` 端到端：建工程 session → 真实写入文件 → `outcome=succeeded` + 越界检测 | ✅ 实跑（`/tmp/opencode/engproj` 写出 `answer2.txt`=42 / `answer3.txt`=43 / `answer4.txt`=44）|
 | `delegate` 续接：复用同一 session（session 数不增）+ 非法 grant 被拒 | ✅ 实跑 |
+| `delegate` 单元测试：`bun test tests/`（63 项：brief 契约 / grants 白名单 / scope→edit 规则 / 规则顺序即策略 / 阻断提取 / 越界判定 / pair+role 登记 / 目录锁并发 / 假 ctx 端到端）| ✅ 全绿 |
 | 11 个 agent 全部注册 + 全部 `{file:...}` 引用解析 | ✅ |
 | permission schema 字段合法；v2 扁平键生效 | ✅ 10 只读 allow、4 写 deny |
 | `experimental.subagent_depth: 2` 生效；顶层 `subagent_depth` 已移除 | ✅ |
