@@ -97,7 +97,7 @@ context-builder：请为以下改动组装 critic prompt。
 
 | 改动路径 | profile |
 |---|---|
-| `.rddf/config/arch-docs.json` 的 `arch_paths[]`（缺失时 fallback：`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design`） | `arch` |
+| `.rddf/config/arch-docs.json` 的 `arch_paths[]` ∪ **fallback 目录集**（口径见 `prompts/build.md` §架构文档范围 的「目录集口径」：5 个 `docs/` 子目录 ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/` 等目录） | `arch` |
 | `openspec/changes/*/proposal.md`、`design.md`、`tasks.md`、`specs/**`、`.rddf/roadmap/**`、`.rddf/improvements/**` | `plan` |
 | `src/**`、`include/**`、`tests/**`、`scripts/**`、`tools/**` | `build` |
 | 归档前判定（只查 delta vs 实现 + 上轮 BLOCKER 闭合） | `archive` |

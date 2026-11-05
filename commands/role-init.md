@@ -19,5 +19,5 @@ agent: build
 3. 简要说明下一步：
    - `现在 <project-root> 已经准备好；当前角色是 no-role。"
    - `用「切换到 architect / planner / builder / verifier」开始。"
-   - `如要用 architect 角色，先运行 /arch-docs-init 梳理架构文档范围。`
+   - `如要用 architect 角色：可写范围按 prompts/build.md §架构文档范围 的判定三态确定（配置缺失时走 fallback 目录集，不阻塞）；需要固定可写范围时再运行 /arch-docs-init 梳理（可选工具）。`
    - `用 /role-show 查看当前状态。`

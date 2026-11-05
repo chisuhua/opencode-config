@@ -1,11 +1,21 @@
 # Multi-Agent 系统设计参考
 
-> **状态**: v1.9 (2026-11-03)
+> **状态**: v2.2.0 (2026-11-05)
 > **范围**: `~/.config/opencode/` 用户配置级 multi-agent orchestration
 > **下游**: `opencode.jsonc`（符号链接 → `opencode.jsonc.openstarry`）+ `prompts/*.md` + `commands/*.md` + `scripts/*.sh`
 
 本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
 
+> **本版（v2.2.0）变更**：新增「实施阶段的新发现」处置 —— builder 实施中发现的计划层 / 决策层问题**停下并路由**（`plan_drift` → planner / `design_drift` → architect / `blocked` → 交用户），**先落 feedback 记录再切角色**；分类复用 rdd-workflow 既有 kind（`needs-revision` / `ac-fail` / `blocked` / `noted`），不新造；授权窗口新增 `builder → planner` / `builder → architect` 两条触发条件（须用户显式把角色写进 `roles`），并统一「每次窗口内自动切换都计入 `used`」。
+>
+> **本版（v2.1.1）变更**：`prompts/build.md` 的**角色列表表**「允许」列只列**自由裁量**工具，**固定审查者（流程义务）不受其限制**（`no-role` 除外；§3.1 的 agent 矩阵 ❌ 不在豁免范围）—— 此前 architect 的允许列未列 `critic`，与 §2.7 要求的 oracle → critic 双审冲突；`prompts/build.md` 新增「调研委派协议」（`explore`/`librarian` 的必须委托 / 不必委托 / 一次一问 / 权限不扩权 / 材料不触发审查），场景对照仍以 §3.2 为准、执行口径以 build.md 为准。
+>
+> **本版（v2.1.0）变更**：architect 产出形态契约新增**一次成稿流程**（4 步聚合块）+「ADR 完成的标志」+ **arch 档审稿判据摘要内联** + 无样板时的默认骨架 + Verification 章节名统一与 AC 映射；审查配对的 architect 行「产出去向」补齐 Decision 段 / 选项对比表；自查清单与降级自检改为引用聚合块。
+>
+> **本版（v2.0.3）变更**：`arch-docs-init` 的 `arch_paths` 解析器重写（按数组边界识别 + 转义反转义）+ 配置状态机（`ok`/`empty`/`corrupt`/`missing`）；判定三态措辞收敛（部分失效 / 全部失效）；`--refresh` 前须先 `--dry-run` 比对会丢弃的手写条目；新增 `tests/verify_arch_docs_scope.sh` 验证夹具（项目形状取自 rdd-workflow-e2e 真实 fixture）。
+>
+> **本版（v2.0.2）变更**：治理面作用域补 `commands/**` 与**被治理面规则行为依赖**的脚本（§2.7）；`/arch-docs-init --check` 的漂移判定收紧为「仅当配置已声明 `arch_paths`」（配置缺失 / `arch_paths` 为空 / 配置损坏时只输出 `NOTE`、exit 0）；`critic` 的 arch 档兜底目录集改引用 build 侧权威映射（v2.0.1：`architect` 可写范围判定三态 + 治理面管辖豁免；v2.0：§2.7 审查配对）。
+>
 > **本版（v1.9）变更**：角色矩阵与 rdd-workflow 解耦——角色矩阵改为**自足内核**，rdd-workflow 降为**可选增强层**（§2.6）。新增 `scripts/rdd-skills.sh`（增强层探测）。角色权限边界不变。
 >
 > **本版（v1.8）变更**：本文档改为「当前态单写」——按版本切分的增量内容（权限加固史、各版本验证记录、已完成改动台账、演进日志）全部外移到 [`docs/CHANGELOG.md`](CHANGELOG.md)；新增 §2.5「architect 产出形态契约」与 critic `arch` 档的聚焦判据（§2.3）。历史内容见 CHANGELOG。
@@ -154,7 +164,7 @@
   | `build` | 源码 / 测试 / 脚本 | 与 spec/公开契约不一致；目标场景失败；未经 ADR 改架构决策 |
   | `archive` | 归档前 | 只判上轮 BLOCKER 闭合 + delta 与实现一致 |
 
-  路径映射：`.rddf/config/arch-docs.json` 的 `arch_paths[]`（缺失时 `docs/adr|docs/architecture|docs/architecture/adr|docs/designs|docs/design`）→ `arch`；`openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements` → `plan`；`src|include|tests|scripts|tools` → `build`。
+  路径映射：`.rddf/config/arch-docs.json` 的 `arch_paths[]` ∪ **fallback 目录集**（`docs/adr|docs/architecture|docs/architecture/adr|docs/designs|docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/|rfc/|specs/` 等目录）→ `arch`；`openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements` → `plan`；`src|include|tests|scripts|tools` → `build`。**本表是权威映射** —— build 按它显式给 `review_profile`，`prompts/critic.md` 的路径推断只在 build 未给时兜底。
 - **`arch` 档的聚焦判据（v1.8 新增）**：BLOCKER 仍是上表四类；另设一组 **SHOULD_FIX** 判据专治「决策文档写成了设计规格 / 流程台账」——决策陈述被稀释（正文超长且决策+后果+备选不足一半）、过程日志混入（审稿轮次与 BLOCKER 清单、台账 Entry / KPI 计数、逐版修订史）、缺独立「后果 / 代价」章、Verification 只写实测日志而无前瞻判据、Status 单行承载整条版本史、一篇 ADR 承载多个独立决策点。**边界**：计数漂移 / 悬空引用 / 索引缺项属 L1 一致性脚本（`docs/review-automation-backlog.md` §1），不进 critic。完整判据见 `prompts/critic.md` 的「arch — SHOULD_FIX 的聚焦判据」。
 - **结论判定（v1.5）**：有 BLOCKER → REJECT（`mergeable: no`）；只有 SHOULD_FIX → `APPROVE_WITH_CONDITIONS`；都没有 → `APPROVE`。**禁止用 NITS 凑 REJECT**
 - **输出格式（强制）**：
@@ -226,6 +236,10 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 - **正文三层分离**：正文 = 决策本身（目标 ≤ 250 行）；推导与证据（时序推导、trace、覆盖率、逐文件裁决表、可枚举改动清单）→ 移出正文到 design.md / tasks.md / 主题文档；过程日志（立项/归档/队列号/台账 Entry/KPI 计数、审稿轮次与 BLOCKER 清单、oracle 复核记录）→ 落治理台账或审稿报告，**不进决策文档**。
 - **必备四要素**：元数据（Status / Date / Author / Parent / 关联 change）+ 选项对比表（≥ 3 行，每行含「结论 + 理由」）+ 独立「后果 / 代价」章 + Verification 章（**前瞻方法**，不是已跑完的实测日志）。
 - **落点路由**：决策与取舍 → ADR；当前态快照与模块关系 → 架构主题文档；实现步骤与验收 → `openspec/changes/*/design.md`；可枚举改动 → `tasks.md`。
+- **可写范围三态 + 治理面例外**（v2.0.1）：配置存在且路径实际存在 → `arch_paths`；配置缺失 / 为空 / 损坏 → fallback 目录集；都不存在 → 只讨论、不落文档。`/arch-docs-init` 是**可选工具**而非前置闸门 —— 旧规则要求「`arch_paths` 为空就先跑 init 再继续」，而脚本在无架构文档目录的项目里写出空 `arch_paths` 并 WARN、重跑不收敛 → architect 第一步即死循环。**治理面文件 `~/.config/opencode/**` 不受该范围管辖**：由 §2.7 治理面归属行直接授权给 `architect`，与项目级 `arch-docs.json` 无关。（v2.0.3：配置解析按数组边界识别，损坏 / 空 / 截断分别诊断；`--refresh` 会覆盖整个配置，手写条目须先用 `--dry-run` 比对。）
+- **一次成稿流程 + 完成定义**（v2.1.0）：4 步（定位 / 成形 / 送审 / 收口），每步的判据在 `prompts/build.md` 内都有落点；送审步的豁免情形（主题文档同步 → 只 oracle；纯错字 → 不审）以 §2.7 审查配对 为准，收口步可跨角色完成。**「ADR 完成的标志」5 条**：四要素齐 / oracle+critic 双审（报过 BLOCKER 则须 1 次复审确认闭合）/ `Status` 转为已决 / 关联 change 已落库**或已登记为 `backlog: <improvement 名>`**（architect 不创建 openspec change，立项后回填；此时元数据的 **AC 映射允许暂缺**，以 `backlog: <improvement 名>` 占位）/ 审稿报告由 architect 誊写落 `.rddf/reviews/<adr>.md` 且被元数据引用。
+- **arch 档审稿判据摘要内联**（v2.1.0）：BLOCKER 四类 + SHOULD_FIX 六类写进 `prompts/build.md` —— 调 critic 时据此**选 2–3 条最相关重点**填 `focus`（不罗列全量），oracle 不可用时据此逐条自检；**以 `prompts/critic.md` 为准**，摘要是随取随用的索引（夹具断言两处条目数一致，防漂移）。
+- **无样板时的默认骨架**（v2.1.0）：元数据 → 背景与问题 → 决策 → 选项对比表 → 后果 / 代价 → Verification（可勾选验收判据）；**Verification 章节名统一**，元数据加 AC 映射（每条判据标注对应 change AC 编号）→ 已接入 §2.6 verifier 判据来源第 4 项。
 - **不追溯存量**：约束只管本次新写/改写的文档；既有 ADR 越界 → 记 backlog 单独立项。
 
 > 背景：近期多个项目的 ADR 出现形态漂移（决策陈述占比低至 22%、ADR 内混入过程日志与实测台账、缺独立后果章），而当时的约束只界定了「写哪里」，没有任何「写什么形状」的判据。详见 §2.3 的 `arch` 档聚焦判据与 CHANGELOG。
@@ -253,6 +267,42 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 | `general` | `guide` |
 
 > 该增强层**不**做阶段自动跟随：workflow 阶段由 handoff 链推进，agent 角色由用户口令切换，两者是正交的两套状态（详见 CHANGELOG 的调研结论）。
+
+### 2.7 审查配对（v2.0 新增）
+
+每个角色有**固定的审查者**。这是角色矩阵的**内核**（不依赖 rdd-workflow 是否安装）——审查者是只读 subagent，或角色本身（verifier）。完整定义在 `prompts/build.md` 的「审查配对」。
+
+| 产出角色 | 审查者 | 审什么 | 触发条件 | 预算 |
+|---|---|---|---|---|
+| `architect` | **oracle** → **critic** | oracle：目标场景**会怎么坏**（失败模式 / 边界 / 被否掉的替代方案是否真的更差）；critic：**与既有 ADR / 契约是否冲突**（`arch` 档） | 新建 ADR 或反转既有决策 → 双审（oracle 先行）；只同步主题文档 → 只 oracle；**ADR** 纯错字 → 不审（`prompts/**` 的错字走治理面行，那行不豁免） | 每 ADR：oracle 1 + critic 1 |
+| `planner` | **metis** | 隐藏意图 / 需求歧义 / AI slop 风险 / 缺失的验收标准 / 边界情况 | 新建或**重写 ≥ 1/3** 的 improvement / proposal；纯状态推进 → 不审 | 该 improvement **总计** 1 轮（设计前 gap 分析不另计） |
+| `builder` | **verifier**（角色内建，非 subagent） | AC 逐条满足（要工具证据）/ 边界与错误路径 / 资源释放 / **遗留清扫** | **每个 change 完成时必审**，不可跳过；`rdd-quick` 不产生 openspec change（无空集豁免）→ 每个 quick 任务完成时审 | 3 轮（对齐 `RDDF_VERIFIER_MAX_LOOPS`），超限 → halted |
+| `builder`（架构面） | **critic** | 见 §2.4 的 5 个触发条件 | 公开 API / 跨模块契约 / ADR 冲突 / 用户要求 / 合并前 | 每 change 2 轮 |
+| `architect`（**治理面**） | **oracle** → **critic**（何时必审见下） | oracle：这条规则在哪些场景会让 agent 产生**错误行为**；critic：与既有不变式 / 角色权限 / 既有规则是否**自相矛盾** | 作用域见下；critic 必审判据 = 本 patch 是否**增删/修改了表格行、不变式条目、自查清单项、触发条件** | 一次改动（一个 patch series 内触及治理面文件的**集合**）：oracle 1 + critic 1；高影响 finding = BLOCKER → 允许 1 次复审 | 规则正文 + 降级自检清单 + 响应正文逐条处置 |
+
+**治理面作用域**（按字面执行，必须带前缀 —— 裸 `docs/MULTI-AGENT-DESIGN.md` 在项目 cwd 里解析不到 → 永不触发）：
+
+- **算**：`~/.config/opencode/prompts/**`、`~/.config/opencode/AGENTS.md`（注入所有 agent，影响力最大）、`~/.config/opencode/docs/{MULTI-AGENT-DESIGN,CHANGELOG}.md`、`~/.config/opencode/opencode.json(c)` 的 agent / permission / provider 段、`~/.config/opencode/commands/**`（slash command = agent 行为指令，与 prompt 同级）、`~/.config/opencode/scripts/**` 中**被治理面规则行为依赖**的脚本（如 `arch-docs-init.sh` —— 规则指示 agent 运行它、或规则语义依赖其输出 / 退出码；改其退出码 / 报错文案 / 落盘行为时）。
+- **不算**：错字 / 链接 / 日期 / 表格对齐 / 纯格式；项目仓库里的 `openspec/**`、`.rddf/**`、`docs/adr/**`（后者属 ADR 行）；`scripts/**` 中不改变退出码 / 报错文案 / 落盘行为的改动，仅被历史记述性提及的脚本，以及未被规则行为依赖的脚本。
+
+**治理面 verdict（oracle 无 pass/fail 信号 → 「调用过」≠「通过」）**：oracle 的「建议」段首行须给 `治理面判定: PASS | BLOCK | PASS-WITH-NOTES`；**每条 finding 必须逐条应答**（修掉写明改了什么 / 写明不修理由），不得只列不改；`BLOCK` 或存在未应答 finding → 不得声称完成。
+
+**自指审查**：改 `prompts/oracle.md` / `prompts/critic.md` / §2.7 本身时，审查实例跑的是**旧版契约**，只能记为「自指审查，不构成独立证据」。
+
+**builder 撞到治理面缺陷**：`~/.config/opencode/**` 不在 builder 产出归属内 → **不直接编辑**；产出 findings + `halted` 报告交用户切 `architect`（不静默越权、不静默忽略、不死等）。
+
+**审查调用失败不重试**：一次失败即降级，不换模型重试（额度类失败是持续态）。
+
+**降级自检清单**（oracle 不可用时逐条自问，结论写进响应正文，缺一条判未通过）：① 与 3 条不变式冲突？② 与角色权限边界矛盾？③ 引入第二套判定标准？④ 触发条件可点数判定？⑤ 有不可用降级路径且**有落盘载体**？⑥ 预算与既有上限冲突？
+
+三条设计约束：
+
+- **顺序不可颠倒**：`architect` 必须 oracle 先于 critic。oracle 找「会怎么坏」，critic 判「是否越界 / 冲突」；反过来会让 critic 在方案本身还站不住时先审一致性，白烧一轮预算。
+- **预算按粒度分层，不是按 change 数量相乘**：ADR 级（architect）与 improvement 级（planner）的轮次发生在**文档**粒度，一个 ADR / 一条 improvement 常覆盖多个 change；只有 builder 的 critic 2 轮 + verifier 3 轮是逐 change 的。所以**单条 change 的审查上限 = critic 2 + verifier 3**。
+- **审查者不可用必须降级，不得静默跳过**：subagent 可能因额度 / 网络 / 权限失败。此时执行该角色的内置自检清单，并在**当回合响应正文首行**注明 `⚠️ 未启用 <reviewer> 审查（原因）—— 已用内置自检清单代替`（`edit` 类改动没有「结论」文件）；**不得**把「不可用」当成「通过」。
+  > 2026-11-04 实测：本机 subagent 因 Token Plan 用量上限全部调用失败。降级是常态需求。
+
+**与 rdd-workflow 的关系**：`verifier` 是角色，`rdd-verifier` 是可选 skill —— 「builder 依赖 verifier 审查」在**没装 rdd-workflow 时也成立**（走「verifier 产出契约」的本地验收 1–5 步）；装了且前置满足时才走 `rdd-verifier` skill 的 AC 验证协议。同理 `metis` / `oracle` / `critic` 是 opencode subagent，与 rdd-workflow 无关。
 
 ---
 
@@ -292,6 +342,8 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 
 > build → critic 是"条件 ✅"：仅在 §3.2 "何时调 critic" 5 个条件命中时调用；其它情况不调。critic 自己不调任何 agent（task deny）。
 > **context-builder** 只能被 build 调，且不委派任何 agent——它只做上下文组装。
+> **本矩阵只回答「允许调谁」；「哪个角色产出必须过谁」见 §2.7 审查配对**（architect → oracle + critic / planner → metis / builder → verifier）。允许 ≠ 必须：矩阵是权限上限，配对是流程下限。 `prompts/build.md` 的**角色列表表**同理只列**自由裁量**可用的工具，**固定审查者是流程义务、不受该列限制**（`no-role` 除外）—— 角色表与配对表是流程下限的两个刻度，不是互相限制的两道闸。（此处指角色列表表；**本节 agent 矩阵的 ❌ 不在豁免范围**。）
+
 ### 3.2 委派触发规则
 
 | 场景 | build 委派给 | rationale |
@@ -319,6 +371,24 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 | 场景 | build 委派给 | rationale |
 |---|---|---|
 | 复杂改动要过 critic，但上下文不好手填 | `context-builder` | 组装 7 字段 critic prompt |
+
+> **调研型（`explore` / `librarian`）的委派前判断要素**（何时必须委托 / 何时不必委托 / 一次一问 + 给清范围与期望输出 / 权限不扩权 / 材料不触发审查）见 `prompts/build.md` 的「调研委派协议」—— 上表是**场景对照**（人类可读），执行口径以 build.md 为准。
+
+#### 3.2.0 角色固定审查配对（v2.0，与场景无关）
+
+上表是**场景驱动**（用户问什么就派谁）；本节是**角色驱动**——产出物属于哪个角色，就必须过哪个审查者，不管用户有没有开口。完整规则见 §2.7。
+
+> **实施阶段的新发现**（v2.2.0）：builder 实施中发现计划层 / 决策层问题时**停下并路由** —— `plan_drift`（需改 plan / AC / tasks）→ `rddf feedback add --kind needs-revision` → planner；`design_drift`（需改已签批 ADR 的决策）→ `rddf feedback add <proposal> --from rdd-builder --kind ac-fail --ref-change <change> --body "..."` → architect（经 `rddf feedback list <proposal>` 读 improvement 文件的 `## Feedback` 段；`.planner-feedback.json` 提升链**未接线**，勿依赖）；`blocked`（缺输入）→ 交用户。**先落记录再切角色**；仅这两类可在用户授权的窗口内自动切换（须把 `planner` / `architect` 写进窗口 `roles`）。完整规则见 `prompts/build.md` 的「实施阶段的新发现」。
+
+| 产出角色 | 必须过 | 何时触发 | 预算 |
+|---|---|---|---|
+| `architect`（新 ADR / 反转决策）| `oracle` → `critic` | 每次新建 ADR 或反转既有决策 | 各 1 轮 |
+| `architect`（只同步主题文档）| `oracle` | 每次 | 1 轮 |
+| `planner`（新建 / 重写 ≥1/3）| `metis` | 每次 | 1 轮 |
+| `builder`（每个 change 完成）| `verifier`（角色内建）| **必审，不可跳过** | 3 轮 |
+| `builder`（架构面改动）| `critic` | §3.2.1 的 5 个条件 | 2 轮 |
+
+> **不可用降级**：审查者调用失败（额度 / 网络 / 权限）时，执行该角色的内置自检清单，并在结论首行注明 `⚠️ 未启用 <reviewer> 审查（原因）`。**不得**把「不可用」当成「通过」。
 
 #### 3.2.1 build 调 critic 的 5 个条件
 
@@ -587,6 +657,8 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 │   ├── arch-docs-init.sh        # 架构文档结构梳理（读写项目配置）
 │   ├── build_critic_prompt.sh   # 生成 critic prompt 骨架（自动填 3/7 字段，读 arch-docs.json）
 │   └── rdd-skills.sh            # rdd-workflow 增强层探测（installed / available[] / sources[] / rddf_cli）
+├── tests/                       # 本地验证夹具（不参与发布）
+│   └── verify_arch_docs_scope.sh  # 判定三态 + arch-docs 语义验证夹具（项目形状取自 rdd-workflow-e2e 真实 fixture）
 ├── skills/                      # 启用的 skills
 │   └── cpp-pro/
 ├── skills.disable/              # 禁用的 skills（superpowers）

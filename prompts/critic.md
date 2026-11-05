@@ -73,7 +73,7 @@ diff 跨档时**分档判**：
 - 输出用 `profile: <档位> (<文件列表>)` 分段；
 - 同一问题只在它所属的档位报一次。
 
-档位由 build 显式给出；缺失时按路径推断：优先读项目配置 `.rddf/config/arch-docs.json` 的 `arch_paths[]`（`arch`），再看 `openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements`（`plan`），最后 `src` / `include` / `tests` / `scripts`（`build`）。配置缺失时 arch 档按 `docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design` 兜底。推断不出就写 `profile: mixed` 并说明理由。
+档位由 build 显式给出；缺失时按路径推断：优先读项目配置 `.rddf/config/arch-docs.json` 的 `arch_paths[]`（`arch`），再看 `openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements`（`plan`），最后 `src` / `include` / `tests` / `scripts` / `tools`（`build`）。配置缺失时 arch 档按 `prompts/build.md` §架构文档范围 的「目录集口径」里的 fallback 目录集兜底（`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/` 等目录）—— **build 侧是权威映射**，critic 侧的路径推断只是 build 未给 profile 时的兜底。推断不出就写 `profile: mixed` 并说明理由。
 
 ## 结论判定（硬规则）
 
