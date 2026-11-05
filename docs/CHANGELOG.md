@@ -459,6 +459,8 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 | `docs/MULTI-AGENT-DESIGN.md` §3.2.0 回环指针 + 头部 v2.2.0；`tests/verify_arch_docs_scope.sh` 补 3 条 needle + **kind 防漂移断言**（真读产品 `VALID_KINDS` 做**全集差集**，新 kind 会立刻报错）| §3 | 产品改 kind 集合时治理面同步告警，杜绝「自造分类」 |
 | 治理面审查（v2.2.0 批）：oracle `PASS-WITH-NOTES`（3 SHOULD_FIX + 3 NITS）→ 全部处置 → critic `APPROVE_WITH_CONDITIONS`（0 BLOCKER / 2 SHOULD_FIX + 3 NITS）| §2.7 | **自指审查**（本批改动的正是角色切换 / 授权窗口契约）→ 结论**不构成独立证据**；oracle F1（`.planner-feedback.json` 提升链未接线，括注错误）/F2（命令缺 `--from` 与位置参数）/F3（无 task 清单时停下不可判定）已修；critic 的 2 条 SHOULD_FIX（跨层优先级未覆盖「落点/读通道」冲突 / discovery 与验收重试共享 revision 预算无节流指引）与 3 条 NITS **在审查后按建议修补**（未再开复审轮，证据：夹具 52/52 + e2e 48/48）|
 | `docs/rdd-workflow-product-issues.md`（**新增**）：把 v2.2.0 实施期核查中发现的 4 处产品缺陷整理成可直接提交上游的 issue 文本 | §3 | A：`route_feedback` 无生产调用方（提升链未接线）/ B：`rddf arch feedback` 对 appender 条目 KeyError / C：planner-feedback 重算静默丢 open 条目 / D：`skills/rdd-builder/SKILL.md` 落点描述与实现不符 —— 均附源码行号、复现步骤与建议修法 |
+| `build.md` §角色列表权限修订（**v2.2.1**）：`planner` 补 `explore` / `librarian`（+「先自读」默认序 +「架构取舍停下请用户切 architect」的护栏）、`verifier` **只补** `explore`、`no-role` 允许列显式列出只读调研；§调研委派协议「权限不扩权」条目改为中性表述 | §2.2 | 补角色**只读调研**能力缺口（此前 planner/verifier 只能自读）；边界不变式保持（禁止列逐字未动，扩权只在「读」侧）。**同时取代 8.1.11 台账里「权限不扩权（planner 走自读或 metis，verifier 走自读）」的表述** —— 该 carve-out 已随本批删除 |
+| `tests/verify_arch_docs_scope.sh`：内联摘要 ↔ `critic.md` 判据的**语义级**防漂移守卫（10/10 对应表）+ 「已废止 carve-out 措辞零命中」防回流断言 | §2.5 | 前者把防漂移从**条数**升级到**语义对应**（critic.md 改判据措辞 → 断言失败，要求同步对应表；负向测试确认会咬：改摘要一个词即 FAIL + exit 1）；后者防「planner/verifier 走自读」旧措辞回流成第二套判据 |
 
 **本批遗留（记入 backlog / 待上报）**
 

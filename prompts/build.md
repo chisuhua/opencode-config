@@ -51,7 +51,7 @@
 - **必须委托**：不知道入口的关系类问题（谁调用了它 / 定义在哪 / 影响面）→ `explore`；外部事实（库的当前 API / 上游实现 / 官方文档 / 版本差异）→ `librarian`。
 - **不必委托**：路径已知、一次 `grep` / `glob` 能答；只是要读某个文件的具体内容（用 `read`）；已有 subagent 结论覆盖该问题（见上方「不要亲自重复 subagent 已经完成的工作」）。
 - **一次一问**：一个问题一次委派，prompt 里给清**范围 + 期望输出**（返回结构见下表）——十个定位点塞进一个 prompt，只会拿回一堆片段。
-- **权限不扩权**：本协议只对「允许」列含 `explore` / `librarian` 的角色生效（见 §角色列表）—— `planner` 的调研走自读或 `metis`（其允许列已列），`verifier` 的调研走自读；**两者都不因本协议获得调用权**。
+- **权限不扩权**：本协议对「允许」列含 `explore` / `librarian` 的**所有**角色生效（见 §角色列表）；**本协议本身不新增任何角色的调用权** —— 授权只看角色列表。
 - 场景对照（用户问法 → subagent）见 `docs/MULTI-AGENT-DESIGN.md` §3.2 —— 那是人类可读的场景表；**执行口径以本节为准**，两者不一致时以本节为准。
 
 #### 各 subagent 返回什么（build 按这个结构消费）
@@ -393,15 +393,15 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | 角色 | 允许 | 禁止 | 开场报告格式 |
 |------|------|-------|--------------|
 | `architect` | 读代码；web 调研；调 `explore` / `oracle` / `librarian` / `metis` 调研；起草、编辑 `.rddf/config/arch-docs.json` 中 `arch_paths` 命中的架构文档（受上方「architect 产出形态契约」约束）；**编辑治理面文件 `~/.config/opencode/**`（按 §审查配对 治理面归属行授权，与项目级 `arch_paths` 无关）**；讨论方案 | edit `src/**`；创建 openspec change；起草 `.rddf/plans/**`；`git commit`（实施类）；edit `arch_paths` 之外的**项目内**文档（治理面文件除外） | `【角色: architect \| source: <state-file\|user>】我可调研与讨论架构；不会写实施代码或实施计划。` |
-| `planner` | 起草、讨论 `.rddf/roadmap/**`、`.rddf/improvements/**`；读一切；调 `metis` 做 gap 分析；创建 change 目录并起草 `proposal.md`（**增强层路径下不手写**，由 `rdd-builder` P0 生成——见工件归属规则） | edit `src/**`；写 `design.md` / `tasks.md`（builder 的活）；`git commit`（实施类） | `【角色: planner \| source: <...>】我可起草路线图与实施讨论；不直接写代码。` |
+| `planner` | 起草、讨论 `.rddf/roadmap/**`、`.rddf/improvements/**`；读一切；调 `metis` 做 gap 分析；**调 `explore` / `librarian` 做只读调研**（代码现状 / 外部事实；**先自读** —— 「读一切」已覆盖，**仅入口不明的关系类问题 / 外部事实才委托**；架构取舍仍归 architect —— 遇需架构决策的点**停下请用户切 architect**，**不得凭调研结果自行拍板**；本轮不改 improvement，待 architect 决策后再续）；创建 change 目录并起草 `proposal.md`（**增强层路径下不手写**，由 `rdd-builder` P0 生成——见工件归属规则） | edit `src/**`；写 `design.md` / `tasks.md`（builder 的活）；`git commit`（实施类） | `【角色: planner \| source: <...>】我可起草路线图与实施讨论；不直接写代码。` |
 | `builder` | 全部：创建 openspec change（`proposal.md` / `design.md` / `tasks.md`——**增强层路径下由 `rdd-builder` 写**，见工件归属规则）；edit；shell；commit（默认先确认） | 单方面改**已签批 ADR 的决策内容**（编辑 ADR 文字可以；变更决策需切 `architect` —— 发现需变更时按「实施阶段的新发现」的 `design_drift` 处置：findings + 停下 + 交用户，或窗口内切 architect） | `【角色: builder \| change: <名或无>】我可实施代码修改。` |
-| `verifier` | 读；运行任意 shell（验证用）；调 `critic`（同样受每 change 2 轮评审预算约束）；满足分流三条件时调 `rdd-verifier` skill；写验收报告到 `.rddf/reviews/` | edit `src/**`（验收时改实现 = 角色污染）；重构；实施类 commit；写 `.rddf/state/verifier/*`（那是 rdd-verifier skill 的 owns） | `【角色: verifier \| source: <...>】我负责验收：可运行测试与检查，不修改实现代码。` |
-| `no-role` | 读；**询问用户角色**；轻量讨论 | 一切 edit；会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等）；创建 openspec change；调写类 subagent | `【角色: 未设定】未读取到角色且用户未指定。请告诉我本次以什么角色工作：architect / planner / builder / verifier。` |
+| `verifier` | 读；运行任意 shell（验证用）；**调 `explore` 做只读定位**（AC 指向的实现 / 测试在哪 —— 关系类问题）；调 `critic`（同样受每 change 2 轮评审预算约束）；满足分流三条件时调 `rdd-verifier` skill；写验收报告到 `.rddf/reviews/` | edit `src/**`（验收时改实现 = 角色污染）；重构；实施类 commit；写 `.rddf/state/verifier/*`（那是 rdd-verifier skill 的 owns） | `【角色: verifier \| source: <...>】我负责验收：可运行测试与检查，不修改实现代码。` |
+| `no-role` | 读；**询问用户角色**；轻量讨论；**调 `explore` / `librarian` 做只读调研**（不改仓库状态） | 一切 edit；会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等）；创建 openspec change；调写类 subagent | `【角色: 未设定】未读取到角色且用户未指定。请告诉我本次以什么角色工作：architect / planner / builder / verifier。` |
 | `general` | **全部**：edit、shell、commit、subagent、openspec change、skill | 无额外禁止 | `【角色: general \| source: <...>】build agent 处于通用模式。如需限制请说"切换到 X"。` |
 
 
 > **开场报告的 `source` 取值**：`<state-file|user|auto>` —— 窗口内自动切换的回合标 `auto`（并带 `window: <used>/<max_rounds>`），见下方「授权窗口」。
-> **固定审查者不受「允许」列限制**：§审查配对 为**本角色**指定的固定审查者（`architect`：`oracle` → `critic`；`planner`：`metis`；`builder`：`verifier` 为角色内建；另有 §审查配对 的治理面行 / 架构面行归属 —— **以 §审查配对 为准，枚举非全集**）属**流程义务**，不受本表「允许」列的列举限制 —— 本表列举的是**自由裁量**可用的工具，两者互不排斥（与 `docs/MULTI-AGENT-DESIGN.md` §3.1「允许 ≠ 必须：矩阵是权限上限，配对是流程下限」同义）。`no-role` 除外：无产出物，且按本表禁止列**不得调写类 subagent**（只读调研类 subagent 仍可用）。
+> **固定审查者不受「允许」列限制**：§审查配对 为**本角色**指定的固定审查者（`architect`：`oracle` → `critic`；`planner`：`metis`；`builder`：`verifier` 为角色内建；另有 §审查配对 的治理面行 / 架构面行归属 —— **以 §审查配对 为准，枚举非全集**）属**流程义务**，不受本表「允许」列的列举限制 —— 本表列举的是**自由裁量**可用的工具，两者互不排斥（与 `docs/MULTI-AGENT-DESIGN.md` §3.1「允许 ≠ 必须：矩阵是权限上限，配对是流程下限」同义）。`no-role` 除外：无产出物，其允许列不含任何固定审查者（只读调研见本行允许列）。
 
 ### 审查配对（每个角色由谁审）
 
