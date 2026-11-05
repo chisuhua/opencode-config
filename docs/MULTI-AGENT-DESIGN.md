@@ -340,7 +340,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 
 #### 2.8.2 状态文件
 
-`<cwd>/.rddf/state/role.json`（schema `role-v1`）：
+`<cwd>/.rddf/state/role.json`（schema `role-v2`，兼容 `role-v1`）：
 
 | 字段 | 含义 |
 |---|---|
