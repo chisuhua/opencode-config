@@ -1,11 +1,13 @@
 # Multi-Agent 系统设计参考
 
-> **状态**: v2.2.2 (2026-11-05)
+> **状态**: v2.2.3 (2026-11-05)
 > **范围**: `~/.config/opencode/` 用户配置级 multi-agent orchestration
-> **下游**: `opencode.jsonc`（符号链接 → `opencode.jsonc.openstarry`）+ `prompts/*.md` + `commands/*.md` + `scripts/*.sh`
+> **下游**: `opencode.jsonc`（符号链接 → `opencode.jsonc.opencode-go`）+ `prompts/*.md` + `commands/*.md` + `scripts/*.sh`
 
 本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
 
+> **本版（v2.2.3）变更**：运行环境修复（非规则变更）—— `kimi-code` provider 迁到 V2 包名 `@opencode/ai/providers/openai-compatible`，并为 `kimi-for-coding` / `k3-256k` 补 `variants`（`reasoning_effort` 映射），修复 oracle 的 `Variant unavailable`。
+>
 > **本版（v2.2.2）变更**：新增 §2.8「角色切换与授权窗口」—— 补上**角色轴（persona）**在本文档的结构性缺口（此前只存在于 `prompts/build.md`）：角色一览 / `role.json` 状态文件 / 切换策略 / 授权窗口三条件与触发条件 / 实施阶段新发现回环；同时显式区分**三个轴**（agent 轴 / 角色轴 / tool 权限轴），避免跨轴误读。
 >
 > **本版（v2.2.0）变更**：新增「实施阶段的新发现」处置 —— builder 实施中发现的计划层 / 决策层问题**停下并路由**（`plan_drift` → planner / `design_drift` → architect / `blocked` → 交用户），**先落 feedback 记录再切角色**；分类复用 rdd-workflow 既有 kind（`needs-revision` / `ac-fail` / `blocked` / `noted`），不新造；授权窗口新增 `builder → planner` / `builder → architect` 两条触发条件（须用户显式把角色写进 `roles`），并统一「每次窗口内自动切换都计入 `used`」。
@@ -68,7 +70,7 @@
 | **context-builder** | subagent | critic prompt 组装器 | `opencode-go/deepseek-v4.1-flash` | 0.1 | 524,288 |
 | **title** | primary（hidden）| 会话标题/摘要生成 | `opencode-go/deepseek-v4.1-flash` | —（未设） | 524,288 |
 
-> **本表以 `opencode.jsonc.openstarry` 为真源**，改动配置后必须同步本表（§11「修改后必做」）。
+> **本表以 `opencode.jsonc.opencode-go`（`opencode.jsonc` 符号链接当前指向）为真源**，改动配置后必须同步本表（§11「修改后必做」）。
 >
 > **`temperature` 一栏为 `—` 的含义**：配置里**未设**该字段——`oracle`（k3-256k）因模型 `capabilities.temperature=false` 不能设，设了也被上游忽略；`plan` / `title` 是主动不设。
 >
@@ -686,6 +688,8 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 >
 > **v1.4 变更**：每个模型补 `capabilities`（`tools` / `temperature` / `reasoning`）；`limit.context` 按证据强度分级修正（见下表）；`mimo-v2.5-pro` 无 agent 使用已从池中移除。
 >
+> **v2.2.3 变更**：`kimi-code` provider 的 `package` 从 V1 老名 `@ai-sdk/openai-compatible` 迁到 **V2 官方名 `@opencode/ai/providers/openai-compatible`**；`models.kimi-for-coding` 补 **`variants`**（`none/low/high/max`，`none` → `reasoning_effort: "off"`）、`models.k3-256k` 补 `low/high/max`（无 `none`），修复「agent 声明 `variant: high` 但模型 variant 集为空 → `Variant unavailable`」。实测：推理 / 4 个档位 / 工具调用均通过（见 §7.1）。
+>
 > **v1.8 订正**：本表与 §2.1 / §5.2 已按当前 `opencode.jsonc.openstarry` 重算——`opencode-go` provider 与 `deepseek-v4.1-flash` 的 agent 归属、`openstarry/deepseek-v4.1-flash` 的 context（262,144 → 524,288）此前与配置不符。
 >
 > | 模型 | 原 `context` | 现 `context` | 依据 |
@@ -735,8 +739,8 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 
 ```
 ~/.config/opencode/
-├── opencode.jsonc -> opencode.jsonc.openstarry  # 符号链接：指向当前生效配置
-├── opencode.jsonc.openstarry   # 配置真源（agent/provider/mcp/permission）
+├── opencode.jsonc -> opencode.jsonc.opencode-go  # 符号链接：指向当前生效配置
+├── opencode.jsonc.opencode-go   # 配置真源（agent/provider/mcp/permission）
 ├── opencode.jsonc.minimax      # 另一份 provider 变体（注意与真源漂移）
 ├── docs/
 │   ├── MULTI-AGENT-DESIGN.md   # 本文件（当前态）
@@ -804,7 +808,7 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 
 ### 6.2 配置顶层结构（v2 schema）
 
-真源是 `opencode.jsonc.openstarry`；`opencode.jsonc` 是指向它的符号链接（git 以 mode 120000 记录）。`opencode.jsonc.minimax` 是另一份变体。
+真源是 `opencode.jsonc.opencode-go`；`opencode.jsonc` 是指向它的符号链接（git 以 mode 120000 记录）。`opencode.jsonc.minimax` 是另一份变体。
 
 ```jsonc
 {
@@ -891,6 +895,8 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 | `plan` / `oracle` 不含 `temperature`（模型不支持该参数） | ✅ |
 | 角色矩阵移出 `AGENTS.md` 后 build prompt 仍完整 | ✅ |
 | 角色切换 / 授权窗口机制（§2.8）| ⚠️ 规则已实现（prompt 级，权威在 `prompts/build.md`），**未在真实 session 做运行时验证** |
+| `kimi-code` provider 用 V2 包名 `@opencode/ai/providers/openai-compatible` | ✅ 实跑通过：`kimi-for-coding` 四个档位（none/low/high/max）、`k3-256k#high` 均返回正常；工具调用（read）正常 |
+| 模型 `variants[].body` 真的合并进请求体 | ✅ 负向探针：临时声明 `reasoning_effort: 123`（类型非法）→ Kimi 回 400 `invalid_request_error`；合法档位 200 —— 证明 body 到达 API 而非被忽略 |
 | provider 模型 id 与上游一致（`opencode models` 核对） | ✅ `mimo-v2.5-pro` / `deepseek-v4.1-flash` / `kimi-k2.6` 均存在 |
 | 备份文件全部进 `.gitignore`，明文 API key 已隔离出索引 | ✅（key 本身仍需轮换） |
 | `deepseek-v4.1-flash` 工具调用 + 210,074 token 输入 | ✅ 接受 → 声明的 262,144 有实测支撑 |
@@ -1065,13 +1071,13 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 
 1. **不要修改 `opencode.jsonc` 中的 prompt 字段**——已经是 file 引用
 2. 直接编辑 `prompts/<name>.md`
-3. 如果是新增 prompt 字段或修改权限，需要动配置真源：`opencode.jsonc.openstarry`（`opencode.jsonc` 是指向它的符号链接；另有 `opencode.jsonc.minimax` 变体，注意三份副本会漂移）
+3. 如果是新增 prompt 字段或修改权限，需要动配置真源：`opencode.jsonc.opencode-go`（`opencode.jsonc` 是指向它的符号链接；另有 `opencode.jsonc.minimax` 变体，注意三份副本会漂移）
 
 ### 修改后必做
 
 ```bash
 # 1. JSON 合法性（纯 JSON 风格，python 即可）
-python3 -c "import json;json.load(open('opencode.jsonc.openstarry'));print('OK')"
+python3 -c "import json;json.load(open('opencode.jsonc.opencode-go'));print('OK')"
 
 # 2. v2 schema 归一化 + 诊断（0 错误 0 警告）
 opencode debug config | jq '.[]?.info | {permissions, agents: (.agents|keys)}'
@@ -1084,7 +1090,7 @@ opencode debug agents > /tmp/agents.json
 - 在 session 中输入 `@<agent> ...` 实测行为
 - **v1.3 新增**：改了 `permission` 后必须跑 `opencode debug agents` 复算——嵌套权限对象在 v2 下**不生效**（action 名对不上，见 §4.4.5）
 - **v1.3 新增**：如改了 critic 触发规则，跑一次 ≥3 文件改动观察 build agent 是否主动调 critic
-- **v1.8 新增**：改了 `agent.*.model` 或 `providers.*.models.*.limit.context` 后，**必须同步本文件的 §2.1 / §5.1 / §5.2 / §5.3**（本文件以 `opencode.jsonc.openstarry` 为真源；配置漂移过一次，8/10 个 agent 的 model 记错）
+- **v1.8 新增**：改了 `agent.*.model` 或 `providers.*.models.*.limit.context` 后，**必须同步本文件的 §2.1 / §5.1 / §5.2 / §5.3**（本文件以 `opencode.jsonc.opencode-go` 为真源；配置漂移过一次，8/10 个 agent 的 model 记错）
 
 ### 不要做
 

@@ -491,12 +491,32 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 - awk 对 `\n` / `\t` 等控制字符转义保留双字符（路径含字面 `
 ` 时仍是假路径，已注释声明为降级行为）。
 
+### 8.1.12 运行环境修复：kimi-code provider（2026-11-05，v2.2.3）
+
+| 改动 | 章节 | 备注 |
+|---|---|---|
+| `opencode.jsonc.opencode-go`：`providers["kimi-code"].package` 由 `@ai-sdk/openai-compatible`（V1 老名）改为 **`@opencode/ai/providers/openai-compatible`**（V2 官方名） | §5.1 | V2 文档列的是后者；二进制内两名并存（V2 名 7 处 / 旧名 4 处），故属**迁移**而非「修复不存在的东西」 |
+| `providers["kimi-code"].models["kimi-for-coding"]` 补 `variants`：`none→reasoning_effort:off` / `low` / `high` / `max`；`models["k3-256k"]` 补 `low` / `high` / `max` | §5.1 | 真正病因：oracle 声明了 `"variant": "high"`，而该模型的 variant 集为空（配置覆盖了目录条目且未声明 `variants`）→ `Variant unavailable for kimi-code/kimi-for-coding: high`。`metis`/`critic` 未声明 variant 所以不受影响 |
+| 实测确定字段名：`reasoning_effort`（字符串）被解析，`effort` / `reasoning` 被忽略，`thinking` 被 400 拒绝 | §5.1 | 用**类型违规探针**判定（传数字/对象 → 若字段被解析必 400），而非按文档措辞猜测；Kimi 文档模型表写 `reasoning_effort`、映射段写「传入 `effort`」两者矛盾，以实测为准 |
+| 验证：JSONC 合法 → `opencode models` 即时反映 variants → 实跑 `kimi-for-coding#none/low/high/max` + `k3-256k#high` 全部正常 → 工具调用（read）正常 → 负向探针（`reasoning_effort: 123`）触发上游 400 | §7.1 | 负向探针是**决定性证据**：证明 `variants[].body` 真的合并进请求体，而不只是「没报错」 |
+| `agent.oracle.variant` 由 `max` → `high`（**用户暂存改动**，随本批一并落地，非本批作者所做） | §2.1 | 补记以免 `git log` 考古断链；该改动只影响 oracle 的思考档位，不影响可用性（`high` 为 Kimi 文档推荐档） |
+| MD 头部「下游/真源」两处 `opencode.jsonc.openstarry` → `opencode.jsonc.opencode-go`（符号链接实际指向；openstarry 文件已不存在） | 头部 / §2.1 | oracle 审查发现：读者按 MD 找真源会扑空，§11 校验流程锚错文件 |
+| `docs/MULTI-AGENT-DESIGN.md` §5.1 变更注记 + §7.1 两行验证状态 + 头部 → v2.2.3 | §5.1 / §7.1 | 纯投影，不改规则语义 |
+| 治理面审查（kimi-code provider 批）：oracle `PASS-WITH-NOTES`（4 条 NIT/none-blocking）→ critic `APPROVE_WITH_CONDITIONS`（0 BLOCKER / 1 SHOULD_FIX + 3 NITS） | §2.7 | oracle 从**二进制源码**证伪了「agent 不声明 variant 时默认取 variants 首项」的风险（`r===undefined` → 原样返回，无首项逻辑）→ `metis`/`critic` 行为与本批前逐字节一致；并确认换包名是**真实代码路径切换**（V2 名命中内建包表，走原生 route 实现），非 no-op。处置：SHOULD_FIX（§11 校验流程仍指 `opencode.jsonc.openstarry`）→ 已连同 §6 文件树 / §4.4 **6 处**一并修正；NIT（§5.1 注记把 `k3-256k` 写成含 `none`）→ 已修。**本批即双审链恢复的证据**：oracle 全程 `variant: high` 正常工作 |
+
+**本批遗留（记入 backlog）**
+
+- `docs/MULTI-AGENT-DESIGN.md` §11「修改后必做」与 §6 文件树、§4.4 的真源指向此前仍写 `opencode.jsonc.openstarry`（该文件已不存在）—— **本批已一并改为 `opencode.jsonc.opencode-go`**（残留的历史 v1.8 注记保留原文，它们描述的是当时的事实）。
+- `opencode-go` / `openstarry` / `minimax-cn` 仍用 V1 包名（`@ai-sdk/*`）。旧名**实测仍可用**（`opencode-go/deepseek-v4.1-flash` 实跑通过），故未一并迁移：`minimax-cn` 是 build/plan/critic 的载体，改错会中断当前会话；`openstarry` 当前无 agent 使用。建议单独一批迁移 + 逐 provider 实跑。
+- `docs/MULTI-AGENT-DESIGN.md` §2.1 / §5.1 / §5.2 的**模型归属**已与当前配置不符（例：表中 explore / critic 仍写 `minimax-cn`，实际为 `opencode/deepseek-v4.1-flash-free` / `kimi-code/kimi-for-coding`；oracle / metis 表写 `k3-256k`，实际已切 `kimi-for-coding`）—— 漂移源自用户尚未提交的模型切换，非本批引入；待该改动定稿后一次性重算这几张表。
+
 ---
 
 ## 演进日志
 
 | 日期 | 版本 | 变更 | 原因 |
 |---|---|---|---|
+| 2026-11-05 | v2.2.3 | 运行环境修复：`kimi-code` provider 迁 V2 包名 `@opencode/ai/providers/openai-compatible`；`kimi-for-coding` / `k3-256k` 补 `variants`（`reasoning_effort` 映射） | oracle 因 `Variant unavailable for kimi-code/kimi-for-coding: high` **持续不可用**，整条 oracle→critic 双审链断掉（上一批只能降级为单审查者）。根因是配置**覆盖**了目录条目却没声明 `variants` → variant 集为空；同一批把 V1 包名迁到 V2 官方名。字段名靠类型违规探针实测确定，不靠文档措辞（文档自相矛盾） |
 | 2026-11-05 | v2.2.2 | MD 新增 §2.8「角色切换与授权窗口」：补**角色轴（persona）在设计文档里的结构性缺口** —— 此前该机制只存在于 `prompts/build.md`，MD 有 agent 轴、有 tool 权限轴，唯独缺「角色是谁 / 怎么切 / 窗口怎么授权」这一轴；新增三轴区分表以免跨轴误读 | MD 自称「当前态单写」设计参考，却缺了角色切换/授权窗口整节 → 读者按 MD 理解会以为「授权只能等用完」、也会以为 architect 可写范围仅限 `arch_paths` 命中目录（漏了治理面文件编辑权） |
 | 2026-11-05 | v2.2.0 | 新增「实施阶段的新发现」：builder 实施中发现的计划层 / 决策层问题**停下并路由**（`plan_drift` → planner / `design_drift` → architect / `blocked` → 交用户 / `noted` → 仅记录），kind 复用 rdd-workflow 既有词表；授权窗口新增 `builder → planner` / `builder → architect` 触发条件 | 两处规则真空：**A** 实施阶段没有「新发现」分类法 —— `implementation_gap`/`proposal_drift` 只服务验收阶段，实施中撞上设计错误/计划漏项时归哪类、回给谁、要不要停，原先无规定；**B** 窗口内自动切换清单只有 `builder→verifier` 等四条，实施中最该自动化的 `builder→architect`/`builder→planner` 不在其中 → 即使用户开了窗口也只能停下问用户。调研发现产品侧已有完整 backward feedback 通道（`rddf feedback add` + 5 种 kind + loop guard + 双读通道），故本批**不新造分类**，只补治理面的映射、停下义务、顺序（先落记录再切角色）与窗口触发条件 |
 | 2026-11-05 | v2.1.1 | 角色列表「固定审查者不受允许列限制」（修 architect 调不了自己 critic 的硬矛盾）+ 新增「调研委派协议」（explore/librarian 的必须/不必委托、一次一问、权限不扩权、材料不触发审查）+ 角色表结构完整性断言 | 分析发现两个缺口：**G1** architect 允许列未列 `critic` 而 §2.7 要求 oracle → critic 双审 → 权限表（上限）与配对表（下限）互相限制；**G2** 调研型 subagent 只有任务类型映射、无「何时必须/不必委托 / 一次一问 / 权限不扩权」，与审查型（oracle/critic/metis）的协议完备度差一个量级 → 现实里表现为「什么都先 explore 一遍」与「本该 explore 却自己 grep 十几轮」|
