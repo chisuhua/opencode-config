@@ -633,7 +633,8 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 ├── docs/
 │   ├── MULTI-AGENT-DESIGN.md   # 本文件（当前态）
 │   ├── CHANGELOG.md            # 历史增量（权限加固史 / 各版本验证记录 / 已完成台账 / 演进日志）
-│   └── review-automation-backlog.md  # 评审自动化迁移清单（L0/L1/L2/L3 分层）
+│   ├── review-automation-backlog.md  # 评审自动化迁移清单（L0/L1/L2/L3 分层）
+│   └── rdd-workflow-product-issues.md  # 待提交上游 rdd-workflow 的产品缺陷清单（4 条）
 ├── prompts/                     # agent prompt 文件（9 个）
 │   ├── build.md                 # 委派规则 + subagent 返回结构表 + critic SOP（7 字段 + 评审预算）+ 角色矩阵 + rdd-workflow 增强层
 │   ├── plan.md                  # 106 行
