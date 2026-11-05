@@ -256,7 +256,11 @@ cmd_ask() {
 }
 
 cmd_wait() {
-  local token="${1:?usage: delegate.sh wait <token> [timeout_seconds]}"
+  if [[ $# -lt 1 ]]; then
+    echo "usage: delegate.sh wait <token> [timeout_seconds]" >&2
+    exit 2
+  fi
+  local token="$1"
   local max_wait="${2:-120}"
 
   # 安全边界：token 校验
@@ -273,21 +277,67 @@ cmd_wait() {
   fi
 
   local elapsed=0
-  local poll_interval=5
+  local poll_interval=2
+  local status=""
   while [[ "$elapsed" -lt "$max_wait" ]]; do
-    local status
     status=$(opencode_api get "/api/session/${session_id}" | jq -r '.data.outcome // "running"' 2>/dev/null || echo "running")
     if [[ "$status" != "running" && "$status" != "null" ]]; then
-      echo "OK: session $session_id outcome=$status"
-      # 输出 session 结果
-      opencode_api get "/api/session/${session_id}/message" 2>/dev/null | jq -r '.data[] | select(.type=="assistant") | .content[] | select(.type=="text") | .text // empty' 2>/dev/null || true
-      return 0
+      break
     fi
     sleep "$poll_interval"
     elapsed=$((elapsed + poll_interval))
   done
 
-  echo "TIMEOUT: session $session_id still running after $max_wait seconds"
+  # 会话已结束，读取结果
+  if [[ "$status" != "running" && "$status" != "null" ]]; then
+    local answer=""
+    local error=""
+    local completed_at
+    completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [[ "$status" == "succeeded" ]]; then
+      # 取最后一条 assistant 的 text 作为回答
+      answer=$(opencode_api get "/api/session/${session_id}/message" 2>/dev/null \
+        | jq -r '[.data[] | select(.type=="assistant") | .content[] | select(.type=="text") | .text] | .[-1] // empty' 2>/dev/null || true)
+    elif [[ "$status" == "failed" ]]; then
+      # 取错误信息
+      error=$(opencode_api get "/api/session/${session_id}" 2>/dev/null \
+        | jq -r '.data.error.message // .data.error // "unknown error"' 2>/dev/null || true)
+    fi
+
+    # 输出结构化 JSON，front 可直接解析
+    jq -n \
+      --arg sessionID "$session_id" \
+      --arg outcome "$status" \
+      --arg answer "${answer:-}" \
+      --arg error "${error:-}" \
+      --arg completed_at "$completed_at" \
+      '{
+        sessionID: $sessionID,
+        outcome: $outcome,
+        answer: $answer,
+        error: $error,
+        completed_at: $completed_at
+      }'
+
+    if [[ "$status" == "succeeded" ]]; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+
+  # 超时，会话仍在运行
+  jq -n \
+    --arg sessionID "$session_id" \
+    --arg max_wait "$max_wait" \
+    '{
+      sessionID: $sessionID,
+      outcome: "pending",
+      answer: "",
+      error: "session still running after \($max_wait) seconds",
+      completed_at: null
+    }' >&2
   return 1
 }
 

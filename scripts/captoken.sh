@@ -63,7 +63,11 @@ parse_token() {
 }
 
 cmd_issue() {
-  local session_id="${1:?usage: captoken.sh issue <session_id> [ttl_minutes]}"
+  if [[ $# -lt 1 ]]; then
+    echo "usage: captoken.sh issue <session_id> [ttl_minutes]" >&2
+    exit 2
+  fi
+  local session_id="$1"
   local ttl_minutes="${2:-$DEFAULT_TTL_MINUTES}"
   init_state
 
@@ -98,8 +102,12 @@ cmd_issue() {
 }
 
 cmd_verify() {
-  local token="${1:?usage: captoken.sh verify <token> <endpoint>}"
-  local endpoint="${2:?usage: captoken.sh verify <token> <endpoint>}"
+  if [[ $# -lt 2 ]]; then
+    echo "usage: captoken.sh verify <token> <endpoint>" >&2
+    exit 2
+  fi
+  local token="$1"
+  local endpoint="$2"
   init_state
 
   local decoded
