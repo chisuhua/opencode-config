@@ -8,6 +8,18 @@
 
 ## 版本变更摘要
 
+> **v2.3 变更摘要（2026-11-06）**：**front agent 重设计** —— front 从"prompt 里的君子协定"变成**权限层强制 + 单通道委托**。
+> ① front 的 `shell` 从 `"*": allow` + 30 deny 改为**只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny），并追加 `"* /*": deny` 禁绝对路径；
+> ② `external_directory` 由 `ask` 改为**路径对象**（放行 `/workspace/**` + 治理面目录）；
+> ③ 新增 **front agent**（第 11 个 agent，第 3 个 primary），职责为用户交互内核 + 委托出口；
+> ④ 新增 `delegate` **插件工具**（`plugins/delegate.ts`）：工具声明 `options.permission="delegate"` → 全局 deny + 仅 `agent.front` allow ⇒ **只有 front 拿得到**；
+> 工程 session 在**建立时**权限定型（`[常量deny, scope edit 规则, grants]`），`grants` 受类目白名单（`question`/`form`/`edit`/`write` 永不可 grant）；
+> ⑤ **退役** `scripts/delegate.sh` + `scripts/captoken.sh`（外部脚本 + 自研 HTTP + capability token）；
+> ⑥ 工程 session 登记：`pair.json`（pair-v2）+ `role.json` 的 `sessions` 分区，**在 prompt 之前**写（否则角色退化为 `general`）；
+> ⑦ 决策依据：[ADR-front-agent-redesign](../.rddf/state/adr-front-agent-redesign.md)；实施路径与验收：[front-agent-redesign](../.rddf/improvements/front-agent-redesign.md)；探针实测：[p0-probes](../.rddf/reviews/front-agent-redesign-p0-probes.md)。
+> 实施期修正了 ADR 三处假设：`external_directory` **不约束 shell**（D4.1）、`session.update` **可原地改权限**（D5.1，救援不必全量重跑）、代答**仅同 location 可用**（D5.3）。
+
+
 > 本节内的 § 引用为**当时的**章节编号；原 §4.4–§4.6 / §7.1–§7.3.1 / §8.1–§8.1.3 现位于本文件后续小节，原 §9 演进日志位于文末。
 
 > **v2.0 变更摘要**：新增**审查配对**（角色 → 审查者）—— `architect` → oracle + critic（oracle 先行）、`planner` → metis、`builder` → verifier（角色内建）+ critic（架构面）。审查是角色矩阵**内核**，不依赖 rdd-workflow；预算按**文档粒度**分层（单条 change 上限 = critic 2 + verifier 3）；补充**审查者不可用降级**（内置自检清单 + 结论首行注明，禁止把「不可用」当「通过」）。

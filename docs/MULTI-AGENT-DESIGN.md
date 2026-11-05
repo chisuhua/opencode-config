@@ -53,7 +53,7 @@
 
 ---
 
-## 2. Agent 体系（10 个）
+## 2. Agent 体系（11 个）
 
 ### 2.1 总览
 
@@ -68,6 +68,7 @@
 | **general** | subagent | 多面手 fallback | `minimax-cn/MiniMax-M3.1-Flash` | 0.2 | 1,000,000 |
 | **critic** | subagent | 对抗式审稿 | `minimax-cn/MiniMax-M3.1-Flash` | 0.1 | 1,000,000 |
 | **context-builder** | subagent | critic prompt 组装器 | `opencode-go/deepseek-v4.1-flash` | 0.1 | 524,288 |
+| **front** | primary | 用户交互内核 / 委托出口 | `minimax-cn/MiniMax-M3.1-Flash` | 0.1 | 1,000,000 |
 | **title** | primary（hidden）| 会话标题/摘要生成 | `opencode-go/deepseek-v4.1-flash` | —（未设） | 524,288 |
 
 > **本表以 `opencode.jsonc.opencode-go`（`opencode.jsonc` 符号链接当前指向）为真源**，改动配置后必须同步本表（§11「修改后必做」）。
@@ -76,7 +77,7 @@
 >
 > **`Context` 一栏是配置里的 `providers.<id>.models.<model>.limit.context`**，不是上游标称值 —— 修正依据与证据强度见 §5.1。
 
-### 2.2 Primary Agents（2 个，用户直接交互）
+### 2.2 Primary Agents（3 个，用户直接交互）
 
 #### `build` —— 主对话 agent
 - **职责**：代码编写、修改、调试、提交
@@ -89,6 +90,18 @@
   4. 执行代码改动
   5. 验证（测试/lint）
   6. **大改动前置审稿**：满足 §3.2 "何时调 critic" 条件时，先调 critic 拿到 4 段式结论再 commit
+
+#### `front` —— 用户交互内核 / 委托出口
+- **职责**：与用户对话、明确意图、给选项；**一切工程行动经 `delegate` 插件工具转交工程 session**
+- **核心 prompt**：`prompts/front.md`（四分类路由 + 委托 brief 契约 + 状态扫描清单 + 降级纪律）
+- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill`/`subagent` deny；`delegate` allow（**唯一**）
+- **门控**：`delegate` 声明 `options.permission="delegate"` → 全局 deny + 仅 front allow ⇒ 其余 agent 调用时答 `NO_TOOL`
+- **典型 workflow**：
+  1. 判类（理解性 / 实施性 / 流程性 / 需裁决）
+  2. 理解性 → 自己 `read`/`grep`/`glob` 答；流程性 → 读 `.rddf/state/` 出摘要（带新鲜度标注）
+  3. 实施性 → 组六必填 brief（+ 必要时向用户预批 `grants`）→ 调 `delegate`
+  4. 读返回值（`outcome`/`blocked_reason`/`out_of_scope_files`）→ 转述给用户
+- **详见**：`docs/dual-session-delegation.md`
 
 #### `plan` —— 设计者 agent
 - **职责**：只读探索、评估取舍、产出可验证的计划
@@ -417,6 +430,21 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 **先落记录 → 再切角色 / 交用户**（切换会丢原上下文，而 feedback 通道正是上游的读入口）。分类**复用 rdd-workflow 既有 kind**，不新造；细则与判据见 `prompts/build.md` 的「实施阶段的新发现」。
 
 
+#### 2.8.6 front 与工程 session 的 pair 登记（2026-11-06 新增）
+
+`delegate` 插件在**建立工程 session 后、prompt 之前**写两份文件（single writer = 插件，目录锁保护）：
+
+| 文件 | 位置 | 内容 |
+|---|---|---|
+| `pair.json`（pair-v2）| `<工程根>/.rddf/state/pair.json` | `pairs: { <engineering_session_id>: { front_session_id, canonical_root, agent, registered_at, last_used_at } }` |
+| `role.json` | `<工程根>/.rddf/state/role.json` | `sessions: { <engineering_session_id>: { current_role, auto_switch_window: null, auto_answer: null, updated_at } }` |
+
+为什么**必须在 prompt 之前写**：工程 session 开局就要读自己的 `role.json` 分区；若登记晚于 prompt，
+它会去找全局 fallback，而全局 fallback 属于 `external_directory`（工程 session 默认 deny）→ 角色退化为 `general`。
+
+`resume_session` 的访问控制 = **pair 登记表 + `canonical_root` 一致**。不硬校验 `front_session_id`
+（每次新对话都是新 front session，硬校验会让"隔天回来继续"失效），改为返回软信号 `resumed_by_other_front`。
+
 ## 3. 委派拓扑
 
 ```
@@ -439,20 +467,22 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 ### 3.1 委派矩阵
 
-| 调用方 ↓ \ 被调方 → | build | plan | explore | librarian | oracle | metis | general | critic | context-builder |
-|---|---|---|---|---|---|---|---|---|---|
-| **build** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（条件）| ✅ |
-| **plan** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅✅（优先）| ❌ | ❌ | ❌ |
-| **explore** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **librarian** | ❌ | ❌ | ✅✅（本地搜索）| ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **oracle** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **metis** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **general** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **critic** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **context-builder** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 调用方 ↓ \ 被调方 → | front | build | plan | explore | librarian | oracle | metis | general | critic | context-builder |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **build** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（条件）| ✅ |
+| **plan** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅✅（优先）| ❌ | ❌ | ❌ |
+| **explore** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **librarian** | ❌ | ❌ | ❌ | ✅✅（本地搜索）| ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **oracle** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **metis** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **general** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **critic** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **context-builder** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **front** | ❌ | ❌（经 `delegate` 工具，非 agent 委派） | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 > build → critic 是"条件 ✅"：仅在 §3.2 "何时调 critic" 5 个条件命中时调用；其它情况不调。critic 自己不调任何 agent（task deny）。
 > **context-builder** 只能被 build 调，且不委派任何 agent——它只做上下文组装。
+> **front 的 "→ build" 不是 agent 委派**：front 不调 subagent 工具，而是调 `delegate` 插件工具，由插件在进程内建立并驱动一个 agent=build 的工程 session（跨目录）。详见 `docs/dual-session-delegation.md`。
 > **本矩阵只回答「允许调谁」；「哪个角色产出必须过谁」见 §2.7 审查配对**（architect → oracle + critic / planner → metis / builder → verifier）。允许 ≠ 必须：矩阵是权限上限，配对是流程下限。 `prompts/build.md` 的**角色列表表**同理只列**自由裁量**可用的工具，**固定审查者是流程义务、不受该列限制**（`no-role` 除外）—— 角色表与配对表是流程下限的两个刻度，不是互相限制的两道闸。（此处指角色列表表；**本节 agent 矩阵的 ❌ 不在豁免范围**。）
 
 ### 3.2 委派触发规则
@@ -605,23 +635,25 @@ OpenCode v2 的 `permission` 可以是单个 action，也可以是「工具 → 
 
 下表是 **v2 运行时实测值**（`opencode debug agents` + 按 last-match-wins 复算），不是配置字面值。
 
-| 工具 | build | plan | explore | librarian | oracle | metis | general | critic | context-builder |
-|---|---|---|---|---|---|---|---|---|---|
-| read | allow | allow | allow | allow | allow | allow | allow | allow | allow |
-| edit | allow | ask（限 `.plans/` 等）| deny | deny | deny | deny | deny | deny | deny |
-| grep/glob/list | allow | allow | allow | allow | allow | allow | allow | allow | allow |
-| bash | allow\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\*\* | 只读子集\*\* |
-| task（subagent 委派）| allow | allow | deny | allow | deny | deny | deny | deny | deny |
-| webfetch | allow | allow | allow | allow | allow | allow | allow | deny | deny |
-| websearch | allow | allow | deny | allow | allow | allow | allow | deny | deny |
-| question | allow | allow | deny | deny | deny | deny | deny | deny | deny |
-| external_directory | ask | ask | (默认 ask) | (默认 ask) | ask | ask | ask | (默认 ask) | (默认 ask) |
-| MCP 写工具（4 个）| ask | ask | deny | deny | deny | deny | deny | deny | deny |
-| MCP 读工具（10 个）| allow | allow | allow | allow | allow | allow | allow | allow | allow |
-| `.env` 读取（read）| ask | ask | ask | ask | ask | ask | ask | ask | ask |
-| `.env` 读取（shell）| ask | deny | deny | deny | deny | deny | deny | deny | deny |
-| doom_loop | (默认) | (默认) | deny | deny | (默认) | (默认) | (默认) | (默认) | (默认) |
+| 工具 | front | build | plan | explore | librarian | oracle | metis | general | critic | context-builder |
+|---|---|---|---|---|---|---|---|---|---|---|
+| read | allow | allow | allow | allow | allow | allow | allow | allow | allow | allow |
+| edit | deny | allow | ask（限 `.plans/` 等） | deny | deny | deny | deny | deny | deny | deny |
+| grep/glob/list | allow | allow | allow | allow | allow | allow | allow | allow | allow | allow |
+| bash | 只读白名单‡ | allow\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\*\* | 只读子集\*\* |
+| task（subagent 委派） | deny | allow | allow | deny | allow | deny | deny | deny | deny | deny |
+| webfetch | allow | allow | allow | allow | allow | allow | allow | allow | deny | deny |
+| websearch | allow | allow | allow | deny | allow | allow | allow | allow | deny | deny |
+| question | allow | allow | allow | deny | deny | deny | deny | deny | deny | deny |
+| external_directory | 按路径 allow§ | ask | ask | (默认 ask) | (默认 ask) | ask | ask | ask | (默认 ask) | (默认 ask) |
+| MCP 写工具（4 个） | ask | ask | ask | deny | deny | deny | deny | deny | deny | deny |
+| MCP 读工具（10 个） | allow | allow | allow | allow | allow | allow | allow | allow | allow | allow |
+| `.env` 读取（read） | ask | ask | ask | ask | ask | ask | ask | ask | ask | ask |
+| `.env` 读取（shell） | deny | ask | deny | deny | deny | deny | deny | deny | deny | deny |
+| doom_loop | (默认) | (默认) | (默认) | deny | deny | (默认) | (默认) | (默认) | (默认) | (默认) |
 
+‡ front 的 shell 是**只读白名单**：`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny（重定向 / `--output` / `-fprint` / `sort -o` / `.env` 族）；另加 `"* /*": deny` 禁止绝对路径（`external_directory` 不约束 shell，见 ADR D4.1）
+§ front 的 `external_directory` 按路径 allow：`/workspace/**` 与 `/home/ubuntu/.config/opencode/**`；其余路径 deny（不写 `"*": allow`）
 \* build 唯一可改代码的 agent；bash 默认 allow，但 19 条危险命令 ask（git push/reset --hard/clean/checkout --/restore/branch -D/stash drop/stash clear/rm -rf|fr|r|f/sudo）
 
 \*\* bash 只读子集：`rg / grep / find / ls / cat / head / tail` + `git log / show / diff / status / blame / ls-files / rev-parse / ls-tree / cat-file / show-ref / config --get / remote -v / stash list / worktree list / shortlog / count-objects / verify-commit` + 文本工具 `wc / sort / uniq / diff / file / stat / du / df / which / tree / basename / dirname / readlink / realpath / tr / cut / printf / date / test / expr / seq / nl / column`。plan 额外 `mkdir`；librarian 额外 `curl / wget / git clone`。**不含** `awk / env / printenv / jq`（§4.4.4）。
@@ -886,7 +918,13 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 | 测试 | 状态 |
 |---|---|
 | JSON / JSONC 合法性 + `opencode debug config` 归一化诊断 | ✅ 0 错误 0 警告 |
-| 10 个 agent 全部注册 + 全部 `{file:...}` 引用解析 | ✅ |
+| front shell 白名单：`*: deny` 打头 + 47 allow + 尾部守卫 deny；实测 `bash -c` / `python3 -c` / `curl` 被**权限层**拒绝（`permission.rejected`）| ✅ |
+| front 守卫用例：重定向 / `--output` / `--format` / `-fprint` / 裸重定向 | ✅ 拦截率 100%（v2.2.5 实测），无副作用文件产生 |
+| front shell 禁绝对路径（`* /*` deny）；`grep` 读 `/etc` 被 `external_directory` 拒、读 `/workspace/**` 放行 | ✅ |
+| `delegate` 门控：仅 front 可见（front `[{*,deny},{*,allow}]`，其余 agent 仅 `[{*,deny}]`）| ✅ `opencode debug agents` 实测 |
+| `delegate` 端到端：建工程 session → 真实写入文件 → `outcome=succeeded` + 越界检测 | ✅ 实跑（`/tmp/opencode/engproj` 写出 `answer2.txt`=42 / `answer3.txt`=43 / `answer4.txt`=44）|
+| `delegate` 续接：复用同一 session（session 数不增）+ 非法 grant 被拒 | ✅ 实跑 |
+| 11 个 agent 全部注册 + 全部 `{file:...}` 引用解析 | ✅ |
 | permission schema 字段合法；v2 扁平键生效 | ✅ 10 只读 allow、4 写 deny |
 | `experimental.subagent_depth: 2` 生效；顶层 `subagent_depth` 已移除 | ✅ |
 | `.env`：read → ask（全部 agent）；shell `cat/head/tail` → deny（只读）/ ask（build） | ✅ |

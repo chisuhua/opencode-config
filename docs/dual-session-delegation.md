@@ -1,202 +1,153 @@
 # 双 session 工程架构 — 用法说明
 
-本文档说明如何使用 `front`（前端用户代理）+ `build`（工程 session）双 session 架构进行工程项目开发。
+> 实现形态（2026-11-06 起）：`front` 通过 **opencode 插件工具 `delegate`** 委托工程 session。
+> 旧的 `scripts/delegate.sh` + `scripts/captoken.sh`（外部脚本 + 自研 HTTP + capability token）**已退役**。
 
 ## 1. 架构概览
 
 ```
-┌─────────────────────┐      delegate(start/ask/wait)      ┌─────────────────────┐
-│   前端 session       │  ─────────────────────────────→   │   工程 session       │
-│   (front agent)      │                                   │   (build agent)      │
-│   • 与用户对话       │                                   │   • 走 role.json 矩阵 │
-│   • 明确用户意图     │                                   │   • architect/planner  │
-│   • 读代码回答理解   │                                   │   • builder/verifier   │
-│   • edit/subagent deny│                                  │   • 只改代码           │
-└─────────────────────┘                                   └─────────────────────┘
-        ▲                                                               ▲
-        │                                                               │
-   用户在此对话                                                       代码在此产出
+┌─────────────────────────────┐        ┌──────────────────────────────┐
+│ front session（primary）     │        │ 工程 session（agent=build）    │
+│  · 与用户对话                │ 委托   │  · 在目标工程目录里干活        │
+│  · 理解性问题自己答          │───────▶│  · 走 build 角色矩阵          │
+│  · 实施性 → delegate 工具    │        │  · 权限在建立时已定型          │
+│  · 流程性问题读状态出摘要     │◀───────│  · 结果结构化回传              │
+└─────────────────────────────┘        └──────────────────────────────┘
 ```
 
-- **front session**：专职与用户对话，明确用户意图，**不改代码、不进 role.json 矩阵**。
-- **工程 session**：走完整多角色矩阵（architect / planner / builder / verifier），负责所有代码修改。
-- **delegate 插件**：front 与工程 session 之间的唯一通道，提供 `start` / `ask` / `wait` 三个固定工具面。
+- **唯一工程通道**：`delegate` 工具（`~/.config/opencode/plugins/delegate.ts`）。
+- **门控**：工具声明 `options.permission = "delegate"` → 全局 `permission.delegate = "deny"` +
+  `agent.front.permission.delegate = "allow"` ⇒ **只有 front 能拿到这个工具**，其余 agent（build / plan / 各 subagent）调用时答 `NO_TOOL`。
+- **front 不持任何凭证、不发任何 HTTP**：委托在插件进程内完成（`ctx.session.create/prompt/wait/get/context`）。
 
 ## 2. 角色边界速查
 
-| 动作 | front session | 工程 session |
-|------|--------------|-------------|
-| 与用户对话、澄清意图 | ✅ | ❌ |
-| 读代码（回答理解性问题） | ✅ | ✅ |
-| 改代码 / 编辑项目文件 | ❌（edit deny） | ✅ |
-| git commit / push | ❌ | ✅（verifier 审查后） |
-| 权限 / 表单代答 | ✅（通过 delegate） | ❌（被代答方） |
-| 走 role.json 角色矩阵 | ❌（固定语义 agent） | ✅（architect/planner/builder/verifier） |
+| 能力 | front | 工程 session |
+|---|---|---|
+| 与用户对话、给选项 | ✅ | — |
+| 读工程代码（`read`/`grep`/`glob`） | ✅（受 `external_directory` 约束） | ✅ |
+| 只读 shell（`ls`/`rg`/`git log`…） | ✅（仅 cwd 相对路径） | ✅（build 自身规则） |
+| 改工程文件 | ❌（`edit: deny`） | ✅（scope 内） |
+| 提交 / 推送 | ❌ | ❌（等用户确认后另行发起） |
+| 调 subagent / skill | ❌ | ✅ |
+| 发起工程任务 | 经 `delegate` | — |
 
 ## 3. 启动方式
 
-### 方法 A：TUI 界面（推荐）
+### 方法 A：TUI（推荐）
 
 ```bash
-# 终端 A —— 前端 session（你和用户对话）
-cd ~/.config/opencode   # 或任何独立目录
-opencode
-# 在 TUI 里输入：/agent front
-# 然后和 front 对话，明确意图
+# 终端 A —— front session（与用户对话）
+opencode /path/to/工程根
+#   在 TUI 里：/agent front
+#   然后直接和 front 对话
 
-# 终端 B —— 工程 session（代码实施）
-cd /home/ubuntu/你的项目
-opencode
-# 在 TUI 里输入：/agent build
-# 工程 session 走角色矩阵，接收 front 委托的任务
+# 终端 B —— 工程 session（可选，通常不需要手工开）
+opencode /path/to/工程根
+#   在 TUI 里：/agent build
 ```
 
-TUI 里可以随时用 `/agent front` / `/agent build` / `/agent list` 切换或查看 agent。
+> front 会在委托时**自动**建立/续接工程 session；手工开终端 B 只在需要旁观时才有必要。
 
 ### 方法 B：CLI 单次运行
 
 ```bash
-# 前端 session
-opencode run --agent front --model minimax-cn/MiniMax-M3.1-Flash "你好，我要实现一个功能"
-
-# 工程 session（单次）
-opencode run --agent build --model minimax-cn/MiniMax-M3.1-Flash -s <sessionID> "执行某项任务"
+opencode run --agent front "帮我看看 X 模块是怎么设计的"
 ```
 
-> `opencode run` 必须提供 `<message>` 参数，否则会报错 `You must provide a message`。
+## 4. 委托流程
 
-## 4. front 驱动工程的完整流程
+### 步骤 1：front 判类（四分类）
 
-### 步骤 1：front 明确用户意图
+| 类别 | 产物 | 出口 |
+|---|---|---|
+| 理解性 | 回答 | front 自己 `read`/`grep`/`glob`，**不建工程 session** |
+| 实施性 | 文件变更 | `delegate` |
+| 流程性 | 状态摘要 | front 读 `.rddf/state/` 等出摘要（带新鲜度标注） |
+| 需裁决 | 决策输入 | `question` 问用户 |
 
-在前端 session 里和 front 对话。如果需求有歧义，front 会用 `question` 工具向你提问并给出选项。
+### 步骤 2：front 组 brief（六个必填）
 
-### 步骤 2：front 委托实施任务
-
-意图明确后，front 通过 `delegate.sh start` 把任务发给工程 session：
-
-```bash
-# 在 front 所在目录（或任意有权限的目录）执行
-cd ~/.config/opencode
-
-./scripts/delegate.sh start /home/ubuntu/你的项目 "给 user 模块的 add 函数加溢出检查，不改签名"
-
-# 输出示例：
-# {
-#   "sessionID": "ses_xxx",
-#   "token": "xxx",        # front 持有，后续 ask/wait 都用这个 token
-#   "project_dir": "/home/ubuntu/你的项目",
-#   "agent": "build",
-#   "pair_registered": false
-# }
+```jsonc
+{
+  "project_dir": "/abs/path/to/project",   // 工程根绝对路径
+  "task":      "用户原话或等价转述",
+  "goal":      "一句话目标（产物是什么）",
+  "scope":     ["src/", "tests/"],          // 允许变更的路径前缀
+  "acceptance":"pytest tests/unit -q 通过", // 可判定的完成判据
+  "constraints": "不要 commit",             // 可选
+  "grants": [                               // 可选：用户预批的操作
+    { "action": "shell", "resource": "git push *" }
+  ]
+}
 ```
 
-front 把返回的 `token` 保存，后续通过 `ask` / `wait` 与工程 session 交互。
+- 插件只校验**存在性/类型/结构**；语义质量是 front 的责任。
+- `grants` 只能给 `shell`（具体单条）/`read`（不含 `.env`）/`grep`/`glob`/`list`/`external_directory`（具体路径）/`webfetch`/`websearch`/`lsp`；
+  **`question`/`form`/`edit`/`write` 永不可 grant**（会破坏工程 session 的安全边界）。
 
-### 步骤 3：工程卡在权限时，front 代答
+### 步骤 3：工程 session 干活
 
-工程 session 在执行中如果遇到需要 `ask` 权限的操作（如 `cat .env`、`git push`），会阻塞。front 通过 `delegate.sh ask` 代答：
-
-```bash
-# 代答一次性允许
-./scripts/delegate.sh ask <token> permission once
-
-# 代答拒绝
-./scripts/delegate.sh ask <token> permission reject
-
-# 代答表单（question 工具）
-./scripts/delegate.sh ask <token> form '{"q0":"项目 Alpha"}'
-```
-
-**代答安全边界**（front 不得越界）：
-- **默认关闭**：用户需显式开启 `auto_answer: true`，否则所有权限/表单请求一律转用户。
-- **白名单**：仅代答读工具（`read` / `grep` / `glob` / `list` / `websearch` / `lsp` / MCP 读工具）。
-- **绝对负面清单**（命中即转用户）：19 条危险 shell 模式（`git push`、`reset --hard`、`clean`、`checkout --`、`restore`、`branch -D`、`stash drop/clear`、`rm -rf|fr|r|f`、`sudo` 等）、`.env` 读取、MCP 写工具、`external_directory`、`doom_loop`、一切 `edit`/`write`、`question`/`form` 自由文本。
-- **单回合上限 ≤ 5 次**，防止批量诱导代答。
-- **不可逆操作不得自动代答**：`git push` / 分支删除 / `rm -rf` / 发布类命令，一律升级用户。
-
-### 步骤 4：等待工程完成并取回结果
-
-```bash
-# 有界等待（≤60s per poll，超时返回 pending 续轮）
-./scripts/delegate.sh wait <token> 120
-
-# 工程完成后，front 把结果原样转述给用户
-```
-
-## 5. delegate.sh 命令速查
-
-```bash
-# 启动工程 session，获得 token
-./scripts/delegate.sh start <project_dir> <task_text>
-
-# 代答权限请求（once | reject）
-./scripts/delegate.sh ask <token> permission <once|reject>
-
-# 代答表单（answer JSON）
-./scripts/delegate.sh ask <token> form '{"q0":"value"}'
-
-# 等待工程 session 空闲（最多等待 timeout 秒）
-./scripts/delegate.sh wait <token> [timeout_seconds]
-
-# 列出活跃工程 session
-./scripts/delegate.sh list
-
-# 签发 / 校验 capability token（调试用）
-./scripts/delegate.sh token issue <session_id> [ttl_minutes]
-./scripts/delegate.sh token verify <token> <endpoint>
-```
-
-安全边界：
-- 只接受固定命令，不接受任意 method/path/body（堵住裸 opencode API 逃逸通道）。
-- 凭证仅在脚本进程内使用，不进入 front transcript。
-- capability token TTL≤15min，进程重启即全量失效。
-- external_directory 一律不代答（全部转用户）。
-
-## 6. 完整示例对话
+`delegate` 建 session 时把权限**定型**为：
 
 ```
-用户（在 front session TUI）：
-  「把 user 模块的 add 函数加溢出检查，但不要改签名。」
-
-front agent（理解意图，确认无歧义后）：
-  「我来把这个任务委托给工程 session。」
-
-front 执行（在 shell 里）：
-  ./scripts/delegate.sh start /home/ubuntu/项目 "给 user 模块的 add 函数加溢出检查，不改签名"
-  → 得到 token
-
-  ./scripts/delegate.sh wait <token> 120
-  → 工程 session 执行，若遇 .env 读取权限 ask，front 代答 once
-  → 工程完成，front 取回结果
-
-front 回复用户：
-  「已在 user/add.c 行 12 加入 __builtin_add_overflow 检查，签名未变。工程 session 已提交，你可以 review。」
+[常量 deny(build 的 ask 类目 + question + form + MCP 写), scope 的 edit 规则, 用户 grants]
 ```
 
-## 7. 关键文件位置
+- 工程 session **没有 UI**：任何 `ask` 会永久挂死 → ask 类目一律落成 `deny`（快速失败）。
+- `scope` → `edit` 规则：scope 内 allow、其余 `edit` deny（**scope 的强制点**）。
+- 登记：建立后立刻写 `<工程>/.rddf/state/pair.json`（pair-v2）与 `role.json` 的 `sessions` 分区
+  ⇒ 工程 session 开局就拿到自己的角色（`builder`），不会退化成 `general`。
 
-| 文件 | 用途 |
-|------|------|
-| `prompts/front.md` | front agent 核心 prompt |
-| `opencode.jsonc.opencode-go` | front agent 权限配置（edit/subagent/skill deny，read/question allow） |
-| `scripts/delegate.sh` | 三个固定工具面：start/ask/wait/list/token |
-| `scripts/captoken.sh` | capability token 签发/校验（TTL≤15min，端点限制 permission/form/wait） |
-| `scripts/role-init.sh` / `role-show.sh` | role-v2 状态文件管理 |
-| `scripts/role-migrate-v2.sh` | role.json v1→v2 离线迁移（history 全量保留） |
-| `.rddf/state/adr-double-session-delegation.md` | 架构决策记录（critic 已 APPROVE，mergeable: yes） |
-| `.rddf/state/role.json` | 角色状态（role-v2，sessions 分区，顶层镜像不作权限判据） |
+### 步骤 4：结果解读
 
-## 8. 常见问题
+工具返回 JSON，重点字段：
 
-**Q：front 能直接改代码吗？**
-A：不能。front 的 `edit` 被设为 `deny`，所有代码修改必须经 delegate 发给工程 session。
+| 字段 | 含义 |
+|---|---|
+| `outcome` | `succeeded` / `failed` / `interrupted` / `unknown`（没有新活动，结论不可信）/ `busy`（上次运行仍在进行，别排队） |
+| `blocked_reason` | 被权限拦住了 —— **不要换写法绕过**，把被拒操作报给用户，问是否追加 grant |
+| `out_of_scope_files` | 本次改了 scope 外的文件 —— 必须点名告知用户 |
+| `changed_files` | 本次委托期间新增/变更的文件（前后 `git status` 差集） |
+| `last_assistant_text` | 工程 session 的最终说明，原样转述 |
+| `resumed_by_other_front` | 续接的 session 属于另一个 front 会话（正常：隔天回来继续） |
 
-**Q：front 和工程 session 能共享 role.json 吗？**
-A：不能直接共享。front 不进 role.json 矩阵，是固定语义 agent；工程 session 走 role.json 角色矩阵。两者通过 delegate 通信，不共享角色状态。
+### 步骤 5：被拒后的救援
 
-**Q：工程 session 掉线了怎么办？**
-A：工程 session 进入 suspended 状态。front 重新连接后，经 delegate 恢复轮询 `/permission` 与 `/form`，继续代答。不设自动超时放行，避免不可逆操作被静默执行。
+`blocked_reason` 非空 → 用户同意追加权限 → **原地补 grant**（`session.update` 改该 session 的 permissions）→ 继续同一 session。
+**不新建 session、不全量重跑。**
 
-**Q：能在同一个 TUI 窗口里切 front 和 build 吗？**
-A：可以。`opencode` 启动 TUI 后，用 `/agent front` / `/agent build` 切换。但建议用两个独立终端，分别对应前端和工程 session，避免上下文混淆。
+## 5. front 的工具边界（权限层强制，非 prompt 承诺）
+
+| 工具 | front | 说明 |
+|---|---|---|
+| `read` / `grep` / `glob` / `list` | allow | 跨目录受 `external_directory` 约束（只放行 `/workspace/**` 与治理面目录） |
+| `shell` | **白名单** | `*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny；**禁止绝对路径**（`"* /*": deny`） |
+| `webfetch` / `websearch` / `lsp` | allow | 只读性质 |
+| `question` | allow | 向用户提问 |
+| `delegate` | allow | 唯一工程通道 |
+| `edit` / `write` | deny | front 不能改工程文件 |
+| `skill` / `subagent` | deny | front 不能调子 agent / 技能 |
+
+> **已知边界**：shell 权限是"命令节点文本做 glob 匹配"，上游存在绕过族（重定向、`--opt=value` 截断、零节点跳过）。
+> 守卫已覆盖当前版本实测的 5 个用例（拦截率 100%），但**不是完备边界**——详见 ADR D4。
+
+## 6. 排障
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| front 工具列表里没有 `delegate` | 门控异常 | 明确报错，**不要**用 shell 脚本绕过 |
+| `Permission denied: external_directory` | 目标路径不在允许目录 | 问用户是否放开该路径 |
+| `outcome: busy` | 目标 session 还在跑 | 等待，不要新建顶替 |
+| `outcome: unknown` | 没有新活动 | 明确说"未拿到可信结果"，可重试一次 |
+| 改了 `opencode.jsonc` 但不生效 | 后台 service 缓存了配置 | `opencode service restart` |
+| 新增/修改插件后不生效 | 同上（插件在 location 激活时加载） | `opencode service restart` |
+| `ServiceUnavailableError: Location plugins did not finish activating` | ① 插件构建失败 ② MCP 启动阻塞 ③ 插件 setup 迟迟不 settle | 先看 `--print-logs` 的 `failed to load plugin`；再查 MCP；最后怀疑插件 API |
+
+## 7. 相关文档
+
+- 架构决策：`.rddf/state/adr-front-agent-redesign.md`
+- 实施路径与验收：`.rddf/improvements/front-agent-redesign.md`
+- 探针报告：`.rddf/reviews/front-agent-redesign-p0-probes.md`
+- 审稿记录：`.rddf/reviews/adr-front-agent-redesign-review.md`
+- 角色与权限总表：`docs/MULTI-AGENT-DESIGN.md`

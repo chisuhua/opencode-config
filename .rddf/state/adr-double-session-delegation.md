@@ -44,6 +44,8 @@
 
 ### 决策 3（对应 BLOCKER 3）：role-v2 按 session 分区并发模型
 
+> **部分被取代（2026-11-05）**：本节最后一条「写盘：atomic rename + last-write-wins，显式接受」已被 [`adr-front-agent-redesign.md`](./adr-front-agent-redesign.md) 的 **D6** 取代——`delegate` 插件把 role.json 的写盘频率从「用户驱动的低频角色切换」提升到「每次委托」，并发写入方增至两个（插件 + 工程 session 的角色切换），因此改为 `.rddf/state/.role.lock` 协作锁 + 锁内 RMW。本节其余条目（role-v2 schema、分区归属、顶层镜像降级、窗口不跨 session、pair 视图一致性）继续有效。
+
 - `role.json` 升 schema **role-v2**。
 - 顶层 `current_role` **降级为镜像**（附带 `updated_at` + `session_id`，仅供跨 session 展示，不作权限判据）。
 - 新增 `sessions: { <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区。
