@@ -461,6 +461,10 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 | `docs/rdd-workflow-product-issues.md`（**新增**）：把 v2.2.0 实施期核查中发现的 4 处产品缺陷整理成可直接提交上游的 issue 文本 | §3 | A：`route_feedback` 无生产调用方（提升链未接线）/ B：`rddf arch feedback` 对 appender 条目 KeyError / C：planner-feedback 重算静默丢 open 条目 / D：`skills/rdd-builder/SKILL.md` 落点描述与实现不符 —— 均附源码行号、复现步骤与建议修法 |
 | `build.md` §角色列表权限修订（**v2.2.1**）：`planner` 补 `explore` / `librarian`（+「先自读」默认序 +「架构取舍停下请用户切 architect」的护栏）、`verifier` **只补** `explore`、`no-role` 允许列显式列出只读调研；§调研委派协议「权限不扩权」条目改为中性表述 | §2.2 | 补角色**只读调研**能力缺口（此前 planner/verifier 只能自读）；边界不变式保持（禁止列逐字未动，扩权只在「读」侧）。**同时取代 8.1.11 台账里「权限不扩权（planner 走自读或 metis，verifier 走自读）」的表述** —— 该 carve-out 已随本批删除 |
 | `tests/verify_arch_docs_scope.sh`：内联摘要 ↔ `critic.md` 判据的**语义级**防漂移守卫（10/10 对应表）+ 「已废止 carve-out 措辞零命中」防回流断言 | §2.5 | 前者把防漂移从**条数**升级到**语义对应**（critic.md 改判据措辞 → 断言失败，要求同步对应表；负向测试确认会咬：改摘要一个词即 FAIL + exit 1）；后者防「planner/verifier 走自读」旧措辞回流成第二套判据 |
+| `docs/MULTI-AGENT-DESIGN.md` 新增 **§2.8 角色切换与授权窗口**（角色轴投影）：三轴区分 / 角色一览 / `role.json` 状态文件 / 切换策略 / 授权窗口（四条件 + 6 条触发条件 + 关闭窗口 + 审计写入）/ 实施阶段新发现回环 | §2.8 | 补**结构性缺口**：MD 自称「当前态单写」，但**角色轴（persona）整条机制此前只存在于 `prompts/build.md`**（MD 有 agent 轴 §2/§3、有 tool 权限轴 §4，唯独缺角色轴）。投影**不改任何规则语义**，并声明执行权威在 build.md |
+| `docs/MULTI-AGENT-DESIGN.md` §7.1 验证状态加 1 行 | §7.1 | 如实标注：机制为 prompt 级软约束，**未在真实 session 做运行时验证**（与 §7.2 口径一致）|
+| `tests/verify_arch_docs_scope.sh` 加 9 条 MD 投影护栏 | §2.8 | 5 条锚点存在性 + 触发条件表**行数**（防漏行类漂移）+ 关闭窗口 / 审计写入 / auto 标记 / architect 治理面编辑权 —— critic 指出「needle 只锁存在性、锁不住漏行」后补强 |
+| 治理面审查（MD §2.8 批）：**oracle 不可用**（原因：`opencode.jsonc.opencode-go` 中 oracle/metis 切到 `kimi-code/kimi-for-coding`，该模型无 `high` 变体 → subagent 调用失败）→ 降级为 critic 审查 + 治理面降级自检清单 6 条自检 | §2.7 | critic 判 `APPROVE_WITH_CONDITIONS`（0 BLOCKER / 3 SHOULD_FIX + 2 NIT）：3 条 SHOULD_FIX 均为**投影漏项**（漏「关闭窗口」、把权威源的 4 条条件写成「三条件」、architect 行漏治理面编辑权）→ 已修；NIT（`general` 同名消歧 / CHANGELOG 版本断链）→ 已修。**本次为单审查者 + 自检，非双审**，结论不构成独立证据 |
 
 **本批遗留（记入 backlog / 待上报）**
 
@@ -493,6 +497,7 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 
 | 日期 | 版本 | 变更 | 原因 |
 |---|---|---|---|
+| 2026-11-05 | v2.2.2 | MD 新增 §2.8「角色切换与授权窗口」：补**角色轴（persona）在设计文档里的结构性缺口** —— 此前该机制只存在于 `prompts/build.md`，MD 有 agent 轴、有 tool 权限轴，唯独缺「角色是谁 / 怎么切 / 窗口怎么授权」这一轴；新增三轴区分表以免跨轴误读 | MD 自称「当前态单写」设计参考，却缺了角色切换/授权窗口整节 → 读者按 MD 理解会以为「授权只能等用完」、也会以为 architect 可写范围仅限 `arch_paths` 命中目录（漏了治理面文件编辑权） |
 | 2026-11-05 | v2.2.0 | 新增「实施阶段的新发现」：builder 实施中发现的计划层 / 决策层问题**停下并路由**（`plan_drift` → planner / `design_drift` → architect / `blocked` → 交用户 / `noted` → 仅记录），kind 复用 rdd-workflow 既有词表；授权窗口新增 `builder → planner` / `builder → architect` 触发条件 | 两处规则真空：**A** 实施阶段没有「新发现」分类法 —— `implementation_gap`/`proposal_drift` 只服务验收阶段，实施中撞上设计错误/计划漏项时归哪类、回给谁、要不要停，原先无规定；**B** 窗口内自动切换清单只有 `builder→verifier` 等四条，实施中最该自动化的 `builder→architect`/`builder→planner` 不在其中 → 即使用户开了窗口也只能停下问用户。调研发现产品侧已有完整 backward feedback 通道（`rddf feedback add` + 5 种 kind + loop guard + 双读通道），故本批**不新造分类**，只补治理面的映射、停下义务、顺序（先落记录再切角色）与窗口触发条件 |
 | 2026-11-05 | v2.1.1 | 角色列表「固定审查者不受允许列限制」（修 architect 调不了自己 critic 的硬矛盾）+ 新增「调研委派协议」（explore/librarian 的必须/不必委托、一次一问、权限不扩权、材料不触发审查）+ 角色表结构完整性断言 | 分析发现两个缺口：**G1** architect 允许列未列 `critic` 而 §2.7 要求 oracle → critic 双审 → 权限表（上限）与配对表（下限）互相限制；**G2** 调研型 subagent 只有任务类型映射、无「何时必须/不必委托 / 一次一问 / 权限不扩权」，与审查型（oracle/critic/metis）的协议完备度差一个量级 → 现实里表现为「什么都先 explore 一遍」与「本该 explore 却自己 grep 十几轮」|
 | 2026-11-05 | v2.1.0 | architect 产出形态契约重构：新增**一次成稿流程**聚合块（4 步单点入口）+「ADR 完成的标志」（完成闭环）+ **arch 档审稿判据摘要内联** + 无样板默认骨架 + Verification 统一命名与 AC 映射接入 verifier | 此前 architect 的判据散在 11 处、跨约 380 行，每回合跨段拼接；只有「形态清单」没有「什么算写完」（Status 谁改、change 何时填、审稿报告谁写都没规定）；调 critic 时 build 不知道 arch 档查什么（critic 是被动审稿人），oracle 不可用时「四要素逐条」是形态不是判据；样板引用（ADR-091/089）在项目无样板时不可得；「Verification」一词双义且 ADR↔change 的 AC 断链 → verifier 消费不到 |

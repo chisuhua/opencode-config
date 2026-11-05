@@ -26,6 +26,7 @@ CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$CONFIG_DIR/scripts/arch-docs-init.sh"
 BUILD_MD="$CONFIG_DIR/prompts/build.md"
 CRITIC_MD="$CONFIG_DIR/prompts/critic.md"
+MD="$CONFIG_DIR/docs/MULTI-AGENT-DESIGN.md"
 CTX_MD="$CONFIG_DIR/prompts/context-builder.md"
 E2E_BED_DIR="${E2E_BED_DIR:-/workspace/main/rdd-workflow-e2e}"
 WORK_ROOT="${BATS_TEST_TMPDIR:-/tmp/opencode}/arch-docs-scope-verify.$$"
@@ -172,6 +173,20 @@ if [[ -n "$CLAUSE_LINE" && -n "$TABLE_LAST_LINE" && "$CLAUSE_LINE" -gt "$TABLE_L
 assert_file_contains "$BUILD_MD" "调研委派协议" "build.md 提供调研型 subagent 的委派前判断协议"
 # 防回流：旧的「planner/verifier 走自读」carve-out 措辞一旦回流，即与角色表形成第二套判据
 if grep -qE "走自读|自读或|调研走" "$BUILD_MD"; then bad "build.md 出现已废止的 carve-out 措辞（走自读/调研走）—— 与角色表形成第二套判据"; else ok "已废止 carve-out 措辞零命中（无第二套判据）"; fi
+
+# MD 投影完整性：§2.8 存在 + 关键锚点与 build.md 语义一致（只查存在性与措辞，防漂移）
+assert_file_contains "$MD" "### 2.8 角色切换与授权窗口" "MD 含角色切换章节（角色轴投影）"
+assert_file_contains "$MD" "auto_switch_window" "MD 投影含授权窗口字段"
+assert_file_contains "$MD" "窗口内的角色间自动切换都计入" "MD 投影含窗口轮次计数口径"
+assert_file_contains "$MD" "role.json" "MD 投影含状态文件路径"
+assert_file_contains "$MD" "以 build.md 为准" "MD 投影声明执行权威在 build.md"
+# 锁住「触发条件表漏行」类漂移：MD 的窗口触发条件必须 6 条 + 关键锚点齐全
+MD_TRIG_ROWS=$(awk '/^#### 2\.8\.4/{f=1} f && /^\| /{n++} f && /^$/{if(n) exit} END{print n+0}' "$MD")
+if [[ "$MD_TRIG_ROWS" -ge 6 ]]; then ok "MD 窗口触发条件表 ≥6 行（不漏行）"; else bad "MD 窗口触发条件表只有 $MD_TRIG_ROWS 行（疑似漏行）"; fi
+assert_file_contains "$MD" "关闭窗口" "MD 投影含关闭窗口机制"
+assert_file_contains "$MD" 'updated_by: "auto"' "MD 投影含自动切换的审计写入"
+assert_file_contains "$MD" "source: auto" "MD 投影含 auto 回合的开场报告标记"
+assert_file_contains "$MD" "~/.config/opencode/**" "MD 投影含 architect 的治理面编辑权"
 assert_file_contains "$BUILD_MD" "实施阶段的新发现" "build.md 定义实施中新发现的停下与路由"
 assert_file_contains "$BUILD_MD" "先落记录" "build.md 规定先落反馈记录再切角色"
 assert_file_contains "$BUILD_MD" "每一次窗口内的角色间自动切换都计入" "build.md 统一窗口内角色间自动切换的轮次计数"

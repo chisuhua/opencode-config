@@ -1,11 +1,13 @@
 # Multi-Agent 系统设计参考
 
-> **状态**: v2.2.0 (2026-11-05)
+> **状态**: v2.2.2 (2026-11-05)
 > **范围**: `~/.config/opencode/` 用户配置级 multi-agent orchestration
 > **下游**: `opencode.jsonc`（符号链接 → `opencode.jsonc.openstarry`）+ `prompts/*.md` + `commands/*.md` + `scripts/*.sh`
 
 本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
 
+> **本版（v2.2.2）变更**：新增 §2.8「角色切换与授权窗口」—— 补上**角色轴（persona）**在本文档的结构性缺口（此前只存在于 `prompts/build.md`）：角色一览 / `role.json` 状态文件 / 切换策略 / 授权窗口三条件与触发条件 / 实施阶段新发现回环；同时显式区分**三个轴**（agent 轴 / 角色轴 / tool 权限轴），避免跨轴误读。
+>
 > **本版（v2.2.0）变更**：新增「实施阶段的新发现」处置 —— builder 实施中发现的计划层 / 决策层问题**停下并路由**（`plan_drift` → planner / `design_drift` → architect / `blocked` → 交用户），**先落 feedback 记录再切角色**；分类复用 rdd-workflow 既有 kind（`needs-revision` / `ac-fail` / `blocked` / `noted`），不新造；授权窗口新增 `builder → planner` / `builder → architect` 两条触发条件（须用户显式把角色写进 `roles`），并统一「每次窗口内自动切换都计入 `used`」。
 >
 > **本版（v2.1.1）变更**：`prompts/build.md` 的**角色列表表**「允许」列只列**自由裁量**工具，**固定审查者（流程义务）不受其限制**（`no-role` 除外；§3.1 的 agent 矩阵 ❌ 不在豁免范围）—— 此前 architect 的允许列未列 `critic`，与 §2.7 要求的 oracle → critic 双审冲突；`prompts/build.md` 新增「调研委派协议」（`explore`/`librarian` 的必须委托 / 不必委托 / 一次一问 / 权限不扩权 / 材料不触发审查），场景对照仍以 §3.2 为准、执行口径以 build.md 为准。
@@ -305,6 +307,112 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 **与 rdd-workflow 的关系**：`verifier` 是角色，`rdd-verifier` 是可选 skill —— 「builder 依赖 verifier 审查」在**没装 rdd-workflow 时也成立**（走「verifier 产出契约」的本地验收 1–5 步）；装了且前置满足时才走 `rdd-verifier` skill 的 AC 验证协议。同理 `metis` / `oracle` / `critic` 是 opencode subagent，与 rdd-workflow 无关。
 
 ---
+
+### 2.8 角色切换与授权窗口（v2.2.2 新增）
+
+**本节讲的是「角色轴」**——build agent **内部**的权限视角。三个轴互不相干，读文档时先分清：
+
+| 轴 | 是什么 | 本文位置 |
+|---|---|---|
+| agent 轴 | 10 个独立 agent（build / plan / explore / librarian / oracle / metis / critic / context-builder / general / title） | §2.1–§2.3、§3 委派拓扑 |
+| **角色轴（persona）** | build agent 内部的权限视角：`architect` / `planner` / `builder` / `verifier` / `no-role` / `general` | **本节** |
+| tool 权限轴 | OpenCode 三层 permission（read / edit / bash / MCP…） | §4 权限模型 |
+
+> **同名消歧**：`general` 在 agent 轴（§3 的独立 subagent，不可被任何 agent 调）与角色轴（§2.8.1 的 build 内部角色）**同名但不同物**；同理 `plan`（agent）与 `planner`（角色）不是一回事。
+
+> 角色轴此前只存在于 `prompts/build.md`，本文档缺席 —— 本节补上**人类可读投影**。
+> **完整规则以 `prompts/build.md` 为准**（执行权威）；本节与它冲突时以 build.md 为准。
+
+#### 2.8.1 角色一览
+
+| 角色 | 职责 | 固定审查者 | 调研类 subagent | 权限边界要点 |
+|---|---|---|---|---|
+| `architect` | 写 `arch_paths` 命中的架构文档（ADR / 主题文档）；产出形态契约见 §2.5；**编辑治理面文件 `~/.config/opencode/**`**（与项目级 `arch_paths` 无关）| `oracle` → `critic` | `explore` / `oracle` / `librarian` / `metis` | 不改 `src/**`、不创建 openspec change、不写 `.rddf/plans/**` |
+| `planner` | 写 roadmap / improvement 草稿、起草 proposal；`metis` 做 gap 分析 | `metis` | `explore` / `librarian`（只读调研；架构取舍归 architect） | 不改 `src/**`、不写 `design.md` / `tasks.md` |
+| `builder` | 全部实施（openspec change、代码、测试、commit） | `verifier`（角色内建）+ `critic`（仅架构面） | 全部 subagent | 单方面改**已签批 ADR 的决策内容**被禁（变更决策需切 `architect`） |
+| `verifier` | 验收（只验不改）：判据逐条有工具证据、边界与遗留清扫 | —（自审） | `explore`（定位 AC 指向的实现 / 测试） | 不改实现、不重构、不做实施类 commit |
+| `no-role` | 仅读 + 轻量讨论 + 询问用户角色 | — | `explore` / `librarian`（只读调研） | 一切 edit、改仓库状态的 shell、创建 openspec change、调写类 subagent 全禁 |
+| `general` | 通用读写（不限角色） | — | 全部 | 无额外禁止 |
+
+> 逐角色的「允许 / 禁止 / 开场报告模板」六列表在 `prompts/build.md` 的「角色列表」；本表只给读文档时的定位视角。
+
+#### 2.8.2 状态文件
+
+`<cwd>/.rddf/state/role.json`（schema `role-v1`）：
+
+| 字段 | 含义 |
+|---|---|
+| `current_role` | 当前角色（合法值见上表） |
+| `updated_at` / `updated_by` | 更新时间 / 来源（`user` / `auto`） |
+| `session_id` | 会话标识 |
+| `auto_switch_window` | 授权窗口（见 2.8.4），无窗口时为 `null` |
+| `history[]` | 切换历史（**上限 20 条**，超出丢最旧） |
+
+- **项目级优先**：`<cwd>/.rddf/state/role.json`；不存在时读全局 `~/.rddf/state/role.json`（**只作 fallback**）；两者都没有 → `general`。
+- **cwd 变更必须重解析**（进 worktree / `session_move` / 换仓 → 项目级文件可能不同，不得沿用上一轮缓存）。
+- **异常值处理**：`current_role` 不在合法集合内或 JSON 解析失败 → 按 `no-role` 处理并提示修复（**不静默降级为 `general`**，那会放大权限）。
+- `role.json` 是**个人状态**，不应进版本库（本仓用 `.git/info/exclude` 排除）。
+
+#### 2.8.3 切换策略（默认用户驱动）
+
+- **触发口令**：「切换到 X」「进入 X 阶段」「以 X 角色工作」「set role to X」；合法值仅上表 6 个，其它值拒绝并列出合法值。
+- **收到口令后**：校验合法性 → 更新项目级 `role.json`（`updated_by: "user"`，追加 `history`）→ **先输出新角色的开场报告**，再处理用户请求。
+- **窗口内自动切换的回合**：开场报告标 `【角色: X | source: auto | window: <used>/<max_rounds>】`，让人一眼看出是窗口内自动切的。
+- **默认不自动切换**：无窗口时**不得根据上下文推测切换**（即使上下文强烈暗示是 builder 阶段）；可以**提议**（"验收发现 3 项失败，需回 builder 修复，是否切换？"），但不能直接切。
+- **切换不追溯**：已完成的动作不回滚；跨角色任务在响应里说明「接下来以 X 角色继续」。
+- **退出**：「退出角色」「reset role」「no role」→ 切回 `no-role` 并清空 `auto_switch_window`。
+
+#### 2.8.4 授权窗口（用户显式授权后才有的窗口内自治）
+
+用户在切换口令里附带授权即可开启：
+
+```
+切换到 builder，允许在 builder ↔ verifier 之间自动切换，最多 3 轮
+```
+
+写入 `role.json` 的 `auto_switch_window`：
+
+```json
+{
+  "roles": ["builder", "verifier"],
+  "max_rounds": 3,
+  "used": 0,
+  "granted_by": "user",
+  "granted_at": "<ISO 8601 UTC>"
+}
+```
+
+**窗口内自动切换必须同时满足（权威源列 4 条，此处完整投影）**：① 目标角色在 `window.roles` 内（**窗口外一律停下问用户**）；② `window.used < window.max_rounds`；③ 有明确触发条件，不是「感觉该切了」；④ 每次自动切换写 `updated_by: "auto"`，`history` 追加 `{role, at, by: "auto", reason}`。
+
+| 触发 | 条件 |
+|---|---|
+| `builder → verifier` | 改动完成且自查通过（满足「质量下限」的完成判据） |
+| `builder → planner` | 实施中发现 `plan_drift`（需改 plan / AC / tasks）—— planner 须在窗口内 |
+| `builder → architect` | 实施中发现 `design_drift`（需改已签批 ADR 的决策）—— architect 须在窗口内 |
+| `verifier → builder` | 验收失败且分类为 `implementation_gap` |
+| `verifier → planner` | 验收失败且分类为 `proposal_drift`（planner 须在窗口内） |
+| 任意 → `no-role` | 任务结束，同时清空窗口（**不计入 `used`**） |
+
+- **每一次窗口内的角色间自动切换都计入 `used += 1`** —— 否则窗口上限形同虚设。
+- **窗口耗尽**（`used >= max_rounds`）→ 不再自动切回，输出 halted 报告（失败项 + 证据 + 已用轮次）交用户裁决。
+- **关闭窗口**：「关闭窗口」「取消自动切换」→ `auto_switch_window: null`，回到**完全用户驱动**（不必等用完）。
+- **要让 builder 实施中自动回环到 planner / architect，必须由用户把这两个角色写进 `roles`**（上面的示例只含 builder ↔ verifier）—— 窗口内自动切换**仅限** `plan_drift` / `design_drift` 两类触发，不得挪作其他理由。
+- **双重保险**：窗口 `max_rounds`（治理面）与产品侧 loop guard（`max_revisions`，默认 3）任一先触发即**升级人工**。
+
+#### 2.8.5 实施阶段的新发现与回环（v2.2.0 新增）
+
+builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由**（不得默默改计划，也不得按错计划继续实现）：
+
+| 情形 | 停下义务 | 路由 | 落点（增强层） |
+|---|---|---|---|
+| 计划对、实现漏 | 不停，自己补 | 不切角色 | 不外传 |
+| `plan_drift`（需改 plan / AC / tasks） | 停该 change 的**剩余 task** | planner | `rddf feedback add <proposal> --from rdd-builder --kind needs-revision` |
+| `design_drift`（需改已签批 ADR 决策） | 停**整个** change | architect | `… --kind ac-fail --ref-change <change>`（落 improvement 文件 `## Feedback` 段） |
+| `blocked`（缺输入 / 凭据 / 用户决策） | 停 | 交用户（不切角色） | `… --kind blocked` |
+| `noted`（观察项） | 不停 | 不切角色 | `… --kind noted` |
+
+**先落记录 → 再切角色 / 交用户**（切换会丢原上下文，而 feedback 通道正是上游的读入口）。分类**复用 rdd-workflow 既有 kind**，不新造；细则与判据见 `prompts/build.md` 的「实施阶段的新发现」。
+
 
 ## 3. 委派拓扑
 
@@ -782,6 +890,7 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 | `capabilities` 字段被接受；`title` / `context-builder.hidden` 生效 | ✅ 0 错误 0 警告 |
 | `plan` / `oracle` 不含 `temperature`（模型不支持该参数） | ✅ |
 | 角色矩阵移出 `AGENTS.md` 后 build prompt 仍完整 | ✅ |
+| 角色切换 / 授权窗口机制（§2.8）| ⚠️ 规则已实现（prompt 级，权威在 `prompts/build.md`），**未在真实 session 做运行时验证** |
 | provider 模型 id 与上游一致（`opencode models` 核对） | ✅ `mimo-v2.5-pro` / `deepseek-v4.1-flash` / `kimi-k2.6` 均存在 |
 | 备份文件全部进 `.gitignore`，明文 API key 已隔离出索引 | ✅（key 本身仍需轮换） |
 | `deepseek-v4.1-flash` 工具调用 + 210,074 token 输入 | ✅ 接受 → 声明的 262,144 有实测支撑 |
