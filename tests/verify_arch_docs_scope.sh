@@ -170,6 +170,8 @@ CLAUSE_LINE=$(grep -n "固定审查者不受" "$BUILD_MD" | head -1 | cut -d: -f
 TABLE_LAST_LINE=$(grep -n "^| \`general\`" "$BUILD_MD" | head -1 | cut -d: -f1)
 if [[ -n "$CLAUSE_LINE" && -n "$TABLE_LAST_LINE" && "$CLAUSE_LINE" -gt "$TABLE_LAST_LINE" ]]; then ok "固定审查者条款位于角色表之后"; else bad "固定审查者条款位置异常（行 $CLAUSE_LINE vs 表尾 $TABLE_LAST_LINE）"; fi
 assert_file_contains "$BUILD_MD" "调研委派协议" "build.md 提供调研型 subagent 的委派前判断协议"
+# 防回流：旧的「planner/verifier 走自读」carve-out 措辞一旦回流，即与角色表形成第二套判据
+if grep -qE "走自读|自读或|调研走" "$BUILD_MD"; then bad "build.md 出现已废止的 carve-out 措辞（走自读/调研走）—— 与角色表形成第二套判据"; else ok "已废止 carve-out 措辞零命中（无第二套判据）"; fi
 assert_file_contains "$BUILD_MD" "实施阶段的新发现" "build.md 定义实施中新发现的停下与路由"
 assert_file_contains "$BUILD_MD" "先落记录" "build.md 规定先落反馈记录再切角色"
 assert_file_contains "$BUILD_MD" "每一次窗口内的角色间自动切换都计入" "build.md 统一窗口内角色间自动切换的轮次计数"
@@ -190,6 +192,29 @@ fi
 CRITIC_BLOCKER_N=$(awk '/^### arch — BLOCKER 只有四类/{f=1;next} /^### arch — SHOULD_FIX/{f=0} f && /^[0-9]+\. /{c++} END{print c+0}' "$CRITIC_MD")
 CRITIC_SHOULDFIX_N=$(awk '/^### arch — SHOULD_FIX/{f=1;next} /^\*\*边界与去重/{f=0} f && /^- \*\*/{c++} END{print c+0}' "$CRITIC_MD")
 if [[ "$CRITIC_BLOCKER_N" == "4" ]]; then ok "critic.md arch 档 BLOCKER 仍是 4 类"; else bad "critic.md arch 档 BLOCKER 条数变了（$CRITIC_BLOCKER_N ≠ 4）——内联摘要需同步"; fi
+
+# 语义级防漂移：critic.md 的每条判据 ↔ build.md 内联摘要的对应措辞（两侧都要命中）。
+# critic.md 改判据措辞 → 本表必须同步更新，否则断言失败（这正是要抓的漂移）。
+SEM_MAP=$(cat <<'EOM'
+与已签批 ADR 冲突|与已签批 ADR 冲突
+决策缺备选方案|决策缺备选方案
+自相矛盾|自相矛盾
+未决问题写成已决|未决问题写成已决
+决策陈述被稀释|决策陈述被稀释
+过程日志混入|过程日志混入
+缺后果章|缺独立「后果 / 代价」章
+Verification 只写实测日志|Verification 只写实测日志
+元数据头膨胀|元数据头膨胀
+一文档多决策|一篇 ADR 承载多个独立决策点
+EOM
+)
+SEM_FAIL=0
+while IFS='|' read -r c_src c_dst; do
+  [[ -z "$c_src" ]] && continue
+  if ! grep -qF -- "$c_src" "$CRITIC_MD"; then bad "critic.md 已无判据措辞「$c_src」——语义对应表需同步（内联摘要可能已漂移）"; SEM_FAIL=1; continue; fi
+  if ! grep -qF -- "$c_dst" "$BUILD_MD"; then bad "build.md 内联摘要缺「$c_dst」（对应 critic.md 的「$c_src」）"; SEM_FAIL=1; fi
+done <<< "$SEM_MAP"
+[[ "$SEM_FAIL" == "0" ]] && ok "内联摘要 ↔ critic.md 原始判据语义对应（10/10）"
 if [[ "$CRITIC_SHOULDFIX_N" == "6" ]]; then ok "critic.md arch 档 SHOULD_FIX 仍是 6 类"; else bad "critic.md arch 档 SHOULD_FIX 条数变了（$CRITIC_SHOULDFIX_N ≠ 6）——内联摘要需同步"; fi
 assert_file_contains "$BUILD_MD" "BLOCKER 四类" "内联摘要声明 BLOCKER 四类（与 critic.md 对齐）"
 assert_file_contains "$BUILD_MD" "SHOULD_FIX 六类" "内联摘要声明 SHOULD_FIX 六类（与 critic.md 对齐）"
