@@ -30,3 +30,5 @@ skills.disable/
 
 # 误重定向产物（`> ~` 生成），非配置文件
 /~
+# 双 session 运行时状态（pair 登记表：活的 session id，非版本化）
+.rddf/state/pair.json
