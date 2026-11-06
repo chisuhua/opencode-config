@@ -303,6 +303,8 @@ front 用 `cat /etc/passwd` **成功执行**（泄漏内容）。
 
 ### 6.1 五条不可破坏的不变量
 
+> 扩展前先读 §6.9「opencode 升级维护清单」——宿主升级会改变插件 API 与配置 schema 的语义。
+
 破坏任何一条都会让"权限层强制"退化成"prompt 承诺"：
 
 1. **单一工程出口**：一切工程行动只能经 `delegate`。不要给 front 加第二个出口。
@@ -421,9 +423,104 @@ await ctx.tool.transform((editor: any) => {
 - [ ] 使用手册 / 测试文档同步；ADR 记录新的边界取舍
 - [ ] 没有把范围外的改动夹带进来（例：顺手刷新的 lockfile）
 
+### 6.9 opencode 升级维护清单
+
+宿主（opencode CLI）会升级，本仓库不会 —— 但**插件 API 与配置 schema 都由宿主定义**，所以升级会打到我们。
+本节是升级的完整操作手册。
+
+#### 6.9.1 先认清「什么会被升级、什么不会」
+
+| 对象 | 路径 | 升级影响 |
+|---|---|---|
+| CLI 二进制 | `~/.opencode/bin/opencode`（curl-install 路径） | **被替换** ← 唯一被升级的东西 |
+| 宿主注入的插件 SDK | `~/.opencode/node_modules/@opencode-ai/plugin`（随二进制分发） | **随宿主变化**（本机实测 1.19.0） |
+| 治理面 | `~/.config/opencode`（配置 / prompt / 插件 / 文档 / 状态） | **不受影响** |
+| 源码 checkout | `/workspace/project/opencode` | **不受影响**（updater 只处理已安装二进制；检测到 source checkout 会跳过） |
+
+三条要记住的事实：
+
+1. `opencode upgrade` **只替换二进制**，不动 config / state / data；
+2. 自动更新策略默认 `notify`（只通知不自动换）——本仓库 `opencode.jsonc` 未设 `autoupdate` → 升级不会悄悄发生；
+3. **源码 checkout 不是「已部署版本」**，它只是只读参考快照；治理仓 `package.json` 里钉的
+   `@opencode-ai/plugin` 版本对本地 `.ts` 插件**不生效**（插件的 `@opencode/plugin` 由宿主注入）
+   → 以宿主 bundle 的版本为准。
+
+#### 6.9.2 升级前
+
+```bash
+opencode --version                      # 记下当前版本（回滚要用）
+cd ~/.config/opencode && git status     # 必须干净；有未提交改动先提交
+cp ~/.opencode/bin/opencode ~/.opencode/bin/opencode.bak-$(opencode --version)   # 备份二进制
+```
+
+- **备份二进制是唯一的回滚手段**（升级是就地替换）；
+- 治理面的改动都在 git 里 → 配置侧回滚 = `git checkout`；
+- 确认没有关键任务在跑（升级后必须重启服务才能生效）。
+
+#### 6.9.3 升级动作
+
+```bash
+opencode upgrade                 # 最新版
+opencode upgrade v2.2.5          # 指定版本（回滚也用它）
+opencode service restart         # 让新二进制生效（服务是常驻进程）
+```
+
+#### 6.9.4 升级后回归清单（按顺序，约 1 分钟）
+
+| # | 命令 | 期望 | 不满足时 |
+|---|---|---|---|
+| 1 | `opencode --version` | 新版本 | — |
+| 2 | `opencode debug config` | **无** `configuration normalization diagnostic` | 症状 A |
+| 3 | `opencode debug agents` | agent 数量不变；front 的 `shell` 首条仍是 `deny`、全文无 `*→allow`；`delegate` 矩阵 front=`[{*,deny},{*,allow}]`、其余 agent 仅 `[{*,deny}]` | 症状 B / C |
+| 4 | `opencode plugin list` | `front-delegate` 在列；日志无 `failed to load plugin` | 症状 A |
+| 5 | `cd ~/.config/opencode && bun test tests/` | 63 pass | 症状 D |
+| 6 | `opencode run --agent front "在 /tmp/opencode/engproj 里新建 smoke.txt，内容 ok"` | 文件被真实写出 | 症状 E |
+| 7 | `opencode debug agents` 的 agent 数量 | 与升级前一致（防止 agent 被静默丢弃） | 症状 A |
+
+> 第 3 / 7 项要**对比升级前基线**：升级前先存一份 `opencode debug agents > /tmp/agents-before.json`，升级后 diff。
+
+#### 6.9.5 症状 → 定位
+
+| 症状 | 最可能的原因 | 定位动作 |
+|---|---|---|
+| **A.** `ServiceUnavailableError: Location plugins did not finish activating`；或**某个 agent 整个消失** | ① 插件 API 漂移（宿主换版本）② 配置 schema 漂移（V1 → V2 迁移） | 先 `opencode --print-logs ...` 看 `failed to load plugin` / `errors building`；再 `opencode debug config` 看 `skipped malformed recognized value`（配置被丢弃） |
+| **B.** front 的 shell 规则变化（冒出 `*→allow`） | 权限归一化语义变化（last-match-wins 实现或 V1 对象式解码顺序变化） | 对比升级前后的 `debug agents` JSON；必要时把 front 的 shell 块改成**原生数组式**（顺序显式，见 §4.2） |
+| **C.** `delegate` 工具不见了 | 门控 action 解析变化，或 `options.permission` 语义变化 | `opencode plugin list` + `debug agents` 看 `delegate` 规则是否还在 |
+| **D.** `bun test` 挂 | 宿主 SDK 类型 / 行为变化 | 看失败断言是**类型层面**（宿主 API 变了）还是**逻辑层面**（我们的代码错了） |
+| **E.** 真实委托不工作但单测全绿 | 宿主接线变了（`ctx.session.*` 语义） | 假 ctx 与真实宿主的差异（见 [测试文档 §6](./front-delegate-testing.md)）→ 补一条真实运行时的断言 |
+
+#### 6.9.6 回滚
+
+```bash
+# 最快：用备份二进制覆盖回去
+cp ~/.opencode/bin/opencode.bak-<版本> ~/.opencode/bin/opencode && opencode service restart
+# 或指定旧版本重装
+opencode upgrade v<旧版本> && opencode service restart
+# 配置侧（独立于二进制）
+cd ~/.config/opencode && git checkout <上一个 commit>
+```
+
+#### 6.9.7 升级后要同步的文档
+
+- 本文的**上游行号引用**（§4.2、§10.2）会漂移 → 升级后重新核对
+  （源码在 `/workspace/project/opencode`，但那是**旧快照**，需 `git fetch && git checkout <新 tag>` 再核对）；
+- [测试文档](./front-delegate-testing.md) §8 的运行时验证清单保持有效（它就是升级后回归的最小集）；
+- 若宿主 API 变了 → 改 `lib/delegate-core.ts` 的适配层，并重跑 §6.8 的 DoD。
+
+#### 6.9.8 不要做的事
+
+- 不要把 `/workspace/project/opencode` 当成「当前运行的版本」——它是只读参考快照，
+  版本字段（2.1.2）与已装二进制（2.2.5）本就不一致；
+- 不要用本地构建覆盖 `~/.opencode/bin/opencode`（会被 `opencode upgrade` 覆盖）。
+  真要改上游：fork + 独立二进制 + `bun run dev` 跑开发版，把补丁维护成本显式记进 backlog；
+- 不要依赖治理仓 `package.json` 里钉的 `@opencode-ai/plugin` 版本（宿主注入，本地 pin 不生效）
+  ——以 `~/.opencode/node_modules/@opencode-ai/plugin/package.json` 为准。
+
 ---
 
 ## 7. 已知陷阱手册（全部实测踩过）
+
+> **升级相关的症状**（插件加载失败、agent 消失、权限矩阵漂移）见 §6.9.5 的症状表。
 
 | # | 陷阱 | 现象 | 正解 |
 |---|---|---|---|
@@ -452,6 +549,10 @@ await ctx.tool.transform((editor: any) => {
 # 服务
 opencode service status
 opencode service restart
+
+# 升级（详见 §6.9：升级前备份二进制，升级后跑 §6.9.4 的 7 条回归）
+opencode --version
+opencode upgrade                 # 指定版本：opencode upgrade v2.2.5
 
 # 插件与权限
 opencode plugin list
