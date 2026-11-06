@@ -215,6 +215,7 @@ opencode run --agent plan "列出你可用的工具名，若有 delegate 请说�
 |---|---|
 | [tests/README.md](../tests/README.md) | 本目录的速查版（覆盖范围、fixture、与真实运行时的关系） |
 | [front-delegate-usage.md](./front-delegate-usage.md) | 使用手册 |
+| [front-delegate-architecture.md](./front-delegate-architecture.md) | 开发者架构文档（扩展前必读）|
 | [dual-session-delegation.md](./dual-session-delegation.md) | 架构与排障 |
 | 探针报告 `.rddf/reviews/front-agent-redesign-p0-probes.md` | 4 项前置探针 + 5 项计划外发现（含代答的 location 边界） |
 | 验收报告 `.rddf/reviews/front-agent-redesign-acceptance.md` | 逐条判定（PASS/PARTIAL/未测）与复现命令 |

@@ -241,6 +241,7 @@ front 从该工程的 `pair.json` 找到登记的工程 session，续接它（`r
 
 | 文档 | 内容 |
 |---|---|
+| [front-delegate-architecture.md](./front-delegate-architecture.md) | **开发者架构文档**：全图、机制根因、开放指南、陷阱手册 |
 | [dual-session-delegation.md](./dual-session-delegation.md) | 架构、brief 模板、权限边界、排障 |
 | [front-delegate-testing.md](./front-delegate-testing.md) | **测试文档**：怎么跑测试、覆盖矩阵、新增测试的写法 |
 | [MULTI-AGENT-DESIGN.md](./MULTI-AGENT-DESIGN.md) | 全部 agent 的角色、权限对比、委派拓扑 |

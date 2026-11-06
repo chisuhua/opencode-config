@@ -162,6 +162,7 @@ cd ~/.config/opencode && bun test tests/     # 63 项单元测试，不依赖 op
 
 ## 8. 相关文档
 
+- **开发者架构文档**：[front-delegate-architecture.md](./front-delegate-architecture.md)（全图 / 机制根因 / 开放指南 / 陷阱手册）
 - **使用手册**：[front-delegate-usage.md](./front-delegate-usage.md)（面向使用者：怎么用、结果怎么读、排障）
 - **测试文档**：[front-delegate-testing.md](./front-delegate-testing.md)（面向改代码的人：怎么跑、覆盖矩阵、新增测试的写法）
 - 架构决策：`.rddf/state/adr-front-agent-redesign.md`
