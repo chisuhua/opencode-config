@@ -1,5 +1,11 @@
 # 验收报告：front-knowledge-capability（builder 实施提交 c81af29）
 
+> ⚠️ **本报告已被取代**（2026-11-09）：本报告写于「真实运行时 E2E 尚未执行」的阶段，其结论
+> 「3 项运行时强制判据**阻塞**，需 `opencode service restart` 后复验」**已过时**——E2E 已落地并实跑通过
+> （`/workspace/main/rdd-workflow-e2e`，15/15，真实模型 + 真实宿主）。
+> **现行验收结论见 [front-knowledge-capability-acceptance.md](./front-knowledge-capability-acceptance.md)**（AC1–AC31 全通过，第 2 轮）。
+> 本报告保留作为历史记录。
+
 - 日期：2026-11-08
 - 验收角色：verifier（只验不改）
 - 对象：commit `c81af29`（feat(front): front 获得知识获取能力）

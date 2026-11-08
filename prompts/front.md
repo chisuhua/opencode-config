@@ -92,6 +92,7 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 | `<工程>/openspec/changes/*/tasks.md` | 各 change 的勾选进度 |
 | `<工程>/.rddf/reviews/*.md` | 最近一次审稿/验收报告的日期与结论 |
 | `<工程>/.rddf/state/pair.json` | 已登记的工程 session（可续接的目标） |
+| `<工程>/.rddf/state/ledger.jsonl` | **委托历史账本**（每行一次委托，含 `recorded_at` / `outcome` / `host_outcome` / 证据字段）——回答"以前做过什么"时读它 |
 
 文件不存在 → 记为"未知"，**不要猜**。
 

@@ -19,6 +19,7 @@ bun test tests/delegate-tool.test.ts   # 假 ctx 端到端
 
 | 文件 | 覆盖 |
 |---|---|
+| `config-guards.test.ts` | **守卫漂移检测**：五个只读 agent 的 shell 规则 == `scripts/agent-guard-rules.ts` 真源（含顺序）、D3.1 首参形态齐备、librarian clone 目标收敛顺序、deny-first、`front.subagent` 首条 `*: deny` + 五 allow 且不含 general/plan/build |
 | `delegate-core.test.ts` | brief 六必填校验、**agent 白名单与 kind 推导**、grants 白名单（question/form/edit/write 永不可 grant）、**知识 session 的 scope/grants 约束**、scope→edit 规则（含文件型 scope 的 `x` 与 `x/*`）、常量 deny 集与**规则顺序即策略**、阻断提取（两种形态）、消息工具、越界判定、项目识别（git / 非 git）、pair-v2 与 role 分区登记（**knowledge 不写 role**）、**ledger 追加与脱敏截断**、**交付面证据 summarizeDelivery（含真实失败会话回归夹具）**、目录锁并发、简报文本组装 |
 | `delegate-tool.test.ts` | 工具契约（权限 action / 输入 schema）、端到端主链路（建 session → 权限定型 → 简报投递 → 结果回传 → pair/role 登记）、**agent 白名单（含 resume 绕过）**、**知识 session 只读语义**、**ledger 行产生时机（正常 / busy / 校验失败）**、**静默失败检测（outcome=unverified / host_outcome / 时间窗 / 仍在跑不判定 / 知识 session 与 shell 写盘不误报）**、grants preflight、非法 grants 在建 session 前被拒、续接不新建、未登记 id 被拒、busy 不排队、blocked_reason 回传、越界文件可见、remove |
 

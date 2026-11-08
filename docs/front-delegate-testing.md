@@ -19,9 +19,11 @@
 ```bash
 cd ~/.config/opencode
 
-bun test tests/                          # 全部（当前 63 项，约 4 秒）
-bun test tests/delegate-core.test.ts     # 纯逻辑（51 项）
-bun test tests/delegate-tool.test.ts     # 假 ctx 端到端（12 项）
+bun test tests/                          # 全部（当前 154 项，约 4 秒）
+bun test tests/delegate-core.test.ts     # 纯逻辑（76 项）
+bun test tests/delegate-tool.test.ts     # 假 ctx 端到端（35 项）
+bun test tests/config-guards.test.ts     # 守卫漂移检测（10 项）
+bun test tests/model-fallback-core.test.ts # 模型降级链内核（33 项）
 
 npm test                                 # 等价（package.json 被 .gitignore 忽略，仅本地便利）
 ```
@@ -37,6 +39,9 @@ lib/delegate-core.ts          纯逻辑内核 + 工具定义工厂（无 opencod
 plugins/delegate.ts           插件壳：只把工具注册进 opencode 的工具表（11 行）
 tests/delegate-core.test.ts   纯逻辑单元测试
 tests/delegate-tool.test.ts   假 ctx 端到端单元测试
+tests/config-guards.test.ts   守卫漂移检测（配置 == scripts/agent-guard-rules.ts 真源）
+tests/model-fallback-core.test.ts 模型降级链内核单元测试
+tests/fixtures/               真实会话回归夹具（如 no-work 形状）
 tests/README.md               本目录的说明（覆盖范围、fixture 约定、与真实运行时的关系）
 ```
 
