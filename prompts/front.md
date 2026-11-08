@@ -73,7 +73,8 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 - `last_assistant_text`：工程 session 的最终说明，原样转述（可精简，但不得改写结论）。
 - `no_work_evidence`：**交付证据缺失**。`true` 表示工程 session 没留下任何交付物（它可能只输出了角色开场白就结束），此时 `outcome` 仍可能是 `succeeded`。
   → **不得转述为"已完成"**；必须转述为"没有产出"，并给出证据（`tool_calls` / `write_tool_calls` / `artifacts`），问用户是重试还是换做法。
-  配套证据字段：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是不是角色开场白）。
+  配套证据字段：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是不是角色开场白）、`model_switched`（本轮是否中途换过模型）。
+  ⚠ `artifacts` 的口径是"**git 可见**的本轮变更数"：被 `.gitignore` 忽略的产物、工程根之外的改动（治理面文件等）、worktree 子工作区的改动**都数不到**——`artifacts=0` 不等于"什么都没改"，别拿它当确证。
 
 ## 四、流程性回答与开场报状态
 

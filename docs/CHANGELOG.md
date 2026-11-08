@@ -9,6 +9,16 @@
 ## 版本变更摘要
 
 > **v2.6 变更摘要（2026-11-09）**：**静默失败检测** —— 宿主说 succeeded ≠ 工程 session 真的交付了东西。
+> ① **缺陷来源**：E2E 实跑中发现，工程 session 在模型于 run 中途被切换后重来时，可能只读了 role.json 就输出角色开场白并 idle；宿主仍把该 run 记为 `succeeded` → delegate 回传 `succeeded` + `changed_files: []`，front 遂向用户转述"已完成"，而实际什么都没产出。
+> ② delegate 回传**交付面证据**：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数：`edit`/`write`/`patch`/`apply_patch`/`multiedit`；**shell 不算**，无法从命令文本判定落盘）、`artifacts`（本次产生的文件变更数，**git 可见口径**：被忽略 / 工程根外 / worktree 内的改动数不到）、`final_is_role_opening`（最后一条文本是否停在角色开场白）、`model_switched`（本轮是否中途换过模型 —— **根因信号**，宿主消息 `type == "model-switched"`，不依赖任何文本格式），以及判定结果 `no_work_evidence`。
+> ③ 判定规则：`no_work_evidence = (final_is_role_opening || model_switched > 0) && write_tool_calls === 0 && artifacts === 0`。**只看本轮消息**（`sliceRoundMessages`，按 baseline 切片）——否则 resume 时上一轮的写盘调用会掩盖本轮零交付。**只对 `kind=engineering` 判定**（知识 session 的产物本就是"回答"，通常零工具调用，套用会误报）。
+> ④ **`outcome` 枚举不变**（仍是宿主视角的 `succeeded`）："没交付"由 `no_work_evidence` 单独表达，不改既有契约；front 契约同步（`prompts/front.md`）：`no_work_evidence=true` 时**不得转述为"已完成"**，必须转述"没有产出"并给出证据数、问用户重试还是换做法；§五 禁止事项新增一条。
+> ⑤ ledger 行增记 `no_work_evidence` / `tool_calls` / `write_tool_calls` / `final_is_role_opening` / `model_switched`（审计可追溯）。
+> ⑥ 判定逻辑集中在 `lib/delegate-core.ts::summarizeDelivery`（纯函数，可单测）；回归夹具 `tests/fixtures/real-no-work-session.json`（真实失败会话实录，回放 → `no_work_evidence=true`）。
+> ⑦ 验证：单测 **143 pass**（新增 19 条）；E2E **15/15 ok**，L2-3 增断言（真实交付不得被误判：`no_work_evidence=false` 且 `write_tool_calls ≥ 1`）。
+> ⑧ **已知缺口（待 architect 决策）**：目前"没交付"只由 `no_work_evidence` 标志位表达，防御**依赖 front 遵守 prompt**——不遵守的消费者读 `outcome=succeeded` 仍会误报。机读化方案（新增 `outcome="unverified"` + ledger 保留 `host_outcome`）属契约变更，未擅自实施。
+
+> **v2.6 变更摘要（2026-11-09）**：**静默失败检测** —— 宿主说 succeeded ≠ 工程 session 真的交付了东西。
 > ① **缺陷来源**：E2E 实跑中发现，工程 session 在模型于 run 中途被切换后重来时，可能只输出角色开场白就 idle；宿主仍把该 run 记为 `succeeded` → delegate 回传 `succeeded` + `changed_files: []`，front 遂向用户转述"已完成"，而实际什么都没产出。
 > ② delegate 回传**交付面证据**：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数：`edit`/`write`/`patch`/`apply_patch`/`multiedit`；**shell 不算**，无法从命令文本判定落盘）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是否停在角色开场白），以及判定结果 `no_work_evidence`（停在开场白 **且**（无写盘调用 或 无产物））。
 > ③ **`outcome` 枚举不变**（仍是宿主视角的 `succeeded`）："没交付"由 `no_work_evidence` 单独表达，避免改动既有契约；**只对 `kind=engineering` 判定**——知识 session 的产物本就是"回答"（通常零工具调用），套用会误报。

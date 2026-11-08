@@ -72,8 +72,8 @@ type FakeOptions = {
   noActivity?: boolean
   /** 模拟 session.wait 抛错：必须落到 wait_error，而不是静默成功。 */
   waitThrows?: boolean
-  /** 覆盖工程 session 的最终 assistant 文本（默认 `已完成：<title>`）。 */
-  assistantText?: string
+  /** 覆盖工程 session 的最终 assistant 文本（默认 `已完成：<title>`）；可按轮次给不同文本。 */
+  assistantText?: string | ((round: number) => string)
 }
 
 function createFakeCtx(options: FakeOptions = {}) {
@@ -136,7 +136,15 @@ function createFakeCtx(options: FakeOptions = {}) {
           id: `msg_assistant_${session.prompts.length}`,
           type: "assistant",
           time: { created: Date.now() },
-          content: [{ type: "text", text: options.assistantText ?? `已完成：${session.title}` }],
+          content: [
+            {
+              type: "text",
+              text:
+                typeof options.assistantText === "function"
+                  ? options.assistantText(session.prompts.length)
+                  : (options.assistantText ?? `已完成：${session.title}`),
+            },
+          ],
         })
         session.outcome = "succeeded"
         session.idle = Date.now()
@@ -677,6 +685,64 @@ describe("交付面证据：静默失败检测（P0）", () => {
       .map((l) => JSON.parse(l))
     expect(rows.length).toBe(1)
     expect(rows[0].no_work_evidence).toBe(true)
+  })
+
+  test("resume：历史轮次的写盘调用不得掩盖本轮零交付（只看本轮窗口）", async () => {
+    const project = fixtureProject()
+    let round = 0
+    const { ctx } = createFakeCtx({
+      assistantText: (n) =>
+        n === 1 ? "## 执行结果\n已创建 first.txt" : "【角色: builder | source: state-file】我可实施代码修改。",
+      onPrompt: (session) => {
+        round++
+        if (round !== 1) return
+        writeFileSync(path.join(project, "tests/first.txt"), "# first\n")
+        session.messages.push({
+          id: "msg_tool_edit",
+          type: "assistant",
+          time: { created: Date.now() },
+          content: [{ type: "tool", name: "edit", state: { status: "completed" } }],
+        })
+      },
+    })
+    const first = await runDelegate(ctx, { ...BASE, project_dir: project })
+    expect(first.write_tool_calls).toBe(1)
+    expect(first.no_work_evidence).toBe(false)
+
+    // 第二轮 resume 同一 session：本轮只输出角色开场白，什么都没做
+    const second = await runDelegate(ctx, { ...BASE, project_dir: project, resume_session: first.session_id })
+    expect(second.write_tool_calls).toBe(0) // 本轮没有写盘调用（上一轮的不算）
+    expect(second.artifacts).toBe(0) // 本轮没有新产物
+    expect(second.no_work_evidence).toBe(true) // 本轮零交付必须报出来
+  })
+
+  test("run 中途换过模型（model-switched）+ 本轮零交付 → 报出来（不依赖文本格式）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({
+      // 最终文本**不是**角色开场白（换模型后的新模型可能说别的）
+      assistantText: "好的，我继续处理。",
+      onPrompt: (session) => {
+        session.messages.push({ id: "msg_switch", type: "model-switched", time: { created: Date.now() } })
+      },
+    })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    expect(summary.model_switched).toBe(1)
+    expect(summary.final_is_role_opening).toBe(false)
+    expect(summary.no_work_evidence).toBe(true)
+  })
+
+  test("用 shell 写盘（有产物）+ 最终文本是开场白 → 不得误报成没有产出", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({
+      assistantText: ROLE_OPENING,
+      onPrompt: (session) => {
+        writeFileSync(path.join(project, "tests/shell_wrote.txt"), "# via shell\n")
+      },
+    })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    expect(summary.write_tool_calls).toBe(0) // shell 不算写盘工具
+    expect(summary.artifacts).toBeGreaterThan(0) // 但产物在
+    expect(summary.no_work_evidence).toBe(false) // 有产物 → 不是"没有产出"
   })
 })
 

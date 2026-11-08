@@ -420,10 +420,13 @@ await ctx.tool.transform((editor: any) => {
   - **职责切分**：`pair.json` 是 resume 的访问控制判据，`ledger.jsonl` 只记录历史事实，**不参与 resume 校验**。
   - 行产生时机：校验失败/resume 失败不落行；busy 落一行（`outcome: "busy"`）；正常结束/超时各落一行。
 - **交付面证据（静默失败检测）**：宿主把 run 记为 `succeeded` ≠ 工程 session 真的交付了东西——实测遇到过"模型在 run 中途被切换后重来，工程 session 只输出角色开场白就 idle"的形态，此时 `outcome=succeeded` 但 `changed_files=[]`。
-  - delegate 因此回传一组**结构化证据**：`tool_calls` / `write_tool_calls` / `artifacts` / `final_is_role_opening`，以及判定结果 `no_work_evidence`（停在角色开场白 **且** 没有写盘调用或没有产物）。
-  - **只对 `kind=engineering` 判定**：知识 session 的产物本就是"回答"，通常零工具调用，套用会误报。
-  - 判定逻辑集中在 `lib/delegate-core.ts::summarizeDelivery`（纯函数，可单测）；`outcome` 枚举**不变**（仍是宿主视角），"没交付"由 `no_work_evidence` 单独表达，front 的契约是"该标记为 true 时不得转述成完成"。
-  - 写盘类工具口径：`edit` / `write` / `patch` / `apply_patch` / `multiedit`；**shell 不算**（无法从命令文本判定是否落盘），shell 写出的产物由 `artifacts` 兜底。
+  - delegate 因此回传一组**结构化证据**：`tool_calls` / `write_tool_calls` / `artifacts` / `final_is_role_opening` / `model_switched`，以及判定结果 `no_work_evidence`。
+  - 判定规则（`lib/delegate-core.ts::summarizeDelivery`，纯函数可单测）：
+    `no_work_evidence = (final_is_role_opening || model_switched > 0) && write_tool_calls === 0 && artifacts === 0`。
+    - `model-switched` 是**根因信号**（宿主消息 `type == "model-switched"`，run 中途换过模型），不依赖任何文本格式；开场白匹配是辅助信号。
+    - 写盘类工具口径：`edit` / `write` / `patch` / `apply_patch` / `multiedit`；**shell 不算**（无法从命令文本判定是否落盘），shell 写出的产物由 `artifacts` 兜底。
+    - ⚠ **判定只看本轮消息**（`sliceRoundMessages(messages, baselineMessageID)`）：resume 时历史轮次的写盘调用会掩盖本轮零交付。找不到 baseline 时退回全量（宁可漏报不误报）。
+    - ⚠ `artifacts` 是 **git 可见口径**：`.gitignore` 内、工程根外、worktree 内的改动都数不到 → `artifacts=0` 不是"什么都没改"的证明。
 
 ### 6.8 完成判据（DoD）
 

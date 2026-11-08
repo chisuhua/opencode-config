@@ -35,6 +35,7 @@ import {
   redactAndTruncate,
   registerSession,
   scopeEditRules,
+  sliceRoundMessages,
   summarizeDelivery,
   validateBrief,
   validateGrants,
@@ -625,7 +626,59 @@ describe("summarizeDelivery：交付面证据（静默失败检测）", () => {
     expect(d.write_tool_calls).toBe(0) // 但没有写盘调用
     expect(d.artifacts).toBe(0) // 也没有产物
     expect(d.final_is_role_opening).toBe(true)
+    expect(d.model_switched).toBe(1) // 根因信号：run 中途换过模型
     expect(d.no_work_evidence).toBe(true)
+  })
+
+  test("model-switched 是根因信号：最终文本不是开场白也能判出来", () => {
+    const d = summarizeDelivery(
+      [
+        { id: "m1", type: "assistant", time: { created: 1 }, content: [{ type: "text", text: "好的，我继续处理。" }] },
+        { id: "m2", type: "model-switched", time: { created: 2 } },
+      ],
+      [],
+    )
+    expect(d.final_is_role_opening).toBe(false)
+    expect(d.model_switched).toBe(1)
+    expect(d.no_work_evidence).toBe(true)
+  })
+
+  test("全角冒号变体也算角色开场白", () => {
+    const d = summarizeDelivery(
+      [{ id: "m1", type: "assistant", time: { created: 1 }, content: [{ type: "text", text: "【角色：builder】…" }] }],
+      [],
+    )
+    expect(d.final_is_role_opening).toBe(true)
+    expect(d.no_work_evidence).toBe(true)
+  })
+
+  test("有产物（有变更文件）时，即使文本是开场白也不判 no_work_evidence", () => {
+    const d = summarizeDelivery(
+      [{ id: "m1", type: "assistant", time: { created: 1 }, content: [{ type: "text", text: "【角色: builder】…" }] }],
+      ["a.txt"],
+    )
+    expect(d.artifacts).toBe(1)
+    expect(d.no_work_evidence).toBe(false)
+  })
+})
+
+describe("sliceRoundMessages：只保留本轮消息", () => {
+  const msgs = [
+    { id: "m1", type: "assistant" },
+    { id: "m2", type: "assistant" },
+    { id: "m3", type: "assistant" },
+  ]
+
+  test("从 baseline 之后开始切", () => {
+    expect(sliceRoundMessages(msgs, "m2").map((m: any) => m.id)).toEqual(["m3"])
+  })
+
+  test("baseline 不在列表（消息被压缩/清理）→ 退回全量（保守：宁可漏报不误报）", () => {
+    expect(sliceRoundMessages(msgs, "missing")).toHaveLength(3)
+  })
+
+  test("无 baseline → 全量", () => {
+    expect(sliceRoundMessages(msgs, "")).toHaveLength(3)
   })
 })
 

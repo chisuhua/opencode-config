@@ -531,10 +531,15 @@ export const WRITE_TOOLS = new Set(["edit", "write", "patch", "apply_patch", "ap
  * front 只看 outcome 就会把"没做"转述成"做完了"。
  *
  * 判定（全部基于结构化事实，不猜模型意图）：
- *   - final_is_role_opening：最后一条 assistant 文本以角色开场白开头（`【角色:`）
+ *   - final_is_role_opening：最后一条 assistant 文本停在角色开场白（`【角色:` / `【角色：`）
  *     → agent 停在了自我介绍这一步；
+ *   - model_switched：本轮窗口内出现过宿主消息 `type == "model-switched"`
+ *     → run 中途换过模型（新模型可能从头再来）；这是**根因信号**，不依赖任何文本格式；
  *   - write_tool_calls：写盘类工具调用数；artifacts：本次委托产生的文件变更数；
- *   - no_work_evidence：停在开场白 **且**（没有写盘调用 或 没有产物）→ 没有交付证据。
+ *   - no_work_evidence：命中上述任一"停住"信号 **且** 无写盘调用 **且** 无产物。
+ *
+ * ⚠ 消息窗口必须只含**本轮**：判定入参应是以 baselineMessageID 切片后的消息
+ * （见 sliceRoundMessages）——否则 resume 时上一轮的写盘调用会掩盖本轮零交付。
  *
  * 知识 session（kind=knowledge）不适用：它的产物本就是"回答"，通常零工具调用。
  */
@@ -542,13 +547,16 @@ export function summarizeDelivery(messages: any, changedFiles: string[]): {
   tool_calls: number
   write_tool_calls: number
   artifacts: number
+  model_switched: number
   final_is_role_opening: boolean
   no_work_evidence: boolean
 } {
   const arr = Array.isArray(messages) ? messages : []
   let toolCalls = 0
   let writeCalls = 0
+  let modelSwitched = 0
   for (const message of arr) {
+    if (message?.type === "model-switched") modelSwitched++
     if (message?.type !== "assistant") continue
     const content = message?.content
     if (!Array.isArray(content)) continue
@@ -560,16 +568,33 @@ export function summarizeDelivery(messages: any, changedFiles: string[]): {
     }
   }
   const finalText = lastAssistantText(arr).trimStart()
-  const finalIsRoleOpening = finalText.startsWith("【角色:")
+  const finalIsRoleOpening = /^【角色\s*[:：]/.test(finalText)
   const artifacts = Array.isArray(changedFiles) ? changedFiles.length : 0
-  const noWorkEvidence = finalIsRoleOpening && (writeCalls === 0 || artifacts === 0)
+  // 析取 → 合取：写盘调用与产物**都**没有，才算"没有交付证据"。
+  // （早先用析取会把"用 shell 写文件"（write_tool_calls=0 但 artifacts≥1）误判成无产出。）
+  const stoppedEarly = finalIsRoleOpening || modelSwitched > 0
+  const noWorkEvidence = stoppedEarly && writeCalls === 0 && artifacts === 0
   return {
     tool_calls: toolCalls,
     write_tool_calls: writeCalls,
     artifacts,
+    model_switched: modelSwitched,
     final_is_role_opening: finalIsRoleOpening,
     no_work_evidence: noWorkEvidence,
   }
+}
+
+/**
+ * 只保留本轮消息（baseline 之后的部分）。
+ * 判定"本轮有没有交付"必须只看本轮——resume 时历史轮次的写盘调用会掩盖本轮零交付。
+ * 找不到 baseline（消息被压缩/清理）时退回全量（保守：宁可漏报也不误报）。
+ */
+export function sliceRoundMessages(messages: any[], baselineMessageID: string): any[] {
+  if (!Array.isArray(messages)) return []
+  if (!baselineMessageID) return messages
+  const idx = messages.findIndex((m: any) => m?.id === baselineMessageID)
+  if (idx < 0) return messages
+  return messages.slice(idx + 1)
 }
 
 export function lastMessageAt(messages: any): number {
@@ -779,8 +804,10 @@ export function delegateToolDefinition(ctx: any): any {
           })
 
           // 交付面证据：宿主说 succeeded ≠ 工程 session 真的交付了东西。
+          // 判定只看向**本轮**的消息（resume 时历史轮次不得掩盖本轮零交付）。
           // 只对工程 session 判定（知识 session 的产物本就是"回答"，通常零工具调用）。
-          const delivery = summarizeDelivery(messages, changed)
+          const roundMessages = sliceRoundMessages(messages, baselineMessageID)
+          const delivery = summarizeDelivery(roundMessages, changed)
           const noWorkEvidence = kind === "engineering" && outcome === "succeeded" && delivery.no_work_evidence
 
           registerSession(root, sessionID, frontSessionID, effectiveAgent, kind, {
@@ -793,6 +820,8 @@ export function delegateToolDefinition(ctx: any): any {
             no_work_evidence: noWorkEvidence,
             tool_calls: delivery.tool_calls,
             write_tool_calls: delivery.write_tool_calls,
+            final_is_role_opening: delivery.final_is_role_opening,
+            model_switched: delivery.model_switched,
           })
 
           if (brief.remove) {
@@ -826,6 +855,7 @@ export function delegateToolDefinition(ctx: any): any {
             write_tool_calls: delivery.write_tool_calls,
             artifacts: delivery.artifacts,
             final_is_role_opening: delivery.final_is_role_opening,
+            model_switched: delivery.model_switched,
             no_work_evidence: noWorkEvidence,
             status_age_ms: Math.max(0, Date.now() - toMillis((after as any)?.time?.updated)),
             wait_error: waitError,

@@ -132,8 +132,8 @@ grant `edit` 会让 `scope` 的强制点失效）。
 | `changed_files` | 本次实际新增/变更的文件 |
 | `last_assistant_text` | 工程 session 的最终说明 |
 | `no_work_evidence` | **没有交付证据**（`true`）——工程 session 可能只输出了角色开场白就结束，而宿主仍记为 succeeded。此时 front **不会**说"已完成" |
-| `tool_calls` / `write_tool_calls` / `artifacts` | 交付证据的三个数：工具调用总数 / 写盘类调用数 / 本次产生的文件变更数 |
-| `final_is_role_opening` | 最后一条文本是不是角色开场白（用于判断"停在自我介绍"） |
+| `tool_calls` / `write_tool_calls` / `artifacts` | 交付证据的三个数：工具调用总数 / 写盘类调用数 / 本次产生的文件变更数（**git 可见口径**：被忽略、工程根外、worktree 内的改动数不到） |
+| `final_is_role_opening` / `model_switched` | 最后一条文本是不是角色开场白 / 本轮是否中途换过模型（"停住"的两个信号） |
 | `resumed_by_other_front` | 续接的是上次那个 session（正常：隔天回来继续） |
 
 | `outcome` | 含义 | 你该怎么理解 |
