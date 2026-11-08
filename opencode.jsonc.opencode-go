@@ -315,7 +315,8 @@
         "external_directory": {
           "*": "deny",
           "/workspace/**": "allow",
-          "/home/ubuntu/.config/opencode/**": "allow"
+          "/home/ubuntu/.config/opencode/**": "allow",
+          "/home/ubuntu/.local/share/**": "allow"
         },
         "webfetch": "allow",
         "websearch": "allow",
@@ -647,7 +648,7 @@
       "prompt": "{file:./prompts/oracle.md}"
     },
     "metis": {
-      "model": "kimi-code/kimi-for-coding",
+      "model": "commandcode/deepseek/deepseek-v4.1-flash",
       "temperature": 0.3,
       "mode": "subagent",
       "hidden": false,
@@ -754,7 +755,7 @@
       "prompt": "{file:./prompts/metis.md}"
     },
     "general": {
-      "model": "minimax-cn/MiniMax-M3.1-Flash",
+      "model": "commandcode/deepseek/deepseek-v4.1-flash",
       "temperature": 0.2,
       "mode": "subagent",
       "hidden": false,
@@ -980,7 +981,7 @@
       "description": "会话标题/摘要生成。用实测不思考的模型（glm-5.3-flash，reasoning_tokens=0），省 token。"
     },
     "context-builder": {
-      "model": "opencode-go/deepseek-v4.1-flash",
+      "model": "opencode/deepseek-v4.1-flash-free",
       "temperature": 0.1,
       "mode": "subagent",
       "hidden": true,
@@ -1090,7 +1091,7 @@
       "name": "opencode-go",
       "settings": {
         "baseURL": "https://opencode.ai/inference/go/openai/v1",
-        "apiKey": "{env:OPENCODE_GO_API_KEY}"
+        "apiKey": "{env:OPENCODE_GO_KEY}"
       },
       "models": {
         "deepseek-v4.1-flash": {
