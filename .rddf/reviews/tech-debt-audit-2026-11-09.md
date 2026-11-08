@@ -51,3 +51,27 @@
 **批次 C（可选）**：D9/D10/D11（卫生）。
 
 风险提示：D5 与 D1 都要改**当前态/已签批文档**，按治理面规则需 oracle→critic；建议与批次 A 合并为一次提交后再审。
+
+---
+
+## 6. 闭环记录（2026-11-09，verifier 复判）
+
+| # | 状态 | 证据 |
+|---|---|---|
+| **D1** | ✅ | 旧 ADR 有「被取代条款」行 + `Status=Accepted——…**非终验全绿**…`（如实标注）+ 正文两处旧表述加删除线 |
+| **D2** | ✅ | `scripts/agent-guard-rules.ts`（真源，覆盖 **front + 五个 subagent**）+ `scripts/agent-guard-gen.ts` + `tests/config-guards.test.ts`（**13 项**）；`bun scripts/agent-guard-gen.ts` → 无漂移；**顺带关掉 front 侧相对路径写 CWD 的绕过**（front 缺首参形态 → 已补，配置 88 → 117 条规则，allow 数不变） |
+| **D3** | ✅ | `prompts/front.md` §4.1 已含 `ledger.jsonl`（grep 命中 2 处：规则 + 扫描表） |
+| **D4** | ✅ | e2e 仓 `.gitignore` 含 `.rddf/`（commit `d21fe9a`） |
+| **D5** | ✅ | `docs/MULTI-AGENT-DESIGN.md` 已收录 `unverified`（grep 命中）与「顺序是硬约束」；front shell 脚注补首参形态 + 真源/闸门指针 |
+| **D6** | ✅ | `docs/front-delegate-testing.md` / `docs/dual-session-delegation.md` 数字统一为 **157 项**（core 76 / tool 35 / config-guards 13 / model-fallback 33） |
+| **D7** | ✅ | 旧验收报告加「已被取代」抬头，指向 `front-knowledge-capability-acceptance.md` |
+| **D8** | ✅ | 旧 improvement 状态改为「核心链路验收通过（非终验全绿）」+ ADR 指针；旧验收报告表头数字订正 |
+| **D9** | ✅ | 生成脚本已入库（`scripts/agent-guard-gen.ts`），`--write` 幂等（重复执行无 diff） |
+| **D10** | ✅ | E2E fixture 堆积 **36 目录 / 14M → 0 / 512B** |
+| **D11** | ✅ | `cli.json` 已提交（commit `a55f82c`），工作区干净 |
+
+**本轮新增并同批收口（原 P2-3）**：front 纳入真源并补首参形态（**安全修复**）、`REQUIRED_GUARD_SET`（真源 ↔ ADR 全量 deny 族锚）、**round-trip 用例**（注入漂移 → 修复 → JSON 可解析 → 规则全等 → 幂等）。取证实验结论：**单独改坏真源会被漂移测试抓到**（5 条失败）；真正的残留是「改坏真源 + 跑 `--write` 同步成坏源」→ 已由 ADR 锚覆盖。
+
+**验证**：`bun test tests/` → **157 pass**；`bun scripts/agent-guard-gen.ts` → 无漂移；`bash tests/verify_arch_docs_scope.sh` → PASS=64 FAIL=0；E2E **15/15**（front 配置变更后复跑）。
+
+**剩余开放项**：无（本审计 11 项 + 新增 3 项全部闭环）。已知残留仍是**有意披露**的边界（ADR D3.1 短选项组合 / `artifacts` git 可见口径），不属本审计范围。
