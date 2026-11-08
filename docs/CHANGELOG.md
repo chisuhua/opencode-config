@@ -8,6 +8,15 @@
 
 ## 版本变更摘要
 
+> **v2.4 变更摘要（2026-11-06）**：**模型降级链** —— OpenCode v2.2.5 无原生 `fallback` 配置（`agent.model` 单值），改由 `plugins/model-fallback.ts` + `lib/model-fallback-core.ts` 实现：挂 `session.hook("retry")`，按错误分类决定「原地退避 / `switchModel` 换链 / 放弃」，build 默认链 `commandcode → minimax-cn → openstarry → opencode-go`。
+> ① 401/403/404 与订阅额度硬失败立即换链；5xx/网络类先退避 2 次；429 优先按 `retryAfterMs` 等待；**内容策略 / 上下文超限（`context length` / `token limit`）/ 400 / 413 / 422 不降级**，且这两类**先于**状态码短路（否则 400 + `forbidden` 会被误判成模型不可用，拿弱模型重试被拒内容）；
+> ①' 冷却表**进程级**（跨 session 共享，内核仍保持纯函数：冷却条目由 plan 带出、宿主落盘）；会话状态按 location 重复 setup 时模块级共享 + 事件级去重；session 状态 30 分钟不活跃即淘汰；
+> ② 失败模型 5 分钟冷却，链尾可绕回已恢复的链首；链耗尽即 `retry: false`；
+> ③ 可见性：切换触发 TUI 模型指示器变化 + `~/.local/share/opencode/model-fallback.log`；实测 `session.synthetic` 通知会被当作新输入**再触发一轮模型调用**并重置降级状态，故默认关闭、降为显式选项 `notify: "synthetic"`；
+> ④ 链与策略走独立配置文件 `~/.config/opencode/model-fallback.json`（`chains` / `policy` / `notify`），环境变量 `MODEL_FALLBACK_CONFIG` 可改路径 —— **本地插件拿不到 opencode 配置里的 options**（实测三种写法 `ctx.options` 恒为 `{}`），故不用 `plugins` 配置项；**链头不单独配**，失败时正在用的模型即链首，改默认模型 = 改 `opencode.jsonc` 的 `agent.model`；
+> ⑤ 同步订正 MD §2.1 / §5.1 / §5.2 的 9 处 model 漂移（build / explore / librarian / oracle / metis / general / critic / context-builder / title），新增 §5.4 降级链；
+> ⑥ 验证：`tests/model-fallback-core.test.ts` 33 条单测（全量 `bun test tests/` 96 pass）；端到端探针以坏 `MINIMAX_API_KEY` 驱动，实测两次换链后由 `opencode-go` 成功作答（见 `~/.local/share/opencode/model-fallback.log`）。
+
 > **v2.3 变更摘要（2026-11-06）**：**front agent 重设计** —— front 从"prompt 里的君子协定"变成**权限层强制 + 单通道委托**。
 > ① front 的 `shell` 从 `"*": allow` + 30 deny 改为**只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny），并追加 `"* /*": deny` 禁绝对路径；
 > ② `external_directory` 由 `ask` 改为**路径对象**（放行 `/workspace/**` + 治理面目录）；
@@ -520,7 +529,22 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 
 - `docs/MULTI-AGENT-DESIGN.md` §11「修改后必做」与 §6 文件树、§4.4 的真源指向此前仍写 `opencode.jsonc.openstarry`（该文件已不存在）—— **本批已一并改为 `opencode.jsonc.opencode-go`**（残留的历史 v1.8 注记保留原文，它们描述的是当时的事实）。
 - `opencode-go` / `openstarry` / `minimax-cn` 仍用 V1 包名（`@ai-sdk/*`）。旧名**实测仍可用**（`opencode-go/deepseek-v4.1-flash` 实跑通过），故未一并迁移：`minimax-cn` 是 build/plan/critic 的载体，改错会中断当前会话；`openstarry` 当前无 agent 使用。建议单独一批迁移 + 逐 provider 实跑。
-- `docs/MULTI-AGENT-DESIGN.md` §2.1 / §5.1 / §5.2 的**模型归属**已与当前配置不符（例：表中 explore / critic 仍写 `minimax-cn`，实际为 `opencode/deepseek-v4.1-flash-free` / `kimi-code/kimi-for-coding`；oracle / metis 表写 `k3-256k`，实际已切 `kimi-for-coding`）—— 漂移源自用户尚未提交的模型切换，非本批引入；待该改动定稿后一次性重算这几张表。
+- `docs/MULTI-AGENT-DESIGN.md` §2.1 / §5.1 / §5.2 / §5.3 的**模型归属**已与当前配置不符（例：表中 explore / critic 仍写 `minimax-cn`，实际为 `opencode/deepseek-v4.1-flash-free` / `kimi-code/kimi-for-coding`；oracle / metis 表写 `k3-256k`，实际已切 `kimi-for-coding`）—— 漂移源自用户尚未提交的模型切换，非本批引入；待该改动定稿后一次性重算这几张表。**闭合触发（v2.2.4 补）**：工作区内模型相关未提交改动（`agents.*.model` / `providers.*.models` / `apiKey` 引用）全部提交或明确放弃后，整批重算；在此之前每批治理面改动可引用本条目递延，但递延不得超过一个批次，否则 §11 的 MUST 同步义务在事实上失效。
+
+### 8.1.13 运行环境修复：oracle model 引用（2026-11-06，v2.2.4）
+
+| 改动 | 章节 | 备注 |
+|---|---|---|
+| `opencode.jsonc.opencode-go`：`agents.oracle.model` 由工作区未提交值 `CommandCode/deepseek-v4.1-flash` 改为 **`commandcode/deepseek/deepseek-v4.1-flash`** | §2.1 | provider id 大小写敏感（实际为小写 `commandcode`）+ model 路径缺 `deepseek/` 一层，启动即 `ModelUnavailableError`；该引用形态是 `providerID/modelPath`（modelPath 自身可含 `/`，如 `deepseek/deepseek-v4.1-flash`），`variant: "max"` 与目录 `effort: low/high/max` 一致，未改 |
+| 验证：`opencode models` 含该引用 → oracle subagent 实测启动并返回 4 节格式 | §7.1 | 修复前错误原文：`SessionRunnerModel.ModelUnavailableError: Model unavailable: CommandCode/deepseek-v4.1-flash` |
+| 治理面审查：oracle `PASS-WITH-NOTES`（0 BLOCKER；F2「文档同步义务」报为未闭合）→ critic `APPROVE`（0 BLOCKER / 2 SHOULD_FIX / 2 NITS，`mergeable: yes`） | §2.7 | F2 处置：MD 四张表的重算并入 §8.1.12 已登记的「用户挂起模型切换批次」，本批不逐表手改，仅在此留痕 |
+| 附带收益（未改配置） | §5.2 | oracle（`commandcode/deepseek`）与 critic（`kimi-code/kimi-for-coding`）自此跨厂商，审查盲区不再重合。写进留痕，避免日后以「统一模型省事」为由回退到同厂 |
+
+**本批遗留（记入 backlog，不在本批处理）**
+
+- `commandcode` provider **无本地 `providers` 块**（32 个模型全部来自 models.dev 目录 + 本机 credential store，凭据环境变量 `CMD_API_KEY`），§5.1 provider 池表未登记该 provider。并入模型切换批次补齐。
+- oracle 的 `agent.*.model` 变更后 §2.1 / §5.1（含 provider 池表）/ §5.2 / §5.3 **未同步**（§11「修改后必做」的 MUST 条款）。已明确合并至 §8.1.12 遗留条目所述批次，不单独重算。
+- 未做 oracle 的「召回校准」（F1）：`deepseek-v4.1-flash` 是否胜任第一顺位审查者，需用 §8.1.12 的已知 finding 当 ground truth 比对召回率；本批只修可用性，不验证能力。
 
 ---
 
@@ -528,6 +552,7 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 
 | 日期 | 版本 | 变更 | 原因 |
 |---|---|---|---|
+| 2026-11-06 | v2.4 | 新增 `model-fallback` 插件（`session.retry` 钩子 + `switchModel`）实现 build 模型降级链；同步订正 MD 的 9 处 model 漂移并补 §5.4 | 用户要求"模型不可用自动切到 `commandcode/deepseek/deepseek-v4.1-flash`"。调研确认 v2.2.5 **无**原生 fallback：schema 的 `agent.model` 是单值、插件无请求错误钩子；`SessionRetry` 钩子（error/attempt/decision）与 `SessionDomain.switchModel` 是唯一可用原语，故需自研插件。探针发现 `session.synthetic` 通知会额外触发一轮模型调用并重置降级状态，改为日志 + 原生模型指示器 |
 | 2026-11-05 | v2.2.3 | 运行环境修复：`kimi-code` provider 迁 V2 包名 `@opencode/ai/providers/openai-compatible`；`kimi-for-coding` / `k3-256k` 补 `variants`（`reasoning_effort` 映射） | oracle 因 `Variant unavailable for kimi-code/kimi-for-coding: high` **持续不可用**，整条 oracle→critic 双审链断掉（上一批只能降级为单审查者）。根因是配置**覆盖**了目录条目却没声明 `variants` → variant 集为空；同一批把 V1 包名迁到 V2 官方名。字段名靠类型违规探针实测确定，不靠文档措辞（文档自相矛盾） |
 | 2026-11-05 | v2.2.2 | MD 新增 §2.8「角色切换与授权窗口」：补**角色轴（persona）在设计文档里的结构性缺口** —— 此前该机制只存在于 `prompts/build.md`，MD 有 agent 轴、有 tool 权限轴，唯独缺「角色是谁 / 怎么切 / 窗口怎么授权」这一轴；新增三轴区分表以免跨轴误读 | MD 自称「当前态单写」设计参考，却缺了角色切换/授权窗口整节 → 读者按 MD 理解会以为「授权只能等用完」、也会以为 architect 可写范围仅限 `arch_paths` 命中目录（漏了治理面文件编辑权） |
 | 2026-11-05 | v2.2.0 | 新增「实施阶段的新发现」：builder 实施中发现的计划层 / 决策层问题**停下并路由**（`plan_drift` → planner / `design_drift` → architect / `blocked` → 交用户 / `noted` → 仅记录），kind 复用 rdd-workflow 既有词表；授权窗口新增 `builder → planner` / `builder → architect` 触发条件 | 两处规则真空：**A** 实施阶段没有「新发现」分类法 —— `implementation_gap`/`proposal_drift` 只服务验收阶段，实施中撞上设计错误/计划漏项时归哪类、回给谁、要不要停，原先无规定；**B** 窗口内自动切换清单只有 `builder→verifier` 等四条，实施中最该自动化的 `builder→architect`/`builder→planner` 不在其中 → 即使用户开了窗口也只能停下问用户。调研发现产品侧已有完整 backward feedback 通道（`rddf feedback add` + 5 种 kind + loop guard + 双读通道），故本批**不新造分类**，只补治理面的映射、停下义务、顺序（先落记录再切角色）与窗口触发条件 |

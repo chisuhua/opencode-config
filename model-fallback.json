@@ -1,0 +1,42 @@
+{
+  "chains": {
+    "build": [
+      { "providerID": "commandcode", "id": "deepseek/deepseek-v4.1-flash" },
+      { "providerID": "minimax-cn", "id": "MiniMax-M3.1-Flash" },
+      { "providerID": "opencode-go", "id": "deepseek-v4.1-flash" }
+    ],
+    "explore": [
+      { "providerID": "minimax-cn", "id": "MiniMax-M3.1-Flash" },
+      { "providerID": "commandcode", "id": "deepseek/deepseek-v4.1-flash" },
+      { "providerID": "opencode-go", "id": "deepseek-v4.1-flash" }
+    ],
+    "librarian": [
+      { "providerID": "minimax-cn", "id": "MiniMax-M3.1-Flash" },
+      { "providerID": "commandcode", "id": "deepseek/deepseek-v4.1-flash" },
+      { "providerID": "opencode-go", "id": "deepseek-v4.1-flash" }
+    ],
+    "oracle": [
+      { "providerID": "minimax-cn", "id": "MiniMax-M3.1-Flash" },
+      { "providerID": "commandcode", "id": "deepseek/deepseek-v4.1-flash" },
+      { "providerID": "opencode-go", "id": "deepseek-v4.1-flash" }
+    ],
+    "metis": [
+      { "providerID": "minimax-cn", "id": "MiniMax-M3.1-Flash" },
+      { "providerID": "commandcode", "id": "deepseek/deepseek-v4.1-flash" },
+      { "providerID": "opencode-go", "id": "deepseek-v4.1-flash" }
+    ],
+    "critic": [
+      { "providerID": "minimax-cn", "id": "MiniMax-M3.1-Flash" },
+      { "providerID": "commandcode", "id": "deepseek/deepseek-v4.1-flash" },
+      { "providerID": "opencode-go", "id": "deepseek-v4.1-flash" }
+    ]
+  },
+  "policy": {
+    "maxSameModelRetries": 2,
+    "maxRateLimitWaits": 2,
+    "baseDelayMs": 500,
+    "maxDelayMs": 15000,
+    "cooldownMs": 300000
+  },
+  "notify": "log"
+}
