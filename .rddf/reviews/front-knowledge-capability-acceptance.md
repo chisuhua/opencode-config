@@ -86,3 +86,26 @@
 
 - 本 change 验收轮次：**1 / 3**（`RDDF_VERIFIER_MAX_LOOPS=3`）。
 - 失败项 1 条，路由回 builder 补齐后进入第 2 轮（只复验 AC31 + 确认其它 AC 未被影响）。
+
+---
+
+## 6. 第 2 轮复验（2026-11-09）
+
+- 触发：builder 提交 `945003f` 修复 AC31（front prompt 补 D7 的 ledger 引用规则）。
+- 复验范围：**只验 AC31 是否闭合 + 改动是否引入回归**（未重跑全量 E2E——改动仅为 prompt，`prompts/` 不参与单测/E2E 的代码路径）。
+
+| 检查 | 结果 |
+|---|---|
+| **AC31-a** 引用 ledger 须出示 `recorded_at` | ✅ `grep -n 'recorded_at' prompts/front.md` → :37（"引用历史（ledger）必须给出时间锚点 … 必须出示 `recorded_at`"） |
+| **AC31-b** 引用 subagent 综述须标注来源 | ✅ `grep -n '标注来源' prompts/front.md` → :36（"引用必须标注来源（file:line / URL，并说明来自 explore/oracle 等综述）"） |
+| **AC31-c** 不得当已批授权 | ✅ 同 :36（`grants` 仍须 `question` 问用户） |
+| 回归 | ✅ 单测 **144 pass / 0 fail / 400 expect**（`prompts/` 改动不影响代码路径）；E2E 产物仍在（9 个 run 场景），AC2/4/6/8/12/14/22/23 的判定不变 |
+
+**结论：通过。** AC1–AC31 全部有工具证据支撑。
+
+**残余说明（不构成失败）**：
+- AC16 的"超时落一行"与 AC18 的"并发"分别依赖同一代码路径与同进程并发（proposal 已注明边界）。
+- E2E 证据来自 2026-11-09 01:35 的 15/15 运行（bats commit `87c8919`）+ `.tmp-l2/run-*.json` 产物；本次 prompt 改动不在此路径上，无需重跑。
+
+- 已用轮次：**2 / 3**（上限 3）。无未决失败项。
+
