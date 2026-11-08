@@ -131,11 +131,14 @@ grant `edit` 会让 `scope` 的强制点失效）。
 | `out_of_scope_files` | **改了 scope 外的文件**。front 必须点名告知 |
 | `changed_files` | 本次实际新增/变更的文件 |
 | `last_assistant_text` | 工程 session 的最终说明 |
+| `no_work_evidence` | **没有交付证据**（`true`）——工程 session 可能只输出了角色开场白就结束，而宿主仍记为 succeeded。此时 front **不会**说"已完成" |
+| `tool_calls` / `write_tool_calls` / `artifacts` | 交付证据的三个数：工具调用总数 / 写盘类调用数 / 本次产生的文件变更数 |
+| `final_is_role_opening` | 最后一条文本是不是角色开场白（用于判断"停在自我介绍"） |
 | `resumed_by_other_front` | 续接的是上次那个 session（正常：隔天回来继续） |
 
 | `outcome` | 含义 | 你该怎么理解 |
 |---|---|---|
-| `succeeded` | 跑完了 | 但仍要看 `out_of_scope_files` 与 `blocked_reason` 是否为空 |
+| `succeeded` | 跑完了 | 但仍要看 `out_of_scope_files`、`blocked_reason` **和 `no_work_evidence`** 是否为"空/否" |
 | `failed` | 任务本身失败 | 看 `last_assistant_text` |
 | `interrupted` | 被中断 | 通常是你或环境中断了它，可以重来 |
 | `unknown` | **没有新活动** | **不能当成成功**——没拿到可信结果，可重试一次 |

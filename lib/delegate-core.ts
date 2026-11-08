@@ -520,6 +520,58 @@ export function lastAssistantText(messages: any): string {
   return ""
 }
 
+/** 写盘类工具名（edit / write / patch 系列）——用于判断工程 session 是否真的"动手"过。 */
+export const WRITE_TOOLS = new Set(["edit", "write", "patch", "apply_patch", "apply-patch", "multiedit"])
+
+/**
+ * 交付面证据（静默失败检测）。
+ *
+ * 背景：工程 session 可能只输出角色开场白就 idle（例如模型在 run 中途被切换后重来），
+ * 宿主仍把该 run 记为 succeeded → delegate 回传 succeeded，但**什么都没产出**。
+ * front 只看 outcome 就会把"没做"转述成"做完了"。
+ *
+ * 判定（全部基于结构化事实，不猜模型意图）：
+ *   - final_is_role_opening：最后一条 assistant 文本以角色开场白开头（`【角色:`）
+ *     → agent 停在了自我介绍这一步；
+ *   - write_tool_calls：写盘类工具调用数；artifacts：本次委托产生的文件变更数；
+ *   - no_work_evidence：停在开场白 **且**（没有写盘调用 或 没有产物）→ 没有交付证据。
+ *
+ * 知识 session（kind=knowledge）不适用：它的产物本就是"回答"，通常零工具调用。
+ */
+export function summarizeDelivery(messages: any, changedFiles: string[]): {
+  tool_calls: number
+  write_tool_calls: number
+  artifacts: number
+  final_is_role_opening: boolean
+  no_work_evidence: boolean
+} {
+  const arr = Array.isArray(messages) ? messages : []
+  let toolCalls = 0
+  let writeCalls = 0
+  for (const message of arr) {
+    if (message?.type !== "assistant") continue
+    const content = message?.content
+    if (!Array.isArray(content)) continue
+    for (const part of content) {
+      if (part?.type !== "tool") continue
+      toolCalls++
+      const name = String(part?.name ?? "").toLowerCase()
+      if (WRITE_TOOLS.has(name)) writeCalls++
+    }
+  }
+  const finalText = lastAssistantText(arr).trimStart()
+  const finalIsRoleOpening = finalText.startsWith("【角色:")
+  const artifacts = Array.isArray(changedFiles) ? changedFiles.length : 0
+  const noWorkEvidence = finalIsRoleOpening && (writeCalls === 0 || artifacts === 0)
+  return {
+    tool_calls: toolCalls,
+    write_tool_calls: writeCalls,
+    artifacts,
+    final_is_role_opening: finalIsRoleOpening,
+    no_work_evidence: noWorkEvidence,
+  }
+}
+
 export function lastMessageAt(messages: any): number {
   const arr = Array.isArray(messages) ? messages : []
   for (let i = arr.length - 1; i >= 0; i--) {
@@ -726,6 +778,11 @@ export function delegateToolDefinition(ctx: any): any {
             return !scopeAbs.some((prefix) => absolute === prefix || absolute.startsWith(prefix + path.sep))
           })
 
+          // 交付面证据：宿主说 succeeded ≠ 工程 session 真的交付了东西。
+          // 只对工程 session 判定（知识 session 的产物本就是"回答"，通常零工具调用）。
+          const delivery = summarizeDelivery(messages, changed)
+          const noWorkEvidence = kind === "engineering" && outcome === "succeeded" && delivery.no_work_evidence
+
           registerSession(root, sessionID, frontSessionID, effectiveAgent, kind, {
             ...ledgerBase,
             outcome,
@@ -733,6 +790,9 @@ export function delegateToolDefinition(ctx: any): any {
             out_of_scope_files: outOfScope,
             changed_files: changed,
             last_assistant_text: redactAndTruncate(assistantText),
+            no_work_evidence: noWorkEvidence,
+            tool_calls: delivery.tool_calls,
+            write_tool_calls: delivery.write_tool_calls,
           })
 
           if (brief.remove) {
@@ -760,6 +820,13 @@ export function delegateToolDefinition(ctx: any): any {
             changed_files: changed,
             scope_check: vcs ? "ok" : "unavailable",
             last_assistant_text: assistantText,
+            // 交付面证据（静默失败）：no_work_evidence=true 时 outcome 仍可能是 succeeded，
+            // 调用方**不得**把它转述成"已完成"。
+            tool_calls: delivery.tool_calls,
+            write_tool_calls: delivery.write_tool_calls,
+            artifacts: delivery.artifacts,
+            final_is_role_opening: delivery.final_is_role_opening,
+            no_work_evidence: noWorkEvidence,
             status_age_ms: Math.max(0, Date.now() - toMillis((after as any)?.time?.updated)),
             wait_error: waitError,
           }

@@ -1,0 +1,110 @@
+{
+  "_comment": "真实失败会话的形状（2026-11-09 E2E 实录）：工程 session 在模型于 run 中途被切换后重来，只读了 role.json 就输出角色开场白并 idle；宿主仍记为 succeeded、changed_files 为空。用作 no_work_evidence 检测器的回归夹具。来源会话 ses_e450875abffeylo5ucNHiBjHVE。",
+  "info": {
+    "id": "ses_e450875abffeylo5ucNHiBjHVE",
+    "agent": "build"
+  },
+  "messages": [
+    {
+      "id": "msg_1baf78ab8001KLjFkyE8VMeLmo",
+      "type": "user",
+      "time": {
+        "created": 1794138147610
+      },
+      "content": []
+    },
+    {
+      "id": "msg_1baf78b2f001KX6pgo6nKHZTMY",
+      "type": "assistant",
+      "time": {
+        "created": 1794138149987,
+        "streamed": 1794138159036,
+        "completed": 1794138159088
+      },
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "Let me start by reading role.json per the role matrix.",
+          "native": {
+            "reasoningField": "reasoning_content"
+          },
+          "time": {
+            "created": 1794138156450,
+            "completed": 1794138159001
+          }
+        },
+        {
+          "type": "tool",
+          "id": "call_ea70b77d3b86455c86573ddc",
+          "name": "shell",
+          "executed": false,
+          "state": {
+            "status": "completed",
+            "input": {
+              "command": "cat .rddf/state/role.json 2>/dev/null || echo \"NO_PROJECT_ROLE\"; echo \"---\"; cat ~/.rddf/state/role.json 2>/dev/null || echo \"NO_GLOBAL_ROLE\"",
+              "workdir": "/workspace/main/rdd-workflow-e2e-l2/engproj-smoke-1794138139"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "{\n  \"sessions\": {\n    \"ses_e450875abffeylo5ucNHiBjHVE\": {\n      \"current_role\": \"builder\",\n      \"auto_switch_window\": null,\n      \"auto_answer\": null,\n      \"updated_at\": \"2026-11-08T11:42:27.457Z\"\n    }\n  },\n  \"current_role\": \"builder\",\n  \"updated_at\": \"2026-11-08T11:42:27.457Z\"\n}\n---\nNO_GLOBAL_ROLE\n"
+              }
+            ],
+            "metadata": {
+              "status": "completed",
+              "truncated": false,
+              "exit": 0
+            }
+          },
+          "time": {
+            "created": 1794138158988,
+            "ran": 1794138159025,
+            "completed": 1794138159076
+          }
+        }
+      ]
+    },
+    {
+      "id": "msg_1baf79406001lwIzlspu67gGhw",
+      "type": "model-switched",
+      "time": {
+        "created": 1794138149894
+      },
+      "content": []
+    },
+    {
+      "id": "msg_1baf7b81b0014z41JivP5f34sk",
+      "type": "assistant",
+      "time": {
+        "created": 1794138159144,
+        "streamed": 1794138162232,
+        "completed": 1794138162242
+      },
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "Role builder. Output opening report. Then do the task.\n\nCreate smoke.txt with content ok. Then verify.",
+          "native": {
+            "reasoningField": "reasoning_content"
+          },
+          "time": {
+            "created": 1794138161712,
+            "completed": 1794138162210
+          }
+        },
+        {
+          "type": "text",
+          "text": "【角色: builder | source: state-file】我可实施代码修改。\n\n目标明确、scope 单文件，直接实施。"
+        }
+      ]
+    },
+    {
+      "id": "msg_1baf7c45d001ZtXJFpUvxqAvvY",
+      "type": "idle",
+      "time": {
+        "created": 1794138162269
+      },
+      "content": []
+    }
+  ]
+}

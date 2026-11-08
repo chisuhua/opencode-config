@@ -8,6 +8,15 @@
 
 ## 版本变更摘要
 
+> **v2.6 变更摘要（2026-11-09）**：**静默失败检测** —— 宿主说 succeeded ≠ 工程 session 真的交付了东西。
+> ① **缺陷来源**：E2E 实跑中发现，工程 session 在模型于 run 中途被切换后重来时，可能只输出角色开场白就 idle；宿主仍把该 run 记为 `succeeded` → delegate 回传 `succeeded` + `changed_files: []`，front 遂向用户转述"已完成"，而实际什么都没产出。
+> ② delegate 回传**交付面证据**：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数：`edit`/`write`/`patch`/`apply_patch`/`multiedit`；**shell 不算**，无法从命令文本判定落盘）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是否停在角色开场白），以及判定结果 `no_work_evidence`（停在开场白 **且**（无写盘调用 或 无产物））。
+> ③ **`outcome` 枚举不变**（仍是宿主视角的 `succeeded`）："没交付"由 `no_work_evidence` 单独表达，避免改动既有契约；**只对 `kind=engineering` 判定**——知识 session 的产物本就是"回答"（通常零工具调用），套用会误报。
+> ④ front 契约同步（`prompts/front.md`）：`no_work_evidence=true` 时**不得转述为"已完成"**，必须转述"没有产出"并给出三个证据数、问用户重试还是换做法；§五 禁止事项新增一条。
+> ⑤ ledger 行增记 `no_work_evidence` / `tool_calls` / `write_tool_calls`（审计可追溯）。
+> ⑥ 验证：单测 133 pass（新增 9 条：交付面证据纯函数 5 条 + 端到端 4 条 + ledger 1 条）；E2E L2-3 增断言 `no_work_evidence=false`（防真实运行下的误报）。
+> ⑦ 判定逻辑集中在 `lib/delegate-core.ts::summarizeDelivery`（纯函数，可单测）。
+
 > **v2.5 修正（2026-11-08，E2E 实测发现）**：两处配置在静态检查下看不出来、必须在真实运行时才暴露的缺陷。
 > ① **`subagent` 规则顺序**：opencode 的工具可见性判定（`whollyDisabled`）只看该 action **最后一条**匹配规则——若 `"*": "deny"` 排在末尾，整个 `subagent` 工具会被**隐藏**（逐 agent allow 完全没机会生效，front 运行时反馈"subagent 工具不存在"）。正确顺序：`"*": "deny"` 第一条，具体 agent allow 在后；对未列出的 agent 仍落 deny（`findLast` 命中首条 `*`）。
 > ② **网络写守卫的参数位置**：原 `curl * -o*` 匹配不到 `curl -o /tmp/x URL`（`-o` 作为第一个参数时前面没有空格）。补首个参数形态：`curl -o*` / `curl --output*` / `curl -O*` / `curl -T *` / `curl --upload-file *` / `curl -d @*` / `curl --data @*` / `curl --data-binary @*`、`wget -O*` / `wget --output-document*` / `wget -P*`。实测：修前 librarian 真的把 `curl -o` 的文件下载落盘了。

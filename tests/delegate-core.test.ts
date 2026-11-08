@@ -35,6 +35,7 @@ import {
   redactAndTruncate,
   registerSession,
   scopeEditRules,
+  summarizeDelivery,
   validateBrief,
   validateGrants,
   withLock,
@@ -556,6 +557,75 @@ describe("容错路径", () => {
     })
     expect(ran).toBe(true)
     expect(existsSync(lock)).toBe(false)
+  })
+})
+
+describe("summarizeDelivery：交付面证据（静默失败检测）", () => {
+  const ROLE_OPENING = "【角色: builder | source: state-file】我可实施代码修改。"
+
+  function assistant(parts: any[]) {
+    return [{ id: "m1", type: "assistant", time: { created: 1 }, content: parts }]
+  }
+
+  test("停在角色开场白 + 无产物 → no_work_evidence=true", () => {
+    const d = summarizeDelivery(assistant([{ type: "text", text: ROLE_OPENING }]), [])
+    expect(d.final_is_role_opening).toBe(true)
+    expect(d.no_work_evidence).toBe(true)
+    expect(d.tool_calls).toBe(0)
+    expect(d.artifacts).toBe(0)
+  })
+
+  test("正常结论文本 → no_work_evidence=false", () => {
+    const d = summarizeDelivery(assistant([{ type: "text", text: "## 执行结果\n已创建 a.txt" }]), ["a.txt"])
+    expect(d.final_is_role_opening).toBe(false)
+    expect(d.no_work_evidence).toBe(false)
+    expect(d.artifacts).toBe(1)
+  })
+
+  test("有写盘工具调用且有产物 → 即使结尾是开场白也不判 no_work_evidence", () => {
+    const d = summarizeDelivery(
+      assistant([
+        { type: "tool", name: "edit", state: { status: "completed" } },
+        { type: "text", text: ROLE_OPENING },
+      ]),
+      ["a.txt"],
+    )
+    expect(d.tool_calls).toBe(1)
+    expect(d.write_tool_calls).toBe(1)
+    expect(d.no_work_evidence).toBe(false)
+  })
+
+  test("shell 不算写盘工具（只有 edit/write/patch 系列算）", () => {
+    const d = summarizeDelivery(
+      assistant([
+        { type: "tool", name: "shell", state: { status: "completed" } },
+        { type: "text", text: ROLE_OPENING },
+      ]),
+      [],
+    )
+    expect(d.tool_calls).toBe(1)
+    expect(d.write_tool_calls).toBe(0)
+    expect(d.no_work_evidence).toBe(true)
+  })
+
+  test("非 assistant 消息不计入工具调用", () => {
+    const d = summarizeDelivery(
+      [{ id: "u1", type: "user", time: { created: 1 }, content: [{ type: "tool", name: "edit" }] }],
+      [],
+    )
+    expect(d.tool_calls).toBe(0)
+  })
+
+  test("回归夹具：真实失败会话（只读 role.json → 角色开场白 → idle）必须被判为 no_work_evidence", () => {
+    const fixture = JSON.parse(
+      readFileSync(path.join(__dirname, "fixtures/real-no-work-session.json"), "utf8"),
+    )
+    const d = summarizeDelivery(fixture.messages, [])
+    expect(d.tool_calls).toBeGreaterThan(0) // 确实调过工具（读 role.json）
+    expect(d.write_tool_calls).toBe(0) // 但没有写盘调用
+    expect(d.artifacts).toBe(0) // 也没有产物
+    expect(d.final_is_role_opening).toBe(true)
+    expect(d.no_work_evidence).toBe(true)
   })
 })
 

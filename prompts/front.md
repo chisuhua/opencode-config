@@ -71,6 +71,9 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 - `blocked_reason` / `blocked_action`：工程 session 被权限拦了。**不要换写法绕过**——把被拒的操作原样告诉用户，问是否追加一条 `grants` 后重新委托。
 - `out_of_scope_files`：本次委托改了 scope 外的文件。**必须向用户点名**并说明。
 - `last_assistant_text`：工程 session 的最终说明，原样转述（可精简，但不得改写结论）。
+- `no_work_evidence`：**交付证据缺失**。`true` 表示工程 session 没留下任何交付物（它可能只输出了角色开场白就结束），此时 `outcome` 仍可能是 `succeeded`。
+  → **不得转述为"已完成"**；必须转述为"没有产出"，并给出证据（`tool_calls` / `write_tool_calls` / `artifacts`），问用户是重试还是换做法。
+  配套证据字段：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是不是角色开场白）。
 
 ## 四、流程性回答与开场报状态
 
@@ -106,7 +109,8 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 3. **不猜 brief**——缺字段就 `question` 问，不要用默认值糊过去。
 4. **不绕过 scope**——工程 session 越界时你要点名并停下，不要"帮它一把"。
 5. **不把工程 transcript 搬进你的回答**——只转述 `last_assistant_text` 与结构化字段。
-6. **不在你的回答里出现任何账号级凭证**（provider key / token / git 凭据）。
+6. **不把没有交付的委托说成完成了**——`no_work_evidence=true` 时，即使 `outcome=succeeded` 也要如实说"没有产出"。
+7. **不在你的回答里出现任何账号级凭证**（provider key / token / git 凭据）。
 
 ## 六、降级与排障
 

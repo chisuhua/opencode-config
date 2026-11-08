@@ -415,10 +415,15 @@ await ctx.tool.transform((editor: any) => {
   - 换 agent 时仍要注意：**不同 agent 的 ask 清单不同**，`CONSTANT_DENY` 需要按目标 agent 调整。
 - **多工程**：现在 `canonical_root` 由 `project_dir` 推导，pair.json 按工程仓各存一份。
   跨仓协作（如 hub-spoke）需要 `external_directory` grant —— 走 §6.5 的 grants 通道。
-- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / 截断脱敏后的 `last_assistant_text`）。
+- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / 截断脱敏后的 `last_assistant_text`）。
   - 写入者只有本插件；与 pair/role 共用 `.rddf/state/.role.lock`。
   - **职责切分**：`pair.json` 是 resume 的访问控制判据，`ledger.jsonl` 只记录历史事实，**不参与 resume 校验**。
   - 行产生时机：校验失败/resume 失败不落行；busy 落一行（`outcome: "busy"`）；正常结束/超时各落一行。
+- **交付面证据（静默失败检测）**：宿主把 run 记为 `succeeded` ≠ 工程 session 真的交付了东西——实测遇到过"模型在 run 中途被切换后重来，工程 session 只输出角色开场白就 idle"的形态，此时 `outcome=succeeded` 但 `changed_files=[]`。
+  - delegate 因此回传一组**结构化证据**：`tool_calls` / `write_tool_calls` / `artifacts` / `final_is_role_opening`，以及判定结果 `no_work_evidence`（停在角色开场白 **且** 没有写盘调用或没有产物）。
+  - **只对 `kind=engineering` 判定**：知识 session 的产物本就是"回答"，通常零工具调用，套用会误报。
+  - 判定逻辑集中在 `lib/delegate-core.ts::summarizeDelivery`（纯函数，可单测）；`outcome` 枚举**不变**（仍是宿主视角），"没交付"由 `no_work_evidence` 单独表达，front 的契约是"该标记为 true 时不得转述成完成"。
+  - 写盘类工具口径：`edit` / `write` / `patch` / `apply_patch` / `multiedit`；**shell 不算**（无法从命令文本判定是否落盘），shell 写出的产物由 `artifacts` 兜底。
 
 ### 6.8 完成判据（DoD）
 

@@ -72,6 +72,8 @@ type FakeOptions = {
   noActivity?: boolean
   /** 模拟 session.wait 抛错：必须落到 wait_error，而不是静默成功。 */
   waitThrows?: boolean
+  /** 覆盖工程 session 的最终 assistant 文本（默认 `已完成：<title>`）。 */
+  assistantText?: string
 }
 
 function createFakeCtx(options: FakeOptions = {}) {
@@ -134,7 +136,7 @@ function createFakeCtx(options: FakeOptions = {}) {
           id: `msg_assistant_${session.prompts.length}`,
           type: "assistant",
           time: { created: Date.now() },
-          content: [{ type: "text", text: `已完成：${session.title}` }],
+          content: [{ type: "text", text: options.assistantText ?? `已完成：${session.title}` }],
         })
         session.outcome = "succeeded"
         session.idle = Date.now()
@@ -604,6 +606,77 @@ describe("失败与并发路径（补审计缺口）", () => {
       .map((l) => JSON.parse(l))
     expect(rows.length).toBe(2)
     expect(rows.map((r) => r.backend_session_id).sort()).toEqual([a.session_id, b.session_id].sort())
+  })
+})
+
+describe("交付面证据：静默失败检测（P0）", () => {
+  const ROLE_OPENING = "【角色: builder | source: state-file】我可实施代码修改。\n\n目标明确、scope 单文件，直接实施。"
+
+  test("工程 session 只输出角色开场白就结束 → no_work_evidence=true（outcome 仍是宿主视角的 succeeded）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({ assistantText: ROLE_OPENING })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    expect(summary.outcome).toBe("succeeded")
+    expect(summary.final_is_role_opening).toBe(true)
+    expect(summary.no_work_evidence).toBe(true)
+    expect(summary.tool_calls).toBe(0)
+    expect(summary.write_tool_calls).toBe(0)
+    expect(summary.artifacts).toBe(0)
+  })
+
+  test("正常交付（正常结论文本）→ no_work_evidence=false", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({
+      onPrompt: (session) => {
+        writeFileSync(path.join(project, "tests/ok.txt"), "# ok\n")
+      },
+    })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    expect(summary.outcome).toBe("succeeded")
+    expect(summary.no_work_evidence).toBe(false)
+    expect(summary.final_is_role_opening).toBe(false)
+    expect(summary.artifacts).toBeGreaterThan(0)
+  })
+
+  test("知识 session（零工具调用、产物就是回答）→ 不得被判成 no_work_evidence", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({ assistantText: "【角色: explore | source: state-file】只读结论……" })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project, agent: "explore", scope: [] })
+    expect(summary.kind).toBe("knowledge")
+    expect(summary.tool_calls).toBe(0)
+    expect(summary.no_work_evidence).toBe(false)
+  })
+
+  test("工程 session 用 edit 工具写盘 → 有写盘调用与产物，即使结尾是开场白也不判 no_work_evidence", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({
+      onPrompt: (session) => {
+        writeFileSync(path.join(project, "tests/edited.txt"), "# edited\n")
+        session.messages.push({
+          id: "msg_tool_edit",
+          type: "assistant",
+          time: { created: Date.now() },
+          content: [{ type: "tool", name: "edit", state: { status: "completed" } }],
+        })
+      },
+      assistantText: ROLE_OPENING,
+    })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    expect(summary.write_tool_calls).toBe(1)
+    expect(summary.artifacts).toBeGreaterThan(0)
+    expect(summary.no_work_evidence).toBe(false)
+  })
+
+  test("ledger 记录 no_work_evidence（审计可追溯）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({ assistantText: ROLE_OPENING })
+    await runDelegate(ctx, { ...BASE, project_dir: project })
+    const rows = readFileSync(path.join(project, ".rddf/state/ledger.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l))
+    expect(rows.length).toBe(1)
+    expect(rows[0].no_work_evidence).toBe(true)
   })
 })
 
