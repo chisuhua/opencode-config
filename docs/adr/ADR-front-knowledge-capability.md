@@ -9,8 +9,9 @@
 | Author | architect |
 | Parent | 部分取代 `adr-front-agent-redesign.md`：D4 中「`subagent` 保持 `deny`」一条作废；D3 的「`scope` 必填」仅对 `kind=engineering` 继续有效；D6 的登记协议扩展 `kind` 字段，其余继续有效。D1 产物判据、D2 唯一工程通道、D5 preflight grants、D6 的锁与 upsert 协议、D7 guide 归宿继续有效 |
 | 关联 change | `backlog: front-knowledge-capability`（立项后回填） |
-| AC 映射 | 待 planner 立项后回填 AC 编号（本文件 Verification 第 1–11 条为候选判据） |
+| AC 映射 | 待 planner 立项后回填 AC 编号（本文件 Verification 第 1–17 条为候选判据） |
 | 审稿报告 | `.rddf/reviews/adr-front-knowledge-capability-review.md` |
+| 增补记录 | **2026-11-08**：E2E 真实运行时暴露两处实现约束 → 补 **D2.1（规则顺序是硬约束）**、**D3.1（网络守卫必须覆盖首参数形态）**，并订正 Verification 第 15 条（原写"末尾 `*: deny`"，与 D2.1 矛盾）、新增 2 条判据与 2 条风险。运行时证据：`/workspace/main/rdd-workflow-e2e/tests/integration/test_front_delegate_runtime.bats`（L2-13/L2-14/L2-15，实跑 15/15 ok）。增补的复审结论见审稿报告 §8 |
 
 ## 背景与问题
 
@@ -31,6 +32,8 @@
 结论：问题不是"front 该不该调 subagent"的二元选择，而是**放行哪些 agent、以什么粒度放行、放行前必须先修什么**。
 
 **前置探针（已通过）**：v2.2.5 配置层接受 `subagent` 的逐 agent 对象形态，解析出 `explore/librarian/oracle/metis/critic` 各一条 `allow` 且 `"*": "deny"` 排最后；上游 `permission.evaluate` 以目标 agent ID 为 resource 做 last-match-wins。探针记录见 `.rddf/reviews/front-subagent-granularity-probe.md`。
+
+> **订正（2026-11-08，E2E 实测）**：探针当时的解析结论只证明"配置被正确解析"，**没有**证明"工具可见"——当时 `"*": "deny"` 排在**末尾**，按 D2.1 的可见性语义会把整个 `subagent` 工具隐藏。规则已调为首条，探针结论以 D2.1 为准。
 
 ## 决策
 
@@ -54,13 +57,29 @@
 ### D2 front 放行五个只读 subagent（逐 agent 门控）
 
 ```
-"subagent": { "explore": "allow", "librarian": "allow", "oracle": "allow",
-              "metis": "allow", "critic": "allow", "*": "deny" }
+"subagent": { "*": "deny",
+              "explore": "allow", "librarian": "allow", "oracle": "allow",
+              "metis": "allow", "critic": "allow" }
 ```
 
 - **显式排除** `general`（`skill: allow`）、`plan`（`edit` allow + `subagent: allow`）、`build`（写 agent）。
 - front 的 `edit: deny` 已覆盖 `write` 工具（权限解析层不存在 `write` action），文档中"`edit`/`write` 均 deny"的措辞与此一致，无需额外配置。
 - 深度 2 链由 D3 的 `librarian.subagent: deny` 封死。
+
+**D2.1 规则顺序是硬约束（E2E 实测发现，不可调换）**
+
+`"*": "deny"` 必须放在**第一条**，具体 agent allow 在后。理由：opencode 的**工具可见性**判定（`whollyDisabled`）只取该 permission action **最后一条**匹配规则，并据此决定工具是否出现在 front 的工具表里。
+
+| 写法 | 最后一条匹配规则 | 结果 |
+|---|---|---|
+| `"*": "deny"` 在**末尾**（本 ADR 初稿） | `{resource: "*", effect: "deny"}` | **整个 `subagent` 工具被隐藏**——逐 agent allow 从未生效；front 运行时反馈"`subagent` 工具在我这里不存在" |
+| `"*": "deny"` 在**首条**（采用） | `{resource: "critic", effect: "allow"}` | 工具可见；调用时按目标 agent 名做 `findLast`：命中五条 allow 之一 → 放行；未列出的 agent 只匹配首条 `*: deny` → 拒绝 |
+
+**因此"逐 agent 白名单"必须同时成立两件事**：① 工具可见（规则顺序）；② 非白名单 agent 被拒（`findLast` 回落首条 `*: deny`）。缺 ① 则能力为零，缺 ② 则门控为零——由 L2-14（规则集合 + 危险 agent 排除）与 L2-15（真实调用非白名单 agent → 必须被拒，同时兜住"工具可见"）覆盖。
+
+**顺序的回归闸**：L2-14 **须**包含顺序断言（`debug agents` 的规则输出是有序的，可检）——**当前 L2-14 尚未断言顺序**（判据 16 要求补齐），因此顺序回归目前只能由 L2-15 的"判据未触发即 FAIL"间接兜住；顺序断言补齐后 L2-14 才成为顺序回归闸。
+
+**前提声明**：本结论以 **front 没有 session 级权限注入**为前提。session 级规则在 opencode 的 `configured()` 中排在 agent 规则**之后**，`findLast` 下会覆盖 agent 配置；当前 front 无注入路径（delegate 注入的是**后端** session），故成立。若将来 front 自身引入 session 级 permissions，必须重验本节。
 
 ### D3 加固后端（同一 patch 内先落加固、再开放，原子生效）
 
@@ -81,6 +100,33 @@
 - 网络外泄（读文件后上传）：`curl * -T *`、`curl * --upload-file *`、`curl * -d @*`、`curl * --data @*`、`curl * --data-binary @*`
 - clone 目标收敛：`git clone * /*` deny → `git clone * /tmp/opencode/*` allow（后者压过前者；本机沙箱禁止通用 `/tmp`，只放行 `/tmp/opencode`）
 - `.env` 读取族：`cat/head/tail *.env*`（沿用 front）
+
+**实现纪律**：上表与 **D3.1 的首参形态必须同批落地、写进同一份规则**（不要分两处维护，否则必然漂移）；D3.1 的"不可完备面"是**已知残留**，不是待补清单。
+
+**D3.1 网络守卫必须覆盖「首参数形态」（E2E 实测发现）**
+
+上表的 `curl * -o*` 一族要求 `-o` 前面有空格，因此**匹配不到 `curl -o /tmp/x URL`**（`-o` 作第一个参数）。E2E 实测：修前 librarian 真的把下载内容落盘了。
+
+**通则（必要条件）**：凡是 `<工具> <旗标> …` 形态的 glob 守卫，都必须同时存在 `<工具> <旗标>*`（旗标紧跟工具、无空格）形态，否则该守卫等于没加。
+
+| 工具 | 带空格的形态 | **必须同时存在**的首参形态 | 当前落地状态 |
+|---|---|---|---|
+| curl | `curl * -o*` / `--output*` / `-O*` | `curl -o*` / `curl --output*` / `curl -O*` | ✅ 已落地 |
+| curl（外泄） | `curl * -T *` / `--upload-file *` / `-d @*` / `--data @*` / `--data-binary @*` | `curl -T *` / `curl --upload-file *` / `curl -d @*` / `curl --data @*` / `curl --data-binary @*` | ✅ 已落地 |
+| wget | `wget * -O*` / `--output-document*` / `-P*` | `wget -O*` / `wget --output-document*` / `wget -P*` | ✅ 已落地 |
+| git | `git * --output*` / `--format*` / `--pretty*` | `git --output*` / `git --format*` / `git --pretty*` | ⬜ **待落地** |
+| sort / uniq | `sort * -o*` / `uniq * -o*` | `sort -o*` / `uniq -o*` | ⬜ **待落地** |
+
+**不需要首参形态的两族（论证）**：`tee` 的文件名就是它的参数本身，`tee *` 已覆盖（`tee /tmp/x` 命中）；`find` 的表达式必须跟在路径之后（`find . -fprintf /tmp/x`），把 `-fprintf` 放首位不是合法用法。
+
+> 订正（2026-11-08 复核）：`git * --output*` **同样匹配不到** `git --output=x`——该模式含两个字面空格（`git ` + `*` + ` `），命令里 `git` 与 `--output` 之间只有一个空格，`*` 匹配空串时消耗的仍是两个空格。git 的首参形态与 curl 是**同构**缺口，因此一并纳入上表。`sort -o /tmp/x a.txt`、`uniq -o /tmp/x a` 同理（review 补出）。
+
+**已知不可完备面（明确接受的残留）**：glob 无法枚举**短选项组合**与**配置化输入**——
+
+- `curl -so /tmp/x URL`（= `-s -o`）、`curl -sO URL`（落 CWD）：既不匹配 `curl * -o*`（无 " -o"）也不匹配 `curl -o*`（首参是 `-so` ≠ `-o`）；
+- `curl -K -` / `curl --config`（stdin / 配置文件里可含 `output=`）：无任何守卫命中。
+
+这类形态**无法靠补 glob 穷举**（组合爆炸），只能靠 librarian prompt 约束 + 显式披露。若要收紧，只能做有限枚举（如 `curl -*o *` / `curl -*O *`），收益有限、改动面大于收益，**本次不做**。
 
 **明确接受的残留（写入「后果 / 风险」）**：
 
@@ -174,6 +220,9 @@
 
 **风险**
 
+- **（2026-11-08 增补）规则顺序是隐式约束，静态检查看不出来**：`"*: deny` 放在末尾 = 整个工具被隐藏（能力为零，且**不报错**）；放在首位 = 门控生效。两种写法都能通过 `debug agents` 的"规则解析正常"，只有真实运行才暴露。任何调整 front `subagent` 规则的动作都必须**真跑**一次（E2E L2-15；L2-14 的顺序断言补齐后才成为顺序回归闸）。
+- **（2026-11-08 增补）守卫的"首参数形态"是通用绕过面**：`<工具> <旗标>` 形态的 glob 守卫天然漏掉旗标作首参的写法（`curl -o …` vs `curl … -o …`）。每加一条此类守卫，都必须**同批补首参形态**——漏补等于该守卫白加（E2E 实测：修前 librarian 真的落盘了）。
+- **（2026-11-08 增补）守卫对"短选项组合 / 配置化输入"不可完备**：`curl -so …`、`curl -sO …`、`curl -K -` / `--config` 这类形态 glob 枚举不出来（组合爆炸）。这是**已披露的残留**，只能靠 prompt 约束；不要用"已补首参形态"的口号暗示已闭合。
 - 守卫 deny 仍是**尽力而为**：上游已知绕过（重定向、`--opt=` 截断、零节点跳过）在修复前持续存在；D3 的加固不改变这一点，只是把 subagent 拉到与 front 同级。
 - **D3 明确接受的残留**：① 无目标参数的 `git clone URL` 会写入 CWD，守卫无法可靠区分有无目标参数，只能靠 librarian prompt 约束 + 显式声明；② `curl` 的内联数据外泄（如 `curl -d "$(cat .env)"`）无法用 glob 可靠拦截，只封了 `-d @file` / `-T` / `--upload-file` 三条文件形态；③ `wget URL` 默认下载到 CWD，靠 `-O`/`-P` 守卫覆盖显式目标，裸 `wget` 属同类残余。
 - `scopeEditRules` 的"只读 agent 恒注入单条 `edit:* deny`"若实现成"空 scope 特判"，容易与"整仓 scope = `.`"分支混淆（后者产出 `[deny *, allow *]` 净放行）→ 必须有测试固定 `["."]` 分支。
@@ -198,4 +247,7 @@
 - [ ] resume 合法性只由 `pair.json` 判定：删除 ledger 中某行不影响 resume；伪造 ledger 行不能让未登记 session 通过校验。
 - [ ] front 引用 ledger 时出示 `recorded_at`；引用 subagent 综述时标注来源，且未把综述当作已批授权。
 - [ ] 配置变更顺序：消防态检查——任一时刻不存在"front 已放行但后端未加固"的配置组合（同一 patch 落地）。
-- [ ] 改配置后 `opencode reload`（或 `service restart`）生效，且 `opencode debug agents` 中 front 的 subagent 规则为五个 `allow` + 末尾 `"*": "deny"`。
+- [ ] 改配置后 `opencode reload`（或 `service restart`）生效，且 `opencode debug agents` 中 front 的 subagent 规则为**首条 `"*": "deny"` + 五个 `allow`**（顺序约束见 D2.1——**不得**把 `"*": "deny"` 放到末尾）。
+- [ ] **（2026-11-08 增补 · D2.1）** front 的 `subagent` 规则**第一条是 `"*": "deny"`**、最后一条是具体 agent allow（L2-14 必须**断言顺序**——`debug agents` 的输出是有序的，可检；顺序回归时 L2-14 不得静默通过）；`subagent` 工具在 front 的工具表里**可见**；front 调 `subagent(agent="general")` 以 `error` 结束且带 `Permission denied` / `permission.rejected`。
+- [ ] **（2026-11-08 增补 · D3.1）** 五个 agent 的守卫里存在**首参数形态**的 deny：curl（`-o*` / `--output*` / `-O*` / `-T *` / `--upload-file *` / `-d @*` / `--data @*` / `--data-binary @*`）、wget（`-O*` / `--output-document*` / `-P*`）、**git（`--output*` / `--format*` / `--pretty*`）**、**sort/uniq（`-o*`）**；实测 `curl -o /tmp/x URL` 被拒且不落盘。
+- [ ] **（2026-11-08 增补 · 已知残留）** 短选项组合（`curl -so …`、`curl -sO …`）与配置化输入（`curl -K -` / `--config`）**已知不被守卫覆盖**，相关文件只由 librarian prompt 约束；若将来要收紧，必须先评估"有限枚举"方案，不得靠"补 glob"的口号。
