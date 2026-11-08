@@ -105,7 +105,7 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 
 | 字段 | 含义 |
 |---|---|
-| `outcome` | `succeeded` / `failed` / `interrupted` / `unknown`（没有新活动，结论不可信）/ `busy`（上次运行仍在进行，别排队） |
+| `outcome` | `succeeded` / **`unverified`（宿主报成功但无交付证据，不得当完成）** / `failed` / `interrupted` / `unknown`（没有新活动，结论不可信）/ `busy`（上次运行仍在进行，别排队） |
 | `blocked_reason` | 被权限拦住了 —— **不要换写法绕过**，把被拒操作报给用户，问是否追加 grant |
 | `out_of_scope_files` | 本次改了 scope 外的文件 —— 必须点名告知用户 |
 | `changed_files` | 本次委托期间新增/变更的文件（前后 `git status` 差集） |
@@ -140,6 +140,7 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 | `Permission denied: external_directory` | 目标路径不在允许目录 | 问用户是否放开该路径 |
 | `outcome: busy` | 目标 session 还在跑 | 等待，不要新建顶替 |
 | `outcome: unknown` | 没有新活动 | 明确说"未拿到可信结果"，可重试一次 |
+| `outcome: unverified` | 宿主报成功但没有可验证的交付证据 | 转述证据字段，问用户重试还是换做法；不得说完成 |
 | 改了 `opencode.jsonc` 但不生效 | 后台 service 缓存了配置 | `opencode service restart` |
 | 新增/修改插件后不生效 | 同上（插件在 location 激活时加载） | `opencode service restart` |
 | `ServiceUnavailableError: Location plugins did not finish activating` | ① 插件构建失败 ② MCP 启动阻塞 ③ 插件 setup 迟迟不 settle | 先看 `--print-logs` 的 `failed to load plugin`；再查 MCP；最后怀疑插件 API |

@@ -67,12 +67,13 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 
 工具返回 JSON，重点看这几个字段：
 
-- `outcome`：`succeeded` 成功；`failed` 任务失败；`unknown` **没有新活动**（拿不到可信结论，别当成成功）；`busy` 目标 session 上一次运行仍在进行（等一会再试，别排队）；`interrupted` 被中断。
+- `outcome`：`succeeded` 成功；**`unverified` 宿主报成功但本轮没有可验证的交付证据**（**不得当完成**，见下条）；`failed` 任务失败；`unknown` **没有新活动**（拿不到可信结论，别当成成功）；`busy` 目标 session 上一次运行仍在进行（等一会再试，别排队）；`interrupted` 被中断。
+- `host_outcome`：宿主原始结果（`unverified` 时恒为 `succeeded`）。排障与如实转述时用它说明「宿主说成功，但没有交付证据」。
 - `blocked_reason` / `blocked_action`：工程 session 被权限拦了。**不要换写法绕过**——把被拒的操作原样告诉用户，问是否追加一条 `grants` 后重新委托。
 - `out_of_scope_files`：本次委托改了 scope 外的文件。**必须向用户点名**并说明。
 - `last_assistant_text`：工程 session 的最终说明，原样转述（可精简，但不得改写结论）。
-- `no_work_evidence`：**交付证据缺失**。`true` 表示工程 session 没留下任何交付物（它可能只输出了角色开场白就结束），此时 `outcome` 仍可能是 `succeeded`。
-  → **不得转述为"已完成"**；必须转述为"没有产出"，并给出证据（`tool_calls` / `write_tool_calls` / `artifacts`），问用户是重试还是换做法。
+- `no_work_evidence`：**交付证据缺失**。`true` 时 `outcome` 已被降级为 **`unverified`**（`host_outcome` 保留宿主的 `succeeded`）。
+  → **不得转述为"已完成"**；必须转述为「**没有可验证的交付证据**」（不要说成"没有产出"——产物可能落在 git 视野外），并给出证据（`tool_calls` / `write_tool_calls` / `artifacts` / `model_switched`），问用户是重试还是换做法。
   配套证据字段：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是不是角色开场白）、`model_switched`（本轮是否中途换过模型）。
   ⚠ `artifacts` 的口径是"**git 可见**的本轮变更数"：被 `.gitignore` 忽略的产物、工程根之外的改动（治理面文件等）、worktree 子工作区的改动**都数不到**——`artifacts=0` 不等于"什么都没改"，别拿它当确证。
 
@@ -110,7 +111,7 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 3. **不猜 brief**——缺字段就 `question` 问，不要用默认值糊过去。
 4. **不绕过 scope**——工程 session 越界时你要点名并停下，不要"帮它一把"。
 5. **不把工程 transcript 搬进你的回答**——只转述 `last_assistant_text` 与结构化字段。
-6. **不把没有交付的委托说成完成了**——`no_work_evidence=true` 时，即使 `outcome=succeeded` 也要如实说"没有产出"。
+6. **不把没有交付的委托说成完成了**——`outcome=unverified`（`no_work_evidence=true`）时不得说"已完成"，必须说「没有可验证的交付证据」并给出证据字段。
 7. **不在你的回答里出现任何账号级凭证**（provider key / token / git 凭据）。
 
 ## 六、降级与排障
@@ -121,6 +122,7 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 | `Permission denied: external_directory` | 目标路径不在 `/workspace/**` 内 | 问用户是否放开该路径（作为 `grants` 或调整 `external_directory`） |
 | `outcome: busy` | 目标工程 session 还在跑 | 告知用户并等待，不要新建 session 顶替 |
 | `outcome: unknown` | 没有新活动，结论不可信 | 明确说"未拿到可信结果"，可重试一次 |
+| `outcome: unverified` | 宿主报成功，但本轮没有可验证的交付证据 | 转述证据（`write_tool_calls` / `artifacts` / `model_switched`）→ 问用户重试还是换做法；**不得**说完成 |
 | `blocked_reason` 非空 | 被权限拦 | 汇报被拒操作 → 问用户 → 追加 grant 后重委托 |
 
 ## 七、输出规范

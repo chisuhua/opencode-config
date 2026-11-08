@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | Proposed |
+| Status | Accepted（2026-11-09，用户拍板推进；oracle+critic 双审完成，0 未闭 BLOCKER；关联 change 已登记为 backlog） |
 | Date | 2026-11-08 |
 | Author | architect |
 | Parent | 部分取代 `adr-front-agent-redesign.md`：D4 中「`subagent` 保持 `deny`」一条作废；D3 的「`scope` 必填」仅对 `kind=engineering` 继续有效；D6 的登记协议扩展 `kind` 字段，其余继续有效。D1 产物判据、D2 唯一工程通道、D5 preflight grants、D6 的锁与 upsert 协议、D7 guide 归宿继续有效 |
@@ -12,6 +12,7 @@
 | AC 映射 | 待 planner 立项后回填 AC 编号（本文件 Verification 第 1–17 条为候选判据） |
 | 审稿报告 | `.rddf/reviews/adr-front-knowledge-capability-review.md` |
 | 增补记录 | **2026-11-08**：E2E 真实运行时暴露两处实现约束 → 补 **D2.1（规则顺序是硬约束）**、**D3.1（网络守卫必须覆盖首参数形态）**，并订正 Verification 第 15 条（原写"末尾 `*: deny`"，与 D2.1 矛盾）、新增 2 条判据与 2 条风险。运行时证据：`/workspace/main/rdd-workflow-e2e/tests/integration/test_front_delegate_runtime.bats`（L2-13/L2-14/L2-15，实跑 15/15 ok）。增补的复审结论见审稿报告 §8 |
+| 增补记录 2 | **2026-11-09**：`outcome` 枚举由 `ADR-delegate-delivery-evidence` 扩展（新增 `unverified` + `host_outcome`）→ **本篇 D5 的 ledger 字段表与"行产生时机"表需同步补 `unverified` / `host_outcome`**（单点耦合，见该篇 Parent 条款与 D3.1 迁移清单第 6 项） |
 
 ## 背景与问题
 
@@ -156,7 +157,7 @@
 ### D5 记忆层：`ledger.jsonl`（插件单写，与 pair/role 同一把锁）
 
 - 路径：`.rddf/state/ledger.jsonl`，append-only。
-- 字段：`recorded_at` / `kind` / `front_session_id` / `backend_session_id` / `goal` / `scope` / `outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `last_assistant_text`（截断，禁止落凭证）。
+- 字段：`recorded_at` / `kind` / `front_session_id` / `backend_session_id` / `goal` / `scope` / `outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `last_assistant_text`（截断，禁止落凭证）。
 - 写入者：**仅 `delegate` 插件**，append 动作放进现有 `registerSession` 的同一 `withLock` 临界区 → 零新增写入方、无第二把锁、无锁序反转。
 - **行产生时机（写死，避免"每次 delegate 一行"与实现歧义）**：
 
@@ -165,7 +166,7 @@
   | brief 校验失败 / grants 非法 / agent 不在白名单 | **不落行**（无 session 产生，无事实可记） |
   | resume 校验失败 | **不落行** |
   | 建 session 后 busy（拒绝排队） | **落一行**，`outcome: "busy"` |
-  | 正常结束 | **落一行**（无论 succeeded/failed/interrupted/unknown） |
+  | 正常结束 | **落一行**（无论 `succeeded` / `unverified` / `failed` / `interrupted` / `unknown`；`unverified` 与 `host_outcome` 见 `ADR-delegate-delivery-evidence`） |
   | wait 超时 / 异常 | **落一行**，`outcome: "unknown"`，`wait_error` 记入 |
 
   实现为**单次 append**，不得搭 `registerSession` 两次调用（prompt 前 / wait 后）的车而产生两行。

@@ -623,11 +623,12 @@ describe("失败与并发路径（补审计缺口）", () => {
 describe("交付面证据：静默失败检测（P0）", () => {
   const ROLE_OPENING = "【角色: builder | source: state-file】我可实施代码修改。\n\n目标明确、scope 单文件，直接实施。"
 
-  test("工程 session 只输出角色开场白就结束 → no_work_evidence=true（outcome 仍是宿主视角的 succeeded）", async () => {
+  test("工程 session 只输出角色开场白就结束 → outcome=unverified（host_outcome 保留宿主的 succeeded）", async () => {
     const project = fixtureProject()
     const { ctx } = createFakeCtx({ assistantText: ROLE_OPENING })
     const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
-    expect(summary.outcome).toBe("succeeded")
+    expect(summary.outcome).toBe("unverified")
+    expect(summary.host_outcome).toBe("succeeded")
     expect(summary.final_is_role_opening).toBe(true)
     expect(summary.no_work_evidence).toBe(true)
     expect(summary.tool_calls).toBe(0)
@@ -644,6 +645,7 @@ describe("交付面证据：静默失败检测（P0）", () => {
     })
     const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
     expect(summary.outcome).toBe("succeeded")
+    expect(summary.host_outcome).toBe("succeeded")
     expect(summary.no_work_evidence).toBe(false)
     expect(summary.final_is_role_opening).toBe(false)
     expect(summary.artifacts).toBeGreaterThan(0)
@@ -656,6 +658,7 @@ describe("交付面证据：静默失败检测（P0）", () => {
     expect(summary.kind).toBe("knowledge")
     expect(summary.tool_calls).toBe(0)
     expect(summary.no_work_evidence).toBe(false)
+    expect(summary.outcome).toBe("succeeded") // 知识 session 不得被判 unverified
   })
 
   test("工程 session 用 edit 工具写盘 → 有写盘调用与产物，即使结尾是开场白也不判 no_work_evidence", async () => {
@@ -688,6 +691,8 @@ describe("交付面证据：静默失败检测（P0）", () => {
       .map((l) => JSON.parse(l))
     expect(rows.length).toBe(1)
     expect(rows[0].no_work_evidence).toBe(true)
+    expect(rows[0].outcome).toBe("unverified")
+    expect(rows[0].host_outcome).toBe("succeeded")
   })
 
   test("resume：历史轮次的写盘调用不得掩盖本轮零交付（只看本轮窗口）", async () => {
@@ -717,6 +722,8 @@ describe("交付面证据：静默失败检测（P0）", () => {
     expect(second.write_tool_calls).toBe(0) // 本轮没有写盘调用（上一轮的不算）
     expect(second.artifacts).toBe(0) // 本轮没有新产物
     expect(second.no_work_evidence).toBe(true) // 本轮零交付必须报出来
+    expect(second.outcome).toBe("unverified")
+    expect(second.host_outcome).toBe("succeeded")
   })
 
   test("run 中途换过模型（model-switched）+ 本轮零交付 → 报出来（不依赖文本格式）", async () => {
@@ -732,6 +739,7 @@ describe("交付面证据：静默失败检测（P0）", () => {
     expect(summary.model_switched).toBe(1)
     expect(summary.final_is_role_opening).toBe(false)
     expect(summary.no_work_evidence).toBe(true)
+    expect(summary.outcome).toBe("unverified")
   })
 
   test("用 shell 写盘（有产物）+ 最终文本是开场白 → 不得误报成没有产出", async () => {
@@ -746,6 +754,7 @@ describe("交付面证据：静默失败检测（P0）", () => {
     expect(summary.write_tool_calls).toBe(0) // shell 不算写盘工具
     expect(summary.artifacts).toBeGreaterThan(0) // 但产物在
     expect(summary.no_work_evidence).toBe(false) // 有产物 → 不是"没有产出"
+    expect(summary.outcome).toBe("succeeded") // 不得降级
   })
 
   test("仍在跑（wait 超时）时不得判 no_work_evidence（resume 的陈旧 outcome 会误报）", async () => {
@@ -758,6 +767,7 @@ describe("交付面证据：静默失败检测（P0）", () => {
       expect(summary.wait_timed_out).toBe(true)
       expect(summary.still_running).toBe(true)
       expect(summary.no_work_evidence).toBe(false) // 仍在跑 → 不判定"没有产出"
+      expect(summary.outcome).not.toBe("unverified") // 陈旧 outcome 不得触发降级
     } finally {
       if (prev === undefined) delete process.env.DELEGATE_WAIT_TIMEOUT_MS
       else process.env.DELEGATE_WAIT_TIMEOUT_MS = prev

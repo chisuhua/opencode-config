@@ -793,7 +793,9 @@ export function delegateToolDefinition(ctx: any): any {
           const afterMessageID = lastMessageID(messages)
           const newActivity = afterMessageID !== baselineMessageID || messages.length !== beforeMessages.length
 
-          let outcome = (after as any)?.outcome ?? null
+          // 宿主原值（契约：`unverified` 时它恒为 "succeeded"，排障/审计用）。
+          const hostOutcome: string | null = ((after as any)?.outcome ?? null) as string | null
+          let outcome = hostOutcome
           if (!newActivity) {
             outcome = "unknown"
           }
@@ -824,10 +826,13 @@ export function delegateToolDefinition(ctx: any): any {
           const stillRunning = waitTimedOut || outcome == null
           const noWorkEvidence =
             kind === "engineering" && outcome === "succeeded" && !stillRunning && delivery.no_work_evidence
+          // 机读化：宿主报成功但无交付证据 → `unverified`（宿主原值保留在 host_outcome）。
+          if (noWorkEvidence) outcome = "unverified"
 
           registerSession(root, sessionID, frontSessionID, effectiveAgent, kind, {
             ...ledgerBase,
             outcome,
+            host_outcome: hostOutcome,
             blocked_reason,
             out_of_scope_files: outOfScope,
             changed_files: changed,
@@ -857,6 +862,7 @@ export function delegateToolDefinition(ctx: any): any {
             resumed_by_other_front: resumedByOtherFront,
             outcome,
             new_activity: newActivity,
+            host_outcome: hostOutcome,
             blocked_reason,
             blocked_action,
             blocked_all,

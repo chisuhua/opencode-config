@@ -50,7 +50,7 @@ opencode run --agent front "把 tests/ 下缺的那几个用例补上"
 （状态来自磁盘快照，所以它会标注"状态读取于 \<时间\>"——工程 session 可能已经更进一步。）
 
 > **口径说明**：本手册描述的行为分两类——
-> **已实测**（有验收证据）：委托链路、权限边界、结果字段与 6 种 `outcome`、scope 强制、
+> **已实测**（有验收证据）：委托链路、权限边界、结果字段与 6 种 `outcome`（`succeeded` / `unverified` / `failed` / `interrupted` / `unknown` / `busy`）、scope 强制、
 > grants 白名单拒绝、续接、busy、越界可见（见 `.rddf/reviews/front-agent-redesign-acceptance.md`）。
 > **已实现但未专项实测**（模型侧对话行为，可能随模型/提示词变化）：
 > ① 首轮主动报状态（ADR AC14）；② 需要额外权限时先向用户预批再委托（ADR AC15）。
@@ -138,7 +138,8 @@ grant `edit` 会让 `scope` 的强制点失效）。
 
 | `outcome` | 含义 | 你该怎么理解 |
 |---|---|---|
-| `succeeded` | 跑完了 | 但仍要看 `out_of_scope_files`、`blocked_reason` **和 `no_work_evidence`** 是否为"空/否" |
+| `succeeded` | 跑完了，且有交付证据 | 仍要看 `out_of_scope_files`、`blocked_reason` 是否为空 |
+| **`unverified`** | **宿主报成功，但本轮没有可验证的交付证据** | **不能当成完成**——看 `host_outcome`（恒为 `succeeded`）与证据字段，问用户重试还是换做法 |
 | `failed` | 任务本身失败 | 看 `last_assistant_text` |
 | `interrupted` | 被中断 | 通常是你或环境中断了它，可以重来 |
 | `unknown` | **没有新活动** | **不能当成成功**——没拿到可信结果，可重试一次 |

@@ -415,7 +415,7 @@ await ctx.tool.transform((editor: any) => {
   - 换 agent 时仍要注意：**不同 agent 的 ask 清单不同**，`CONSTANT_DENY` 需要按目标 agent 调整。
 - **多工程**：现在 `canonical_root` 由 `project_dir` 推导，pair.json 按工程仓各存一份。
   跨仓协作（如 hub-spoke）需要 `external_directory` grant —— 走 §6.5 的 grants 通道。
-- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / `final_is_role_opening` / `model_switched` / 截断脱敏后的 `last_assistant_text`）。
+- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / `final_is_role_opening` / `model_switched` / 截断脱敏后的 `last_assistant_text`）。
   - 写入者只有本插件；与 pair/role 共用 `.rddf/state/.role.lock`。
   - **职责切分**：`pair.json` 是 resume 的访问控制判据，`ledger.jsonl` 只记录历史事实，**不参与 resume 校验**。
   - 行产生时机：校验失败/resume 失败不落行；busy 落一行（`outcome: "busy"`）；正常结束/超时各落一行。
@@ -423,6 +423,7 @@ await ctx.tool.transform((editor: any) => {
   - delegate 因此回传一组**结构化证据**：`tool_calls` / `write_tool_calls` / `artifacts` / `final_is_role_opening` / `model_switched`，以及判定结果 `no_work_evidence`。
   - 判定规则（`lib/delegate-core.ts::summarizeDelivery`，纯函数可单测）：
     `no_work_evidence = (final_is_role_opening || model_switched > 0) && write_tool_calls === 0 && artifacts === 0`。
+    判定为真时 **`outcome` 降级为 `unverified`**，宿主原值保留在 `host_outcome`（契约见 `ADR-delegate-delivery-evidence`）。
     - `model-switched` 是**根因信号**（宿主消息 `type == "model-switched"`，run 中途换过模型），不依赖任何文本格式；开场白匹配是辅助信号。
     - 写盘类工具口径：`edit` / `write` / `patch` / `apply_patch` / `multiedit`；**shell 不算**（无法从命令文本判定是否落盘），shell 写出的产物由 `artifacts` 兜底。
     - ⚠ **判定只看本轮消息**（`sliceRoundMessages(messages, baselineMessageID)`）：resume 时历史轮次的写盘调用会掩盖本轮零交付。找不到 baseline 时退回全量（宁可漏报不误报）。

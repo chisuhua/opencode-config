@@ -8,6 +8,11 @@
 
 ## 版本变更摘要
 
+> **v2.6 增补（2026-11-09，ADR-delegate-delivery-evidence 落地）**：上面 v2.6 段的「**outcome 枚举不变**」一句已过时（历史不改，此处增补）：`outcome` 现扩展为 `succeeded` / **`unverified`** / `failed` / `interrupted` / `unknown` / `busy`。
+> - `unverified` = 宿主报成功但本轮没有可验证的交付证据（`no_work_evidence=true` 时触发；判定链见 ADR D2）。
+> - 摘要与 ledger 行同时保留宿主原值 `host_outcome`（`unverified` 时恒为 `succeeded`）。
+> - 迁移面：`prompts/front.md`、`docs/front-delegate-usage.md`、`docs/dual-session-delegation.md`、`docs/front-delegate-architecture.md`、`ADR-front-knowledge-capability` D5、单测与 E2E —— **同一 patch 内完成**（ADR D3.1 八项）。
+
 > **v2.6 变更摘要（2026-11-09）**：**静默失败检测** —— 宿主说 succeeded ≠ 工程 session 真的交付了东西。
 > ① **缺陷来源**：E2E 实跑中发现，工程 session 在模型于 run 中途被切换后重来时，可能只读了 role.json 就输出角色开场白并 idle；宿主仍把该 run 记为 `succeeded` → delegate 回传 `succeeded` + `changed_files: []`，front 遂向用户转述"已完成"，而实际什么都没产出。
 > ② delegate 回传**交付面证据**：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数：`edit`/`write`/`patch`/`apply_patch`/`multiedit`；**shell 不算**，无法从命令文本判定落盘）、`artifacts`（本次产生的文件变更数，**git 可见口径**：被忽略 / 工程根外 / worktree 内的改动数不到）、`final_is_role_opening`（最后一条文本是否停在角色开场白）、`model_switched`（本轮是否中途换过模型 —— **根因信号**，宿主消息 `type == "model-switched"`，不依赖任何文本格式），以及判定结果 `no_work_evidence`。
