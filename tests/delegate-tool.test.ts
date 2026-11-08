@@ -38,6 +38,11 @@ function fixtureProject(): string {
   execFileSync("git", ["init", "-q"], { cwd: dest })
   execFileSync("git", ["add", "-A"], { cwd: dest })
   execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "fixture"], { cwd: dest })
+  // 约定（docs/front-delegate-testing.md §5）：清掉示例工程里活的登记/账本，
+  // 否则 fixture 会带着上一轮真实运行的 pair/role/ledger，断言不再确定。
+  for (const f of ["pair.json", "role.json", "ledger.jsonl"]) {
+    rmSync(path.join(dest, ".rddf/state", f), { force: true })
+  }
   return dest
 }
 
@@ -60,6 +65,13 @@ type FakeOptions = {
   onPrompt?: (session: Session, brief: string) => void
   /** 预置一个"正在运行"的 session（用于 busy 判定）。 */
   busy?: boolean
+  /**
+   * 模拟"prompt 入队失败"：prompt 不产生任何消息 → 委托结束后 newActivity=false，
+   * 必须返回 outcome="unknown"（不得采信旧的 outcome）。
+   */
+  noActivity?: boolean
+  /** 模拟 session.wait 抛错：必须落到 wait_error，而不是静默成功。 */
+  waitThrows?: boolean
 }
 
 function createFakeCtx(options: FakeOptions = {}) {
@@ -94,6 +106,10 @@ function createFakeCtx(options: FakeOptions = {}) {
         const session = sessions.get(input.sessionID)
         if (!session) throw new Error(`未知 session: ${input.sessionID}`)
         session.prompts.push(input.text)
+        if (options.noActivity) {
+          // 模拟 prompt 入队失败：不产生任何新消息（baseline 与 after 完全一致）
+          return {}
+        }
         session.messages.push({
           id: `msg_user_${session.prompts.length}`,
           type: "user",
@@ -125,7 +141,9 @@ function createFakeCtx(options: FakeOptions = {}) {
         session.updated = session.idle
         return {}
       },
-      wait: async () => {},
+      wait: async () => {
+        if (options.waitThrows) throw new Error("wait failed")
+      },
       get: async (input: any) => {
         const session = sessions.get(input.sessionID)
         if (!session) throw new Error(`未知 session: ${input.sessionID}`)
@@ -491,6 +509,101 @@ describe("ledger 行产生时机（D5）", () => {
     const { ctx } = createFakeCtx()
     await expect(runDelegate(ctx, { ...BASE, project_dir: project, agent: "general" })).rejects.toThrow(/白名单/)
     expect(existsSync(ledgerPath(project))).toBe(false)
+  })
+})
+
+describe("失败与并发路径（补审计缺口）", () => {
+  test("prompt 无新活动 → outcome=unknown，不采信旧 outcome", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({ noActivity: true })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    expect(summary.outcome).toBe("unknown")
+    expect(summary.new_activity).toBe(false)
+    const rows = readFileSync(path.join(project, ".rddf/state/ledger.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l))
+    expect(rows.length).toBe(1)
+    expect(rows[0].outcome).toBe("unknown")
+  })
+
+  test("resume 的 canonical_root 不匹配 → 拒", async () => {
+    const project = fixtureProject()
+    const stateDir = path.join(project, ".rddf/state")
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(
+      path.join(stateDir, "pair.json"),
+      JSON.stringify({
+        version: "pair-v2",
+        pairs: {
+          ses_elsewhere: {
+            front_session_id: null,
+            canonical_root: "/tmp/other-project",
+            agent: "build",
+            kind: "engineering",
+            registered_at: new Date().toISOString(),
+            last_used_at: new Date().toISOString(),
+          },
+        },
+      }),
+    )
+    const { ctx, calls } = createFakeCtx()
+    await expect(
+      runDelegate(ctx, { ...BASE, project_dir: project, resume_session: "ses_elsewhere" }),
+    ).rejects.toThrow(/canonical_root/)
+    expect(calls.create).toBe(0)
+  })
+
+  test("resume 时显式 agent 与登记 agent 不一致 → 拒", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx()
+    const first = await runDelegate(ctx, { ...BASE, project_dir: project, agent: "build" })
+    await expect(
+      runDelegate(ctx, {
+        ...BASE,
+        project_dir: project,
+        agent: "explore",
+        scope: [],
+        resume_session: first.session_id,
+      }),
+    ).rejects.toThrow(/不匹配/)
+  })
+
+  test("session.wait 抛错 → wait_error 回传，仍写出结果与 ledger", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({ waitThrows: true })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    expect(summary.wait_error).toContain("wait failed")
+    expect(summary.session_id).toBeTruthy()
+    const rows = readFileSync(path.join(project, ".rddf/state/ledger.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l))
+    expect(rows.length).toBe(1)
+  })
+
+  test("并发两次委托：pair/role/ledger 均无丢失", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    const [a, b] = await Promise.all([
+      runDelegate(ctx, { ...BASE, project_dir: project, goal: "并发 A" }),
+      runDelegate(ctx, { ...BASE, project_dir: project, goal: "并发 B" }),
+    ])
+    expect(a.session_id).not.toBe(b.session_id)
+    expect(sessions.size).toBe(2)
+
+    const pair = JSON.parse(readFileSync(path.join(project, ".rddf/state/pair.json"), "utf8"))
+    expect(Object.keys(pair.pairs).sort()).toEqual([a.session_id, b.session_id].sort())
+
+    const role = JSON.parse(readFileSync(path.join(project, ".rddf/state/role.json"), "utf8"))
+    expect(Object.keys(role.sessions).sort()).toEqual([a.session_id, b.session_id].sort())
+
+    const rows = readFileSync(path.join(project, ".rddf/state/ledger.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l))
+    expect(rows.length).toBe(2)
+    expect(rows.map((r) => r.backend_session_id).sort()).toEqual([a.session_id, b.session_id].sort())
   })
 })
 

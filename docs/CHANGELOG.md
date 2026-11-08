@@ -8,6 +8,13 @@
 
 ## 版本变更摘要
 
+> **v2.5 修正（2026-11-08，E2E 实测发现）**：两处配置在静态检查下看不出来、必须在真实运行时才暴露的缺陷。
+> ① **`subagent` 规则顺序**：opencode 的工具可见性判定（`whollyDisabled`）只看该 action **最后一条**匹配规则——若 `"*": "deny"` 排在末尾，整个 `subagent` 工具会被**隐藏**（逐 agent allow 完全没机会生效，front 运行时反馈"subagent 工具不存在"）。正确顺序：`"*": "deny"` 第一条，具体 agent allow 在后；对未列出的 agent 仍落 deny（`findLast` 命中首条 `*`）。
+> ② **网络写守卫的参数位置**：原 `curl * -o*` 匹配不到 `curl -o /tmp/x URL`（`-o` 作为第一个参数时前面没有空格）。补首个参数形态：`curl -o*` / `curl --output*` / `curl -O*` / `curl -T *` / `curl --upload-file *` / `curl -d @*` / `curl --data @*` / `curl --data-binary @*`、`wget -O*` / `wget --output-document*` / `wget -P*`。实测：修前 librarian 真的把 `curl -o` 的文件下载落盘了。
+> ③ 单测补 4 条失败/并发路径（unknown / resume canonical_root / resume agent mismatch / 并发两次委托 + wait 抛错 + readJson/withLock 容错）→ **123 pass，delegate-core 行覆盖 98.14%**。
+> ④ E2E：`/workspace/main/rdd-workflow-e2e/tests/integration/test_front_delegate_runtime.bats` 扩到 **14 条**（新增 L2-9…L2-14 覆盖 agent 白名单 / 知识 session / ledger / subagent 加固 / 网络守卫 / 门控），真实模型实测 **13 pass + 1 skip**（L2-7 busy 因 delegate 同步、单进程不可达，已写明并指向单测）。
+> ⑤ 遗留：ADR D3 的守卫清单与 `docs/adr/` 的 D3 表尚未回填上述"首个参数形态"（属架构文档，待 architect 回填）。
+
 > **v2.5 变更摘要（2026-11-08）**：**front 获得知识获取能力** —— 在「front 不获得写 / 执行能力」的前提下，放行只读 subagent 并引入记忆层。
 > ① `agent.front.permission.subagent` 由 `"deny"` 改为逐 agent 对象：`explore` / `librarian` / `oracle` / `metis` / `critic` allow + `"*": "deny"`（显式排除 `general` / `plan` / `build`）。粒度实测：`opencode reload` 后 `debug agents` 解析出六条规则，`"*": deny` 末尾。
 > ② 五个被放行 agent 的 `shell` 从 `"*": allow` 改为**三段式**（`"*": deny` 打头 → 只读白名单 → 尾部守卫 deny）：补 `* > *` / `* >> *` / `tee` / `find -fls` / `sort -o` / `uniq -o` / `git --output|--format|--pretty`；网络写落盘（`curl -o|--output|-O`、`wget -O|--output-document|-P`）与文件外泄（`curl -T|--upload-file|-d @|--data @|--data-binary @`）守卫；`git clone * /*` deny → `git clone * /tmp/opencode/*` allow。`librarian` 额外保留 `curl`/`wget`/`git clone`/`git ls-remote` 且不套 `* /*` 守卫；其 `subagent: allow` 改为 `deny`（封深度 2 链）。

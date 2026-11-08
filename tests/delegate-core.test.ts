@@ -8,7 +8,7 @@
  * 运行：bun test tests/
  */
 import { afterAll, describe, expect, test } from "bun:test"
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, utimesSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -529,6 +529,33 @@ describe("ledger：历史事实（插件单写）", () => {
     expect(out).not.toContain("oc_sk_abcdefgh12345678")
     expect(out).not.toContain("sk-1234567890abcdef")
     expect(redactAndTruncate("a".repeat(20), 10)).toBe("a".repeat(10) + "…")
+  })
+})
+
+describe("容错路径", () => {
+  test("readJson：损坏 JSON / 空文件 → undefined", () => {
+    const bad = path.join(TMP, "bad.json")
+    writeFileSync(bad, "{not json")
+    expect(readJson(bad)).toBeUndefined()
+    const empty = path.join(TMP, "empty.json")
+    writeFileSync(empty, "  \n")
+    expect(readJson(empty)).toBeUndefined()
+    expect(readJson(path.join(TMP, "missing.json"))).toBeUndefined()
+  })
+
+  test("withLock：陈旧锁（>30s）被回收，不阻塞", () => {
+    const dir = path.join(TMP, "stale-lock")
+    mkdirSync(dir, { recursive: true })
+    const lock = path.join(dir, ".role.lock")
+    mkdirSync(lock)
+    const old = new Date(Date.now() - 60_000)
+    utimesSync(lock, old, old)
+    let ran = false
+    withLock(lock, () => {
+      ran = true
+    })
+    expect(ran).toBe(true)
+    expect(existsSync(lock)).toBe(false)
   })
 })
 
