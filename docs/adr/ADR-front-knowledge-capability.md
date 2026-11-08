@@ -77,7 +77,7 @@
 
 **因此"逐 agent 白名单"必须同时成立两件事**：① 工具可见（规则顺序）；② 非白名单 agent 被拒（`findLast` 回落首条 `*: deny`）。缺 ① 则能力为零，缺 ② 则门控为零——由 L2-14（规则集合 + 危险 agent 排除）与 L2-15（真实调用非白名单 agent → 必须被拒，同时兜住"工具可见"）覆盖。
 
-**顺序的回归闸**：L2-14 **须**包含顺序断言（`debug agents` 的规则输出是有序的，可检）——**当前 L2-14 尚未断言顺序**（判据 16 要求补齐），因此顺序回归目前只能由 L2-15 的"判据未触发即 FAIL"间接兜住；顺序断言补齐后 L2-14 才成为顺序回归闸。
+**顺序的回归闸**：L2-14 **须**包含顺序断言（`debug agents` 的规则输出是有序的，可检）——**已于 2026-11-08 补齐**（L2-14 现在断言"首条必须是 `*: deny`、末条不得是 `*`"，并用"把配置改回错误顺序"验证其真能拦住）；补齐前顺序回归只能由 L2-15 的"判据未触发即 FAIL"间接兜住。
 
 **前提声明**：本结论以 **front 没有 session 级权限注入**为前提。session 级规则在 opencode 的 `configured()` 中排在 agent 规则**之后**，`findLast` 下会覆盖 agent 配置；当前 front 无注入路径（delegate 注入的是**后端** session），故成立。若将来 front 自身引入 session 级 permissions，必须重验本节。
 
@@ -114,8 +114,8 @@
 | curl | `curl * -o*` / `--output*` / `-O*` | `curl -o*` / `curl --output*` / `curl -O*` | ✅ 已落地 |
 | curl（外泄） | `curl * -T *` / `--upload-file *` / `-d @*` / `--data @*` / `--data-binary @*` | `curl -T *` / `curl --upload-file *` / `curl -d @*` / `curl --data @*` / `curl --data-binary @*` | ✅ 已落地 |
 | wget | `wget * -O*` / `--output-document*` / `-P*` | `wget -O*` / `wget --output-document*` / `wget -P*` | ✅ 已落地 |
-| git | `git * --output*` / `--format*` / `--pretty*` | `git --output*` / `git --format*` / `git --pretty*` | ⬜ **待落地** |
-| sort / uniq | `sort * -o*` / `uniq * -o*` | `sort -o*` / `uniq -o*` | ⬜ **待落地** |
+| git | `git * --output*` / `--format*` / `--pretty*` | `git --output*` / `git --format*` / `git --pretty*` | ✅ 已落地（2026-11-08） |
+| sort / uniq | `sort * -o*` / `uniq * -o*` | `sort -o*` / `uniq -o*` | ✅ 已落地（2026-11-08） |
 
 **不需要首参形态的两族（论证）**：`tee` 的文件名就是它的参数本身，`tee *` 已覆盖（`tee /tmp/x` 命中）；`find` 的表达式必须跟在路径之后（`find . -fprintf /tmp/x`），把 `-fprintf` 放首位不是合法用法。
 
