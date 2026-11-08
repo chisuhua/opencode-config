@@ -59,17 +59,17 @@
 
 | Agent | Mode | 角色 | Model | Temperature | Context |
 |---|---|---|---|---|---|
-| **build** | primary | 严谨代码工程师 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.1 | 1,000,000† |
+| **build** | primary | 严谨代码工程师 | `minimax-cn/MiniMax-M3.1-Flash` | 0.1 | 1,000,000 |
 | **plan** | primary | 设计者+只读规划 | `minimax-cn/MiniMax-M3.1-Flash` | —（未设） | 1,000,000 |
-| **explore** | subagent | 本地代码搜索 | `commandcode/deepseek/deepseek-v4.1-flash`（`variant: low`） | 0.1 | 1,000,000† |
+| **explore** | subagent | 本地代码搜索 | `opencode/deepseek-v4.1-flash-free`（`variant: low`） | 0.1 | 200,000† |
 | **librarian** | subagent | 外部文档/依赖调研 | `opencode/deepseek-v4.1-flash-free`（`variant: low`） | 0.1 | 200,000† |
-| **oracle** | subagent | 架构咨询 | `commandcode/deepseek/deepseek-v4.1-flash`（`variant: max`） | —（未设） | 1,000,000† |
+| **oracle** | subagent | 架构咨询 | `kimi-code/kimi-for-coding`（`variant: max`） | —（未设） | 1,048,576 |
 | **metis** | subagent | 计划前差距分析 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.3 | 1,000,000† |
 | **general** | subagent | 多面手 fallback | `commandcode/deepseek/deepseek-v4.1-flash` | 0.2 | 1,000,000† |
 | **critic** | subagent | 对抗式审稿 | `kimi-code/kimi-for-coding` | 0.1 | 1,048,576 |
 | **context-builder** | subagent | critic prompt 组装器 | `opencode/deepseek-v4.1-flash-free` | 0.1 | 200,000† |
 | **front** | primary | 用户交互内核 / 委托出口 | `minimax-cn/MiniMax-M3.1-Flash` | 0.1 | 1,000,000 |
-| **title** | primary（hidden）| 会话标题/摘要生成 | `opencode/deepseek-v4.1-flash-free`（`variant: low`） | —（未设） | 200,000† |
+| **title** | primary（hidden） | 会话标题/摘要生成 | `opencode/deepseek-v4.1-flash-free`（`variant: low`） | —（未设） | 200,000† |
 
 > **本表以 `opencode.jsonc.opencode-go`（`opencode.jsonc` 符号链接当前指向）为真源**，改动配置后必须同步本表（§11「修改后必做」）。
 >
@@ -77,7 +77,9 @@
 >
 > **`Context` 一栏优先取配置里的 `providers.<id>.models.<model>.limit.context`**，不是上游标称值 —— 修正依据与证据强度见 §5.1。带 `†` 的模型未在配置声明 `limit`，取 models.dev 值（opencode 运行时即以其为默认）。
 >
-> **v2.4 订正（2026-11-06）**：本表此前与 `opencode.jsonc` 实际配置不符（build / explore / librarian / oracle / metis / general / critic / context-builder / title 共 9 行 model 记错）。现按配置逐行重算；`librarian` / `context-builder` / `title` 实际跑在 `opencode/deepseek-v4.1-flash-free` 上，不是 `opencode-go`。
+> **v2.4 订正（2026-11-08）**：本表按**运行时真值**重算 —— 数据取自 `opencode debug agents`（生效配置解析结果），不是对配置文件的肉眼抄读；`Context` 带 `†` 的模型未在配置声明 `limit`，取 models.dev 值。
+>
+> **踩过的坑**：v2.4 初稿曾按配置文件的一次中间态抄读，把 build / explore / oracle 记成 `commandcode/deepseek/deepseek-v4.1-flash`，与运行时真值不符（实际分别是 `minimax-cn/MiniMax-M3.1-Flash` / `opencode/deepseek-v4.1-flash-free` / `kimi-code/kimi-for-coding`）。**选型表以 `opencode debug agents` 为准，不要以配置文件某一时点的内容为准。**
 
 ### 2.2 Primary Agents（3 个，用户直接交互）
 
@@ -714,11 +716,11 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 
 | Provider | Models 数 | 当前 agent 用途 |
 |---|---|---|
-| `commandcode`（models.dev 内建）| — | build / explore / oracle / metis / general（`deepseek/deepseek-v4.1-flash`）|
-| `minimax-cn`（厂商直连）| 2 | plan / front（`MiniMax-M3.1-Flash`）；`MiniMax-M3` 在池内但无 agent 使用 |
+| `commandcode`（models.dev 内建）| — | metis / general（`deepseek/deepseek-v4.1-flash`）|
+| `minimax-cn`（厂商直连）| 2 | build / plan / front（`MiniMax-M3.1-Flash`）；`MiniMax-M3` 在池内但无 agent 使用 |
 | `opencode-go` | 1 | 无 agent 声明；`deepseek-v4.1-flash` 是降级链候选（§5.4）|
-| `opencode`（内建免费）| — | librarian / context-builder / title（`deepseek-v4.1-flash-free`）|
-| `kimi-code`（厂商直连）| 2 | critic（`kimi-for-coding`）；`k3-256k` 在池内但无 agent 使用 |
+| `opencode`（内建免费）| — | explore / librarian / context-builder / title（`deepseek-v4.1-flash-free`）|
+| `kimi-code`（厂商直连）| 2 | oracle / critic（`kimi-for-coding`）；`k3-256k` 在池内但无 agent 使用 |
 | `openstarry`（中转网关）| 7 | 无 agent 声明；`deepseek-v4.1-flash` 是降级链候选（§5.4）。池内另有 `glm-5.3-flash` / `deepseek-v4.1-flash-1017` / `kimi-k2.7-code` / `kimi-k2.6` / `qwen3.7-plus` / `MiniMax-M2.7-highspeed` |
 
 > **v1.3 变更**：provider 段迁到 v2 的 `providers` 形态（`package` / `settings` / `models[].limit`）；模型 id 已用 `opencode models` 与上游核对一致。
@@ -748,13 +750,13 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 
 | Agent | 选用 model | rationale |
 |---|---|---|
-| build | `commandcode/deepseek/deepseek-v4.1-flash` | 主对话模型；1M 上下文吃得下长会话，CommandCode 套餐内 |
-| plan | `minimax-cn/MiniMax-M3.1-Flash` | 规划要读大量代码与文档，1M 上下文优先于成本 |
-| explore | `commandcode/deepseek/deepseek-v4.1-flash` | 速度优先、本地搜索 token 少；`variant: low` |
+| build | `minimax-cn/MiniMax-M3.1-Flash` | 主对话模型；1M 上下文吃得下长会话；也是降级链的链头（§5.4）|
+| plan | `minimax-cn/MiniMax-M3.1-Flash` | 与 build 同款：规划要读大量代码与文档，1M 上下文优先于成本 |
+| explore | `opencode/deepseek-v4.1-flash-free` | 速度优先、本地搜索 token 少；免费档 + `variant: low` |
 | librarian | `opencode/deepseek-v4.1-flash-free` | 纯外部检索，免费档够用；`variant: low` |
-| oracle | `commandcode/deepseek/deepseek-v4.1-flash` | 1M 上下文，吃得下大量文件做架构分析；`variant: max` |
+| oracle | `kimi-code/kimi-for-coding` | 架构分析要吃下大量文件，1M 上下文；`variant: max` |
 | metis | `commandcode/deepseek/deepseek-v4.1-flash` | 创造性发散任务，温度 0.3 配合 |
-| general | `commandcode/deepseek/deepseek-v4.1-flash` | 多面手 fallback，与 build/explore 同款 |
+| general | `commandcode/deepseek/deepseek-v4.1-flash` | 多面手 fallback |
 | critic | `kimi-code/kimi-for-coding` | 长 PR diff + 文件全扫；1M 上下文吃得下全仓扫描 |
 | context-builder | `opencode/deepseek-v4.1-flash-free` | 纯机械的 prompt 组装，成本优先 |
 | title | `opencode/deepseek-v4.1-flash-free` | 高频短任务，轻量档足够 |
@@ -766,10 +768,10 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 ### 5.3 关键决策
 
 - **不引入 Anthropic / OpenAI provider**——本地网络限制 + 成本考虑
-- **主链路（build / explore / oracle / metis / general）用 `commandcode/deepseek/deepseek-v4.1-flash`**——1M 上下文；这些 agent 的共同特征是「要读很多」，上下文比单价更决定可用性
-- **plan / front 用 `minimax-cn/MiniMax-M3.1-Flash`**——与主链路同档位，但走厂商直连，作为主链路的天然异 provider 备份
-- **critic 用 `kimi-code/kimi-for-coding`**——长 PR diff + 全仓扫描，1M 上下文
-- **轻量链路（librarian / context-builder / title）用 `opencode/deepseek-v4.1-flash-free`**——检索与机械组装不需要长上下文
+- **主对话链路（build / plan / front）用 `minimax-cn/MiniMax-M3.1-Flash`**——1M 上下文；这些 agent 的共同特征是「要读很多」，上下文比单价更决定可用性
+- **重活链路（oracle / critic）用 `kimi-code/kimi-for-coding`**——架构分析 / 全仓扫描要吃下大量文件，1M 上下文
+- **杂活链路（metis / general）用 `commandcode/deepseek/deepseek-v4.1-flash`**——发散与杂活，1M 上下文
+- **轻量链路（explore / librarian / context-builder / title）用 `opencode/deepseek-v4.1-flash-free`**——检索与机械组装不需要长上下文，用免费档
 - **套餐可用性先于型号新旧（v1.4 实测教训）**——`deepseek-v4-flash` 与 `glm-5.1` 虽在 models.dev 存在，但**不在本套餐**（`model_price_error`）。选型前必须先打 `/v1/models` + 实测一次调用
 - **模型上下文 limit 写在配置里**（`providers.<id>.models.<model>.limit.context`），需与上游实际值核对（§8.2）
 
@@ -782,7 +784,7 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 | 入口 | `plugins/model-fallback.ts`（接线）+ `lib/model-fallback-core.ts`（纯逻辑）+ `tests/model-fallback-core.test.ts` |
 | 接线点 | `ctx.session.hook("retry", …)`：拿到 `{ agent, model, error, attempt, decision }`，必要时 `ctx.session.switchModel(...)` 后置 `decision = { retry: true }` |
 | 内置默认链 | `commandcode/deepseek/deepseek-v4.1-flash` → `minimax-cn/MiniMax-M3.1-Flash` → `openstarry/deepseek-v4.1-flash` → `opencode-go/deepseek-v4.1-flash`（**仅在没有配置文件时生效**；内置默认只覆盖 build 一个 agent）|
-| 当前生效链 | 由 `model-fallback.json` 整体覆盖（配置存在时以配置为准）：build = `commandcode/deepseek/deepseek-v4.1-flash` → `minimax-cn/MiniMax-M3.1-Flash` → `opencode-go/deepseek-v4.1-flash`；explore / librarian / oracle / metis / critic 各 3 候选。**`openstarry` 被有意剔除** —— 实测该 provider 返回 403「订阅额度不足」，放进链里只是白等一次降级 |
+| 当前生效链 | **链头 = agent 自己的默认模型**，其后接 `model-fallback.json` 的候选（去重）。当前 build 的链是 `minimax-cn/MiniMax-M3.1-Flash`（链头）→ `commandcode/deepseek/deepseek-v4.1-flash` → `opencode-go/deepseek-v4.1-flash`；explore / librarian / oracle / metis / critic 各 3 候选。**`openstarry` 被有意剔除** —— 实测该 provider 返回 403「订阅额度不足」，放进链里只是白等一次降级 |
 | 链推进 | 链尾失败且链首已恢复（冷却到期）时可**绕回链首**；换链预算 `chain.length * 2`，超限即放弃 |
 | 降级条件 | 401/403/404（模型级）立刻换；订阅额度不足（硬失败）立刻换；5xx / 网络类先原地退避 2 次再换；429 优先按 `retryAfterMs` 原地等待；**内容策略 / 上下文超限（`context length` / `token limit`）/ 400 / 413 / 422 一律不降级**（应走 compaction 或直接报错）——判定顺序上「内容策略 / 上下文超限」**先于**状态码短路，避免 400 + `forbidden` 被误判成模型不可用而拿弱模型去重试被拒的内容 |
 | 冷却 | 失败模型进入冷却（默认 5 分钟），链推进时跳过。**进程级**：provider 挂了就是挂了，冷却表跨 session 共享（内核保持纯函数，冷却条目由 plan 带出、宿主落盘） |
@@ -798,6 +800,8 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 > **中途换模型会重新构链**：用户在会话中 `/model` 切到链外模型后再次失败，会以新模型为链首重新组链（旧的推进下标一并重置，冷却表保留），而不是按旧链继续往后跳。
 >
 > **端到端记录的时间口径**：`minimax-cn 401 → openstarry 403 → opencode-go` 跑在**配置文件覆盖之前**（用的内置默认链）；当前生效链不含 openstarry，失败路径是 `openstarry（起点）403 → commandcode`。
+>
+> **面向使用者的操作与排障**见 [model-fallback-usage.md](./model-fallback-usage.md)（默认模型 / 后备链分别改哪、什么错误会换模型、日志怎么读、怎么停用降级）。本节是设计口径，用手册是操作口径。
 
 ---
 
@@ -1086,6 +1090,11 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
    - 建立 critic 输出质量的回归测试集（10+ 个 known-bug 样本）
    - 跑新 critic 看是否能找出 80%+ 的 known-bug
    - 低于阈值则需要扩展 prompt（§2.3 4 段式）或加 examples
+
+6. **`model-fallback` 缺显式开关与原地重试日志**
+   - 停用降级目前只能「移走 `plugins/model-fallback.ts`」或「把链配成长度 1」，没有配置级开关（`chains.<agent>: []` 会被忽略并回落到内置默认，实测仍会切换）
+   - 建议加 `"chains": { "<agent>": { "enabled": false, "candidates": [...] } }` 或独立的 `"disabled": ["build"]`
+   - 原地重试 / 原地等待不写日志，排障时看不出「等过几轮才换」；建议加一条 debug 级记录（`docs/model-fallback-usage.md` §5 已把这一限制写明）
 
 ### 8.4 P3: 长期（3+ 月）
 

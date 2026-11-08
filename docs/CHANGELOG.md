@@ -8,14 +8,15 @@
 
 ## 版本变更摘要
 
-> **v2.4 变更摘要（2026-11-06）**：**模型降级链** —— OpenCode v2.2.5 无原生 `fallback` 配置（`agent.model` 单值），改由 `plugins/model-fallback.ts` + `lib/model-fallback-core.ts` 实现：挂 `session.hook("retry")`，按错误分类决定「原地退避 / `switchModel` 换链 / 放弃」，build 默认链 `commandcode → minimax-cn → openstarry → opencode-go`。
+> **v2.4 变更摘要（2026-11-06）**：**模型降级链** —— OpenCode v2.2.5 无原生 `fallback` 配置（`agent.model` 单值），改由 `plugins/model-fallback.ts` + `lib/model-fallback-core.ts` 实现：挂 `session.hook("retry")`，按错误分类决定「原地退避 / `switchModel` 换链 / 放弃」，build 内置默认链 `commandcode → minimax-cn → openstarry → opencode-go`（当前生效链以 `model-fallback.json` 为准，见 ④）。
 > ① 401/403/404 与订阅额度硬失败立即换链；5xx/网络类先退避 2 次；429 优先按 `retryAfterMs` 等待；**内容策略 / 上下文超限（`context length` / `token limit`）/ 400 / 413 / 422 不降级**，且这两类**先于**状态码短路（否则 400 + `forbidden` 会被误判成模型不可用，拿弱模型重试被拒内容）；
 > ①' 冷却表**进程级**（跨 session 共享，内核仍保持纯函数：冷却条目由 plan 带出、宿主落盘）；会话状态按 location 重复 setup 时模块级共享 + 事件级去重；session 状态 30 分钟不活跃即淘汰；
 > ② 失败模型 5 分钟冷却，链尾可绕回已恢复的链首；链耗尽即 `retry: false`；
 > ③ 可见性：切换触发 TUI 模型指示器变化 + `~/.local/share/opencode/model-fallback.log`；实测 `session.synthetic` 通知会被当作新输入**再触发一轮模型调用**并重置降级状态，故默认关闭、降为显式选项 `notify: "synthetic"`；
 > ④ 链与策略走独立配置文件 `~/.config/opencode/model-fallback.json`（`chains` / `policy` / `notify`），环境变量 `MODEL_FALLBACK_CONFIG` 可改路径 —— **本地插件拿不到 opencode 配置里的 options**（实测三种写法 `ctx.options` 恒为 `{}`），故不用 `plugins` 配置项；**链头不单独配**，失败时正在用的模型即链首，改默认模型 = 改 `opencode.jsonc` 的 `agent.model`；
-> ⑤ 同步订正 MD §2.1 / §5.1 / §5.2 的 9 处 model 漂移（build / explore / librarian / oracle / metis / general / critic / context-builder / title），新增 §5.4 降级链；
-> ⑥ 验证：`tests/model-fallback-core.test.ts` 33 条单测（全量 `bun test tests/` 96 pass）；端到端探针以坏 `MINIMAX_API_KEY` 驱动，实测两次换链后由 `opencode-go` 成功作答（见 `~/.local/share/opencode/model-fallback.log`）。
+> ⑤ 同步订正 MD §2.1 / §5.1 / §5.2 的 model 归属，新增 §5.4 降级链。**订正以运行时真值（`opencode debug agents`）为准** —— 初稿曾照抄配置文件的一次中间态，把 build / explore / oracle 误记成 `commandcode/deepseek/deepseek-v4.1-flash`（实际分别是 `minimax-cn/MiniMax-M3.1-Flash` / `opencode/deepseek-v4.1-flash-free` / `kimi-code/kimi-for-coding`），已在 §2.1 的订正说明里记下这个坑；
+> ⑥ 验证：`tests/model-fallback-core.test.ts` 33 条单测（全量 `bun test tests/` 96 pass）；端到端探针以坏 `MINIMAX_API_KEY` 驱动，实测两次换链后由 `opencode-go` 成功作答（见 `~/.local/share/opencode/model-fallback.log`）；
+> ⑦ 新增面向使用者的手册 `docs/model-fallback-usage.md`（默认模型 vs 后备链分别改哪 / 什么错误会换模型 / 日志怎么读 / 怎么停用降级），§5.4 与之互相指向；停用降级的做法均为实测结论（`chains.<agent>: []` **无效**，会回落到内置默认）。
 
 > **v2.3 变更摘要（2026-11-06）**：**front agent 重设计** —— front 从"prompt 里的君子协定"变成**权限层强制 + 单通道委托**。
 > ① front 的 `shell` 从 `"*": allow` + 30 deny 改为**只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny），并追加 `"* /*": deny` 禁绝对路径；
