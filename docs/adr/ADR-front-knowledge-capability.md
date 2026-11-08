@@ -4,12 +4,12 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | Accepted（2026-11-09，用户拍板推进；oracle+critic 双审完成，0 未闭 BLOCKER；关联 change 已登记为 backlog） |
+| Status | Accepted（2026-11-09，用户拍板推进；oracle+critic 双审完成，0 未闭 BLOCKER；关联 change 已立项） |
 | Date | 2026-11-08 |
 | Author | architect |
 | Parent | 部分取代 `adr-front-agent-redesign.md`：D4 中「`subagent` 保持 `deny`」一条作废；D3 的「`scope` 必填」仅对 `kind=engineering` 继续有效；D6 的登记协议扩展 `kind` 字段，其余继续有效。D1 产物判据、D2 唯一工程通道、D5 preflight grants、D6 的锁与 upsert 协议、D7 guide 归宿继续有效 |
-| 关联 change | `backlog: front-knowledge-capability`（立项后回填） |
-| AC 映射 | 待 planner 立项后回填 AC 编号（本文件 Verification 第 1–17 条为候选判据） |
+| 关联 change | `openspec/changes/front-knowledge-capability/`（已立项；与 `ADR-delegate-delivery-evidence` 共用同一 change——同批交付、同批验收） |
+| AC 映射 | 本文件 Verification 1–18 → proposal 的 **AC1–AC7 / AC12–AC20 / AC31** 与 **Note N2**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表） |
 | 审稿报告 | `.rddf/reviews/adr-front-knowledge-capability-review.md` |
 | 增补记录 | **2026-11-08**：E2E 真实运行时暴露两处实现约束 → 补 **D2.1（规则顺序是硬约束）**、**D3.1（网络守卫必须覆盖首参数形态）**，并订正 Verification 第 15 条（原写"末尾 `*: deny`"，与 D2.1 矛盾）、新增 2 条判据与 2 条风险。运行时证据：`/workspace/main/rdd-workflow-e2e/tests/integration/test_front_delegate_runtime.bats`（L2-13/L2-14/L2-15，实跑 15/15 ok）。增补的复审结论见审稿报告 §8 |
 | 增补记录 2 | **2026-11-09**：`outcome` 枚举由 `ADR-delegate-delivery-evidence` 扩展（新增 `unverified` + `host_outcome`）→ **本篇 D5 的 ledger 字段表与"行产生时机"表需同步补 `unverified` / `host_outcome`**（单点耦合，见该篇 Parent 条款与 D3.1 迁移清单第 6 项） |

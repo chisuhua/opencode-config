@@ -8,8 +8,8 @@
 | Date | 2026-11-09 |
 | Author | architect |
 | Parent | **部分取代** `.rddf/state/adr-front-agent-redesign.md` D2 的 outcome 枚举（`succeeded\|failed\|interrupted\|unknown` 一处作废）：**目标枚举**为 `succeeded\|unverified\|failed\|interrupted\|unknown\|busy`（`busy` 是此前实现先行漂移进来的，旧 D2 的枚举早已 stale，本次一并校正）；该篇 D2 的 baseline 校验、不回传 transcript 等其余条款继续有效。与 `ADR-front-knowledge-capability`：**决策面正交**，但 ledger schema 面有单点耦合（该篇 D5 的 outcome 枚举需同步补 `unverified`/`host_outcome`） |
-| 关联 change | `backlog: delegate-delivery-evidence`（planner 立项后回填） |
-| AC 映射 | 待立项后回填（本文件 Verification 1–6 为候选判据） |
+| 关联 change | `openspec/changes/front-knowledge-capability/`（与 `ADR-front-knowledge-capability` 共用同一 change——同批交付、同批验收） |
+| AC 映射 | 本文件 Verification 1–8 → proposal 的 **AC21–AC30** 与 **Note N1**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表） |
 | 审稿报告 | 待收口时写入 `.rddf/reviews/adr-delegate-delivery-evidence-review.md` |
 
 ## 背景与问题
@@ -71,7 +71,7 @@ host_outcome == "succeeded"
 
 ### D3.1 迁移清单（同一 patch 内原子完成，不允许中间态）
 
-枚举新增值属**契约变更**：实现改了而消费方没改，就会把 `unverified` 当未知值处理——正是本篇要消除的那类静默失败。以下 7 项**必须同 patch 落地**（与 `ADR-front-knowledge-capability` D3 的"顺序铁律"同级）：
+枚举新增值属**契约变更**：实现改了而消费方没改，就会把 `unverified` 当未知值处理——正是本篇要消除的那类静默失败。以下 **8 项**必须同 patch 落地（与 `ADR-front-knowledge-capability` D3 的"顺序铁律"同级）：
 
 | # | 消费方 | 位置 | 需要的改动 |
 |---|---|---|---|
@@ -128,6 +128,6 @@ host_outcome == "succeeded"
 - [ ] resume 一个历史含写盘调用的 session、本轮仅开场白 → 仍判 `unverified`（时间窗生效）。
 - [ ] wait 超时 / 宿主未给 outcome（`still_running=true`）→ **不**判 `unverified`。
 - [ ] ledger 行同时记录 `outcome` 与 `host_outcome`；front 的 outcome 枚举表包含 `unverified` 且明确"不得当完成"。
-- [ ] **迁移清单 7 项同 patch 完成**：`docs/CHANGELOG.md` 的"枚举不变"旧句以**增补记录**方式校正（不改历史），且 `prompts/front.md` 的枚举表与排障表均含 `unverified`、`no_work_evidence` 段的"outcome 仍可能是 succeeded"措辞已更新。
+- [ ] **迁移清单 8 项同 patch 完成**：`docs/CHANGELOG.md` 的"枚举不变"旧句以**增补记录**方式校正（不改历史），且 `prompts/front.md` 的枚举表与排障表均含 `unverified`、`no_work_evidence` 段的"outcome 仍可能是 succeeded"措辞已更新。
 - [ ] **已知误报形态（文档化判例，不修）**：shell 写 git 可见之外的文件（`.gitignore` 内 / 工程根外）+ 开场白收尾 → 判 `unverified`。这是 D2 口径失真的**有意边界**，不是漏网；改判定链时不得因此加"有 shell 就不判"（见选项表）。
 
