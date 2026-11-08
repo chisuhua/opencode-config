@@ -767,11 +767,22 @@ export function delegateToolDefinition(ctx: any): any {
           const promptText = buildBrief(brief, root)
           await ctx.session.prompt({ sessionID, text: promptText })
 
+          // 超时上限：默认 30 分钟；测试可用 DELEGATE_WAIT_TIMEOUT_MS 缩短。
+          const waitTimeoutMs = (() => {
+            const v = Number(process.env.DELEGATE_WAIT_TIMEOUT_MS)
+            return Number.isFinite(v) && v > 0 ? v : WAIT_TIMEOUT_MS
+          })()
           let waitError: string | undefined
+          let waitTimedOut = false
           try {
             await Promise.race([
               ctx.session.wait({ sessionID }),
-              new Promise((resolve) => setTimeout(resolve, WAIT_TIMEOUT_MS)),
+              new Promise((resolve) =>
+                setTimeout(() => {
+                  waitTimedOut = true
+                  resolve(undefined)
+                }, waitTimeoutMs),
+              ),
             ])
           } catch (e: any) {
             waitError = e?.message ?? String(e)
@@ -806,9 +817,13 @@ export function delegateToolDefinition(ctx: any): any {
           // 交付面证据：宿主说 succeeded ≠ 工程 session 真的交付了东西。
           // 判定只看向**本轮**的消息（resume 时历史轮次不得掩盖本轮零交付）。
           // 只对工程 session 判定（知识 session 的产物本就是"回答"，通常零工具调用）。
+          // ⚠ 仍在跑（wait 超时 / 宿主未给 outcome）时**不判定**：此时读到的 outcome
+          //   可能是上一轮的陈旧值（resume 场景），据此判"没有产出"会误报。
           const roundMessages = sliceRoundMessages(messages, baselineMessageID)
           const delivery = summarizeDelivery(roundMessages, changed)
-          const noWorkEvidence = kind === "engineering" && outcome === "succeeded" && delivery.no_work_evidence
+          const stillRunning = waitTimedOut || outcome == null
+          const noWorkEvidence =
+            kind === "engineering" && outcome === "succeeded" && !stillRunning && delivery.no_work_evidence
 
           registerSession(root, sessionID, frontSessionID, effectiveAgent, kind, {
             ...ledgerBase,
@@ -857,6 +872,8 @@ export function delegateToolDefinition(ctx: any): any {
             final_is_role_opening: delivery.final_is_role_opening,
             model_switched: delivery.model_switched,
             no_work_evidence: noWorkEvidence,
+            still_running: stillRunning,
+            wait_timed_out: waitTimedOut,
             status_age_ms: Math.max(0, Date.now() - toMillis((after as any)?.time?.updated)),
             wait_error: waitError,
           }

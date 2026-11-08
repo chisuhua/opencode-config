@@ -72,6 +72,8 @@ type FakeOptions = {
   noActivity?: boolean
   /** 模拟 session.wait 抛错：必须落到 wait_error，而不是静默成功。 */
   waitThrows?: boolean
+  /** 模拟 session.wait 永不返回（触发 wait 超时 → still_running）。 */
+  waitNeverResolves?: boolean
   /** 覆盖工程 session 的最终 assistant 文本（默认 `已完成：<title>`）；可按轮次给不同文本。 */
   assistantText?: string | ((round: number) => string)
 }
@@ -153,6 +155,7 @@ function createFakeCtx(options: FakeOptions = {}) {
       },
       wait: async () => {
         if (options.waitThrows) throw new Error("wait failed")
+        if (options.waitNeverResolves) await new Promise(() => {})
       },
       get: async (input: any) => {
         const session = sessions.get(input.sessionID)
@@ -743,6 +746,22 @@ describe("交付面证据：静默失败检测（P0）", () => {
     expect(summary.write_tool_calls).toBe(0) // shell 不算写盘工具
     expect(summary.artifacts).toBeGreaterThan(0) // 但产物在
     expect(summary.no_work_evidence).toBe(false) // 有产物 → 不是"没有产出"
+  })
+
+  test("仍在跑（wait 超时）时不得判 no_work_evidence（resume 的陈旧 outcome 会误报）", async () => {
+    const project = fixtureProject()
+    const prev = process.env.DELEGATE_WAIT_TIMEOUT_MS
+    process.env.DELEGATE_WAIT_TIMEOUT_MS = "30"
+    try {
+      const { ctx } = createFakeCtx({ waitNeverResolves: true, assistantText: ROLE_OPENING })
+      const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+      expect(summary.wait_timed_out).toBe(true)
+      expect(summary.still_running).toBe(true)
+      expect(summary.no_work_evidence).toBe(false) // 仍在跑 → 不判定"没有产出"
+    } finally {
+      if (prev === undefined) delete process.env.DELEGATE_WAIT_TIMEOUT_MS
+      else process.env.DELEGATE_WAIT_TIMEOUT_MS = prev
+    }
   })
 })
 

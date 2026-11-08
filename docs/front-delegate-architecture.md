@@ -415,7 +415,7 @@ await ctx.tool.transform((editor: any) => {
   - 换 agent 时仍要注意：**不同 agent 的 ask 清单不同**，`CONSTANT_DENY` 需要按目标 agent 调整。
 - **多工程**：现在 `canonical_root` 由 `project_dir` 推导，pair.json 按工程仓各存一份。
   跨仓协作（如 hub-spoke）需要 `external_directory` grant —— 走 §6.5 的 grants 通道。
-- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / 截断脱敏后的 `last_assistant_text`）。
+- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / `final_is_role_opening` / `model_switched` / 截断脱敏后的 `last_assistant_text`）。
   - 写入者只有本插件；与 pair/role 共用 `.rddf/state/.role.lock`。
   - **职责切分**：`pair.json` 是 resume 的访问控制判据，`ledger.jsonl` 只记录历史事实，**不参与 resume 校验**。
   - 行产生时机：校验失败/resume 失败不落行；busy 落一行（`outcome: "busy"`）；正常结束/超时各落一行。

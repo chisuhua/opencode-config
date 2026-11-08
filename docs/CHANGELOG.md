@@ -11,28 +11,15 @@
 > **v2.6 变更摘要（2026-11-09）**：**静默失败检测** —— 宿主说 succeeded ≠ 工程 session 真的交付了东西。
 > ① **缺陷来源**：E2E 实跑中发现，工程 session 在模型于 run 中途被切换后重来时，可能只读了 role.json 就输出角色开场白并 idle；宿主仍把该 run 记为 `succeeded` → delegate 回传 `succeeded` + `changed_files: []`，front 遂向用户转述"已完成"，而实际什么都没产出。
 > ② delegate 回传**交付面证据**：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数：`edit`/`write`/`patch`/`apply_patch`/`multiedit`；**shell 不算**，无法从命令文本判定落盘）、`artifacts`（本次产生的文件变更数，**git 可见口径**：被忽略 / 工程根外 / worktree 内的改动数不到）、`final_is_role_opening`（最后一条文本是否停在角色开场白）、`model_switched`（本轮是否中途换过模型 —— **根因信号**，宿主消息 `type == "model-switched"`，不依赖任何文本格式），以及判定结果 `no_work_evidence`。
-> ③ 判定规则：`no_work_evidence = (final_is_role_opening || model_switched > 0) && write_tool_calls === 0 && artifacts === 0`。**只看本轮消息**（`sliceRoundMessages`，按 baseline 切片）——否则 resume 时上一轮的写盘调用会掩盖本轮零交付。**只对 `kind=engineering` 判定**（知识 session 的产物本就是"回答"，通常零工具调用，套用会误报）。
+> ③ 判定规则：`no_work_evidence = (final_is_role_opening || model_switched > 0) && write_tool_calls === 0 && artifacts === 0`。
+>   - **只看本轮消息**（`sliceRoundMessages`，按 baseline 切片）——否则 resume 时上一轮的写盘调用会掩盖本轮零交付；找不到 baseline 时退回全量（宁可漏报不误报）。
+>   - **仍在跑时不判定**（`still_running`：wait 超时或宿主未给 outcome）——此时读到的 outcome 可能是上一轮的陈旧值（resume 场景），据此判"没有产出"会误报。
+>   - **只对 `kind=engineering` 判定**（知识 session 的产物本就是"回答"，通常零工具调用，套用会误报）。
 > ④ **`outcome` 枚举不变**（仍是宿主视角的 `succeeded`）："没交付"由 `no_work_evidence` 单独表达，不改既有契约；front 契约同步（`prompts/front.md`）：`no_work_evidence=true` 时**不得转述为"已完成"**，必须转述"没有产出"并给出证据数、问用户重试还是换做法；§五 禁止事项新增一条。
 > ⑤ ledger 行增记 `no_work_evidence` / `tool_calls` / `write_tool_calls` / `final_is_role_opening` / `model_switched`（审计可追溯）。
 > ⑥ 判定逻辑集中在 `lib/delegate-core.ts::summarizeDelivery`（纯函数，可单测）；回归夹具 `tests/fixtures/real-no-work-session.json`（真实失败会话实录，回放 → `no_work_evidence=true`）。
-> ⑦ 验证：单测 **143 pass**（新增 19 条）；E2E **15/15 ok**，L2-3 增断言（真实交付不得被误判：`no_work_evidence=false` 且 `write_tool_calls ≥ 1`）。
+> ⑦ 验证：单测 **144 pass**（覆盖率 99.14%）；E2E **15/15 ok**，L2-3 增断言（真实交付不得被误判：`no_work_evidence=false` 且 `write_tool_calls ≥ 1`）。
 > ⑧ **已知缺口（待 architect 决策）**：目前"没交付"只由 `no_work_evidence` 标志位表达，防御**依赖 front 遵守 prompt**——不遵守的消费者读 `outcome=succeeded` 仍会误报。机读化方案（新增 `outcome="unverified"` + ledger 保留 `host_outcome`）属契约变更，未擅自实施。
-
-> **v2.6 变更摘要（2026-11-09）**：**静默失败检测** —— 宿主说 succeeded ≠ 工程 session 真的交付了东西。
-> ① **缺陷来源**：E2E 实跑中发现，工程 session 在模型于 run 中途被切换后重来时，可能只输出角色开场白就 idle；宿主仍把该 run 记为 `succeeded` → delegate 回传 `succeeded` + `changed_files: []`，front 遂向用户转述"已完成"，而实际什么都没产出。
-> ② delegate 回传**交付面证据**：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数：`edit`/`write`/`patch`/`apply_patch`/`multiedit`；**shell 不算**，无法从命令文本判定落盘）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是否停在角色开场白），以及判定结果 `no_work_evidence`（停在开场白 **且**（无写盘调用 或 无产物））。
-> ③ **`outcome` 枚举不变**（仍是宿主视角的 `succeeded`）："没交付"由 `no_work_evidence` 单独表达，避免改动既有契约；**只对 `kind=engineering` 判定**——知识 session 的产物本就是"回答"（通常零工具调用），套用会误报。
-> ④ front 契约同步（`prompts/front.md`）：`no_work_evidence=true` 时**不得转述为"已完成"**，必须转述"没有产出"并给出三个证据数、问用户重试还是换做法；§五 禁止事项新增一条。
-> ⑤ ledger 行增记 `no_work_evidence` / `tool_calls` / `write_tool_calls`（审计可追溯）。
-> ⑥ 验证：单测 133 pass（新增 9 条：交付面证据纯函数 5 条 + 端到端 4 条 + ledger 1 条）；E2E L2-3 增断言 `no_work_evidence=false`（防真实运行下的误报）。
-> ⑦ 判定逻辑集中在 `lib/delegate-core.ts::summarizeDelivery`（纯函数，可单测）。
-
-> **v2.5 修正（2026-11-08，E2E 实测发现）**：两处配置在静态检查下看不出来、必须在真实运行时才暴露的缺陷。
-> ① **`subagent` 规则顺序**：opencode 的工具可见性判定（`whollyDisabled`）只看该 action **最后一条**匹配规则——若 `"*": "deny"` 排在末尾，整个 `subagent` 工具会被**隐藏**（逐 agent allow 完全没机会生效，front 运行时反馈"subagent 工具不存在"）。正确顺序：`"*": "deny"` 第一条，具体 agent allow 在后；对未列出的 agent 仍落 deny（`findLast` 命中首条 `*`）。
-> ② **网络写守卫的参数位置**：原 `curl * -o*` 匹配不到 `curl -o /tmp/x URL`（`-o` 作为第一个参数时前面没有空格）。补首个参数形态：`curl -o*` / `curl --output*` / `curl -O*` / `curl -T *` / `curl --upload-file *` / `curl -d @*` / `curl --data @*` / `curl --data-binary @*`、`wget -O*` / `wget --output-document*` / `wget -P*`。实测：修前 librarian 真的把 `curl -o` 的文件下载落盘了。
-> ③ 单测补 4 条失败/并发路径（unknown / resume canonical_root / resume agent mismatch / 并发两次委托 + wait 抛错 + readJson/withLock 容错）→ **123 pass，delegate-core 行覆盖 98.14%**。
-> ④ E2E：`/workspace/main/rdd-workflow-e2e/tests/integration/test_front_delegate_runtime.bats` 扩到 **14 条**（新增 L2-9…L2-14 覆盖 agent 白名单 / 知识 session / ledger / subagent 加固 / 网络守卫 / 门控），真实模型实测 **13 pass + 1 skip**（L2-7 busy 因 delegate 同步、单进程不可达，已写明并指向单测）。
-> ⑤ 遗留：ADR D3 的守卫清单与 `docs/adr/` 的 D3 表尚未回填上述"首个参数形态"（属架构文档，待 architect 回填）。
 
 > **v2.5 变更摘要（2026-11-08）**：**front 获得知识获取能力** —— 在「front 不获得写 / 执行能力」的前提下，放行只读 subagent 并引入记忆层。
 > ① `agent.front.permission.subagent` 由 `"deny"` 改为逐 agent 对象：`explore` / `librarian` / `oracle` / `metis` / `critic` allow + `"*": "deny"`（显式排除 `general` / `plan` / `build`）。粒度实测：`opencode reload` 后 `debug agents` 解析出六条规则，`"*": deny` 末尾。
