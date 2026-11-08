@@ -408,10 +408,17 @@ await ctx.tool.transform((editor: any) => {
 
 ### 6.7 支持新的委托目标（多 agent / 多工程）
 
-- **多 agent**：brief 已有 `agent` 字段（默认 `build`）。换 agent 时注意：**不同 agent 的 ask 清单不同**，
-  `CONSTANT_DENY` 需要按目标 agent 调整。
+- **多 agent**：brief 的 `agent` 字段已**白名单化**（v2.5，ADR-front-knowledge-capability D4）：`build` + `explore` / `librarian` / `oracle` / `metis` / `critic`。
+  - `build` → `kind=engineering`：`scope` 必填，注入 scope 派生 `edit` 规则，可带 grants。
+  - 只读 agent → `kind=knowledge`：`scope` 可省略/为空，**恒注入单条 `edit:* deny`**（绝不注入 scope allow），**grants 必须为空**，只登记 `pair.json`（`kind: "knowledge"`）、不写 `role.json` 的 `sessions` 分区。
+  - 白名单对 `resume_session` 同样生效：resume 时校验 pair 条目的 `agent`，不在白名单则拒。
+  - 换 agent 时仍要注意：**不同 agent 的 ask 清单不同**，`CONSTANT_DENY` 需要按目标 agent 调整。
 - **多工程**：现在 `canonical_root` 由 `project_dir` 推导，pair.json 按工程仓各存一份。
   跨仓协作（如 hub-spoke）需要 `external_directory` grant —— 走 §6.5 的 grants 通道。
+- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / 截断脱敏后的 `last_assistant_text`）。
+  - 写入者只有本插件；与 pair/role 共用 `.rddf/state/.role.lock`。
+  - **职责切分**：`pair.json` 是 resume 的访问控制判据，`ledger.jsonl` 只记录历史事实，**不参与 resume 校验**。
+  - 行产生时机：校验失败/resume 失败不落行；busy 落一行（`outcome: "busy"`）；正常结束/超时各落一行。
 
 ### 6.8 完成判据（DoD）
 

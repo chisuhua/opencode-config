@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs"
 import path from "node:path"
 
 /**
@@ -76,6 +76,21 @@ export const GRANT_ALLOWED = new Set([
 
 /** grants 永久禁止的类目：这些一旦被 grant 会破坏 D5 的三条规则。 */
 export const GRANT_FORBIDDEN = new Set(["question", "form", "edit", "write"])
+
+/**
+ * front 可委托的 agent 白名单（ADR-front-knowledge-capability D2/D4）。
+ * `build` = 工程 session（写）；其余 = 知识 session（只读）。
+ */
+export const READONLY_AGENTS = ["explore", "librarian", "oracle", "metis", "critic"] as const
+
+export const ALLOWED_AGENTS = new Set<string>(["build", ...READONLY_AGENTS])
+
+export type DelegateKind = "engineering" | "knowledge"
+
+/** kind 由 agent 推导，不由调用方声明（front 无法伪造类型）。 */
+export function kindOfAgent(agent: string): DelegateKind {
+  return agent === "build" ? "engineering" : "knowledge"
+}
 
 export const WAIT_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -186,6 +201,8 @@ export function validateGrants(grants: any): Array<{ action: string; resource: s
 export function validateBrief(input: any): {
   project_dir: string
   agent: string
+  agentProvided: boolean
+  kind: DelegateKind
   task: string
   goal: string
   scope: string[]
@@ -211,23 +228,40 @@ export function validateBrief(input: any): {
     if (value.trim().length === 0) throw fail(`${name} 必填且不能为空`)
   }
 
+  const agentProvided = input.agent !== undefined && input.agent !== null
+  const agent = String(input.agent ?? "build").trim() || "build"
+  if (!ALLOWED_AGENTS.has(agent)) {
+    throw fail(`agent 不在白名单内: ${agent}（允许：${[...ALLOWED_AGENTS].join(", ")}）`)
+  }
+  const kind = kindOfAgent(agent)
+
+  // scope：工程 session 必填非空；知识 session 可省略或为空（不参与权限组装）。
   const scope = input.scope
-  if (!Array.isArray(scope) || scope.length === 0) throw fail("scope 必填且必须是非空字符串数组")
   const scopeList: string[] = []
-  for (const item of scope) {
-    if (typeof item !== "string" || item.trim().length === 0) throw fail("scope 元素必须是非空字符串")
-    scopeList.push(item.trim())
+  if (scope !== undefined && scope !== null) {
+    if (!Array.isArray(scope)) throw fail("scope 必须是字符串数组")
+    for (const item of scope) {
+      if (typeof item !== "string" || item.trim().length === 0) throw fail("scope 元素必须是非空字符串")
+      scopeList.push(item.trim())
+    }
+  }
+  if (kind === "engineering" && scopeList.length === 0) {
+    throw fail("scope 必填且必须是非空字符串数组（仅工程 session 需要）")
   }
 
-  const agent = String(input.agent ?? "build").trim() || "build"
   const constraints = String(input.constraints ?? "")
   const resume = input.resume_session === undefined ? undefined : String(input.resume_session)
   const remove = input.remove === true
   const grants = validateGrants(input.grants)
+  if (kind === "knowledge" && grants.length > 0) {
+    throw fail("知识 session 不接受 grants（只读语义不允许任何预批放宽）")
+  }
 
   return {
     project_dir: projectDir,
     agent,
+    agentProvided,
+    kind,
     task,
     goal,
     scope: scopeList,
@@ -245,7 +279,12 @@ export function buildBrief(brief: ReturnType<typeof validateBrief>, projectRoot:
   lines.push("")
   lines.push(`- 目标（goal）: ${brief.goal}`)
   lines.push(`- 工程根: ${projectRoot}`)
-  lines.push(`- 允许变更范围（scope）: ${brief.scope.join(", ")}`)
+  lines.push(`- 类型（kind）: ${brief.kind}`)
+  if (brief.kind === "engineering") {
+    lines.push(`- 允许变更范围（scope）: ${brief.scope.join(", ")}`)
+  } else {
+    lines.push(`- 允许变更范围（scope）: 无（知识 session 只读，不产生文件变更）`)
+  }
   lines.push(`- 验收判据（acceptance）: ${brief.acceptance}`)
   if (brief.constraints.trim().length > 0) {
     lines.push(`- 额外约束（constraints）: ${brief.constraints}`)
@@ -260,10 +299,17 @@ export function buildBrief(brief: ReturnType<typeof validateBrief>, projectRoot:
   lines.push("")
   lines.push("## 执行要求")
   lines.push("")
-  lines.push("1. 只在 scope 内改动；scope 外的文件不得写入。")
-  lines.push("2. 按 acceptance 自行验证，报告实际执行的命令与结果。")
-  lines.push("3. 不要 git commit / git push —— 提交由用户确认后另行发起。")
-  lines.push("4. 遇到权限被拒（Permission denied）不要换写法绕过，直接说明被拒的操作并停下。")
+  if (brief.kind === "engineering") {
+    lines.push("1. 只在 scope 内改动；scope 外的文件不得写入。")
+    lines.push("2. 按 acceptance 自行验证，报告实际执行的命令与结果。")
+    lines.push("3. 不要 git commit / git push —— 提交由用户确认后另行发起。")
+    lines.push("4. 遇到权限被拒（Permission denied）不要换写法绕过，直接说明被拒的操作并停下。")
+  } else {
+    lines.push("1. 这是只读的知识/调研任务：**不要修改任何文件**，不要 commit。")
+    lines.push("2. 给出结论时标注证据（`file:line` / URL）；不确定的地方明确说不确定。")
+    lines.push("3. 若任务实际需要文件变更，请在结论中说明并停下——变更必须转工程 session。")
+    lines.push("4. 遇到权限被拒（Permission denied）不要换写法绕过，直接说明被拒的操作并停下。")
+  }
   return lines.join("\n")
 }
 
@@ -319,8 +365,44 @@ export function writeJsonAtomic(file: string, value: any): void {
   renameSync(tmp, file)
 }
 
-/** 登记 pair + role.json 的 session 分区（single writer = 本插件）。 */
-export function registerSession(root: string, sessionID: string, frontSessionID: string | undefined, agent: string): void {
+/** ledger 行（JSONL）追加；调用方必须已持有 `.role.lock`。 */
+function appendLedgerLine(root: string, row: any): void {
+  const stateDir = path.join(root, ".rddf", "state")
+  mkdirSync(stateDir, { recursive: true })
+  appendFileSync(path.join(stateDir, "ledger.jsonl"), JSON.stringify(row) + "\n")
+}
+
+/** 供 busy 等无登记写入的分支使用：自己取同一把锁后追加一行。 */
+export function appendLedger(root: string, row: any): void {
+  const stateDir = path.join(root, ".rddf", "state")
+  const lockDir = path.join(stateDir, ".role.lock")
+  mkdirSync(stateDir, { recursive: true })
+  withLock(lockDir, () => appendLedgerLine(root, row))
+}
+
+/** 截断 + 脱敏：ledger 落盘时 last_assistant_text 可能含凭证。 */
+export function redactAndTruncate(text: string, max = 800): string {
+  let s = String(text ?? "")
+  s = s.replace(/\b(?:oc_sk|sk|xox[baprs]|ghp|gho|ghu|ghs|ghr)[-_][A-Za-z0-9_-]{8,}\b/g, "[REDACTED]")
+  s = s.replace(/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED]")
+  s = s.replace(/(Bearer\s+)[A-Za-z0-9._-]{8,}/gi, "$1[REDACTED]")
+  if (s.length > max) s = s.slice(0, max) + "…"
+  return s
+}
+
+/**
+ * 登记 pair + role.json 的 session 分区（single writer = 本插件）。
+ * `kind=knowledge` 只写 pair（含 kind 字段），**不触碰 role.json**——
+ * 否则会在 sessions 分区产生非法 `current_role`（如 "explore"）。
+ */
+export function registerSession(
+  root: string,
+  sessionID: string,
+  frontSessionID: string | undefined,
+  agent: string,
+  kind: DelegateKind = kindOfAgent(agent),
+  ledgerRow?: any,
+): void {
   const stateDir = path.join(root, ".rddf", "state")
   const lockDir = path.join(stateDir, ".role.lock")
   mkdirSync(stateDir, { recursive: true })
@@ -328,28 +410,34 @@ export function registerSession(root: string, sessionID: string, frontSessionID:
     const pairFile = path.join(stateDir, "pair.json")
     const pair = readJson(pairFile) ?? {}
     const pairs = pair.pairs && typeof pair.pairs === "object" ? pair.pairs : {}
+    const existing = pairs[sessionID]
     pairs[sessionID] = {
       front_session_id: frontSessionID ?? null,
       canonical_root: root,
       agent,
-      registered_at: new Date().toISOString(),
+      kind,
+      registered_at: existing?.registered_at ?? new Date().toISOString(),
       last_used_at: new Date().toISOString(),
     }
     writeJsonAtomic(pairFile, { version: "pair-v2", pairs })
 
-    const roleFile = path.join(stateDir, "role.json")
-    const role = readJson(roleFile) ?? {}
-    const sessions = role.sessions && typeof role.sessions === "object" ? role.sessions : {}
-    sessions[sessionID] = {
-      current_role: agent === "build" ? "builder" : agent,
-      auto_switch_window: null,
-      auto_answer: null,
-      updated_at: new Date().toISOString(),
+    if (kind === "engineering") {
+      const roleFile = path.join(stateDir, "role.json")
+      const role = readJson(roleFile) ?? {}
+      const sessions = role.sessions && typeof role.sessions === "object" ? role.sessions : {}
+      sessions[sessionID] = {
+        current_role: agent === "build" ? "builder" : agent,
+        auto_switch_window: null,
+        auto_answer: null,
+        updated_at: new Date().toISOString(),
+      }
+      role.sessions = sessions
+      role.current_role = role.current_role ?? sessions[sessionID].current_role
+      role.updated_at = new Date().toISOString()
+      writeJsonAtomic(roleFile, role)
     }
-    role.sessions = sessions
-    role.current_role = role.current_role ?? sessions[sessionID].current_role
-    role.updated_at = new Date().toISOString()
-    writeJsonAtomic(roleFile, role)
+
+    if (ledgerRow) appendLedgerLine(root, ledgerRow)
   })
 }
 
@@ -463,13 +551,13 @@ export function delegateToolDefinition(ctx: any): any {
           type: "object",
           properties: {
             project_dir: { type: "string", description: "工程根目录的绝对路径" },
-            agent: { type: "string", description: "工程 session 的 agent，默认 build" },
+            agent: { type: "string", description: "会话的 agent，默认 build。白名单：build / explore / librarian / oracle / metis / critic" },
             task: { type: "string", description: "给工程 session 的任务原话" },
             goal: { type: "string", description: "一句话目标" },
             scope: {
               type: "array",
               items: { type: "string" },
-              description: "允许变更的路径前缀（相对工程根或绝对路径）",
+              description: "允许变更的路径前缀（相对工程根或绝对路径）；知识 session 可传空数组",
             },
             acceptance: { type: "string", description: "可判定的验收判据" },
             constraints: { type: "string", description: "额外禁止动作" },
@@ -504,6 +592,8 @@ export function delegateToolDefinition(ctx: any): any {
           // "隔天回来继续"这种正常用法失效；改为返回软信号，由 front 告知用户。
           let existing: any = undefined
           let resumedByOtherFront = false
+          let effectiveAgent = brief.agent
+          let kind = brief.kind
           if (brief.resume_session) {
             existing = lookupPair(root, brief.resume_session)
             if (!existing) {
@@ -512,14 +602,31 @@ export function delegateToolDefinition(ctx: any): any {
             if (existing.canonical_root !== root) {
               throw fail(`resume_session 的 canonical_root 不匹配: ${existing.canonical_root} != ${root}`)
             }
+            // 白名单对 resume 同样生效（否则 create 校验、resume 放行 = 结构性绕过）。
+            const existingAgent = String(existing.agent ?? "build")
+            if (!ALLOWED_AGENTS.has(existingAgent)) {
+              throw fail(`resume_session 的 agent 不在白名单内: ${existingAgent}`)
+            }
+            if (brief.agentProvided && brief.agent !== existingAgent) {
+              throw fail(`resume_session 的 agent 不匹配: ${brief.agent} != ${existingAgent}`)
+            }
+            effectiveAgent = existingAgent
+            kind = kindOfAgent(effectiveAgent)
             resumedByOtherFront = Boolean(
               existing.front_session_id && frontSessionID && existing.front_session_id !== frontSessionID,
             )
           }
 
+          // 只读 session 恒注入单条 edit deny，绝不注入 scope 派生 allow
+          // （session 规则排在 agent 规则之后、last-match-wins，会覆盖只读 agent 自身的 edit: deny）。
+          const editRules =
+            kind === "engineering"
+              ? scopeEditRules(root, brief.scope)
+              : [{ action: "edit", resource: "*", effect: "deny" }]
+
           const permissions = [
             ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: "deny" })),
-            ...scopeEditRules(root, brief.scope),
+            ...editRules,
             ...brief.grants,
           ]
 
@@ -527,7 +634,7 @@ export function delegateToolDefinition(ctx: any): any {
           if (!sessionID) {
             const created = await ctx.session.create({
               location: { directory: brief.project_dir },
-              agent: brief.agent,
+              agent: effectiveAgent,
               title: brief.goal.slice(0, 60),
               permissions,
             })
@@ -536,20 +643,36 @@ export function delegateToolDefinition(ctx: any): any {
 
           // 登记必须发生在 prompt 之前：工程 session 开局就要读自己的 role.json 分区，
           // 否则它会去找全局 fallback，而全局 fallback 属于 external_directory（默认 deny）。
-          registerSession(root, sessionID, frontSessionID, brief.agent)
+          registerSession(root, sessionID, frontSessionID, effectiveAgent, kind)
           const statusBefore = vcs ? gitStatusPaths(root) : []
 
           const before = await ctx.session.get({ sessionID })
           const beforeMessages = await ctx.session.context({ sessionID })
           const baselineMessageID = lastMessageID(beforeMessages)
           const baselineIdle = toMillis((before as any)?.time?.idle)
-          const baselineUpdated = toMillis((before as any)?.time?.updated)
           const baselineLastMessageAt = lastMessageAt(beforeMessages)
 
           // in-flight 保护：最后一条消息晚于最后空闲时间 → 上一次运行仍在进行，不排队。
           // （不能用 `time.updated > time.idle`：首次运行中的 session 从未 idle 过，idle 为 0，会漏判。）
           const busy = baselineLastMessageAt > baselineIdle
+          const ledgerBase = {
+            recorded_at: new Date().toISOString(),
+            kind,
+            front_session_id: frontSessionID ?? null,
+            backend_session_id: sessionID,
+            agent: effectiveAgent,
+            goal: brief.goal,
+            scope: brief.scope,
+          }
           if (busy) {
+            appendLedger(root, {
+              ...ledgerBase,
+              outcome: "busy",
+              blocked_reason: null,
+              out_of_scope_files: [],
+              changed_files: [],
+              last_assistant_text: "",
+            })
             return {
               content: JSON.stringify(
                 {
@@ -603,7 +726,14 @@ export function delegateToolDefinition(ctx: any): any {
             return !scopeAbs.some((prefix) => absolute === prefix || absolute.startsWith(prefix + path.sep))
           })
 
-          registerSession(root, sessionID, frontSessionID, brief.agent)
+          registerSession(root, sessionID, frontSessionID, effectiveAgent, kind, {
+            ...ledgerBase,
+            outcome,
+            blocked_reason,
+            out_of_scope_files: outOfScope,
+            changed_files: changed,
+            last_assistant_text: redactAndTruncate(assistantText),
+          })
 
           if (brief.remove) {
             try {
@@ -617,6 +747,8 @@ export function delegateToolDefinition(ctx: any): any {
             session_id: sessionID,
             project_root: root,
             vcs,
+            agent: effectiveAgent,
+            kind,
             resumed: Boolean(brief.resume_session),
             resumed_by_other_front: resumedByOtherFront,
             outcome,

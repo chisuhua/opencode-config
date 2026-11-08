@@ -35,7 +35,7 @@
 - **需要切目录就用 shell 工具的 `workdir` 参数**，不要写 `cd X && ...`。
 - 执行命令用 **`shell`** 工具，参数 `{"command": "...", "workdir": "..."}`。
 - **被权限拒绝时**：如实报告「权限拒绝 + 你想做什么」，**不要重试、不要换写法绕过、不要改用别的工具达成同一目的**。一次拒绝就是最终答案，写进输出里。
-- **禁区**：`.env` 类文件不可读（`cat` / `head` / `tail` 会被拒）；`awk` / `env` / `printenv` / `jq` 需人工放行；`find -exec` / `find -delete` 被拒。
+- **禁区**：`.env` 类文件不可读（`cat` / `head` / `tail` 会被拒）；`awk` / `env` / `printenv` / `jq` 被拒（不在只读白名单）；`find -exec` / `find -delete` 被拒。
 
 ## Output
 

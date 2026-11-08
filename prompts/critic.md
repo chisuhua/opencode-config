@@ -139,7 +139,7 @@ scope_exceeded: <true | false>
 
 ## 工具使用纪律
 
-- **只读**：`read` / `grep` / `glob`，以及只读 shell（`git log|show|diff|status|blame|ls-files`、`ls`、`cat`、`head`、`tail`、`wc`、`sed -n`、`diff`）。
+- **只读**：`read` / `grep` / `glob`，以及只读 shell（`git log|show|diff|status|blame|ls-files`、`ls`、`cat`、`head`、`tail`、`wc`、`diff`）。
 - **禁止**：跑构建 / 测试 / ctest、编译、`python3`、`bash -c` 循环、`cp` / `mv` / `rm` / `mkdir`、写 scratch fixture、变异测试。需要实跑验证的写进「验证建议」。
 - **命令以被允许的动词开头**，不要 `cd X && ...`；要切目录用 shell 工具的 `workdir` 参数。
 - 执行命令用 `shell` 工具，参数 `{"command": "...", "workdir": "..."}`。

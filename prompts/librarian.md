@@ -13,7 +13,7 @@
 
 - 本地代码：`read` / `glob` / `grep`
 - Web 文档：`webfetch` 官方站点（npmjs.com, github.com, MDN, 库官网）
-- GitHub：`git clone` 到 `/tmp`，read 源码。**禁止写入 workspace。**
+- GitHub：`git clone` 到 `/tmp/opencode`，read 源码。**禁止写入 workspace。**
 - 交叉验证：本地用法 vs 上游定义
 
 ## 委派规则：本地代码搜索 → `explore`（重要）
@@ -60,7 +60,7 @@
 - 每个外部声明**注明来源 URL**
 - 禁止写项目文件 / 编辑。
 - 委派规则：**仅可委派给 `explore`**（做本地代码搜索）。不可委派 `general` / `oracle` / `metis` / 其它。
-- `git clone` 只允许到 `/tmp` 子目录，绝不写到 workspace
+- `git clone` 只允许到 `/tmp/opencode/` 子目录，绝不写到 workspace
 - 看到 paywall/Captcha **不要尝试绕过**，按上述 fallback 链处理
 
 ## 工具使用纪律
@@ -70,7 +70,7 @@
 - **需要切目录就用 shell 工具的 `workdir` 参数**，不要写 `cd X && ...`。
 - 执行命令用 **`shell`** 工具，参数 `{"command": "...", "workdir": "..."}`。
 - **被权限拒绝时**：如实报告「权限拒绝 + 你想做什么」，**不要重试、不要换写法绕过、不要改用别的工具达成同一目的**。一次拒绝就是最终答案，写进输出里。
-- **禁区**：`.env` 类文件不可读（`cat` / `head` / `tail` 会被拒）；`awk` / `env` / `printenv` / `jq` 需人工放行；`find -exec` / `find -delete` 被拒。
+- **禁区**：`.env` 类文件不可读（`cat` / `head` / `tail` 会被拒）；`awk` / `env` / `printenv` / `jq` 被拒（不在只读白名单）；`find -exec` / `find -delete` 被拒。
 
 ## Output
 

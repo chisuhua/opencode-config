@@ -98,7 +98,7 @@
 #### `front` —— 用户交互内核 / 委托出口
 - **职责**：与用户对话、明确意图、给选项；**一切工程行动经 `delegate` 插件工具转交工程 session**
 - **核心 prompt**：`prompts/front.md`（四分类路由 + 委托 brief 契约 + 状态扫描清单 + 降级纪律）
-- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill`/`subagent` deny；`delegate` allow（**唯一**）
+- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`"*": deny`，v2.5）；`delegate` allow（**唯一**登记型通道）
 - **门控**：`delegate` 声明 `options.permission="delegate"` → 全局 deny + 仅 front allow ⇒ 其余 agent 调用时答 `NO_TOOL`
 - **典型 workflow**：
   1. 判类（理解性 / 实施性 / 流程性 / 需裁决）
@@ -123,13 +123,13 @@
 
 #### `explore` —— 本地代码 grep
 - **核心 prompt**：`prompts/explore.md`
-- **权限**：read-only allowlist（read/grep/glob/list/bash 安全子集/webfetch/websearch）
+- **权限**：read-only allowlist（read/grep/glob/list/bash 安全子集/webfetch/websearch）；**v2.5 起 shell 为三段式**：`*: deny` 打头 + 只读白名单 + 尾部守卫 deny（重定向 / `tee` / `find -exec/-fprint/-fls` / `sort|uniq -o` / `git --output|--format|--pretty` / `.env` 族）
 - **不能**写、不能委派
 - **输出**：Markdown 四节（匹配文件 / 直接答案 / 下一步），路径必须绝对
 
 #### `librarian` —— 外部文档/依赖源码 ⭐有特殊委派规则
 - **核心 prompt**：`prompts/librarian.md`（3601 字节，82 行）
-- **权限**：read-only + 宽松 bash（curl/wget/git clone 到 /tmp）
+- **权限**：read-only + **三段式 shell**（`*: deny` + 只读白名单 + 尾部守卫）；额外保留 `curl` / `wget` / `git clone` / `git ls-remote`，clone 仅 `/tmp/opencode/*`（`git clone * /*` deny）；**不套** `* /*` 绝对路径守卫（v2.5）
 - **特殊规则**：
   - 本地代码搜索 → **委派给 `explore`**
   - 外部 API/库文档 → 自己 `webfetch`
@@ -140,13 +140,13 @@
 
 #### `oracle` —— 架构咨询
 - **核心 prompt**：`prompts/oracle.md`
-- **权限**：read-only + bash 需 ask
+- **权限**：read-only + **三段式 shell**（`*: deny` + 只读白名单 + 尾部守卫；v2.5 起不再依赖 `*: allow`）；`.env` 读取被拒
 - **输出**：Markdown 四节（根因 / 建议 / 已排除的替代方案 / 下一步）
 
 #### `metis` —— 计划前 gap 分析
 - **核心 prompt**：`prompts/metis.md`
 - **温度 0.3**（最高）—— 创造性发散
-- **权限**：read-only + bash 需 ask
+- **权限**：read-only + **三段式 shell**（`*: deny` + 只读白名单 + 尾部守卫；v2.5 起不再依赖 `*: allow`）；`.env` 读取被拒
 - **输入**：计划草稿 OR 准备规划的 prompt
 - **输出**：Markdown 六节（隐藏意图 / 歧义 / AI slop 风险 / 缺失的验收标准 / 边界情况 / 建议修改）
 
@@ -482,11 +482,12 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 | **general** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **critic** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **context-builder** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **front** | ❌ | ❌（经 `delegate` 工具，非 agent 委派） | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **front** | ❌ | ❌（经 `delegate` 工具，非 agent 委派） | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 
 > build → critic 是"条件 ✅"：仅在 §3.2 "何时调 critic" 5 个条件命中时调用；其它情况不调。critic 自己不调任何 agent（task deny）。
 > **context-builder** 只能被 build 调，且不委派任何 agent——它只做上下文组装。
 > **front 的 "→ build" 不是 agent 委派**：front 不调 subagent 工具，而是调 `delegate` 插件工具，由插件在进程内建立并驱动一个 agent=build 的工程 session（跨目录）。详见 `docs/dual-session-delegation.md`。
+> **front → 五个只读 agent（v2.5）**：front 可直接调用 `explore` / `librarian` / `oracle` / `metis` / `critic`，产物仅"回答"，不产生文件变更；发现需要变更必须改判实施性走 `delegate`。依据：`docs/adr/ADR-front-knowledge-capability.md`（前置条件是这五个 agent 的 shell 已按三段式加固）。
 > **本矩阵只回答「允许调谁」；「哪个角色产出必须过谁」见 §2.7 审查配对**（architect → oracle + critic / planner → metis / builder → verifier）。允许 ≠ 必须：矩阵是权限上限，配对是流程下限。 `prompts/build.md` 的**角色列表表**同理只列**自由裁量**可用的工具，**固定审查者是流程义务、不受该列限制**（`no-role` 除外）—— 角色表与配对表是流程下限的两个刻度，不是互相限制的两道闸。（此处指角色列表表；**本节 agent 矩阵的 ❌ 不在豁免范围**。）
 
 ### 3.2 委派触发规则
@@ -644,8 +645,8 @@ OpenCode v2 的 `permission` 可以是单个 action，也可以是「工具 → 
 | read | allow | allow | allow | allow | allow | allow | allow | allow | allow | allow |
 | edit | deny | allow | ask（限 `.plans/` 等） | deny | deny | deny | deny | deny | deny | deny |
 | grep/glob/list | allow | allow | allow | allow | allow | allow | allow | allow | allow | allow |
-| bash | 只读白名单‡ | allow\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\* | 只读子集\*\*\* | 只读子集\*\* |
-| task（subagent 委派） | deny | allow | allow | deny | allow | deny | deny | deny | deny | deny |
+| bash | 只读白名单‡ | allow\* | 只读子集\*\* | 三段式‡‡ | 三段式+网络‡‡ | 三段式‡‡ | 三段式‡‡ | 只读子集\*\* | 三段式‡‡ | 只读子集\*\* |
+| task（subagent 委派） | 仅五个只读 agent† | allow | allow | deny | allow | deny | deny | deny | deny | deny |
 | webfetch | allow | allow | allow | allow | allow | allow | allow | allow | deny | deny |
 | websearch | allow | allow | allow | deny | allow | allow | allow | allow | deny | deny |
 | question | allow | allow | allow | deny | deny | deny | deny | deny | deny | deny |
@@ -657,6 +658,8 @@ OpenCode v2 的 `permission` 可以是单个 action，也可以是「工具 → 
 | doom_loop | (默认) | (默认) | (默认) | deny | deny | (默认) | (默认) | (默认) | (默认) | (默认) |
 
 ‡ front 的 shell 是**只读白名单**：`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny（重定向 / `--output` / `-fprint` / `sort -o` / `.env` 族）；另加 `"* /*": deny` 禁止绝对路径（`external_directory` 不约束 shell，见 ADR D4.1）
+† front 的 `subagent` 仅 allow `explore` / `librarian` / `oracle` / `metis` / `critic`（`"*": deny`，v2.5）；这五个 agent 的 shell 已按三段式加固，产物为"回答"、不产生文件变更。依据 `docs/adr/ADR-front-knowledge-capability.md`
+‡‡ 三段式 shell：`*: deny` 打头 + 只读白名单 + 尾部守卫 deny（v2.5 加固，见 ADR-front-knowledge-capability D3）；`librarian` 额外保留 `curl`/`wget`/`git clone`/`git ls-remote`，clone 仅 `/tmp/opencode/*`，且不套 `* /*` 绝对路径守卫
 § front 的 `external_directory` 按路径 allow：`/workspace/**` 与 `/home/ubuntu/.config/opencode/**`；其余路径 deny（不写 `"*": allow`）
 \* build 唯一可改代码的 agent；bash 默认 allow，但 19 条危险命令 ask（git push/reset --hard/clean/checkout --/restore/branch -D/stash drop/stash clear/rm -rf|fr|r|f/sudo）
 

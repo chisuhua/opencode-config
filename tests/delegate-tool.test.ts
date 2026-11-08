@@ -11,7 +11,7 @@
  * 运行：bun test tests/
  */
 import { afterAll, describe, expect, test } from "bun:test"
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 
@@ -360,6 +360,137 @@ describe("续接、busy、阻断与越界", () => {
     await runDelegate(ctx, { ...BASE, project_dir: project, remove: true })
     expect(calls.remove).toBe(1)
     expect([...sessions.values()][0].removed).toBe(true)
+  })
+})
+
+// ───────────── front 知识获取能力（ADR-front-knowledge-capability） ─────────────
+
+describe("agent 白名单（H1）与知识 session 语义", () => {
+  test("非白名单 agent 在建 session 之前被拒", async () => {
+    const project = fixtureProject()
+    const { ctx, calls } = createFakeCtx()
+    for (const agent of ["general", "plan"]) {
+      await expect(runDelegate(ctx, { ...BASE, project_dir: project, agent })).rejects.toThrow(/白名单/)
+    }
+    expect(calls.create).toBe(0)
+  })
+
+  test("知识 session：edit 恒为单条 deny，不注入 scope allow", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project, agent: "explore", scope: [] })
+    expect(summary.kind).toBe("knowledge")
+    expect(summary.agent).toBe("explore")
+    const session = [...sessions.values()][0]
+    expect(session.agent).toBe("explore")
+    const editRules = session.permissions.filter((p: any) => p.action === "edit")
+    expect(editRules).toEqual([{ action: "edit", resource: "*", effect: "deny" }])
+    expect(session.permissions.every((p: any) => p.action !== "edit" || p.effect === "deny")).toBe(true)
+  })
+
+  test("知识 session 即使传了非空 scope，也不获得 edit allow（ADR Verification #5）", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    await runDelegate(ctx, { ...BASE, project_dir: project, agent: "explore", scope: ["tests/"] })
+    const session = [...sessions.values()][0]
+    const editRules = session.permissions.filter((p: any) => p.action === "edit")
+    expect(editRules).toEqual([{ action: "edit", resource: "*", effect: "deny" }])
+  })
+
+  test("知识 session 不写 role.json 的 sessions 分区，只登记 pair（kind=knowledge）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx()
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project, agent: "oracle", scope: [] })
+    const pair = JSON.parse(readFileSync(path.join(project, ".rddf/state/pair.json"), "utf8"))
+    expect(pair.pairs[summary.session_id].kind).toBe("knowledge")
+    const roleFile = path.join(project, ".rddf/state/role.json")
+    const role = existsSync(roleFile) ? JSON.parse(readFileSync(roleFile, "utf8")) : {}
+    expect(role.sessions?.[summary.session_id]).toBeUndefined()
+  })
+
+  test("知识 session 的 grants 被拒（不产生副作用）", async () => {
+    const project = fixtureProject()
+    const { ctx, calls } = createFakeCtx()
+    await expect(
+      runDelegate(ctx, {
+        ...BASE,
+        project_dir: project,
+        agent: "librarian",
+        scope: [],
+        grants: [{ action: "shell", resource: "curl *" }],
+      }),
+    ).rejects.toThrow(/不接受 grants/)
+    expect(calls.create).toBe(0)
+  })
+
+  test("resume 一个已登记但 agent 不在白名单的 session 被拒（H1b）", async () => {
+    const project = fixtureProject()
+    const stateDir = path.join(project, ".rddf/state")
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(
+      path.join(stateDir, "pair.json"),
+      JSON.stringify({
+        version: "pair-v2",
+        pairs: {
+          ses_bad: {
+            front_session_id: null,
+            canonical_root: path.resolve(project),
+            agent: "general",
+            kind: "engineering",
+            registered_at: new Date().toISOString(),
+            last_used_at: new Date().toISOString(),
+          },
+        },
+      }),
+    )
+    const { ctx, calls } = createFakeCtx()
+    await expect(
+      runDelegate(ctx, { ...BASE, project_dir: project, resume_session: "ses_bad" }),
+    ).rejects.toThrow(/白名单/)
+    expect(calls.create).toBe(0)
+  })
+})
+
+describe("ledger 行产生时机（D5）", () => {
+  const ledgerPath = (project: string) => path.join(project, ".rddf/state/ledger.jsonl")
+
+  test("正常结束恰好一行，字段齐全且已脱敏", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({
+      onPrompt: (session) => {
+        session.messages.push({
+          id: "msg_secret",
+          type: "assistant",
+          time: { created: Date.now() },
+          content: [{ type: "text", text: "done, key=oc_sk_abcdefgh12345678" }],
+        })
+      },
+    })
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    const rows = readFileSync(ledgerPath(project), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    expect(rows.length).toBe(1)
+    expect(rows[0].backend_session_id).toBe(summary.session_id)
+    expect(rows[0].kind).toBe("engineering")
+    expect(rows[0].outcome).toBe("succeeded")
+    expect(rows[0].recorded_at).toBeTruthy()
+    expect(rows[0].last_assistant_text).not.toContain("oc_sk_abcdefgh12345678")
+  })
+
+  test("busy 也落一行（outcome=busy）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx({ busy: true })
+    const first = await runDelegate(ctx, { ...BASE, project_dir: project })
+    await runDelegate(ctx, { ...BASE, project_dir: project, resume_session: first.session_id })
+    const rows = readFileSync(ledgerPath(project), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    expect(rows.length).toBe(2)
+    expect(rows[1].outcome).toBe("busy")
+  })
+
+  test("校验失败不落行", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx()
+    await expect(runDelegate(ctx, { ...BASE, project_dir: project, agent: "general" })).rejects.toThrow(/白名单/)
+    expect(existsSync(ledgerPath(project))).toBe(false)
   })
 })
 

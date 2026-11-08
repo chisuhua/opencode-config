@@ -8,6 +8,14 @@
 
 ## 版本变更摘要
 
+> **v2.5 变更摘要（2026-11-08）**：**front 获得知识获取能力** —— 在「front 不获得写 / 执行能力」的前提下，放行只读 subagent 并引入记忆层。
+> ① `agent.front.permission.subagent` 由 `"deny"` 改为逐 agent 对象：`explore` / `librarian` / `oracle` / `metis` / `critic` allow + `"*": "deny"`（显式排除 `general` / `plan` / `build`）。粒度实测：`opencode reload` 后 `debug agents` 解析出六条规则，`"*": deny` 末尾。
+> ② 五个被放行 agent 的 `shell` 从 `"*": allow` 改为**三段式**（`"*": deny` 打头 → 只读白名单 → 尾部守卫 deny）：补 `* > *` / `* >> *` / `tee` / `find -fls` / `sort -o` / `uniq -o` / `git --output|--format|--pretty`；网络写落盘（`curl -o|--output|-O`、`wget -O|--output-document|-P`）与文件外泄（`curl -T|--upload-file|-d @|--data @|--data-binary @`）守卫；`git clone * /*` deny → `git clone * /tmp/opencode/*` allow。`librarian` 额外保留 `curl`/`wget`/`git clone`/`git ls-remote` 且不套 `* /*` 守卫；其 `subagent: allow` 改为 `deny`（封深度 2 链）。
+> ③ `prompts/front.md` 同步：`subagent` 行改为「仅五个只读 agent ✅，其余 deny」；理解性出口扩为「直读 或 召只读 subagent」；新增 §2.1「只读 / 改判 / 信任定级」。`prompts/{explore,oracle,metis,librarian}.md` 的 `awk/env/printenv/jq` 措辞由「需人工放行」改为「被拒」；`critic.md` 删去白名单外的 `sed -n`；`librarian.md` 的 clone 目标改为 `/tmp/opencode`。
+> ④ 决策依据：[ADR-front-knowledge-capability](../../docs/adr/ADR-front-knowledge-capability.md)（Proposed）；探针：[front-subagent-granularity-probe](../reviews/front-subagent-granularity-probe.md)；审稿：[adr-front-knowledge-capability-review](../reviews/adr-front-knowledge-capability-review.md)（oracle BLOCK→闭合，critic APPROVE_WITH_CONDITIONS，0 BLOCKER）。
+> ⑤ **配套实施项未完成（转 builder）**：`delegate` 的 agent 白名单（create + resume）、只读 agent 恒注入 `edit:* deny`、`kind=engineering|knowledge` 登记类型、`.rddf/state/ledger.jsonl`。在此之前，D2 的放行与 D4 的约束**尚未同时成立**——front 已能召只读 subagent，但 `delegate(agent=...)` 仍未受限。
+> ⑥ 生效条件：配置改动经 `opencode reload` 生效；**prompt 文件内容改动需 `opencode service restart`**（service 缓存，见 v2.3 的 D8.1）。
+
 > **v2.4 变更摘要（2026-11-06）**：**模型降级链** —— OpenCode v2.2.5 无原生 `fallback` 配置（`agent.model` 单值），改由 `plugins/model-fallback.ts` + `lib/model-fallback-core.ts` 实现：挂 `session.hook("retry")`，按错误分类决定「原地退避 / `switchModel` 换链 / 放弃」，build 内置默认链 `commandcode → minimax-cn → openstarry → opencode-go`（当前生效链以 `model-fallback.json` 为准，见 ④）。
 > ① 401/403/404 与订阅额度硬失败立即换链；5xx/网络类先退避 2 次；429 优先按 `retryAfterMs` 等待；**内容策略 / 上下文超限（`context length` / `token limit`）/ 400 / 413 / 422 不降级**，且这两类**先于**状态码短路（否则 400 + `forbidden` 会被误判成模型不可用，拿弱模型重试被拒内容）；
 > ①' 冷却表**进程级**（跨 session 共享，内核仍保持纯函数：冷却条目由 plan 带出、宿主落盘）；会话状态按 location 重复 setup 时模块级共享 + 事件级去重；session 状态 30 分钟不活跃即淘汰；

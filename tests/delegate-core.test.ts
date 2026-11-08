@@ -14,20 +14,25 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 import {
+  ALLOWED_AGENTS,
   CONSTANT_DENY,
   GRANT_ALLOWED,
   GRANT_FORBIDDEN,
+  READONLY_AGENTS,
+  appendLedger,
   buildBrief,
   canonicalRoot,
   changedSince,
   extractBlocked,
   gitStatusPaths,
+  kindOfAgent,
   lastAssistantText,
   lastMessageAt,
   lastMessageID,
   lookupPair,
   outOfScopeFiles,
   readJson,
+  redactAndTruncate,
   registerSession,
   scopeEditRules,
   validateBrief,
@@ -434,6 +439,96 @@ describe("buildBrief：委托简报（front 与工程 session 之间唯一的通
     const text = buildBrief(validateBrief({ ...VALID_INPUT }), TMP)
     expect(text).toContain("scope")
     expect(text).toContain("不要换写法绕过")
+  })
+})
+
+// ───────────── front 知识获取能力（ADR-front-knowledge-capability） ─────────────
+
+describe("agent 白名单与 kind 推导", () => {
+  test("白名单 = build + 五个只读 agent", () => {
+    expect([...ALLOWED_AGENTS].sort()).toEqual(
+      ["build", "critic", "explore", "librarian", "metis", "oracle"].sort(),
+    )
+    expect([...READONLY_AGENTS].sort()).toEqual(["critic", "explore", "librarian", "metis", "oracle"].sort())
+  })
+
+  test("build → engineering；只读 agent → knowledge", () => {
+    expect(kindOfAgent("build")).toBe("engineering")
+    for (const a of READONLY_AGENTS) expect(kindOfAgent(a)).toBe("knowledge")
+  })
+
+  test("不在白名单的 agent → 在建 session 前拒绝", () => {
+    for (const a of ["general", "plan", "title", "compaction", "context-builder"]) {
+      expect(() => validateBrief({ ...VALID_INPUT, agent: a })).toThrow(/白名单/)
+    }
+  })
+
+  test("知识 session 的 scope 可省略/为空；工程 session 仍必填", () => {
+    const k = validateBrief({ ...VALID_INPUT, agent: "explore", scope: undefined })
+    expect(k.scope).toEqual([])
+    expect(k.kind).toBe("knowledge")
+    expect(() => validateBrief({ ...VALID_INPUT, scope: [] })).toThrow(/scope/)
+  })
+
+  test("知识 session 不接受 grants", () => {
+    expect(() =>
+      validateBrief({
+        ...VALID_INPUT,
+        agent: "librarian",
+        scope: [],
+        grants: [{ action: "shell", resource: "git push *" }],
+      }),
+    ).toThrow(/不接受 grants/)
+  })
+
+  test("简报：知识 session 无 scope 行、要求只读", () => {
+    const text = buildBrief(validateBrief({ ...VALID_INPUT, agent: "oracle", scope: [] }), TMP)
+    expect(text).toContain("kind）: knowledge")
+    expect(text).toContain("不要修改任何文件")
+    expect(text).not.toContain("只在 scope 内改动")
+  })
+})
+
+describe("知识 session 登记（不污染 role.json）", () => {
+  test("registerSession(kind=knowledge) 只写 pair，不写 role.json", () => {
+    const repo = gitRepo("repo-knowledge")
+    registerSession(repo, "ses_k", "ses_front", "explore", "knowledge")
+    const pair = readJson(path.join(repo, ".rddf/state/pair.json"))
+    expect(pair.pairs["ses_k"].kind).toBe("knowledge")
+    expect(pair.pairs["ses_k"].agent).toBe("explore")
+    expect(existsSync(path.join(repo, ".rddf/state/role.json"))).toBe(false)
+  })
+
+  test("engineering 登记的 pair 条目同样带 kind", () => {
+    const repo = gitRepo("repo-eng-kind")
+    registerSession(repo, "ses_e", null, "build")
+    expect(readJson(path.join(repo, ".rddf/state/pair.json")).pairs["ses_e"].kind).toBe("engineering")
+  })
+
+  test("重复登记保留 registered_at，只更新 last_used_at / front_session_id", () => {
+    const repo = gitRepo("repo-reattach")
+    registerSession(repo, "ses_r", null, "build")
+    const first = readJson(path.join(repo, ".rddf/state/pair.json")).pairs["ses_r"]
+    registerSession(repo, "ses_r", "ses_other", "build")
+    const second = readJson(path.join(repo, ".rddf/state/pair.json")).pairs["ses_r"]
+    expect(second.registered_at).toBe(first.registered_at)
+    expect(second.front_session_id).toBe("ses_other")
+  })
+})
+
+describe("ledger：历史事实（插件单写）", () => {
+  test("appendLedger 追加 JSONL 行", () => {
+    const repo = gitRepo("repo-ledger")
+    appendLedger(repo, { outcome: "succeeded", goal: "x" })
+    const raw = readFileSync(path.join(repo, ".rddf/state/ledger.jsonl"), "utf8")
+    expect(JSON.parse(raw.trim()).goal).toBe("x")
+  })
+
+  test("redactAndTruncate 脱敏 + 截断", () => {
+    const out = redactAndTruncate("token=oc_sk_abcdefgh12345678 and sk-1234567890abcdef end", 1000)
+    expect(out).not.toContain("oc_sk_abcdefgh12345678")
+    expect(out).not.toContain("sk-1234567890abcdef")
+    expect(redactAndTruncate("a".repeat(20), 10)).toBe("a".repeat(10) + "…")
   })
 })
 

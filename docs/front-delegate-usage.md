@@ -20,9 +20,10 @@
 
 | 性质 | 含义 |
 |---|---|
-| **唯一通道** | front 的一切工程行动都经 `delegate`；没有第二条路（shell 跑脚本、subagent 委派都被权限层 deny） |
+| **唯一工程通道** | front 的一切**工程行动**（文件变更）都经 `delegate`；没有第二条写通道。理解性的只读调研可另召五个只读 subagent（v2.5） |
 | **权限层强制** | front 的能力边界由 `opencode.jsonc` 的权限块决定，不是 prompt 里的承诺 |
 | **front 专属** | `delegate` 只对 front 可见；其他 agent（含 build）调用时工具根本不存在 |
+| **知识 session** | `delegate` 也可用只读 agent（`explore`/`librarian`/`oracle`/`metis`/`critic`）建"知识 session"：无写权限、不登记角色、产物是回答 |
 
 ## 2. 快速上手
 
@@ -73,12 +74,13 @@ front 组 brief 时用下面这张表（**你只提供素材，front 负责填**
 | 字段 | 含义 | 缺了会怎样 |
 |---|---|---|
 | `project_dir` | 工程根绝对路径 | front 问你 |
+| `agent` | 会话类型：`build`（默认，工程）或只读 agent（知识） | 默认 `build`；知识类任务 front 会显式指定 |
 | `task` | 你的原话 | — |
 | `goal` | 一句话目标（产物是什么） | front 问你 |
-| `scope` | **允许改动的路径**（相对工程根或绝对） | front 问你（宁可窄不可宽） |
+| `scope` | **允许改动的路径**（相对工程根或绝对） | 工程 session 必填（宁可窄不可宽）；知识 session 可为空 |
 | `acceptance` | **怎么算完成**（能跑的命令 / 能勾的条目） | front 问你 |
 | `constraints` | 额外禁止（"不要 commit""别动 X"） | 可选 |
-| `grants` | 你已批准的特殊操作 | 可选（见 §5） |
+| `grants` | 你已批准的特殊操作 | 可选（见 §5）；知识 session 一律不接受 |
 
 ### `scope` 是硬边界（会被权限层强制）
 

@@ -1,0 +1,6 @@
+{
+  "arch_paths": [
+    "docs/adr"
+  ],
+  "exclude_paths": []
+}
