@@ -91,6 +91,25 @@
 - **钩子**：pre-commit。
 - **验收**：CI 的 format check 与本地 pre-commit 结果一致。
 
+### P2-3 守卫规则的真源 ↔ ADR 锚（2026-11-09 新增）
+
+**背景**：五个只读 subagent 的 shell 守卫原本只以手写 JSON 存在于 `opencode.jsonc`，本轮因此出过两次事故
+（① front 的 `subagent` 规则把 `"*": "deny"` 放末尾 → 整个工具被隐藏；② `curl * -o*` 匹配不到
+`curl -o /tmp/x URL` → librarian 真落盘）。已建 `scripts/agent-guard-rules.ts`（真源）+
+`scripts/agent-guard-gen.ts`（重建/检漂移）+ `tests/config-guards.test.ts`（漂移检测）。
+
+**残留缺口（三项，均属下一批）**：
+
+| # | 缺口 | 取证 | 建议 |
+|---|---|---|---|
+| 1 | **front 自己的 shell 不在真源内**（且缺 D3.1 首参形态） | 真源 `GUARDED_AGENTS` 只有五个 subagent；front 的 `shell * -o*` 之类**缺首参形态** → `sort -o out a` 这类**相对路径写 CWD**在 front 侧仍可写 | 把 front 纳入真源（需先抽差量：front 无 curl/wget allow、`git` allow 全带子命令、`* /*` 守卫）；并补 front 的首参形态守卫 |
+| 2 | **真源 ↔ ADR D3.1 全量清单缺锚** | 现有测试只锚首参形态（`REQUIRED_FIRST_ARG_FORMS`）；其余 deny 族（重定向 / `tee *` / find 族 / `.env` 族）只存在于真源自身 | 加 `REQUIRED_GUARD_SET`（ADR D3/D3.1 全量 deny 族硬编码进测试）——**实测**：单独改坏真源**会**被漂移测试抓到（5 条失败），但"改坏真源 + 跑 `--write` 把配置同步成坏源"后二者一致 → 只有 ADR 锚能发现 |
+| 3 | **`--write` 的修复路径无自动化验证** | 目前只测了"检测"（注入漂移 → 失败 → 恢复 → 全绿），**没测"修复"**（注入漂移 → `--write` → 断言 JSON 可解析、五块与真源全等、二次执行无 diff） | 加 round-trip 用例（临时副本） |
+
+**教训（写进清理规程）**：数字/状态类修复必须**全仓 grep 同类模式**，不能只改审计点名的那几个文件
+——本轮就漏了 `docs/MULTI-AGENT-DESIGN.md:974-975`（"63 项"/"96 pass"）与
+`docs/dual-session-delegation.md`（同样的数字）。
+
 ## 3. 不建议自动化的部分
 
 - 架构取舍是否成立（例如「收敛到单一权威头」vs「保留双副本」）。

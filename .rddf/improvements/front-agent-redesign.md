@@ -2,9 +2,9 @@
 
 | 字段 | 值 |
 |---|---|
-| 状态 | draft（v2，已并入 metis gap 分析 + 两项用户决策） |
+| 状态 | **核心链路验收通过（2026-11-06；13 PASS / 3 PARTIAL / 1 条判据需改 / 3 条未实测 —— 已登记为已知缺口，非终验全绿）**；后续演进（front 获得知识获取能力、交付面证据与 `unverified`）另立 `front-knowledge-capability` |
 | 创建 | 2026-11-05 |
-| 关联 ADR | `.rddf/state/adr-front-agent-redesign.md`（Status: Proposed，oracle + critic 双审通过，0 BLOCKER） |
+| 关联 ADR | `.rddf/state/adr-front-agent-redesign.md`（Status: Accepted；**部分条款已被取代**，见该 ADR 元数据「被取代条款」行 → `docs/adr/ADR-front-knowledge-capability.md` / `ADR-delegate-delivery-evidence.md`） |
 | 关联审稿 | `.rddf/reviews/adr-front-agent-redesign-review.md` |
 | 实施计划落点 | `.rddf/plans/front-agent-redesign.md`（builder 阶段生成） |
 | 验收报告落点 | `.rddf/reviews/front-agent-redesign-acceptance.md`（Stage 6 产出） |
@@ -207,7 +207,7 @@ git stash list  git worktree list
 | `opencode.jsonc.opencode-go` | 改：front shell 三段式 / `external_directory` 按路径 allow / `delegate` 门控 |
 | `plugins/delegate.ts` | 新建（后拆为「插件壳」+ `lib/delegate-core.ts` 纯逻辑内核，见实施结果）|
 | `lib/delegate-core.ts` | 新建：工具的纯逻辑内核 + 工具定义工厂（无宿主依赖，可独立单测）|
-| `tests/delegate-core.test.ts`、`tests/delegate-tool.test.ts` | 新建：63 项单元测试（假 ctx 端到端 + 纯逻辑）|
+| `tests/delegate-core.test.ts`、`tests/delegate-tool.test.ts` | 新建：单元测试（假 ctx 端到端 + 纯逻辑；**当时 63 项，现 111 项**）|
 | `prompts/front.md` | 重写（六项工作；删代答安全边界节） |
 | `prompts/build.md` | 改：role.json 写盘契约定用 `.role.lock` |
 | `<canonical_root>/.rddf/state/pair.json` | 新建 / 升级 `pair-v2`（每工程仓库一份） |

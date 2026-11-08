@@ -98,13 +98,13 @@
 #### `front` —— 用户交互内核 / 委托出口
 - **职责**：与用户对话、明确意图、给选项；**一切工程行动经 `delegate` 插件工具转交工程 session**
 - **核心 prompt**：`prompts/front.md`（四分类路由 + 委托 brief 契约 + 状态扫描清单 + 降级纪律）
-- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`"*": deny`，v2.5）；`delegate` allow（**唯一**登记型通道）
+- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`"*": deny` **必须是第一条**，v2.5 + ADR D2.1：opencode 的工具可见性判定取该 action **最后一条**匹配规则，`"*": deny` 放末尾会把整个 `subagent` 工具隐藏）；`delegate` allow（**唯一**登记型通道）
 - **门控**：`delegate` 声明 `options.permission="delegate"` → 全局 deny + 仅 front allow ⇒ 其余 agent 调用时答 `NO_TOOL`
 - **典型 workflow**：
   1. 判类（理解性 / 实施性 / 流程性 / 需裁决）
   2. 理解性 → 自己 `read`/`grep`/`glob` 答；流程性 → 读 `.rddf/state/` 出摘要（带新鲜度标注）
   3. 实施性 → 组六必填 brief（+ 必要时向用户预批 `grants`）→ 调 `delegate`
-  4. 读返回值（`outcome`/`blocked_reason`/`out_of_scope_files`）→ 转述给用户
+  4. 读返回值（`outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `no_work_evidence`）→ 转述给用户；**`outcome=unverified`（宿主成功但无交付证据）不得说成完成**
 - **详见**：`docs/dual-session-delegation.md`
 
 #### `plan` —— 设计者 agent
@@ -658,7 +658,7 @@ OpenCode v2 的 `permission` 可以是单个 action，也可以是「工具 → 
 | doom_loop | (默认) | (默认) | (默认) | deny | deny | (默认) | (默认) | (默认) | (默认) | (默认) |
 
 ‡ front 的 shell 是**只读白名单**：`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny（重定向 / `--output` / `-fprint` / `sort -o` / `.env` 族）；另加 `"* /*": deny` 禁止绝对路径（`external_directory` 不约束 shell，见 ADR D4.1）
-† front 的 `subagent` 仅 allow `explore` / `librarian` / `oracle` / `metis` / `critic`（`"*": deny`，v2.5）；这五个 agent 的 shell 已按三段式加固，产物为"回答"、不产生文件变更。依据 `docs/adr/ADR-front-knowledge-capability.md`
+† front 的 `subagent` 仅 allow `explore` / `librarian` / `oracle` / `metis` / `critic`，且 `"*": deny` **排在第一条**（顺序是硬约束，见 `ADR-front-knowledge-capability` D2.1；顺序错 → 工具被整体隐藏）；这五个 agent 的 shell 已按三段式加固，产物为"回答"、不产生文件变更。依据 `docs/adr/ADR-front-knowledge-capability.md`
 ‡‡ 三段式 shell：`*: deny` 打头 + 只读白名单 + 尾部守卫 deny（v2.5 加固，见 ADR-front-knowledge-capability D3）；`librarian` 额外保留 `curl`/`wget`/`git clone`/`git ls-remote`，clone 仅 `/tmp/opencode/*`，且不套 `* /*` 绝对路径守卫
 § front 的 `external_directory` 按路径 allow：`/workspace/**` 与 `/home/ubuntu/.config/opencode/**`；其余路径 deny（不写 `"*": allow`）
 \* build 唯一可改代码的 agent；bash 默认 allow，但 19 条危险命令 ask（git push/reset --hard/clean/checkout --/restore/branch -D/stash drop/stash clear/rm -rf|fr|r|f/sudo）
@@ -971,8 +971,8 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 | `delegate` 门控：仅 front 可见（front `[{*,deny},{*,allow}]`，其余 agent 仅 `[{*,deny}]`）| ✅ `opencode debug agents` 实测 |
 | `delegate` 端到端：建工程 session → 真实写入文件 → `outcome=succeeded` + 越界检测 | ✅ 实跑（`/tmp/opencode/engproj` 写出 `answer2.txt`=42 / `answer3.txt`=43 / `answer4.txt`=44）|
 | `delegate` 续接：复用同一 session（session 数不增）+ 非法 grant 被拒 | ✅ 实跑 |
-| `delegate` 单元测试：`bun test tests/delegate-core.test.ts tests/delegate-tool.test.ts`（63 项：brief 契约 / grants 白名单 / scope→edit 规则 / 规则顺序即策略 / 阻断提取 / 越界判定 / pair+role 登记 / 目录锁并发 / 假 ctx 端到端）| ✅ 全绿 |
-| `model-fallback` 单元测试：`bun test tests/model-fallback-core.test.ts`（33 项：错误分类含内容策略/上下文超限短路与裸 403 仍降级 / 链推进 / 冷却跳过 / 429 退避 / 不降级场景 / 链耗尽 / 绕回链首 / 冷却表跨 session 共享 / 状态不可变）| ✅ 全绿（全量 `bun test tests/` 96 pass）|
+| `delegate` 单元测试：`bun test tests/delegate-core.test.ts tests/delegate-tool.test.ts`（111 项：brief 契约 / grants 白名单 / scope→edit 规则 / 规则顺序即策略 / 阻断提取 / 越界判定 / pair+role 登记 / 目录锁并发 / 假 ctx 端到端 / 交付面证据与 `unverified`）| ✅ 全绿 |
+| `model-fallback` 单元测试：`bun test tests/model-fallback-core.test.ts`（33 项：错误分类含内容策略/上下文超限短路与裸 403 仍降级 / 链推进 / 冷却跳过 / 429 退避 / 不降级场景 / 链耗尽 / 绕回链首 / 冷却表跨 session 共享 / 状态不可变）| ✅ 全绿（全量 `bun test tests/` 154 pass）|
 | `model-fallback` 端到端（当前生效链）：`opencode run --standalone --agent build -m openstarry/deepseek-v4.1-flash`，openstarry 403「订阅额度不足」→ **一次**切到 `commandcode` → 成功作答；日志每次失败只落一行切换记录（无重复撞墙）| ✅ 实跑（2026-11-08）|
 | `model-fallback` 端到端（内置默认链，配置文件覆盖前）：坏 `MINIMAX_API_KEY` 驱动 `opencode run --agent build`，实测 `minimax-cn` 401 → `openstarry` 403 → `opencode-go` 成功作答| ✅ 实跑（2026-11-06）|
 | 11 个 agent 全部注册 + 全部 `{file:...}` 引用解析 | ✅ |

@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | Accepted（2026-11-09，用户拍板；oracle+critic 双审完成，0 未闭 BLOCKER）。**实现待落地**：D3.1 的 8 项迁移清单须同 patch 完成 |
+| Status | Accepted（2026-11-09，用户拍板；oracle+critic 双审完成，0 未闭 BLOCKER）。**已实现**：D3.1 的 8 项迁移清单于 2026-11-09 同 patch 落地（commit `61edd9d`），并经 `openspec/changes/front-knowledge-capability` 的 AC21–AC30 验收通过 |
 | Date | 2026-11-09 |
 | Author | architect |
 | Parent | **部分取代** `.rddf/state/adr-front-agent-redesign.md` D2 的 outcome 枚举（`succeeded\|failed\|interrupted\|unknown` 一处作废）：**目标枚举**为 `succeeded\|unverified\|failed\|interrupted\|unknown\|busy`（`busy` 是此前实现先行漂移进来的，旧 D2 的枚举早已 stale，本次一并校正）；该篇 D2 的 baseline 校验、不回传 transcript 等其余条款继续有效。与 `ADR-front-knowledge-capability`：**决策面正交**，但 ledger schema 面有单点耦合（该篇 D5 的 outcome 枚举需同步补 `unverified`/`host_outcome`） |

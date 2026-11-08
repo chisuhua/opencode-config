@@ -5,7 +5,7 @@
 | 日期 | 2026-11-06 |
 | 范围 | Stage 0–5 的实施产物 + Stage 6 终验 |
 | 判据来源 | `.rddf/improvements/front-agent-redesign.md` 的 AC1–AC17（终验权威为 ADR 的 18 条 Verification） |
-| 结论 | **13 PASS / 3 PARTIAL / 2 FAIL-判据需改 / 2 NOT-TESTED**；核心链路（门控 → 委托 → 权限 → 结果回传）全通 |
+| 结论 | **13 PASS / 3 PARTIAL / 1 FAIL-判据需改（AC9）/ 3 NOT-TESTED（AC14/AC15/AC17）**；核心链路（门控 → 委托 → 权限 → 结果回传）全通 |
 
 ## 一、逐条判定
 

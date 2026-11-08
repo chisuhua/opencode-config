@@ -155,7 +155,7 @@ tests/delegate-tool.test.ts   假 ctx 端到端单元测试
 ```
 
 ```bash
-cd ~/.config/opencode && bun test tests/     # 63 项单元测试，不依赖 opencode 运行时
+cd ~/.config/opencode && bun test tests/     # 154 项单元测试，不依赖 opencode 运行时
 ```
 
 被委托的**示例工程 = `rdd-workflow-e2e`**：单元测试复制其工作树到临时目录作 fixture
