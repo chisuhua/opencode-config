@@ -74,12 +74,20 @@ export const CLONE_GUARD: Array<[string, string]> = [
   ["git clone * /tmp/opencode/*", "allow"],
 ]
 
-/** 受这套规则约束的 agent（五个只读 subagent）。 */
-export const GUARDED_AGENTS = ["explore", "oracle", "metis", "critic", "librarian"] as const
+/**
+ * 受这套规则约束的 agent：**front + 五个只读 subagent**。
+ *
+ * front 也在内：它的 shell 同样只读，且此前**缺首参形态守卫** → `sort -o out a` 这类
+ * **相对路径写 CWD** 的绕过在 front 侧仍然成立（`sort * -o*` 要求 `-o` 前有空格）。
+ * 把它纳入真源既补上了这个洞，也让 front 与 subagent 的守卫不再各写各的。
+ */
+export const GUARDED_AGENTS = ["front", "explore", "oracle", "metis", "critic", "librarian"] as const
 
 export type GuardedAgent = (typeof GUARDED_AGENTS)[number]
 
-/** ADR D3.1 要求"首参数形态"必须齐备的守卫族（漂移检测用）。 */
+/**
+ * ADR D3.1 要求"首参数形态"必须齐备的守卫族（漂移检测用）。
+ */
 export const REQUIRED_FIRST_ARG_FORMS: string[] = [
   "curl -o*", "curl --output*", "curl -O*",
   "curl -T *", "curl --upload-file *",
@@ -87,6 +95,34 @@ export const REQUIRED_FIRST_ARG_FORMS: string[] = [
   "wget -O*", "wget --output-document*", "wget -P*",
   "git --output*", "git --format*", "git --pretty*",
   "sort -o*", "uniq -o*",
+]
+
+/**
+ * ADR D3 / D3.1 的**全量 deny 族**（真源 ↔ ADR 的第三层锚）。
+ *
+ * 为什么需要这一层：漂移测试断言的是"配置 == 真源"。若有人同时改坏真源**并**跑
+ * `--write` 把配置同步成坏源，两者依旧相等 → 只有与 ADR 清单比对才能发现。
+ * （已实测：单独改坏真源会被漂移测试抓到；"改坏 + 同步"才会同时骗过两层。）
+ */
+export const REQUIRED_GUARD_SET: string[] = [
+  // 写落盘
+  "* > *", "* >> *", "tee *",
+  "find * -exec*", "find * -execdir*", "find * -delete",
+  "find * -fprint*", "find * -fprintf*", "find * -fls*",
+  "sort * -o*", "uniq * -o*",
+  "git * --output*", "git * --format*", "git * --pretty*",
+  // 绝对路径（librarian 除外：它必须能 clone 到 /tmp/opencode）
+  "* /*",
+  // 破坏性命令
+  "git push *", "git push", "git reset --hard *", "git reset --hard",
+  "git clean -fd *", "git clean -fd", "git clean -fdx *", "git clean -fdx",
+  "git checkout -- *", "git checkout .", "git restore *",
+  "git branch -D *", "git stash drop *", "git stash clear *",
+  "git commit *", "git commit",
+  "rm -rf *", "rm -fr *", "rm -r *", "rm -f *", "sudo *",
+  // .env 读取族
+  "cat *.env", "cat *.env.*", "head *.env", "head *.env.*",
+  "tail *.env", "tail *.env.*",
 ]
 
 /**

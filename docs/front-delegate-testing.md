@@ -19,10 +19,10 @@
 ```bash
 cd ~/.config/opencode
 
-bun test tests/                          # 全部（当前 154 项，约 4 秒）
+bun test tests/                          # 全部（当前 157 项，约 4 秒）
 bun test tests/delegate-core.test.ts     # 纯逻辑（76 项）
 bun test tests/delegate-tool.test.ts     # 假 ctx 端到端（35 项）
-bun test tests/config-guards.test.ts     # 守卫漂移检测（10 项）
+bun test tests/config-guards.test.ts     # 守卫漂移检测（13 项）
 bun test tests/model-fallback-core.test.ts # 模型降级链内核（33 项）
 
 npm test                                 # 等价（package.json 被 .gitignore 忽略，仅本地便利）

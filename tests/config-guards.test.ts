@@ -16,9 +16,11 @@ import path from "node:path"
 import {
   GUARDED_AGENTS,
   REQUIRED_FIRST_ARG_FORMS,
+  REQUIRED_GUARD_SET,
   buildShellRules,
   type GuardedAgent,
 } from "../scripts/agent-guard-rules.ts"
+import { applyRules } from "../scripts/agent-guard-gen.ts"
 
 const CONFIG_PATH = path.join(import.meta.dir, "..", "opencode.jsonc")
 const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8"))
@@ -33,13 +35,41 @@ describe("守卫漂移检测：配置 == 规则真源", () => {
     })
   }
 
-  test("五个 agent 的守卫都含 ADR D3.1 要求的首参数形态（且都是 deny）", () => {
+  test("每个受管 agent（front + 五个 subagent）的守卫都含 ADR D3.1 的首参数形态（且都是 deny）", () => {
     for (const agent of GUARDED_AGENTS) {
       const shell = config.agent[agent].permission.shell as Record<string, string>
       for (const form of REQUIRED_FIRST_ARG_FORMS) {
         expect(shell[form], `${agent} 缺少首参形态守卫 ${form}`).toBe("deny")
       }
     }
+  })
+
+  test("每个 agent 都含 ADR D3/D3.1 的全量 deny 族（真源 ↔ ADR 的第三层锚）", () => {
+    for (const agent of GUARDED_AGENTS) {
+      const shell = config.agent[agent].permission.shell as Record<string, string>
+      for (const guard of REQUIRED_GUARD_SET) {
+        // librarian 例外：它必须能 clone 到 /tmp/opencode，故不设绝对路径禁令
+        if (guard === "* /*" && agent === "librarian") continue
+        expect(shell[guard], `${agent} 缺少 ADR 要求的守卫 ${guard}`).toBe("deny")
+      }
+    }
+  })
+
+  test("round-trip：注入漂移 → applyRules 修复 → JSON 仍可解析、规则全等、二次执行幂等", () => {
+    const original = readFileSync(CONFIG_PATH, "utf8")
+    const drifted = original.replace(/^\s*"tee \*": "deny",\n/m, "")
+    expect(drifted, "注入漂移失败：没找到 tee * 守卫").not.toBe(original)
+
+    const { text: fixed, changed } = applyRules(drifted)
+    expect(changed.length).toBeGreaterThan(0)
+
+    const parsed = JSON.parse(fixed) // 修复后必须仍是合法 JSON
+    for (const agent of GUARDED_AGENTS) {
+      expect(parsed.agent[agent].permission.shell).toEqual(
+        Object.fromEntries(buildShellRules(agent as GuardedAgent)),
+      )
+    }
+    expect(applyRules(fixed).changed.length, "二次执行应无变化（幂等）").toBe(0)
   })
 
   test("librarian：clone 目标收敛顺序正确（allow 在 deny 之后才生效）", () => {

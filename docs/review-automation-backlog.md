@@ -98,7 +98,11 @@
 `curl -o /tmp/x URL` → librarian 真落盘）。已建 `scripts/agent-guard-rules.ts`（真源）+
 `scripts/agent-guard-gen.ts`（重建/检漂移）+ `tests/config-guards.test.ts`（漂移检测）。
 
-**残留缺口（三项，均属下一批）**：
+**状态更新（2026-11-09 同日收口）**：下表三项**已全部落地** —— front 已纳入真源并补齐首参形态
+（配置 88 → 117 条规则，allow 数不变 47）；新增 `REQUIRED_GUARD_SET`（真源 ↔ ADR 全量 deny 族锚）；
+新增 round-trip 用例（注入漂移 → 修复 → JSON 可解析 → 规则全等 → 二次执行幂等）。以下保留为**设计说明**。
+
+**残留缺口（三项，原始记录）**：
 
 | # | 缺口 | 取证 | 建议 |
 |---|---|---|---|
