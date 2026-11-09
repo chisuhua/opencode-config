@@ -9,7 +9,7 @@
 | Author | architect |
 | Parent | 部分取代 `docs/adr/ADR-front-agent-redesign.md` 的 D2（`delegate` 的同步单发序列）与 D3（brief 契约的 scope 部分），**并把该篇 D2 的「唯一工程通道」口径扩写为「唯一门控插件出口」**（见 D1 的不变式说明）；**不改**该篇 D1（四分类）、D4（front 工具面白名单）、D5（preflight grants）、D6（登记与并发协议）、D7（guide 归宿）、D8（调试纪律）；与 `ADR-front-knowledge-capability` 的 D2（只读 subagent 门控）、D4（agent 白名单与 kind）、D5（ledger 记忆层）**决策面正交**，但 ledger schema 面有单点耦合（见 D2.2）。与 `ADR-canonical-root-normalization` **决策面正交**（本篇只在 goal_key 里引用归一后的 `canonical_root`），但**实施顺序有依赖**：归一篇应先落地 |
 | 关联 change | `openspec/changes/front-multi-backend/`（已立项 2026-11-09，planner 起草） |
-| AC 映射 | 本文件 Verification 1–28 → proposal 的 **AC1–AC30**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表；AC11/AC30 为扩展项） |
+| AC 映射 | 本文件 Verification 1–28 → proposal 的 **AC1–AC38**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表；同源条目已合并） |
 | 审稿报告 | `.rddf/reviews/adr-front-multi-backend-review.md` |
 | 前置事实 | 19 条运行时探针（HTTP 层 8 + 插件内直测 8 + oracle 后补 3），全部带真实返回摘录，落在 `.rddf/reviews/front-multi-backend-probes.md`。**本篇的每个技术断言都有探针背书，无推测项** |
 
@@ -203,12 +203,12 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 - [ ] `opencode debug agents` 中 front 可见 `dispatch`/`sessions`/`cancel` 三个工具；`delegate` 仍可见。
 - [ ] 除 front 外任一 agent 调用 `dispatch`/`sessions`/`cancel` → **权限层**拒绝（非模型拒绝），且 `delegate` 仍不可见。
 - [ ] `cancel` 的 action 可被单独 deny 而 `dispatch`/`sessions` 仍 allow（验证 action 细分生效）。
-- [ ] `dispatch` 的 execute 在后端挂死时**在超时上限内返回**（不无限等）；构造一个永不 settle 的后端验证。
+- [ ] `dispatch` 的 execute 在**宿主调用挂死**时**在超时上限内返回**（不无限等）；构造 `create`/`prompt`/`update` 永不 settle 的情形验证（**不是**"构造挂死的后端"——dispatch 不 wait 后端，后端挂死不会让 dispatch 挂住）。
 
 **名册与索引（D2）**
 
 - [ ] `dispatch` 后：后端 session 的 metadata 含 `delegated_by/goal_key/canonical_root/baseline_message_id/dispatched_at/state`；`pair.json` 有对应条目；`ledger.jsonl` 有 `dispatched` 行。
-- [ ] `sessions` 列出本 front 名下全部后端（≥2 个，分属不同工程目录），每项含状态与证据字段；**调用 `sessions` 前后，被观测后端的 `ledger.jsonl` 行数不变**（证明观测面不投递 prompt、不污染）。
+- [ ] `sessions` 列出本 front 名下全部后端（≥2 个，分属不同工程目录），每项含状态与证据字段；**调用 `sessions` 前后，被观测后端的 `session.context` 消息条数与最后一条消息 id、以及 `time.updated` 均不变**（证明观测面不投递 prompt、不污染）。⚠️ **不以 ledger 行数不变为判据**——reconcile 会写行，且 prompt 投递不会立即产生 ledger 行，行数不变证明不了没投递。
 - [ ] 后端 session 被外部删除后，`sessions` 报该项"已消失"，并在 ledger 补记终态行（区分于"从未派发"）。
 - [ ] front session 换代（新 front session id）后，仍能通过兜底路径找回旧后端。
 - [ ] **兜底路径扫全量**：构造 >50 个 session（其中 ≥2 个是被派发的后端且 `time.updated` 最旧）→ 换代后的 `sessions` 仍能列出这两个后端（验证 cursor 续扫，不因 limit 窗口漏扫）。

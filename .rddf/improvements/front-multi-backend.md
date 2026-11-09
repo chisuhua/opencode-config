@@ -33,21 +33,22 @@ ADR `docs/adr/ADR-front-multi-backend.md` 已 Accepted（oracle + critic 双审�
 
 ## Acceptance
 
-见 `openspec/changes/front-multi-backend/proposal.md` 的 `## 验收标准`（AC1–AC30，逐条映射 ADR 的 Verification 1–28）。
+见 `openspec/changes/front-multi-backend/proposal.md` 的 `## 验收标准`（AC1–AC38）。**编号以 proposal 的 `## 验收标准` 为唯一源**，本段只列选型。
 
-**最小可验收集合**（缺一即不通过）：AC1（工具可见性）、AC2（非 front 被拒）、AC3（dispatch 立即返回 + delivery=queue）、AC4（sessions 不污染后端）、AC5（dispatched 行落 ledger）、AC6（goal_key 不一致拒续接）、AC7（running 判据）、AC8（worst-of 聚合）、AC9（同仓互斥拒绝）、AC10（cancel 墓碑）、AC11（既有 delegate 全绿回归）。
+**最小可验收集合**（缺一即不通过）：AC1（工具可见性）、AC2（非 front 被拒）、AC4（观测面不污染）、AC5（dispatch 立即返回）、AC6（显式 delivery=queue）、AC9（dispatch 落三处）、AC16（goal_key 不一致拒续接）、AC21（running 判据）、AC23（worst-of 聚合）、AC26（同仓互斥拒绝）、AC28（cancel 墓碑）、AC33（既有 delegate 全绿回归）。
 
-**否决条件**：① 最小集合里任一 AC 有工具证据表明失败；② 既有 `delegate` 的既有判据出现回归（AC11 失败即否决）；③ 观测面污染后端（调用 `sessions` 前后后端 ledger 行数变化）。
+**否决条件**：① 最小集合里任一 AC 有工具证据表明失败；② 既有 `delegate` 的既有判据出现回归（AC33 失败即否决）；③ 观测面污染后端（调用 `sessions` 前后后端 `session.context` 消息条数或 `time.updated` 变化）。
 
 ## Capabilities
 
-- front 的回合不再被后端钉死：派发即返回，N 个后端并发推进，用户随时能问进度。
+- front 的回合不再被后端钉死：派发即返回，**多个后端跨仓并发推进**（⚠️ **同仓仍是串行**——D6 的同仓互斥是有意限制，worktree 隔离后置；这是本批已知的交付边界，必须写进 front prompt），用户随时能问进度。
 - 「front 名下有哪些后端」有了可枚举的答案，且不新增持久状态文件。
 - 上下文污染有了强制点：goal_key 不一致即拒续接，而非依赖 front 自觉。
 - 活体判据与 `outcome` 解耦，避免"未开始/进行中/僵尸"三义性误判。
 
 ## Impact
 
-- 影响面：`lib/delegate-core.ts`（新增 dispatch/sessions/cancel 三工具 + 名册索引 + goal_key 校验 + 互斥）、`opencode.jsonc.opencode-go`（三个新 permission action 的全局 deny + 仅 front allow）、`prompts/front.md`（三工具契约 + "dispatch 返回 ≠ 后端完成"）、`docs/front-delegate-architecture.md`（§6.1 不变式 1 的"出口"口径扩写 + §4.3 delivery 语义修正）、`docs/front-delegate-usage.md`、`docs/dual-session-delegation.md`、`tests/*`、`docs/CHANGELOG.md`。
-- 兼容性：`delegate` 的**既有语义与既有判据全部不变**（`outcome` 枚举含 `unverified`、`busy` 拒绝、scope 越界检测、pair 登记、ledger 行时机）⇒ 既有 E2E 不受影响，但 prompt/手册需**新增**三工具契约段。ledger schema 需新增 `dispatched` 态（与 `ADR-front-knowledge-capability` D5 的行产生时机表有单点耦合，须同步）。
-- 风险：上游语义漂移（`delivery` 默认值、`time.busy` 存在性、`session.list` 过滤字段）会让 D1/D4 语义**静默反转** ⇒ 必须代码级强制 + 升级回归清单加两条；**dispatch 返回 ≠ 后端完成**是新增的失败形态（模型极易误报），只能靠 prompt 防线；同 slug 异目标无法机制识别；front 换代即失联（roster 是快路径不是唯一路径）。
+- 影响面：`lib/delegate-core.ts`（新增 dispatch/sessions/cancel 三工具 + 名册索引 + goal_key 校验 + 互斥 + dispatch 写入顺序与失败清理）、`opencode.jsonc.opencode-go`（三个新 permission action 的全局 deny + 仅 front allow；注意 `opencode.jsonc` 是符号链接）、`prompts/front.md`（三工具契约 + "dispatch 返回 ≠ 后端完成" + **删除旧措辞**）、`prompts/build.md`（若 change 1 未覆盖则一并在本批处理，见 Out of Scope）、`docs/front-delegate-architecture.md`（§6.1 不变式 1 的"出口"口径扩写 + §4.3 delivery 语义修正 + §2.1 全景图）、`docs/front-delegate-usage.md`、`docs/dual-session-delegation.md`、`docs/CHANGELOG.md`、`tests/*`、外部 E2E 仓库（新增 L2-16..）。
+  - **文档清单与 AC 的对应关系（避免"说了要改却没人判"）**：`prompts/front.md` → AC34；`docs/front-delegate-architecture.md` → AC35；`docs/dual-session-delegation.md` + `prompts/front.md` 的 ledger 说明 + `ADR-front-knowledge-capability` D5 → AC36；`docs/front-delegate-usage.md` / `docs/CHANGELOG.md` → **本批无 AC**（属"顺手同步"，不单独判据；若实施时漏改，不构成 AC 失败但应在交付说明中如实列出）。
+- 兼容性：`delegate` 的**既有语义与既有判据全部不变**（`outcome` 枚举含 `unverified`、`busy` 拒绝、scope 越界检测、pair 登记、ledger 行时机）⇒ 既有 E2E 不受影响，但 prompt/手册需**新增**三工具契约段并删除旧措辞。ledger schema 需新增**独立 `event` 字段**（`dispatched` / `dispatch_failed`）与 `outcome` 新值 `vanished`（**不塞进 6 值枚举之外的语义混淆**，见 AC36）。
+- 风险：上游语义漂移（`delivery` 默认值、`time.busy` 存在性、`session.list` 过滤字段）会让语义**静默反转** ⇒ 必须代码级强制 + 升级回归清单加两条；**dispatch 返回 ≠ 后端完成**是新增的失败形态（模型极易误报），只能靠 prompt 防线；同 slug 异目标无法机制识别；front 换代后 roster 快路径不可用（本批已把 roster 移出 scope，只做兜底扫描）；`withLock` 现为同步签名而 `create` 是 await ⇒ 互斥的原子性需要顺序约定（AC26 ③）。
