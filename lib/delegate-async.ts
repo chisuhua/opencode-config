@@ -154,6 +154,32 @@ export function aggregateStates(
   return { overall: "completed", headline: `已终结：共 ${total} 个后端` }
 }
 
+/**
+ * 按 `work_root` 分组（AC43「按 work_root 分组」/ AC57「同组列出」）。
+ *
+ * 分组键缺失的条目归入 `null` 组（不丢弃）；输出按 `work_root` 字典序 ⇒ 确定性。
+ */
+export function groupByWorkRoot(items: Array<{ session_id: string; work_root: string | null }>): Array<{
+  work_root: string | null
+  session_ids: string[]
+}> {
+  const map = new Map<string | null, string[]>()
+  for (const it of items) {
+    const key = typeof it.work_root === "string" && it.work_root.length > 0 ? it.work_root : null
+    const arr = map.get(key)
+    if (arr) arr.push(it.session_id)
+    else map.set(key, [it.session_id])
+  }
+  return [...map.entries()]
+    .sort((a, b) => {
+      // `null` 组（work_root 缺失）排最后
+      if (a[0] === null) return 1
+      if (b[0] === null) return -1
+      return a[0].localeCompare(b[0])
+    })
+    .map(([work_root, session_ids]) => ({ work_root, session_ids }))
+}
+
 /** 全局上限判定（AC31）。 */
 export function exceedsLimit(active: number, limit: number): boolean {
   return active >= limit
@@ -908,9 +934,13 @@ export function sessionsToolDefinition(ctx: any): any {
       const agg = aggregateStates(
         items.map((i) => ({ state: i.state, running: i.running, outcome: i.outcome })),
       )
+      // AC43/AC57：按 work_root 分组（同工作树的常驻后端「列在一起」）
+      const groups = groupByWorkRoot(
+        items.map((i) => ({ session_id: i.session_id, work_root: i.work_root })),
+      )
       return {
         content: JSON.stringify(
-          { overall: agg.overall, headline: agg.headline, items },
+          { overall: agg.overall, headline: agg.headline, items, groups },
           null,
           2,
         ),

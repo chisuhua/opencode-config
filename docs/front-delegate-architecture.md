@@ -21,42 +21,38 @@
 ### 2.1 运行时全景
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 用户（TUI / CLI）                                                              │
-│   "补个测试" / "X 在哪" / "下一步做什么"                                          │
-└───────────────┬──────────────────────────────────────────────────────────────┘
-                │ 对话
 ┌───────────────▼──────────────────────────────────────────────────────────────┐
-│ front session（opencode primary agent，model=minimax-cn/MiniMax-M3.1-Flash）     │
+│ front session（opencode primary agent，model=minimax-cn/MiniMax-M3.1-Flash） │
 │                                                                              │
-│  职责边界（权限层强制，非 prompt 承诺）                                          │
-│   ✅ read / grep / glob / list（跨目录受 external_directory 约束）                │
-│   ✅ shell 只读白名单（*: deny 打头 + 47 allow + 尾部守卫 deny + "* /*" 禁绝对路径）│
-│   ✅ question（问用户）    ✅ delegate 插件（唯一门控出口：delegate/dispatch/      │
-│      sessions/suspend/cancel —— 门控边界唯一，不是工具名唯一）                     │
-│   ❌ edit / write   ❌ skill   ❌ subagent   ❌ bash -c / curl / python -c         │
+│  职责边界（权限层强制，非 prompt 承诺）                                      │
+│   ✅ read / grep / glob / list（跨目录受 external_directory 约束）           │
+│   ✅ shell 只读白名单（*: deny 打头 + 47 allow + 尾部守卫 deny）             │
+│   ✅ question（问用户）                                                      │
+│   ✅ delegate 插件（唯一门控出口：delegate/dispatch/sessions/                │
+│      suspend/cancel —— 门控边界唯一，不是工具名唯一）                        │
+│   ❌ edit / write   ❌ skill   ❌ subagent   ❌ bash -c / curl / python -c   │
 │                                                                              │
-│  四分类路由（判据=产物形态）                                                      │
-│   理解性→自己答   实施性→delegate   流程性→读状态出摘要   需裁决→question           │
+│  四分类路由（判据=产物形态）                                                 │
+│   理解性→自己答  实施性→delegate/dispatch  流程性→读状态  需裁决→question    │
 └───────────────┬──────────────────────────────────────────────────────────────┘
                 │ delegate 插件（唯一门控出口；五个工具同一门控）
                 │   ctx.session.create / prompt / wait / get / context / remove
                 │   （全部在插件进程内，front 不持凭证、不发 HTTP）
 ┌───────────────▼──────────────────────────────────────────────────────────────┐
-│ 工程 session（opencode session，agent=build，位于目标工程目录）                    │
+│ 工程 session（opencode session，agent=build，位于目标工程目录）              │
 │                                                                              │
-│  权限在【建立时】定型（顺序即策略，last-match-wins）                              │
-│   [ 常量 deny(build 的 ask 类目 + question + form + MCP 写) ,                     │
-│     scope→edit 规则（scope 内 allow / 其余 deny）,                                │
-│     用户预批的 grants ]                                                           │
+│  权限在【建立时】定型（顺序即策略，last-match-wins）                         │
+│   [ 常量 deny(build 的 ask 类目 + question + form + MCP 写) ,                │
+│     scope→edit 规则（scope 内 allow / 其余 deny）,                           │
+│     用户预批的 grants ]                                                      │
 │                                                                              │
-│  角色：走 build 角色矩阵（architect/planner/builder/verifier）                     │
-│  登记：pair.json（pair-v2）+ role.json 的 sessions 分区 ← 必须在 prompt 之前写       │
+│  角色：走 build 角色矩阵（architect/planner/builder/verifier）               │
+│  登记：pair.json（pair-v2）+ role.json 的 sessions 分区（prompt 之前写）     │
 └───────────────┬──────────────────────────────────────────────────────────────┘
                 │ 读写文件 / 跑测试
 ┌───────────────▼──────────────────────────────────────────────────────────────┐
-│ 工程仓库（git repo）                                                             │
-│   源码 · .rddf/state/{role.json,pair.json} · openspec/changes/*                    │
+│ 工程仓库（git repo）                                                         │
+│   源码 · .rddf/state/{role.json,pair.json} · openspec/changes/*              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -66,7 +62,7 @@
 |---|---|---|---|
 | **L0 宿主** | opencode v2.2.5（`/workspace/project/opencode` 上游） | 插件加载、工具注册、权限判定、session 运行时 | 上游（只读参考） |
 | **L1 治理面** | `~/.config/opencode`（本仓库） | agent 定义、权限块、prompt、插件、状态文件、文档 | 本仓库 |
-| **L2 插件** | `plugins/delegate.ts`（11 行）+ `lib/delegate-core.ts`（638 行） | 委托逻辑实现 | 本仓库 |
+| **L2 插件** | `plugins/delegate.ts`（插件壳，5 个工具注册）+ `lib/delegate-core.ts`（同步委托 18 步 + 槽位原语）+ `lib/delegate-async.ts`（异步派发面 + 槽位生命周期 + 消费确认） | 委托逻辑实现 | 本仓库 |
 | **L3 工程仓** | 被委托的 git 仓库 | 代码、测试、工程自己的 `.rddf/state/` | 工程 session |
 | **L4 技能层** | `~/.agents/skills/rdd-workflow`（或 `rdd-workflow` 仓库） | rdd-arch/planner/builder/verifier 工作流 | 独立仓库 |
 

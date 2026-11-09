@@ -144,7 +144,7 @@ ADR `docs/adr/ADR-front-multi-backend.md`（**Accepted，2026-11-09 改写后**�
 | **AC30** | **dispatch 的写入顺序与失败语义**：顺序为 `create → pair → ledger(dispatched) → metadata → prompt → 消费确认`；失败处置**按步骤分档**（与 AC7 同一张表）：`create`/写盘失败 ⇒ 清理 + 不占槽 + 留痕；**`prompt`/消费确认超时 ⇒ 保留 session + 保留槽位 + `state=dispatching`**（此处**不得**清理、**不得**放行）。此条覆盖"metadata 写失败但 session 已创建"的崩溃窗口 | 单测（各步注入失败，断言清理/留痕/占槽三态；断言超时路径 session 与槽位**同时**保留） |
 | **AC31** | **并发上限（ADR D10）**：同时在跑的后端数达到**全局**上限（配置项 `RDDF_MAX_ACTIVE_BACKENDS`，**默认值 3**）时，第 N+1 个 dispatch **fail-fast 拒绝**且**不排队**，错误信息说明先 cancel/finish 哪个。实际并发度 = **min(活跃工作树数, 全局上限)**——单槽是**每工作树**的上限（ADR D6.2），全局上限是另一维 | 单测（注入配置测边界 + 断言与单槽的叠加关系 + 断言默认值 3） |
 | **AC32** | **知识 session 与单槽/上限的关系（已定死）**：`kind=knowledge`（只读）**不占工作树槽位**（不被同 `workRoot` 的单槽拒绝——它不写工作树）**且不计入全局上限**（只读不占写名额；上限只数 `kind=engineering` 的活跃后端） | 单测（knowledge + engineering 同 workRoot 并发用例 + 上限计数只数 engineering） |
-| **AC57** | **常驻与往返切换（用户诉求的稳态形态）**：`dispatch(A)` → A 自然跑完（**不调用 `sessions`**）→ `dispatch(B)` **成功** → `sessions` 按 `work_root` **同组列出** A（`idle`）与 B（`active`）→ **再次 `dispatch(A)`（同 goal_key）成功**且 A 的上下文**未被重建**（`session.id` 不变、`baseline_message_id` 不变、消息条数单调增长）。⚠️ 这条直接对应"同一工作树养着多个目标、不因切换而丢弃" | 单测（完整序列四步 + 断言 A 的 session.id / baseline_message_id 未变）；E2E |
+| **AC57** | **常驻与往返切换（用户诉求的稳态形态）**：`dispatch(A)` → A 自然跑完（**不调用 `sessions`**）→ `dispatch(B)` **成功** → `sessions` 按 `work_root` **同组列出** A（`idle`）与 B（`active`）→ **切回 A = 两步**（ADR D11.1）：先 `suspend(B)` 让出槽位，再 **`dispatch(resume_session=A)`（同 goal_key）成功**，且 A 的上下文**未被重建**（`session.id` 不变、`baseline_message_id` 不变、消息条数单调增长）。⚠️ **单步 resume A 必被拒**（B 仍占槽）——这正是单槽的预期行为，不得为"让 A 直接回来"而绕过。⚠️ 这条直接对应"同一工作树养着多个目标、不因切换而丢弃" | 单测（完整序列四步 + 断言 A 的 session.id / baseline_message_id 未变）；E2E |
 | **AC58** | **`resume` 路径同样经过 `dispatching` → 消费确认 → `active`**：对**已存在的**后端（`suspended` 或 `idle`）再次 dispatch 时，**不得**直接置 `active` —— 必须同样走 `dispatching` 与消费确认；窗口期内 `suspend` 被拒、`cancel` 可用。⚠️ 若实现把 resume 直接置 `active`，则 D7.2 的幽灵注入窗口在**切换路径上重新打开**，而 AC51/AC52 仍会绿 | 单测（对 `suspended` 后端 dispatch → 断言先经 `dispatching`、消费确认后才 `active` + 窗口期 `suspend` 被拒） |
 | **AC50** | **既有 `delegate` 的变更面**：① **新增一条拒绝路径**（同工作树已有 `active`/`dispatching` 后端时拒绝派发）——**成功路径语义与既有判据全部不变**，但**这确实是一条新增的拒绝路径**（不得宣称"语义完全不变"）；② `delegate` 返回时同写 `state:"idle"`；③ `delegate` 建的 pair 条目同样落 `work_root`/`state`（否则两个派发面无法共用一张槽位表） | 单测（三条各一例 + 既有 `tests/delegate-core.test.ts` 判据全绿 + 既有 `canonical_root` 不匹配被拒用例仍绿）；E2E |
 
@@ -197,6 +197,7 @@ ADR `docs/adr/ADR-front-multi-backend.md`（**Accepted，2026-11-09 改写后**�
 |---|---|---|---|---|
 | `overall` | enum | `completed` / `in_progress` / `no_verifiable_delivery` | 推导 | 聚合态（worst-of，AC23/AC24） |
 | `items` | array | — | 推导 | 逐项明细（**永远非空**，AC23） |
+| `groups` | array | `{work_root: string\|null, session_ids: string[]}` | 推导 | **按 `work_root` 分组**（同一工作树的常驻后端「列在一起」，AC43/AC57）；`work_root` 缺失的条目归入 `null` 组；按 `work_root` 字典序排列 |
 | `headline` | string | — | 推导 | 一句话摘要（**必须带明细提示**，如「进行中（含 1 项交付存疑）」） |
 
 ## AC ↔ ADR Verification 映射

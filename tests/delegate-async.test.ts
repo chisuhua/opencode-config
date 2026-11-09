@@ -17,6 +17,7 @@ process.env.RDDF_CONSUME_TIMEOUT_MS = "200"
 
 import {
   aggregateStates,
+  groupByWorkRoot,
   detectSteerResidue,
   isDangling,
   isStalled,
@@ -533,7 +534,7 @@ describe("sessions（AC4/AC10/AC11/AC29）", () => {
     const { ctx } = createFakeCtx()
     await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
     const r = await run(sessionsToolDefinition(ctx), {}, "f")
-    expect(Object.keys(r).sort()).toEqual(["headline", "items", "overall"])
+    expect(Object.keys(r).sort()).toEqual(["groups", "headline", "items", "overall"])
     const item = r.items[0]
     for (const k of [
       "session_id",
@@ -897,4 +898,68 @@ describe("已删后端的处置矩阵（ADR D12 / AC13）", () => {
     expect(err).toContain("墓碑")
   })
 
+})
+
+describe("AC57 常驻与往返切换（自然跑完 → B → 回到 A）", () => {
+  test("A 自然跑完（不调 sessions）→ 派 B 成功 → 名册同组列出 A/B → resume A 成功且上下文未重建", async () => {
+    const dir = repo("ac57-roundtrip")
+    const { ctx, sessions } = createFakeCtx()
+
+    // ① dispatch(A)
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const countAfterA = sessions.get(a.session_id).messages.length
+
+    // ② A **自然跑完**（不是 suspend）：busy → false、idle 更新；**全程不调用 sessions**
+    const sa = sessions.get(a.session_id)
+    sa.busy = false
+    sa.idle = Date.now()
+
+    // ③ dispatch(B) ⇒ 必须成功（reconcile 把 A 翻成 idle，槽位让出）
+    const b = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-b"))
+    expect(b.state).toBe("active")
+
+    // ④ sessions：A 与 B **同组列出**（同一 work_root）
+    const list = await run(sessionsToolDefinition(ctx), {}, "f")
+    const ids = list.items.map((i: any) => i.session_id)
+    expect(ids).toContain(a.session_id)
+    expect(ids).toContain(b.session_id)
+    expect(list.items.find((i: any) => i.session_id === a.session_id).state).toBe("idle")
+    expect(list.items.find((i: any) => i.session_id === b.session_id).state).toBe("active")
+    const sameGroup = list.groups.find((g: any) => g.session_ids.includes(a.session_id))
+    expect(sameGroup).toBeDefined()
+    expect(sameGroup.session_ids).toContain(b.session_id)
+
+    // ⑤ **单步 resume A 必被拒**（B 仍占槽）——这正是单槽的预期行为
+    let err = ""
+    try {
+      await dispatchToolDefinition(ctx).execute(
+        { ...baseInput(dir, "goal-a"), resume_session: a.session_id },
+        { sessionID: "ses_front_test" },
+      )
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain(b.session_id) // 拒绝信息含占槽者 id
+
+    // ⑥ **切回 A = 两步**（ADR D11.1）：先 suspend(B) 让出槽位，再 resume A
+    await run(suspendToolDefinition(ctx), { session_id: b.session_id })
+    const back = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), resume_session: a.session_id },
+    )
+    expect(back.session_id).toBe(a.session_id) // 同一个 session，未重建
+    expect(sessions.get(a.session_id).messages.length).toBeGreaterThan(countAfterA) // 单调增长
+  })
+
+  test("groups：work_root 缺失的条目归入 null 组（不丢弃）", () => {
+    const g = groupByWorkRoot([
+      { session_id: "s1", work_root: "/w/a" },
+      { session_id: "s2", work_root: "/w/a" },
+      { session_id: "s3", work_root: null },
+    ])
+    expect(g).toEqual([
+      { work_root: "/w/a", session_ids: ["s1", "s2"] },
+      { work_root: null, session_ids: ["s3"] },
+    ])
+  })
 })
