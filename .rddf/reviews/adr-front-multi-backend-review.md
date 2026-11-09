@@ -163,3 +163,54 @@ Verification 判据 28 → **49 条**；决策段 246 行（≤250）；最长 D
 2. **steer 残留大概率不可检测** —— 缓解只到「报存疑」（`baseline_message_id` 比对），且明写**不能保证检出**。
 3. **存量 pair 条目回填**已定为决策（D2.3），但迁移的执行细则由实施期定。
 4. `proposal.md` 的 AC 编号与映射表**仍待 planner 同步**（architect 不写 proposal）；在此之前以 ADR 的 Verification 文本为准。
+
+---
+
+# 第三轮：2026-11-09 第二轮改写（D12 已删后端可见性）
+
+## 触发
+
+change 2 实施 + verifier 第 1 轮验收发现 **AC13 无法实现**：判据要求「后端被删后 `sessions` 报已消失 + ledger 补记终态行」，但 `ctx.session.list()` 不返回已删 session，而 ADR D2.1 又否决全局 registry。
+
+## 改动
+
+| # | 改动 | 位置 |
+|---|---|---|
+| 1 | 新增 **D12「已删后端的可见性（能力边界）与后续触碰处置」** | 决策段（D11 之后） |
+| 2 | **V09 改写**：观测面 / 派发面 / 终止面 / 痕迹 四段分别判 | Verification |
+| 3 | **V08 修正**：删「reconcile 会写行」（实现中 reconcile 只写 `pair.json`） | Verification |
+| 4 | 选项对比表 +3 行（扫 pair.json / 调用方传 repo / 订阅 `session.deleted`） | 选项对比表 |
+| 5 | 后果/代价 +1 条（已删后端不可枚举） | 后果 / 代价 |
+| 6 | 元数据收敛：Status 只留当前态；两轮改写摘要 + 审稿报告指针；「前置事实」的绝对化表述改为「探针或上游源码背书 + 未探针假设显式标注」 | 元数据 |
+
+## oracle（1 轮，7 处全部采纳）
+
+| # | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| F1 | 高 | **resume 命中已删后端 ⇒ 级联死槽**：dispatch 只写 `dispatch_failed` 并提示 cancel，而 `cancel`/`suspend` 因 `locateBackend` 抛「无法定位」⇒ `dispatching` 死条目永久占死工作树 | ✅ D12 增「后续触碰处置矩阵」：派发面拿到 404 **正面证据**时必须处置（置 `tombstone` + 落终态行 + 同 goal_key 新建）；`cancel`/`suspend` 不得因「无法定位」抛错 |
+| F2 | 高 | **断链引用「D2.5」**（该小节不存在） | ✅ 全改 D12 |
+| F3 | 高 | 「三种做法都不可行」**过强**：漏了第四条——`ctx.event` 可达全局 bus，订阅 `session.deleted` 做写侧墓碑**部分可行** | ✅ 补进选项表，并列四条否决理由（事件不带 location / 依赖插件存活与 location 激活 / 跨 server 送达未探针 / 解决不了可见性） |
+| F4 | 中 | V09「不新增终态行」**不可判定**（与 `dispatched`/`dispatch_failed`/`taken_over` 写点混淆）；且 V08 称「reconcile 会写行」与实现不符 | ✅ V09 改为可判定措辞（观测面：ledger 行数与末行不变）；V08 修正 |
+| F5 | 中 | 「插件无法枚举 repo」**过强**：`list` item 带 `location`/`projectID` | ✅ 精确化为「只能枚举**仍有存活 session** 的 repo；目标场景恰在盲区正中」 |
+| F6 | 低 | 三种「没有」未区分（从未派发 / 已删除 / **索引写丢**） | ✅ D12 读侧语义写死三种都 `≠`，并指回 D2.1「可丢弃索引」 |
+| F7 | 低 | reconcile 翻转后 pair 不再携带「消失」证据 | ✅ D12 写明「区分点只剩 ledger 那条 `dispatched`」 |
+
+## critic（1 轮 REJECT → 2 BLOCKER 全部闭合）
+
+| # | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| B1 | **BLOCKER** | D12 写 `event:"vanished"`，与 AC36 已裁定的 **`vanished` 是 `outcome` 值**冲突（`dual-session-delegation.md:112` + 实现 `delegate-async.ts:784` 三处一致） | ✅ 全改 `outcome:"vanished"` 终态行 |
+| B2 | **BLOCKER** | `suspend` 对已删后端的处置**三处互斥**（D12 说 no-op / D11 段说释放槽位 / V 说墓碑拒绝） | ✅ D12 改为**唯一处置矩阵**（`state` × 已删 × 动作 共 9 格），并声明它**取代** D9「`interrupted:false ⇒ no-op」的一半适用范围——界线是「不在跑」vs「已不存在」 |
+| S1 | SHOULD_FIX | 选项表把「跨 server 不送达」写成既成事实（未探针） | ✅ 改「**未探针**，按不送达假设处理」；元数据「前置事实」同步 |
+| S2 | SHOULD_FIX | Status 行承载版本史 / 过程日志进决策文档 | ✅ Status 收敛为当前态；两轮改写压成摘要行；过程记录移本节 |
+| N1 | NIT | 新建 session 失败时的状态未写 | ✅ D12 补「视同 dispatch 新建失败：不占槽，终态行已落」 |
+
+## 闭合后结构自检
+
+决策段 **250 行**（上限 250）、最长 D 段 **39 行**（上限 40）、Verification **49 条**、D 段数 **12**。
+
+## 下游待办
+
+- **planner**：按 D12 改写 proposal 的 **AC13**（原判据要求「报已消失 + 补记」）；同步 AC36 的 `vanished` 表述（已确认是 `outcome`）。
+- **builder**：按 D12 矩阵实现「已删后端的后续触碰处置」（`dispatch(resume)` / `cancel` / `suspend` 三入口）。
+- **architect**：`ADR-front-knowledge-capability` D5 行产生时机表（`event` + `outcome:"vanished"`）。

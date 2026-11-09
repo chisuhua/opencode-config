@@ -4,15 +4,16 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | **Accepted**（2026-11-09 改写完成：oracle 1 轮 + critic 2 轮，第 1 轮 REJECT（3 BLOCKER）→ 全部闭合 → 第 2 轮 **APPROVE**（0 BLOCKER）。审稿记录见 `.rddf/reviews/adr-front-multi-backend-review.md`） |
+| Status | **Accepted**（2026-11-09，两轮改写后定稿；**未实施完成**——AC13 的处置待 planner 按 D12 改写判据）。审稿记录见 `.rddf/reviews/adr-front-multi-backend-review.md` |
 | Date | 2026-11-09（初稿与本次改写同日） |
 | Author | architect |
-| 本次改写 | ① D6 槽位键 `canonical_root`→**`workRoot`**，并把「互斥」细化为**单槽**（常驻 vs 活跃分离）；② 新增 **D7 槽位生命周期**（翻转执行者 / 消费确认 / 回收与亡主接管）、**D8 构造性保证与范围假设**、**D11 切换两步编排**；③ 原 D7 改为 **D9 终止（墓碑）vs 暂停（可续）** 的边界；④ D1 工具面三→四（加 `suspend`）；⑤ D2.3/D3 索引与检索键加 `work_root`。改写理由、证据与评审记录见审稿报告 |
+| 本次改写（摘要） | ⑥ **D12 已删后端的可见性（能力边界）+ 后续触碰处置矩阵**（V09 随之改写；V08 修正「reconcile 会写行」的误述）。详见审稿报告。 |
+| 首轮改写（摘要） | ① D6 槽位键 `canonical_root`→**`workRoot`**，并把「互斥」细化为**单槽**（常驻 vs 活跃分离）；② 新增 **D7 槽位生命周期**（翻转执行者 / 消费确认 / 回收与亡主接管）、**D8 构造性保证与范围假设**、**D11 切换两步编排**；③ 原 D7 改为 **D9 终止（墓碑）vs 暂停（可续）** 的边界；④ D1 工具面三→四（加 `suspend`）；⑤ D2.3/D3 索引与检索键加 `work_root`。改写理由、证据与评审记录见审稿报告 |
 | Parent | 部分取代 `docs/adr/ADR-front-agent-redesign.md` 的 D2（`delegate` 的同步单发序列）与 D3（brief 契约的 scope 部分），**并把该篇 D2 的「唯一工程通道」口径扩写为「唯一门控插件出口」**（见 D1 的不变式说明）；**不改**该篇 D1（四分类）、D4（front 工具面白名单）、D5（preflight grants）、D7（guide 归宿）、D8（调试纪律）；**D6（登记与并发协议）的锁协议沿用不改**（槽位翻转仍走其同步 RMW，见 D7.1），但其 **pair-v2 schema 追加 `work_root` / `state` 两字段**（本次改写，见 D2.1/D2.3）；与 `ADR-front-knowledge-capability` 的 D2（只读 subagent 门控）、D4（agent 白名单与 kind）、D5（ledger 记忆层）**决策面正交**，但 ledger schema 面有单点耦合（见 D2.2）。与 `ADR-canonical-root-normalization` **原为决策面正交，本次改写后变为强依赖**：D6 的槽位键直接取其 D1 定义的 `workRoot`（该篇已落地，commit `23584cd`），其 `stateRoot/workRoot` 拆分正是本篇「同工作树单槽」的前置 |
 | 关联 change | `openspec/changes/front-multi-backend/`（已立项 2026-11-09，planner 起草） |
 | AC 映射 | 本文件 Verification 1–**49**（本次改写把判据集从 28 条扩到 49 条：新增 `suspend` 门控、`work_root`/`state` 索引、单槽与实现约束、消费确认与翻转执行者、回收与亡主接管、终止/暂停、切换与回收）。**映射表在 proposal 的「AC ↔ ADR Verification 映射」段**——本次新增/改写判据对应的 AC 编号由 planner 在同步 proposal 时补齐并回填；**回填前以本文件的 Verification 文本为准** |
 | 审稿报告 | `.rddf/reviews/adr-front-multi-backend-review.md`（初稿 + **本次改写**的 oracle/critic 记录追加在同一文件） |
-| 前置事实 | 19 条运行时探针（HTTP 层 8 + 插件内直测 8 + oracle 后补 3），全部带真实返回摘录，落在 `.rddf/reviews/front-multi-backend-probes.md`。**本篇的每个技术断言都有探针背书，无推测项**。<br>**本次改写新增上游源码证据**（opencode v2.2.5）：`packages/core/src/session/execution.ts:151-170`（interrupt 的 resume 语义）、`packages/core/src/session/inbox.ts:470-487`（inbox 提升顺序）、`packages/plugin/src/promise/adapter.ts:622-645`（插件可见的 session 方法全集）——见 D6/D7/D9 |
+| 前置事实 | 19 条运行时探针（HTTP 层 8 + 插件内直测 8 + oracle 后补 3），全部带真实返回摘录，落在 `.rddf/reviews/front-multi-backend-probes.md`。**本篇的技术断言都有探针或上游源码背书**；**未探针的假设在正文中显式标注**（如 D12 选项表第④条的「跨 server 实例删除是否送达」）。<br>**本次改写新增上游源码证据**（opencode v2.2.5）：`packages/core/src/session/execution.ts:151-170`（interrupt 的 resume 语义）、`packages/core/src/session/inbox.ts:470-487`（inbox 提升顺序）、`packages/plugin/src/promise/adapter.ts:622-645`（插件可见的 session 方法全集）——见 D6/D7/D9 |
 
 ## 背景与问题
 
@@ -61,23 +62,19 @@ front 今天的委托能力是**同步单发**：`delegate` 一次调用 = 建/�
 | `suspend` | **暂停**一个后端：interrupt + 释放槽位 + 标记可续 | `delegate_suspend` | **不是终止**——不墓碑，目标仍可 resume（D7/D9） |
 | `cancel` | **终止**一个后端：`interrupt({resume:false})` + 墓碑；可选 remove（默认不删） | `delegate_cancel` | 墓碑语义（D9） |
 
-**为什么拆工具而不是给 `delegate` 加 `async` 参数**：参数是**静默开关**——模型忘写 `async:true` 时静默退化为 30 分钟阻塞，多后端场景下等于其余后端全部饿死，**且无任何报错信号**。拆工具后误用形态变成「dispatch 完立刻汇报结果」，是**可见的体验问题**而非正确性问题，两者可检测性完全不同。
+**为什么拆工具而不是给 `delegate` 加 `async` 参数**：参数是**静默开关**——忘写 `async:true` 就静默退化为 30 分钟阻塞，多后端场景下其余后端全部饿死且**无报错信号**；拆工具后误用形态变成「dispatch 完立刻汇报结果」，是**可见的体验问题**而非正确性问题。
 
 **为什么 `suspend` 是独立工具而不是 `cancel` 的参数开关**：同一判据——**默认值不可逆**。若 `cancel({mode:"suspend"})` 而模型漏写 `mode`，默认落到 `terminate` 会**永久杀死一个本该续接的后端**；而 `suspend` 漏写时落到 `cancel` 则是**可恢复的**（重建 session 即可，代价是丢上下文）。⇒ 不可逆的默认值必须由**独立的工具名**承载，让误用形态从「静默丢失」变成「用错工具」（可见）。
 
-**为什么 action 细分而不是四工具同挂 `delegate`**：插件出口仍唯一（不变式 1 不丢），但治理面可按 action 粒度放行——例如允许派发与观测、禁止取消。功能等价、权限面更细，代价仅多几行权限配置。
+**为什么 action 细分而不是四工具同挂 `delegate`**：插件出口仍唯一（不变式 1 不丢），但治理面可按 action 粒度放行（如允许派发与观测、禁止取消）——功能等价、权限面更细，代价仅几行配置。
 
 **与「单一工程出口」不变式的关系（必须写明，否则后续读者会拿 §6.1 原文否决实现）**：`docs/front-delegate-architecture.md` §6.1 不变式 1 原文是「一切工程行动只能经 `delegate`。不要给 front 加第二个出口」。本篇**不修改这条不变式的实质**，只扩写它的**口径**：
 
-> 不变式 1 的「出口」指的是**门控边界**——「同一个插件 + 每个工具声明独立的 `options.permission` action + 全局 deny + 仅 front allow」这套形态——而不是**工具名**。`dispatch`/`sessions`/`suspend`/`cancel` 全部落在同一个 `delegate` 插件内、全部走同一套门控形态、全部只对 front 可见；没有任何一条工程行动路径**绕过**该门控。
+> 不变式 1 的「出口」指的是**门控边界**——「同一个插件 + 每个工具声明独立的 `options.permission` action + 全局 deny + 仅 front allow」这套形态——而不是**工具名**。`dispatch`/`sessions`/`suspend`/`cancel` 全部落在同一个 `delegate` 插件内、走同一套门控形态、只对 front 可见；没有任何一条工程行动路径**绕过**该门控。既有依据：§6.3「加一个新工具」已认可「一条 action 管多个工具」（`run_tests` 示例即独立 `options.permission`）。→ **实施期须同步修订 §6.1 措辞**。
 
-这一扩写**有既有依据**：`docs/front-delegate-architecture.md` §6.3「加一个新工具」已明确认可「一条 action 管多个工具」的形态（`run_tests` 示例即独立 `options.permission`）。→ **实施期必须同步修订 §6.1 的措辞**，把「出口」的定义写清（否则文档与实现长期不一致）。
+**既有 `delegate` 保留**：同步单发面，服务「派一个任务、当场等结果」这一主路径；**既有语义与判据全部不变**（`outcome` 枚举、`busy` 拒绝、scope 强制、pair 登记、ledger 行时机），既有 E2E 不受影响——新增的只是共享槽位表带来的检查（D7.4）。`prompts/front.md` / 手册 / 架构文档需新增四工具契约段。
 
-**既有 `delegate` 保留**：它是同步单发面，服务「派一个任务、当场等结果」这一主路径。`delegate` 的**既有语义与既有判据全部不变**（`outcome` 枚举、`busy` 拒绝、scope 强制、pair 登记、ledger 行时机），既有 E2E 不受影响——**唯一新增**是共享槽位表带来的一条检查（D7.4）。`prompts/front.md` / 使用手册 / 架构文档**需要新增四工具的契约段**。
-
-**D1.1 `dispatch` 的硬超时**：execute 必须有超时上限（既有 `delegate` 是 30min）。理由是实测的：插件 setup 若未 settle 会**阻塞该 location 的激活**（探针报告 R6 节记录的 round 4 现象）——一个挂死的后端会拖住 front 的整个工具调用。
-
-**D1.2 插件不得对 front session 发 prompt**：探针 R6 实测，在插件里对"正在运行的 session"发 prompt 会**死锁**。front session 的 prompt 只能由 front 自己发起；插件对 front session **只做 metadata 的读/写**。
+**D1.1 硬超时 + D1.2 不得对 front 发 prompt**：execute 必须有超时上限——插件 setup 若未 settle 会**阻塞该 location 的激活**（探针 R6 的 round 4 现象），一个挂死的后端会拖住 front 的整个工具调用；且探针 R6 实测在插件里对"正在运行的 session"发 prompt 会**死锁** ⇒ front 的 prompt 只能由 front 自己发起，插件对 front 只做 metadata 读/写。
 
 ### D2 名册：宿主 session metadata 作可丢弃索引
 
@@ -89,17 +86,17 @@ front 今天的委托能力是**同步单发**：`delegate` 一次调用 = 建/�
 | 历史事实 | `ledger.jsonl`（每工程仓） | 做过什么 | 权威、append-only |
 | 名册索引 | **宿主 session metadata** | 枚举 + 展示态 | **可丢弃索引，丢了可重建，不是真相源** |
 
-**为什么不用治理面全局 roster 文件**：它会成为第三份真相源（ADR-front-knowledge-capability D5 已红线）；且并发写需锁、跨项目可见性违背权限面、**会悬挂**（后端删了文件条目还在）。metadata 索引的三个优势：随 session 删除自动消失（探针 P8：remove 后 404，**不会悬挂**）、无新增文件、无新增锁。
+**为什么不用治理面全局 roster 文件**：会成为第三份真相源（ADR-front-knowledge-capability D5 已红线），且并发写需锁、跨项目可见性违背权限面、**会悬挂**（后端删了文件条目还在）。metadata 索引三个优势：随 session 删除自动消失（探针 P8：remove 后 404，**不悬挂**）、无新增文件、无新增锁。
 
 **D2.2 dispatch 时必须落 ledger `dispatched` 行**：这是「从未派发」与「派发后消失」可区分的**唯一支点**。没有它，D5 的 unknown 兜底是盲的。append-only 账本把「派发」本身也变成事实。ledger schema 需新增 `dispatched` 态（与 `ADR-front-knowledge-capability` D5 的行产生时机表有单点耦合，须同步）。
 
 **D2.3 索引内容**：后端 session 的 metadata 写 `{delegated_by:"front-delegate", front_session_id, goal_key, canonical_root, work_root, project_dir, baseline_message_id, dispatched_at, state}`。**metadata update 是整体替换语义**（探针 Q5），插件每次写必须回传完整对象。
 
-**`work_root` 为什么必须在索引里（本次改写新增）**：`canonical_root`（= stateRoot）在 linked worktree 场景下是**主仓**，同一主仓的多个 worktree 共享同一个值 ⇒ 只靠 `canonical_root` 无法区分「后端 A 在 wt1、后端 B 在 wt2」。而 D6 的槽位键、名册的分组展示、D9 的切换选择都按**工作树**分。⇒ `work_root`（= `abs(--show-toplevel)`，取自 `ADR-canonical-root-normalization` D1）必须显式落在索引与 pair 条目里。
+**`work_root` 为什么必须在索引里**：`canonical_root`（= stateRoot）在 linked worktree 场景下是**主仓**，同一主仓的多个 worktree 共享同一值 ⇒ 无法区分「A 在 wt1、B 在 wt2」；而槽位键、名册分组、切换选择都按**工作树**分。⇒ `work_root`（取自 `ADR-canonical-root-normalization` D1）必须显式落在索引与 pair 条目里。
 
 **`state` 的取值域**：以 **D6.3 的状态枚举表**为准（`dispatching` / `active` / `idle` / `suspended` / `tombstone`）。**`state` 是登记态**（持久化在 pair.json），与 D4 的**观测态**（`time.busy` 推导的 running/stalled）是两回事——前者回答「谁占着槽」，后者回答「谁在跑」。
 
-**存量条目的一次性回填（数据迁移，属决策）**：存量 pair 条目无 `work_root` / `state` ⇒ 首次观测时按 **`work_root = canonical_root`**（退化为原粒度，不误判为同树）+ **`state` 按活体判据确定**（busy ⇒ `active`，否则 `idle`）回填。⚠️ **不得一律默认 `idle`**——那等于给存量后端放行第二个写入者。
+**存量条目的一次性回填（数据迁移）**：无 `work_root`/`state` 的存量条目在首次观测时按 **`work_root = canonical_root`**（退化为原粒度，不误判为同树）+ **`state` 按活体判据**（busy ⇒ `active`，否则 `idle`）回填。⚠️ **不得一律默认 `idle`**——那等于给存量后端放行第二个写入者。
 
 **D2.4 检索入口**：`sessions` 工具 list 后按 metadata 过滤。两条路径并存：
 - **快路径**：front 自身 session 的 metadata 维护 roster 数组（`{roster:[backend_id,...]}`）。探针 R6 实测**可行**且**经 host 活动后不覆盖** → 查询 O(1)、不占 title、不用扫全库。
@@ -107,8 +104,8 @@ front 今天的委托能力是**同步单发**：`delegate` 一次调用 = 建/�
 
 **兜底路径的两条硬约束（探针 P2c / P7 背书，不可省略）**：
 1. **必须 cursor 续扫到全量**，不能只扫一页。list 按 **`time_updated` 降序**、默认 limit=50 ⇒ **长期 idle 的后端会沉出窗口**。兜底路径必须循环 `cursor.next` 直到扫完或找齐。
-2. **不能用 `directory` 过滤做重建**——重建时要发现的恰恰是"有哪些目录"，用 `directory` 过滤等于要求事先知道答案。
-3. **`search` 只能作为可选优化，不能作为兜底主路径**：它按 title LIKE 收窄，需要一个**固定的 title 前缀标记**（如 `[fd]`），代价是 title 可见噪声 + 与 metadata 两套标记需保持一致。若采用，必须由插件单一写点保证一致性，并在 D2.3 的 metadata schema 里定义该前缀。
+2. **不能用 `directory` 过滤做重建**——重建要发现的恰恰是"有哪些目录"，用 `directory` 过滤等于要求事先知道答案。
+3. **`search` 只能作可选优化**：它按 title LIKE 收窄，需**固定 title 前缀标记**（如 `[fd]`），代价是 title 噪声 + 与 metadata 两套标记要一致 ⇒ 若采用必须由插件单一写点保证，并在 D2.3 的 schema 里定义该前缀。
 
 **front session 身份漂移**：roster 挂在 front session 上，front session 被重建后 id 变化 → 旧后端失联。故 roster **只能是快路径不是唯一路径**，兜底路径必须常在（front 换代后仍能通过 metadata 找回后端）。
 
@@ -124,15 +121,11 @@ goal_key = { repo: canonical_root, intent: <kebab-slug> }
 
 **resume 时校验 goal_key 一致**：不一致 ⇒ **拒绝续接、要求新 session**（不是警告，是硬拒）。这不只是设计洁癖——**宿主机制层面**：steer 会注入当前轮并改写它，把新简报灌进正在执行的 run 就是上下文污染（探针 P6 实测）。
 
-**`goal_key.repo` 保持 `canonical_root`，但检索/调度键用 `work_root`（本次改写澄清）**：判等回答的是「这是不是**同一个目标**」——同一项目的不同工作树仍是同一项目，故 `repo` 取 stateRoot。而「这个后端**住在哪个工作树**、该工作树的槽位被谁占着」是**调度问题**，不是判等问题 ⇒ 用 `work_root`。两者不可混：把 `work_root` 塞进 `goal_key.repo` 会让「同一目标换一个 worktree 续接」被误判为不同目标。
-
-**与救援路径不冲突**：「原地补 grant 续跑」（ADR-front-agent-redesign D5.1）本就是同一目标的延续，goal_key 相同。
+**`goal_key.repo` 保持 `canonical_root`，但检索/调度键用 `work_root`**：判等回答「是不是同一个目标」——同一项目的不同工作树仍是同一项目，故 `repo` 取 stateRoot；而「这个后端住在哪个工作树、该槽被谁占着」是**调度问题** ⇒ 用 `work_root`。两者不可混：把 `work_root` 塞进 `goal_key.repo` 会让「同一目标换 worktree 续接」被误判为不同目标。**与救援路径不冲突**：「原地补 grant 续跑」（ADR-front-agent-redesign D5.1）本就是同一目标的延续。
 
 **判等的方向性（必须写明，否则防线范围会被高估）**：goal_key 校验是**单向硬强制**——
 - ✅ **换 slug 续接 ⇒ 机制拒绝**（这是硬强制点）。
-- ❌ **同 slug 异目标 ⇒ 机制无法识别**。slug 由 front 自行确定，front 对两个不同目标复用同一 slug 时，校验通过 ⇒ **该方向的防线退化为 prompt 纪律**（见风险章）。
-
-这是有意的取舍：自然语言判等是魔法数字重灾区，而"front 复用 slug"是**可审计**的错误（ledger 里能看到同一 slug 出现在不同 goal 描述上），比"误判为不同目标"（该续接的被拒、用户被迫重跑）危害小。
+- ❌ **同 slug 异目标 ⇒ 机制无法识别**（front 复用 slug 时校验通过，该方向退化为 prompt 纪律，见风险章）。**取舍理由**：自然语言判等是魔法数字重灾区，而「front 复用 slug」是**可审计**的错误（ledger 里能看到同一 slug 出现在不同 goal 描述上），比「误判为不同目标」（该续接的被拒、用户被迫重跑）危害小。
 
 ### D4 状态判定：running 判据用 `time.busy`
 
@@ -148,7 +141,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 ### D5 聚合语义：整体 = 最差的那个，且永远列明细
 
-- 任一后端 `unverified` / `unknown` / `stalled` ⇒ **不得声称整体完成**（与 `ADR-delegate-delivery-evidence` 的 `unverified` 语义同构，推广）。
+- 任一后端 `unverified` / `unknown` / `stalled` ⇒ **不得声称整体完成**（与 `ADR-delegate-delivery-evidence` 的 `unverified` 同构）。
 - 任一后端 running ⇒ 整体"进行中"，且**不进入 worst-of 计算**（worst-of 只对已终结后端）。
 - 全部 `unverified` ⇒ "无可验证交付"（**不是**"没有产出"——产物可能落在 git 视野外）。
 - **headline 之外永远列明细**：`1 running + 1 unverified` 若只显示"进行中"会让用户误以为一切正常；headline 应为「进行中（含 1 项交付存疑）」或放弃单一 headline。
@@ -164,7 +157,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 | `canonical_root`（stateRoot，原设计） | **每仓一个槽** | 同一仓的多个 worktree 被"同 repo 互斥"堵死 ⇒ **worktree 隔离能力等于没实现** |
 | **`workRoot`（本次改写采用）** | **每工作树一个槽** | 同仓不同 worktree 可各占一槽；同工作树内一次一个 |
 
-依据：`workRoot` = `abs(git rev-parse --show-toplevel)`，linked worktree 下**就是 worktree 自身路径**（`ADR-canonical-root-normalization` D1，已落地 commit `23584cd`）；两个 linked worktree 有**独立 git index** 与**独立工作树** ⇒ 写同一文件**互不覆盖**（实测），且 git **禁止两个 worktree checkout 同一分支** ⇒ 同分支 ref 锁争用被上游兜住大半（残留：detached HEAD / 手动 `update-ref`，是**可检测的失败**而非静默损坏）。
+依据：`workRoot` = `abs(--show-toplevel)`，linked worktree 下**就是 worktree 自身路径**（`ADR-canonical-root-normalization` D1，已落地 `23584cd`）；两个 linked worktree 有**独立 git index 与独立工作树** ⇒ 写同一文件**互不覆盖**（实测），且 git **禁止两个 worktree checkout 同一分支** ⇒ ref 锁争用被上游兜住大半（残留：detached HEAD / 手动 `update-ref`，是**可检测的失败**）。
 
 **D6.2 单槽：常驻与活跃分离**
 
@@ -182,9 +175,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 **D6.4 worktree 隔离仍后置（但前置已就位）**
 
-每后端一个 git worktree 的**自动创建**仍不在本篇：`ctx.worktree.create` 需 `projectID` 而插件 ctx 拿不到目标仓的 project id ⇒ 需插件自建 `git worktree add`，生命周期与**清理策略**全归插件（**不配清理策略即定时炸弹**）。
-
-但本次改写后「worktree 隔离」的**前置条件已满足**（键已是工作树粒度，将来插件自建 worktree 时无需再改键）。**代价**：目录仍需 front 或用户**显式准备**——本篇**不**代管 worktree 生命周期 ⇒ **prompt 契约必须写明**「同仓并行需先准备独立工作树」。
+每后端一个 git worktree 的**自动创建**仍不在本篇：`ctx.worktree.create` 需 `projectID` 而插件拿不到 ⇒ 需插件自建 `git worktree add`，生命周期与**清理策略**全归插件（**不配即定时炸弹**）。本次改写后「worktree 隔离」的**前置条件已满足**（键已是工作树粒度，将来无需再改键）；**代价**：目录仍需 front/用户**显式准备**——本篇不代管 worktree 生命周期 ⇒ **prompt 契约必须写明**「同仓并行需先准备独立工作树」。
 
 ### D7 槽位生命周期：翻转执行者、消费确认与回收
 
@@ -216,7 +207,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 后端崩溃、被外部删除、或 `interrupt` 未真正停机 ⇒ 登记态 `active` 但实际不 busy ⇒ 槽被占死。
 
-- **回收**：每次派发的 reconcile（D7.1）会把「已空闲的 `active`」翻回 `idle` ⇒ **不需要单独的回收动作**；`dispatching` 条目**不在回收范围**（见上）；`stalled`（D4 阈值）降级为**展示层信号**（报「槽位疑似悬挂」），不承担回收职责。
+- **回收**：每次派发的 reconcile（D7.1）把「已空闲的 `active`」翻回 `idle` ⇒ **不需要单独的回收动作**；`dispatching` 条目**不在回收范围**（见上）；`stalled` 是**展示层信号**（报「槽位疑似悬挂」），不承担回收职责。
 - **强制接管**：若 `interrupt` 无法停机（D11 的停机确认失败），槽保持 `active` 且**不得静默放掉**；只能由 front **`cancel` 旧条目（墓碑）→ `dispatch` 新后端接管**两步完成，旧条目置 `tombstone`——**必须被报告，不能静默等待**。
 - **亡主接管（front 换代）**：`suspend` 的 ACL 以**登记 front 存活**为软信号（沿用既有 `resumedByOtherFront` 先例）。条目的 `front_session_id` 对应 session 已不存在 ⇒ 视为无主 ⇒ 允许本 front `suspend` 回收；**不允许**静默 dispatch 顶掉。接管须落 ledger 行。
 
@@ -234,13 +225,11 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 1. **只向空闲 session 投递**：目标 session 在跑 ⇒ 拒绝（既有 busy 判据，`outcome:"busy"`）；
 2. **同一工作树一次只投递一次**：单槽保证不会对同一工作树二次投递 ⇒ 不会把第二份简报排在第一份后面。
 
-**D8.2 scope 前缀重叠检测：本篇不做**——单槽把同工作树的并发写**构造性排除**（D6.2），跨工作树的同名 scope 物理上不重叠 ⇒ 该检测**无可达的保护场景**，保留即**死代码**（proposal 的 AC27 已自陈此风险）。**决定：删除该要求**。
+**D8.2 scope 前缀重叠检测：本篇不做**——单槽把同工作树的并发写构造性排除（D6.2），跨工作树的同名 scope 物理上不重叠 ⇒ 该检测**无可达的保护场景**，保留即死代码。**决定：删除该要求**。
 
 **D8.3 范围假设（构造性保证的成立前提）**
 
-保证仅在「**后端 session 只经本插件四工具被操作**」时成立。用户在 TUI 里直接对后端 session 打字或追加指令 ⇒ 产生**插件不可见的 pending steer**（`interrupt` 不删 steer 行；`nextPromotable` 先提 steer，`inbox.ts:475-476`）⇒ 恢复时可能被注入陈旧指令。
-
-⇒ 该情形**显式声明为超出范围**；唯一防线是 D9 的「事后报存疑」（**不能保证检出**）。
+保证仅在「**后端 session 只经本插件四工具被操作**」时成立。用户在 TUI 里直接对后端 session 打字/追加指令 ⇒ 产生**插件不可见的 pending steer**（`interrupt` 不删 steer 行；`nextPromotable` 先提 steer，`inbox.ts:475-476`）⇒ 恢复时可能被注入陈旧指令。⇒ **显式声明为超出范围**；唯一防线是 D9 的「事后报存疑」（**不能保证检出**）。
 
 ### D9 终止 vs 暂停：`cancel` 墓碑 / `suspend` 可续
 
@@ -253,9 +242,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 两者上游调用相同，差别**只在插件侧的登记态**（`suspended` vs `tombstone`）——插件不依赖上游清理行为，自己决定后端还能不能续。
 
-**为什么 `cancel` 保持墓碑**：墓碑防的是"parked 旧简报在未来某次 resume 时幽灵注入"。D7.2 的消费确认让 **dispatch 路径**不产生 parked 项；但 `cancel` 的语义是"目标作废"，此时**主动杀死**比留着一个可能带陈旧上下文的 session 更安全 ⇒ 保留墓碑。
-
-**为什么 `suspend` 不需要墓碑**：D7.2 确认消费 + D8.1 的构造性保证 ⇒ 恢复时不会有旧简报抢先跑。
+**为什么 `cancel` 要墓碑、`suspend` 不要**：墓碑防的是"parked 旧简报在未来某次 resume 时幽灵注入"。D7.2 的消费确认让 dispatch 路径不产生 parked 项 ⇒ `suspend` 恢复时不会有旧简报抢先跑，故无需墓碑；而 `cancel` 的语义是"目标作废"，**主动杀死**比留着一个可能带陈旧上下文的 session 更安全 ⇒ 保留墓碑。
 
 **残留风险（如实记录）：steer 残留**。上游 `interrupt({resume:false})` **不删除** pending steer 行（`packages/core/src/session/execution.ts:151-170`：仅 `resume:true` 才走 `nextPromotable` 提升路径），而 `nextPromotable` **优先提升 steer**。⇒ 被 `suspend` 的 session 若在运行期间被注入过 steer，恢复后的第一轮**优先被提升并注入当前轮**。
 
@@ -266,9 +253,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 ### D10 成本与并发上限
 
-同时在跑的后端数设**全局**上限；**超限时 fail-fast 拒绝，不排队**（排队需要持久队列，超出本篇范围）。`Session.Info` 带 `cost`/`tokens` ⇒ 每后端成本可观测（探针 Q7 确认 list item 含 cost/tokens）。
-
-**单槽是每工作树的上限，与全局上限叠加** ⇒ 实际并发度 = min(活跃工作树数, 全局上限)。`kind=knowledge`（只读）**不占工作树槽位**，是否计入全局上限另议。
+同时在跑的后端数设**全局**上限（`RDDF_MAX_ACTIVE_BACKENDS`，默认 3）；**超限 fail-fast 拒绝、不排队**（排队需持久队列，超出本篇范围）。`Session.Info` 带 `cost`/`tokens` ⇒ 每后端成本可观测（探针 Q7）。**单槽是每工作树的上限，与全局上限叠加** ⇒ 实际并发度 = min(活跃工作树数, 全局上限)；`kind=knowledge` 不占工作树槽位。
 
 ### D11 槽位切换的两步编排
 
@@ -276,7 +261,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 「切换活跃后端」= `suspend(当前活跃)` → `dispatch/resume(目标后端)`。
 
-**不做成一个原子工具**：跨两个 session 的两步（interrupt A + prompt B）**无法与上游的 prompt 投递原子化**——上游投递是异步的、不可回滚；强行合成一个工具会产生「A 已停、B 未起」的半成功状态，而该状态**在单槽模型下正是合法状态**（A=suspended、B=idle）。⇒ 两步各自原子 + front 负责顺序，与状态机一致，是最简形态。
+**不做成一个原子工具**：跨两个 session 的两步（interrupt A + prompt B）**无法与上游投递原子化**（投递异步、不可回滚）；合成一个工具会产生「A 已停、B 未起」的半成功态，而该态在单槽模型下**本就合法**（A=suspended、B=idle）⇒ 两步各自原子 + front 编排，与状态机一致。
 
 **D11.2 原子性要求**：每一步内部的状态翻转（占槽 / 释放槽）都在**同一次 `withLock` 临界区**内完成（同 D7.4），且遵循 D7.1 的「锁的形态」：**异步动作在锁外，锁内重验后再翻转**。两步之间允许存在中间态。
 
@@ -284,7 +269,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 `suspend` 必须在**确认目标 session 已停机**后才释放槽位并标记 `suspended`。若 `interrupt` 未真正停机（返回 `interrupted:false` 而 session 实际仍在跑）⇒ **不得释放槽位**，保持 `active` 并报错。
 
-理由：单槽的全部价值建立在"同一工作树同时只有一个写入者"上；放掉一个仍在写的槽 = 立刻产生并发写。⇒ **「停机确认」是释放槽位的前置，不是可选项**。停机确认（`interrupt` + 活体复查）在**锁外**完成，锁内**重验该条目仍是 `active`** 才翻转为 `suspended`。
+理由：单槽的价值建立在"同一工作树同时只有一个写入者"上；放掉一个仍在写的槽 = 立刻并发写。⇒ **「停机确认」是释放槽位的前置**。停机确认（`interrupt` + 活体复查）在**锁外**完成，锁内**重验该条目仍是 `active`** 才翻转为 `suspended`。
 
 **D11.4 语义约束**
 
@@ -294,11 +279,34 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 - `suspend` 一个**`dispatching`（未确认消费）的后端** ⇒ **拒绝**（只可 cancel，见 D7.2）；
 - `suspend` 一个**不在跑**的后端 ⇒ 幂等 no-op。
 
+### D12 已删后端的可见性（能力边界）与后续触碰处置
+
+**结论**：`sessions` **不列**已删后端，观测面**不补记**终态行；但**派发面**一旦拿到「该 session 不存在」的**正面证据**，**必须**处置——否则会留下死条目把整个工作树占死。
+
+**为什么可见性做不到**（2026-11-09 实证）：`ctx.session.list()` 不返回已删 session，而**插件 ctx 只能枚举「仍有存活 session」的 repo**（item 带 `location`/`projectID`，但已删项根本不出现）⇒ 目标场景（被删后端是该 repo **唯一** session）**恰在盲区正中**。四条替代做法的取舍见选项对比表。
+
+**后续触碰处置（必须做，否则死槽）**：派发面从上游拿到 404 / not-found（**正面证据**，不是「看不到」）时，按**唯一矩阵**处置（消除二义）：
+
+| 条目 `state` × session 已删 | `dispatch(resume=X)` | `suspend` | `cancel` |
+|---|---|---|---|
+| `dispatching` / `active` | 旧条目置 `tombstone` + 落 `outcome:"vanished"` 终态行 + 按同一 `goal_key` **新建**续接 | **释放槽位** + 置 `suspended` | 置 `tombstone` + 落 `outcome:"vanished"` 终态行 |
+| `idle` / `suspended` | 同上（置墓碑后新建） | 幂等 no-op（本就不占槽） | 置 `tombstone` + 落 `outcome:"vanished"` 终态行 |
+| `tombstone` | 拒绝（终态不可续接） | 拒绝（终态） | 幂等 no-op |
+
+⚠️ **本矩阵取代 D9 / V36–V39 中「`interrupted:false` ⇒ 纯 no-op、不墓碑」的一半适用范围**：那条规则针对 **session 仍存在但不在跑**（可续接）；**已不存在时没有「可续接的上下文」**，故按终态处置——界线是**「不在跑」vs「已不存在」**，不是"是否回 `interrupted:true`"。⚠️ 新建 session 失败（`create` 抛错）⇒ 视同 dispatch 新建失败：**不占槽**（旧条目已 `tombstone`），`outcome:"vanished"` 行已落。
+
+⇒ 与「观测面不补记」不矛盾：观测面是**被动不可见**，派发面是**主动拿到否定证据**。
+
+**痕迹与读侧语义**：该 repo 的 `ledger.jsonl` 里 `event:"dispatched"` 行仍在；`pair.json` 条目仍在，但 **reconcile 会把「已消失的 `active`」静默翻成 `idle`** ⇒ 翻转后 pair 不再携带「消失」证据，**区分点只剩 ledger 那条 `dispatched`**。**读侧语义**：`sessions` 未在册 = **未观测到存活后端**，≠「从未派发」、≠「没有终态」、≠「一定被删」（**索引写丢是第三种可能**——metadata 写失败被静默吞，见 D2.1「可丢弃索引」）。
+
 ## 选项对比表
 
 | 方案 | 结论 | 理由 |
 |---|---|---|
 | **四工具（dispatch/sessions/suspend/cancel）+ metadata 索引 + 每工作树单槽（本次改写采用）** | 采用 | 派发与观测分离是**唯一**能避免"查询即污染"的形态（`delegate` 每次调用都投递简报，resume 分支也一样）；metadata 索引随 session 删除自动消失，无悬挂、无新增锁、无第三份真相源；action 细分让治理面可单独禁取消；**单槽 + 可切换**同时满足"同工作树不并发写"与"多目标常驻可轮转" |
+| **扫各 repo 的 `pair.json` 以发现已删后端** | 否决 | 枚举 repo 本身依赖「该 repo 仍有存活 session」⇒ 对目标场景（被删后端是该 repo 唯一 session）**恒盲**，正是不解决要解决的问题 |
+| 由调用方（front）传入 repo 列表 | 否决 | front 是对话代理不是台账，未必知道；且把契约复杂度推给调用方 |
+| **订阅 `session.deleted` 在删除时刻写侧补记** | 否决（部分可行） | 插件 `ctx.event` 确实可达全局 bus，但：事件**不带 `location`**（需自建 sessionID→repo 映射，冷启动即丢）；依赖插件存活与 location 激活，而「front 不在跑时用户在 TUI 删后端」恰是**主流场景**；跨 server 实例删**是否送达未探针**（按不送达假设处理）；且**解决不了 `sessions` 的可见性**（metadata 已随删消失） |
 | **槽位键 = `canonical_root`（stateRoot，原设计）** | 否决 | 每仓一个槽 ⇒ 同一仓的多个 worktree 被"同 repo 互斥"堵死 ⇒ worktree 隔离能力等于没实现；且 `ADR-canonical-root-normalization` 已交付的 `workRoot` 沦为闲置 |
 | **单槽但**不可**切换（cancel 一律墓碑）** | 否决 | 切走即丢上下文 ⇒ 与「一 session 一目标、上下文各自干净」的前提直接冲突；常驻的后端变成一次性资源。⚠️ **但这是 D7.2 的降级落点**：若实施期实测证明**无法可靠观测"简报已消费"**，`suspend` 的安全锚消失 ⇒ **退回本方案**（此时只保留单槽，不提供切换） |
 | **`cancel` 加 `mode` 参数（suspend/terminate 二选一）** | 否决 | **默认值不可逆**：漏写 `mode` 落到 `terminate` 会永久杀死本该续接的后端；而独立工具名 `suspend` 漏用时的默认后果是"用错工具"（可恢复）。同 D1 反对 `async` 参数的同类理由 |
@@ -335,6 +343,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 - **终态可能永远不到**：front 不查询 ⇒ ledger 缺终态行。缓解是"开场即 reconcile"（见 D2.4）——front 新会话第一轮就要读状态（ADR-front-agent-redesign D7 已要求开场报状态），故 reconcile 与开场扫描天然合一；但用户不再问时，终态行仍可能缺失 ⇒ **ledger 的"未终结"记录必须被读侧理解为"未观测到终态"而非"没有终态"**。
 - **metadata 整体替换语义**：每次写都要回传完整对象，漏字段即丢数据（探针 Q5）。新增 `work_root` / `state` 后字段更多 ⇒ 漏字段的后果更重。
 - **front session 换代即失联**：roster 是快路径不是唯一路径，兜底路径必须常在。
+- **已删后端不可枚举**（D12）：插件 ctx 无 `project` 域 ⇒ 无法枚举 repo ⇒ 后端被删后 `sessions` 看不到、也不补记终态行。这是**能力边界**，与 D2.1 的「索引随删除消失」一致；代价是读侧必须理解「`sessions` 里没有」≠「从未派发」。
 - **同工作树并发被压制**：同一工作树一次只能一个后端在跑（D6.2）。这是**有意的保守**——工作树层的破坏不可事后兜底；想要并行就准备独立工作树（D6.4）。
 - **切换是两步、由 front 编排**：两步之间存在中间态（A 已停、B 未起）。这在状态机里是合法态，但**模型可能只做一半** ⇒ prompt 契约必须写明「切换 = 先 suspend 再 dispatch/resume」。
 - **槽位可能悬挂**：后端崩溃/被删 ⇒ 槽被占死，该工作树后续派发全被拒。缓解是 D7.3 的 `stalled` 判定 + `suspend` 幂等回收，但**发现与回收依赖 front 主动查询**。
@@ -368,8 +377,12 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 - [ ] `dispatch` 后：后端 session 的 metadata 含 `delegated_by/goal_key/canonical_root/**work_root**/baseline_message_id/dispatched_at/state`；`pair.json` 有对应条目；`ledger.jsonl` 有 `dispatched` 行。
 - [ ] `pair.json` 条目含 **`work_root`** 与 **`state`**（枚举见 D6.3：`dispatching/active/idle/suspended/tombstone`）；**存量条目**（无 `work_root`）按 `work_root = canonical_root` 保守回填（退化为原粒度，不误判为同树），且其 `state` 按**活体判据**首次观测时确定（busy ⇒ `active`，否则 `idle`）——**不得一律默认 `idle`**（那等于放行第二个写入者）。
-- [ ] `sessions` 列出本 front 名下全部后端（≥2 个，分属不同工程目录），每项含状态与证据字段；**调用 `sessions` 前后，被观测后端的 `session.context` 消息条数与最后一条消息 id、以及 `time.updated` 均不变**（证明观测面不投递 prompt、不污染）。⚠️ **不以 ledger 行数不变为判据**——reconcile 会写行，且 prompt 投递不会立即产生 ledger 行，行数不变证明不了没投递。
-- [ ] 后端 session 被外部删除后，`sessions` 报该项"已消失"，并在 ledger 补记终态行（区分于"从未派发"）。
+- [ ] `sessions` 列出本 front 名下全部后端（≥2 个，分属不同工程目录），每项含状态与证据字段；**调用 `sessions` 前后，被观测后端的 `session.context` 消息条数与最后一条消息 id、以及 `time.updated` 均不变**（证明观测面不投递 prompt、不污染）。⚠️ **不以 ledger 行数不变为判据**——prompt 投递不会立即产生 ledger 行，行数不变证明不了没投递（**注意：reconcile 只写 `pair.json`、不写 ledger**，别拿 pair 的变化当 ledger 证据）。
+- [ ] **已删后端的观测面与派发面分别判**（D12）：
+  - **观测面**：后端被外部删除后，`sessions` 输出**不含**该项，且**调用 `sessions` 前后该 repo 的 `ledger.jsonl` 行数与末行内容均不变**（观测面不写 ledger）。⚠️ **不得**把「`sessions` 里没有」判成「从未派发」/「没有终态」/「一定被删」。
+  - **派发面**：`dispatch(resume_session=X)` 命中已删 X ⇒ **不得**留下 `state=dispatching` 的悬挂条目；旧条目置 `tombstone`、ledger 出现 **`outcome:"vanished"` 终态行**、同一 `goal_key` 的新 session 建成 ⇒ **同一 `workRoot` 可再次派发**。
+  - **终止 / 暂停面**（按 D12 矩阵）：已删 X 且条目 `dispatching`/`active` ⇒ `suspend` **释放槽位并置 `suspended`**、`cancel` **置 `tombstone` 并落 `outcome:"vanished"`**；条目 `idle`/`suspended` ⇒ `suspend` 幂等 no-op、`cancel` 置墓碑落行；条目 `tombstone` ⇒ `suspend` 拒绝、`cancel` 幂等 no-op。**四组都不得因「无法定位工作目录」而抛错**。
+  - **痕迹**：该 repo 的 `ledger.jsonl` 里原有 `event:"dispatched"` 行仍在（`reconcile` 只改 `pair.json` 的 `state`，不写 ledger）。
 - [ ] front session 换代（新 front session id）后，仍能通过兜底路径找回旧后端。
 - [ ] **兜底路径扫全量**：构造 >50 个 session（其中 ≥2 个是被派发的后端且 `time.updated` 最旧）→ 换代后的 `sessions` 仍能列出这两个后端（验证 cursor 续扫，不因 limit 窗口漏扫）。
 - [ ] metadata update 后**完整字段仍在**（不因整体替换丢字段）——含新增的 `work_root` / `state`。
