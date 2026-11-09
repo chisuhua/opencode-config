@@ -83,5 +83,8 @@
 | T7.2 | AC44 有界时延（连续 10 次，≥8 次 60s 内进 `active`） | AC44 | 需真实模型跑 10 次 |
 | T7.3 | **AC13「已消失可见 + ledger 补记 vanished」** | AC13 | ⛔ **设计张力**：`list` 不返回已删 session ⇒ 兜底路径看不到它；而 ADR D2.1 否决了全局 registry。⇒ `design_drift` → **architect 决策**（见 design.md §5） |
 | T7.4 | AC57 的「自然跑完 → B → 再回 A」完整序列 | AC57 | ⚠️ 部分（suspend→resume 已测；自然跑完→切回只覆盖了名册可见） |
-| T7.6 | `docs/MULTI-AGENT-DESIGN.md`（`:101`「唯一登记型通道」+ 工具面）与 `docs/CHANGELOG.md`（change 2 条目） | AC35 | ⛔ **治理面文件**（`~/.config/opencode/docs/**`）⇒ **architect**（改它们须 oracle + critic 审） |
+| T7.6 | `docs/MULTI-AGENT-DESIGN.md` + `docs/CHANGELOG.md`（治理面）+ `ADR-front-knowledge-capability` D5 表 | AC35 / AC36 | ✅ **已完成**（architect，oracle + critic 双审：治理面判定 PASS-WITH-NOTES → critic APPROVE） |
+| T7.7 | **D12 派发面处置矩阵的实现**：`dispatch(resume=已删)` ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` + 同 goal_key 新建；`suspend`/`cancel` 对已删后端按矩阵返回（**不得**抛「无法定位」） | AC13 | ⛔ **未实现**（已正向验证：`suspend`/`cancel` 仍抛「无法定位后端…」，`dispatch(resume=已删)` 仍落 `dispatch_failed` 且保留槽位 ⇒ **死槽风险仍在**）。判定已定（ADR D12），实施排期由用户定 |
+| T7.8 | AC36 余下两处同步：`docs/dual-session-delegation.md` 的 event 枚举补 **`taken_over`**；`prompts/front.md` 的 ledger 说明补 **`vanished`** 与 **`event` 字段** | AC36 | ⛔ **builder**（本轮由 oracle 审出，两份文档均是 builder 归属） |
+| T7.9 | `proposal.md` 的 **AC4 脚注**旧表述「reconcile 会写行（AC13）」修正 —— 与 ADR V08 的修正及 D5 新增的「reconcile 不写 ledger」注**直接矛盾** | AC4 | ⛔ **planner**（proposal 归属） |
 | T7.5 | AC35 的 §2.1 ASCII 全景图箱体对齐 | AC35 | ⚠️ 纯格式，改文字后可能不齐 |

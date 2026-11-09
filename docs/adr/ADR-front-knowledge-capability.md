@@ -13,6 +13,7 @@
 | 审稿报告 | `.rddf/reviews/adr-front-knowledge-capability-review.md` |
 | 增补记录 | **2026-11-08**：E2E 真实运行时暴露两处实现约束 → 补 **D2.1（规则顺序是硬约束）**、**D3.1（网络守卫必须覆盖首参数形态）**，并订正 Verification 第 15 条（原写"末尾 `*: deny`"，与 D2.1 矛盾）、新增 2 条判据与 2 条风险。运行时证据：`/workspace/main/rdd-workflow-e2e/tests/integration/test_front_delegate_runtime.bats`（L2-13/L2-14/L2-15，实跑 15/15 ok）。增补的复审结论见审稿报告 §8 |
 | 增补记录 2 | **2026-11-09**：`outcome` 枚举由 `ADR-delegate-delivery-evidence` 扩展（新增 `unverified` + `host_outcome`）→ **本篇 D5 的 ledger 字段表与"行产生时机"表需同步补 `unverified` / `host_outcome`**（单点耦合，见该篇 Parent 条款与 D3.1 迁移清单第 6 项） |
+| 增补记录 3 | **2026-11-09**：`ADR-front-multi-backend` 落地 → **D5 的 ledger 字段表与"行产生时机"表同步补 `event` 独立字段**（`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`）与 **`outcome:"vanished"`**（后端被外部删除）；并加注「reconcile 不写 ledger」（槽位回收只改 `pair.json`）。判据的适用范围见该篇 **D12**（观测面不补记、派发面拿到 404 正面证据才落终态行）。**该篇的派发面处置矩阵实现尚未落地**（见 `docs/CHANGELOG.md` v2.7 的未完成清单） |
 
 ## 背景与问题
 
@@ -158,6 +159,8 @@
 
 - 路径：`.rddf/state/ledger.jsonl`，append-only。
 - 字段：`recorded_at` / `kind` / `front_session_id` / `backend_session_id` / `goal` / `scope` / `outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `last_assistant_text`（截断，禁止落凭证）。
+- **`event` 字段（2026-11-09 增补，ADR-front-multi-backend AC36）**：**独立字段，不塞进 `outcome`** —— `event` 取值 `dispatched` / `dispatch_failed` / `cancelled` / `taken_over`；这些行**没有** `outcome` 语义，消费者按 `event` 分派。`outcome` 枚举**新增 `vanished`**（后端被外部删除，见下表）。
+- **event 行动带的字段**（实现落盘口径，`lib/delegate-async.ts`）：`event` / `recorded_at` / `kind` / `front_session_id` / `backend_session_id` / `agent` / `goal` / `scope` / **`goal_key`** / **`work_root`** / **`canonical_root`** / `outcome`（恒 `null`）。终态行（`outcome:"vanished"`）则**没有 `event` 字段**，其余字段同构。
 - 写入者：**仅 `delegate` 插件**，append 动作放进现有 `registerSession` 的同一 `withLock` 临界区 → 零新增写入方、无第二把锁、无锁序反转。
 - **行产生时机（写死，避免"每次 delegate 一行"与实现歧义）**：
 
@@ -168,8 +171,15 @@
   | 建 session 后 busy（拒绝排队） | **落一行**，`outcome: "busy"` |
   | 正常结束 | **落一行**（无论 `succeeded` / `unverified` / `failed` / `interrupted` / `unknown`；`unverified` 与 `host_outcome` 见 `ADR-delegate-delivery-evidence`） |
   | wait 超时 / 异常 | **落一行**，`outcome: "unknown"`，`wait_error` 记入 |
+  | 异步派发成功投递（`dispatch`） | **落一行**，`event: "dispatched"`（无 `outcome` 语义） |
+  | 异步派发投递失败 / 结果未知 | **落一行**，`event: "dispatch_failed"` |
+  | 后端被 `cancel` 终止 | **落一行**，`event: "cancelled"` |
+  | 回收他 front 遗留的槽位（亡主接管） | **落一行**，`event: "taken_over"` |
+  | 后端被**外部删除**（派发面拿到 404 正面证据） | **落一行**，`outcome: "vanished"`（**观测面不补记**——见 `ADR-front-multi-backend` D12） |
 
   实现为**单次 append**，不得搭 `registerSession` 两次调用（prompt 前 / wait 后）的车而产生两行。
+  ⚠️ **reconcile 不写 ledger**：槽位回收（把「已消失的 `active`」翻成 `idle`）只改 `pair.json`，**不落行** ⇒ 判「ledger 行数不变」时别把 pair 的变化当 ledger 证据。
+  ⚠️ **`vanished` 是 `outcome` 取值、不是 `event` 取值**：`event` 四行（`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`）的 `outcome` 恒为 `null`（它们是**动作**，不是终态）；`vanished` 行**没有 `event` 字段**（它是**终态结果**）。⇒ 消费者按「有 `event` ⇒ 动作行；无 `event` ⇒ 终态行」分派。
 - **职责切分（写死）**：`pair.json` = 访问控制登记表（`resume_session` 合法性唯一判据）；`ledger.jsonl` = 历史事实（回答"做过什么"）。**ledger 不参与 resume 校验**，避免两个真相源漂移。
 
 ### D6 wiki 后置（本次明确不做）

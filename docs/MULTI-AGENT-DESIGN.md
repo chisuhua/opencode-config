@@ -98,13 +98,13 @@
 #### `front` —— 用户交互内核 / 委托出口
 - **职责**：与用户对话、明确意图、给选项；**一切工程行动经 `delegate` 插件工具转交工程 session**
 - **核心 prompt**：`prompts/front.md`（四分类路由 + 委托 brief 契约 + 状态扫描清单 + 降级纪律）
-- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`"*": deny` **必须是第一条**，v2.5 + ADR D2.1：opencode 的工具可见性判定取该 action **最后一条**匹配规则，`"*": deny` 放末尾会把整个 `subagent` 工具隐藏）；`delegate` allow（**唯一**登记型通道）
-- **门控**：`delegate` 声明 `options.permission="delegate"` → 全局 deny + 仅 front allow ⇒ 其余 agent 调用时答 `NO_TOOL`
+- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`"*": deny` **必须是第一条**，v2.5 + ADR D2.1：opencode 的工具可见性判定取该 action **最后一条**匹配规则，`"*": deny` 放末尾会把整个 `subagent` 工具隐藏）；`delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel` allow（**唯一登记型通道**——五个 action 同挂 `delegate` 插件、各自独立放行；「唯一」指**门控边界**唯一，**不是工具名**唯一，ADR `docs/adr/ADR-front-multi-backend.md` D1）
+- **门控**：五个工具各声明**独立** `options.permission`（`delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel`）→ 全局 deny + 仅 front allow ⇒ 其余 agent 调用时答 `NO_TOOL`
 - **典型 workflow**：
   1. 判类（理解性 / 实施性 / 流程性 / 需裁决）
   2. 理解性 → 自己 `read`/`grep`/`glob` 答；流程性 → 读 `.rddf/state/` 出摘要（带新鲜度标注）
-  3. 实施性 → 组六必填 brief（+ 必要时向用户预批 `grants`）→ 调 `delegate`
-  4. 读返回值（`outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `no_work_evidence`）→ 转述给用户；**`outcome=unverified`（宿主成功但无交付证据）不得说成完成**
+  3. 实施性 → 组六必填 brief（+ 必要时向用户预批 `grants`）→ 调 `delegate`（要等结果）或 `dispatch`（并发多任务；**同一工作树一次一个活跃**，换后端先 `suspend`）
+  4. 读返回值（`outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `no_work_evidence`）→ 转述给用户；**`outcome=unverified`（宿主成功但无交付证据）不得说成完成**。⚠️ `dispatch` **不回 `outcome`**（只回 `state` / `delivery_known`）⇒ 其结论须用 `sessions` 查
 - **详见**：`docs/dual-session-delegation.md`
 
 #### `plan` —— 设计者 agent
@@ -440,7 +440,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 | 文件 | 位置 | 内容 |
 |---|---|---|
-| `pair.json`（pair-v2）| `<工程根>/.rddf/state/pair.json` | `pairs: { <engineering_session_id>: { front_session_id, canonical_root, agent, registered_at, last_used_at } }` |
+| `pair.json`（pair-v2）| `<stateRoot>/.rddf/state/pair.json` | `pairs: { <engineering_session_id>: { front_session_id, canonical_root, work_root, state, goal_key, kind, agent, registered_at, last_used_at, suspended_at_message_id?, steer_residue? } }`（`work_root`/`state`/`goal_key` 为 2026-11-09 增补，见 `ADR-front-multi-backend` D2.3/D6/D3）|
 | `role.json` | `<工程根>/.rddf/state/role.json` | `sessions: { <engineering_session_id>: { current_role, auto_switch_window: null, auto_answer: null, updated_at } }` |
 
 为什么**必须在 prompt 之前写**：工程 session 开局就要读自己的 `role.json` 分区；若登记晚于 prompt，
@@ -482,7 +482,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 | **general** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **critic** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **context-builder** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **front** | ❌ | ❌（经 `delegate` 工具，非 agent 委派） | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **front** | ❌ | ❌（经 `delegate` 插件工具，非 agent 委派） | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 
 > build → critic 是"条件 ✅"：仅在 §3.2 "何时调 critic" 5 个条件命中时调用；其它情况不调。critic 自己不调任何 agent（task deny）。
 > **context-builder** 只能被 build 调，且不委派任何 agent——它只做上下文组装。
@@ -837,10 +837,11 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 │   ├── arch-docs-init.md        # /arch-docs-init：梳理架构文档结构 → .rddf/config/arch-docs.json
 │   └── critic-review.md         # /critic-review：7 字段上下文契约调 critic
 ├── plugins/                     # 本地 opencode 插件（server 启动时加载；改代码需 restart）
-│   ├── delegate.ts              # front → 工程 session 的委托工具
+│   ├── delegate.ts              # front → 工程 session 的委托工具（五个：delegate/dispatch/sessions/suspend/cancel）
 │   └── model-fallback.ts        # 模型降级链接线（retry 钩子 + switchModel）
 ├── lib/                         # 插件的纯逻辑内核（无宿主依赖，可单测）
-│   ├── delegate-core.ts
+│   ├── delegate-core.ts          # 同步委托 18 步 + 槽位原语（两派发面共用）
+│   ├── delegate-async.ts        # 异步派发面：dispatch/sessions/suspend/cancel + 槽位生命周期 + 消费确认
 │   └── model-fallback-core.ts   # 错误分类 / 链推进 / 冷却 / 组链
 ├── model-fallback.json          # 降级链配置（chains / policy / notify）；环境变量 MODEL_FALLBACK_CONFIG 可改路径
 ├── scripts/                     # opencode 命令调用的 shell 脚本
@@ -971,7 +972,12 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 | `delegate` 门控：仅 front 可见（front `[{*,deny},{*,allow}]`，其余 agent 仅 `[{*,deny}]`）| ✅ `opencode debug agents` 实测 |
 | `delegate` 端到端：建工程 session → 真实写入文件 → `outcome=succeeded` + 越界检测 | ✅ 实跑（`/tmp/opencode/engproj` 写出 `answer2.txt`=42 / `answer3.txt`=43 / `answer4.txt`=44）|
 | `delegate` 续接：复用同一 session（session 数不增）+ 非法 grant 被拒 | ✅ 实跑 |
-| `delegate` 单元测试：`bun test tests/delegate-core.test.ts tests/delegate-tool.test.ts`（111 项：brief 契约 / grants 白名单 / scope→edit 规则 / 规则顺序即策略 / 阻断提取 / 越界判定 / pair+role 登记 / 目录锁并发 / 假 ctx 端到端 / 交付面证据与 `unverified`）| ✅ 全绿 |
+| `delegate` 单元测试：`bun test tests/delegate-core.test.ts tests/delegate-tool.test.ts`（brief 契约 / grants 白名单 / scope→edit 规则 / 规则顺序即策略 / 阻断提取 / 越界判定 / pair+role 登记 / 目录锁并发 / 假 ctx 端到端 / 交付面证据与 `unverified`）| ✅ 全绿 |
+| **四工具门控**：`delegate_dispatch`/`delegate_sessions`/`delegate_suspend`/`delegate_cancel` 各自独立 action ⇒ 全局 deny + 仅 front allow，其余 agent 全 deny | ✅ `opencode debug agents` 实测（2026-11-09）|
+| **单槽与切换**：同一 `workRoot` 第二个活跃后端被拒（错误含占槽 id）；两 linked worktree 各派一个**都成功**；`suspend` 释放槽位后可派发；既有 `delegate` 与新工具**共用同一张槽位表** | ✅ `bun test tests/delegate-async.test.ts`（44 项）|
+| **消费确认**：「简报已被消费」= 其 `message.id` 出现在 `session.context()` 的消息 id 集合里；pending 的简报**不在** context；`interrupt({resume:false})` **不删** pending 行 ⇒ 幽灵注入真实存在 | ✅ Phase 0 探针 16/16（`.rddf/reviews/front-multi-backend-consume-probe.md`）|
+| `stateRoot`/`workRoot` 归一：linked worktree 下 pair 落主仓、变更检测在 worktree；submodule 归 superproject | ✅ `bun test tests/canonical-root.test.ts`（15 项）+ 验收报告 PASS 18/18 |
+| 全量单测 | ✅ `bun test tests/` **216 pass / 0 fail**（2026-11-09）|
 | `model-fallback` 单元测试：`bun test tests/model-fallback-core.test.ts`（33 项：错误分类含内容策略/上下文超限短路与裸 403 仍降级 / 链推进 / 冷却跳过 / 429 退避 / 不降级场景 / 链耗尽 / 绕回链首 / 冷却表跨 session 共享 / 状态不可变）| ✅ 全绿（全量 `bun test tests/` 157 pass）|
 | `model-fallback` 端到端（当前生效链）：`opencode run --standalone --agent build -m openstarry/deepseek-v4.1-flash`，openstarry 403「订阅额度不足」→ **一次**切到 `commandcode` → 成功作答；日志每次失败只落一行切换记录（无重复撞墙）| ✅ 实跑（2026-11-08）|
 | `model-fallback` 端到端（内置默认链，配置文件覆盖前）：坏 `MINIMAX_API_KEY` 驱动 `opencode run --agent build`，实测 `minimax-cn` 401 → `openstarry` 403 → `opencode-go` 成功作答| ✅ 实跑（2026-11-06）|

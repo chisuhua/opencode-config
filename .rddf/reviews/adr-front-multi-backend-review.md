@@ -214,3 +214,53 @@ change 2 实施 + verifier 第 1 轮验收发现 **AC13 无法实现**：判据�
 - **planner**：按 D12 改写 proposal 的 **AC13**（原判据要求「报已消失 + 补记」）；同步 AC36 的 `vanished` 表述（已确认是 `outcome`）。
 - **builder**：按 D12 矩阵实现「已删后端的后续触碰处置」（`dispatch(resume)` / `cancel` / `suspend` 三入口）。
 - **architect**：`ADR-front-knowledge-capability` D5 行产生时机表（`event` + `outcome:"vanished"`）。
+
+
+---
+
+# 第四轮：2026-11-09 治理面 + ADR D5 同步（AC36 收尾）
+
+## 改动（三份）
+
+| 文件 | 档 | 改了什么 |
+|---|---|---|
+| `docs/adr/ADR-front-knowledge-capability.md` | arch | **D5**：① 字段段新增 `event` 独立字段 + `outcome` 枚举新增 `vanished`；② 行产生时机表 +5 行（异步派发面）；③ 加「reconcile 不写 ledger」注；④ 加「`vanished` 是 outcome 不是 event」消歧句；⑤ 补 event 行的实际字段清单；⑥ 元数据补「增补记录 3」 |
+| `docs/MULTI-AGENT-DESIGN.md` | 治理面 | front 权限行改五个 action + 澄清「唯一 = 门控边界唯一」；门控行；workflow 第 3/4 步；pair 登记表补 `work_root`/`state`/`goal_key`/`kind`/`suspended_at_message_id?`/`steer_residue?`；权限矩阵措辞；验证记录 +5 行；文件树补 `lib/delegate-async.ts`；修 code span 内 `**` 渲染 |
+| `docs/CHANGELOG.md` | 治理面 | 新增 **v2.7 变更摘要**（8 条）+ 未完成清单 |
+
+## oracle（1 轮，治理面判定 **PASS-WITH-NOTES**）
+
+| # | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| 1 | **必须修** | **CHANGELOG ⑥ 把未实现行为写成已落地**：全库唯一 `vanished` 是 `sessions` 的**展示字段**（`delegate-async.ts:784`），ledger 从未写过 `outcome:"vanished"`；`suspend`/`cancel` 对已删后端仍抛「无法定位」⇒ 死槽风险**仍在** | ✅ ⑥ 改为「派发面处置矩阵**已按 D12 定稿**，但**实现尚未落地**」并列出当前实际行为；⚠️ 行扩为「AC13 判据改写 + **D12 矩阵的实现**」 |
+| 2 | 建议（中） | D5 的 `vanished` ∈ event 的读法歧义 | ✅ D5 加消歧句：`event` 四行 `outcome` 恒 `null`（是**动作**），`vanished` 行**无 `event` 字段**（是**终态结果**）；消费者按「有 event ⇒ 动作行；无 event ⇒ 终态行」分派 |
+| 3 | 建议（低） | `MULTI-AGENT-DESIGN.md:443` code span 内的 `**` 渲染成字面星号 | ✅ 去掉 span 内的 `**` |
+| 4 | 建议（低） | workflow 第 4 步未区分 `dispatch` 不回 `outcome` | ✅ 补半句「`dispatch` 不回 `outcome`（只回 `state`/`delivery_known`）⇒ 结论须用 `sessions` 查」 |
+| 5 | 建议（低） | CHANGELOG ① 括注「唯一新增」不够严 | ✅ 改为「唯一**行为**影响 + 另有两处登记字段写盘」 |
+| 6 | **新发现（builder 侧）** | AC36 同步清单余下两处未做：`docs/dual-session-delegation.md` event 枚举缺 `taken_over`；`prompts/front.md` 缺 `vanished` 与 `event` 说明 | ✅ 登记为 **tasks.md T7.8**（builder） |
+| 7 | **新发现（planner 侧）** | `proposal.md` AC4 脚注「reconcile 会写行（AC13）」与 ADR V08 修正、D5 新注**直接矛盾** | ✅ 登记为 **tasks.md T7.9**（planner） |
+
+## critic（1 轮 **APPROVE**，0 BLOCKER / 0 SHOULD_FIX / 4 NIT）
+
+| # | 级别 | 问题 | 处置 |
+|---|---|---|---|
+| N1 | NIT | D5 字段清单未含 event 行的实际字段（`goal_key`/`work_root`/`canonical_root`/`agent`） | ✅ D5 补「event 行动带的字段」清单 |
+| N2 | NIT | D5 元数据缺第三条增补记录（既有两条先例） | ✅ 补「增补记录 3」 |
+| N3 | NIT | `MULTI-AGENT-DESIGN.md` pair 表缺 `kind` / `suspended_at_message_id?` / `steer_residue?` | ✅ 补齐（后两者标 `?` 表示可选） |
+| N4 | NIT | `cli.json`（用户 UI 偏好）混在 diff | ✅ 本仓库**始终不提交** `cli.json`（前几轮提交已排除），本轮同样排除 |
+
+## 收尾验证（critic 的验证建议）
+
+| 建议 | 结果 |
+|---|---|
+| `bun test tests/` 确认 216 pass | ✅ **216 pass / 0 fail**（实跑） |
+| `bun test tests/delegate-async.test.ts` 确认 44 项且含 stalled/steer_residue/亡主接管 | ✅ **44 pass / 0 fail**（实跑） |
+| 正向验证 CHANGELOG ⑥ 的**负向陈述**（suspend/cancel 对已删后端确实抛「无法定位」而非静默成功） | ✅ 实跑确认：`suspend` 与 `cancel` 均抛「无法定位后端 …（session 已不存在？）」⇒ **「实现尚未落地」陈述成立** |
+| `opencode debug agents` 复核 front 五个 action | ✅ 本轮实测：front 五 action 全 allow，Build/General/Plan/Explore 全 deny |
+
+## 本轮之后的未完成（已登记 tasks.md）
+
+- **T7.7 D12 派发面处置矩阵的实现**（builder；死槽风险仍在）
+- **T7.8 AC36 余下两处同步**（builder：`dual-session-delegation.md` / `prompts/front.md`）
+- **T7.9 proposal AC4 脚注修正**（planner）
+- **T7.2 / T7.3**（E2E bats / AC44 时延，需用户授权外部仓库 + 真实模型）

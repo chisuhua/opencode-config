@@ -8,6 +8,20 @@
 
 ## 版本变更摘要
 
+---
+
+> **v2.7 变更摘要（2026-11-09，ADR-front-multi-backend 落地）**：**front 从「同步单发」升级为「异步派发 + 只读观测 + 名册索引 + 单槽切换」**。
+> ① **工具面三→四**：新增 `dispatch`（异步派发，立即返回）/ `sessions`（只读观测，**绝不投递 prompt**）/ `suspend`（暂停、**保留上下文可续**）/ `cancel`（终止、墓碑）；四个新工具各有**独立权限 action**（`delegate_dispatch`/`delegate_sessions`/`delegate_suspend`/`delegate_cancel`），全局 deny + 仅 front allow。既有 `delegate` 保留，**语义与判据不变**（唯一**行为**影响：与新工具共用一张槽位表的检查；另有两处登记字段写盘 `state`/`work_root`）。
+> ② **单槽模型**：同一 git 工作树内**同一时刻只允许一个后端在跑**（槽位键 = `workRoot`；`dispatching`/`active` 占槽，`idle`/`suspended`/`tombstone` 不占）。同一仓的不同 linked worktree 各自一槽 ⇒ 想并行需先准备独立工作树。
+> ③ **切换两步**：`suspend(当前)` → `dispatch/resume(目标)`，由 front 编排；**暂停 ≠ 终止**（`cancel` 才是墓碑、永久不可续）。
+> ④ **「投递 ≠ 消费」**：上游 drain 是 `peek → awaitActivation(可无限阻塞) → prepareContext → promote`，且 `interrupt({resume:false})` **不删 pending 行** ⇒ 旧简报会在恢复后抢先跑（幽灵注入，**已运行时坐实**）。故 dispatch 返回前须**确认消费**（判据 = 该简报的 `message.id` 出现在 `session.context()` 的消息 id 集合里），未确认则停在 `dispatching`（只可 `cancel`）。
+> ⑤ **ledger 增 `event` 独立字段**（不塞进 `outcome`）：`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`；`outcome` 枚举新增 **`vanished`**（后端被外部删除）。
+> ⑥ **已删后端不可见**（能力边界）：插件 ctx 无 `project` 域 ⇒ 无法枚举 repo ⇒ `sessions` 不列已删后端、观测面不补记。**派发面处置矩阵已按 ADR D12 定稿**（拿到 404 正面证据 ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` 行 + 释放槽位），**但实现尚未落地**——当前对已删后端 `suspend`/`cancel` 仍报「无法定位后端」，`dispatch(resume=已删)` 落 `dispatch_failed` 且保留槽位（死槽风险仍在，实现随 AC13 落地）。
+> ⑦ **双根归一**：`stateRoot`（状态落盘）与 `workRoot`（工作树）分离，linked worktree 下 pair 落主仓、变更检测在 worktree（`ADR-canonical-root-normalization`，commit `23584cd`）。
+> ⑧ **上游语义实测**：`get()` 在 run 中**确实**返回 `time.busy`（此前探针 Q2/R4 冲突，R4 正确）；`list` 的 item 带 `metadata`（为空时省略字段）。
+> 验证：`bun test tests/` **216 pass / 0 fail**；Phase 0 消费判据探针 16/16；权限矩阵 `opencode debug agents` 实测。ADR：`docs/adr/ADR-front-multi-backend.md`（D1–D12）；实施与验收记录见 `.rddf/reviews/front-multi-backend-*.md`。
+> ⚠️ **未完成**：E2E bats L2-16..（外部仓库）、AC44 连续 10 次时延、**AC13 判据改写（planner）+ D12 派发面处置矩阵的实现**、AC36 余下两处同步（`docs/dual-session-delegation.md` 的 event 枚举补 `taken_over`、`prompts/front.md` 补 `vanished` 与 `event` 字段说明）、`proposal.md` AC4 脚注「reconcile 会写行」的旧表述修正。
+
 > **v2.6 增补（2026-11-09，ADR-delegate-delivery-evidence 落地）**：上面 v2.6 段的「**outcome 枚举不变**」一句已过时（历史不改，此处增补）：`outcome` 现扩展为 `succeeded` / **`unverified`** / `failed` / `interrupted` / `unknown` / `busy`。
 > - `unverified` = 宿主报成功但本轮没有可验证的交付证据（`no_work_evidence=true` 时触发；判定链见 ADR D2）。
 > - 摘要与 ledger 行同时保留宿主原值 `host_outcome`（`unverified` 时恒为 `succeeded`）。
