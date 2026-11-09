@@ -32,13 +32,14 @@
 │  职责边界（权限层强制，非 prompt 承诺）                                          │
 │   ✅ read / grep / glob / list（跨目录受 external_directory 约束）                │
 │   ✅ shell 只读白名单（*: deny 打头 + 47 allow + 尾部守卫 deny + "* /*" 禁绝对路径）│
-│   ✅ question（问用户）    ✅ delegate（唯一工程出口）                            │
+│   ✅ question（问用户）    ✅ delegate 插件（唯一门控出口：delegate/dispatch/      │
+│      sessions/suspend/cancel —— 门控边界唯一，不是工具名唯一）                     │
 │   ❌ edit / write   ❌ skill   ❌ subagent   ❌ bash -c / curl / python -c         │
 │                                                                              │
 │  四分类路由（判据=产物形态）                                                      │
 │   理解性→自己答   实施性→delegate   流程性→读状态出摘要   需裁决→question           │
 └───────────────┬──────────────────────────────────────────────────────────────┘
-                │ delegate 工具（唯一通道）
+                │ delegate 插件（唯一门控出口；五个工具同一门控）
                 │   ctx.session.create / prompt / wait / get / context / remove
                 │   （全部在插件进程内，front 不持凭证、不发 HTTP）
 ┌───────────────▼──────────────────────────────────────────────────────────────┐
@@ -178,7 +179,7 @@ agent：  agent.front.permission.delegate = "allow" → 唯一例外
 | 原语 | 语义 | 坑 |
 |---|---|---|
 | `ctx.session.create({location:{directory}, agent, title, permissions})` | 在**指定目录**建 session（可跨 location）；`permissions` 可预置 | 跨 location 创建可行；但插件 ctx 的**权限服务是 location 绑定的** |
-| `ctx.session.prompt({sessionID, text})` | 投递指令 | 目标是队列；同一 session 已有 in-flight run 时会排队（所以要有 busy 保护） |
+| `ctx.session.prompt({sessionID, text, delivery})` | 投递指令 | `delivery` 默认 **`steer`**（注入当前轮并改写它，**不是**排队）；显式传 `delivery:"queue"` 才是"下一轮"。⇒ 插件层的 busy 拒绝是**主动选择**（避免 steer 改写正在执行的目标），不是上游自动排队 |
 | `ctx.session.wait({sessionID})` | 等到运行结束 | 工具里用 `Promise.race` 加 30min 上限 |
 | `ctx.session.get({sessionID})` | 读 `outcome` / `time.idle` / `time.updated` / `permissions` | **`outcome` 是"上一次已结束 run"的结果**，可能是陈旧值 |
 | `ctx.session.context({sessionID})` | 读消息数组（`content[]` 里含 tool part） | 跨 location 可读（与权限服务不同） |
@@ -307,7 +308,13 @@ front 用 `cat /etc/passwd` **成功执行**（泄漏内容）。
 
 破坏任何一条都会让"权限层强制"退化成"prompt 承诺"：
 
-1. **单一工程出口**：一切工程行动只能经 `delegate`。不要给 front 加第二个出口。
+1. **单一工程出口**：一切工程行动只能经 `delegate` 插件。不要给 front 加第二个出口。
+
+  > **口径（2026-11-09 明确，ADR-front-multi-backend D1）**：这条不变式的「出口」指**门控边界**——
+  > 「同一个插件 + 每个工具声明独立的 `options.permission` action + 全局 deny + 仅 front allow」这套形态——
+  > **而不是工具名**。`dispatch`/`sessions`/`suspend`/`cancel` 全部落在同一个 `delegate` 插件内、
+  > 全部走同一套门控形态、全部只对 front 可见；没有任何一条工程行动路径**绕过**该门控。
+  > ⇒ 新增工具不等于"加第二个出口"；**绕过插件的 shell 脚本/裸 API 调用**才是。。
 2. **门控在权限层**：新工具必须声明独立的 `options.permission` action，并全局 deny + 仅 front allow。
 3. **工程 session 的权限在建立时定型**：不依赖运行时代答（无 UI → ask 会永久挂死）。
 4. **规则顺序即策略**：`[常量deny, scope, grants]`；grants 有类目白名单，且白名单**先于** grants 生效。

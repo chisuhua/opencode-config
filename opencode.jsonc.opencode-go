@@ -27,7 +27,11 @@
     "codebase-memory-mcp_detect_changes": "allow",
     "codebase-memory-mcp_list_projects": "allow",
     "codebase-memory-mcp_index_status": "allow",
-    "delegate": "deny"
+    "delegate": "deny",
+    "delegate_dispatch": "deny",
+    "delegate_sessions": "deny",
+    "delegate_suspend": "deny",
+    "delegate_cancel": "deny"
   },
   "agent": {
     "build": {
@@ -361,6 +365,10 @@
         },
         "question": "allow",
         "delegate": "allow",
+        "delegate_dispatch": "allow",
+        "delegate_sessions": "allow",
+        "delegate_suspend": "allow",
+        "delegate_cancel": "allow",
         "codebase-memory-mcp_index_repository": "ask",
         "codebase-memory-mcp_ingest_traces": "ask",
         "codebase-memory-mcp_manage_adr": "ask",

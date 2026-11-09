@@ -108,7 +108,9 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 
 | 字段 | 含义 |
 |---|---|
-| `outcome` | `succeeded` / **`unverified`（宿主报成功但无交付证据，不得当完成）** / `failed` / `interrupted` / `unknown`（没有新活动，结论不可信）/ `busy`（上次运行仍在进行，别排队） |
+| `event` | **独立字段（不塞进 `outcome`）**：`dispatched`（异步派发已投递）/ `dispatch_failed`（投递失败或结果未知）/ `cancelled`（被终止）。⚠️ 这些行**没有** `outcome` 语义，消费者按 `event` 分派 |
+| `outcome` | `succeeded` / **`unverified`（宿主报成功但无交付证据，不得当完成）** / `failed` / `interrupted` / `unknown`（没有新活动，结论不可信）/ `busy`（上次运行仍在进行，别排队）/ **`vanished`（后端被外部删除；与「从未派发」的区分点是该后端曾有 `event:"dispatched"` 行）** |
+| `state` | 槽位登记态（仅异步派发面）：`dispatching` / `active` / `idle` / `suspended` / `tombstone` |
 | `blocked_reason` | 被权限拦住了 —— **不要换写法绕过**，把被拒操作报给用户，问是否追加 grant |
 | `out_of_scope_files` | 本次改了 scope 外的文件 —— 必须点名告知用户 |
 | `changed_files` | 本次委托期间新增/变更的文件（前后 `git status` 差集） |
@@ -139,7 +141,9 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| front 工具列表里没有 `delegate` | 门控异常 | 明确报错，**不要**用 shell 脚本绕过 |
+| front 工具列表里没有 `delegate` / `dispatch` / `sessions` / `suspend` / `cancel` | 门控异常 | 明确报错，**不要**用 shell 脚本绕过 |
+| `dispatch` 返回 `state:"dispatching"` | 简报已入队但**未被确认消费** | 该后端暂**不可** `suspend`（旧简报会抢先跑）；稍后 `sessions` 复查，或 `cancel` 后重派 |
+| 派发被拒且错误里有后端 id | 同一工作树已有活跃后端（单槽） | 先 `suspend` 那个后端再派；**不要**换个写法硬闯 |
 | `Permission denied: external_directory` | 目标路径不在允许目录 | 问用户是否放开该路径 |
 | `outcome: busy` | 目标 session 还在跑 | 等待，不要新建顶替 |
 | `outcome: unknown` | 没有新活动 | 明确说"未拿到可信结果"，可重试一次 |

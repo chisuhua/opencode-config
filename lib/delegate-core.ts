@@ -87,6 +87,170 @@ export const ALLOWED_AGENTS = new Set<string>(["build", ...READONLY_AGENTS])
 
 export type DelegateKind = "engineering" | "knowledge"
 
+// ─────────────────── front-multi-backend：槽位与目标判等 ───────────────────
+
+/**
+ * 槽位登记态（ADR D6.3）。
+ *
+ * `dispatching` 也**占槽**——它的简报可能仍 pending 在上游 inbox（Phase 0 实测坐实），
+ * 放行它等于让第二份简报与它并发写同一工作树。
+ */
+export type SlotState = "dispatching" | "active" | "idle" | "suspended" | "tombstone"
+
+export const SLOT_STATES: readonly SlotState[] = [
+  "dispatching",
+  "active",
+  "idle",
+  "suspended",
+  "tombstone",
+]
+
+/** 占据槽位的两种状态。 */
+export const SLOT_OCCUPYING: readonly SlotState[] = ["dispatching", "active"]
+
+/**
+ * 目标判等键（ADR D3）。
+ *
+ * - `repo` = `canonical_root`（stateRoot）：判等回答"是不是**同一个项目**"，
+ *   同一项目的不同工作树仍是同一项目 ⇒ 取 stateRoot（AC41）。
+ * - `intent` = kebab slug：判等回答"是不是**同一个目标**"。
+ */
+export interface GoalKey {
+  repo: string
+  intent: string
+}
+
+export function isSlotState(value: unknown): value is SlotState {
+  return typeof value === "string" && (SLOT_STATES as readonly string[]).includes(value)
+}
+
+/** kebab slug：ADR D3 约定 front 自行确定并在续接时复用同一 slug。 */
+export function isKebabSlug(value: unknown): boolean {
+  return typeof value === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
+}
+
+/**
+ * 同 `workRoot` 下**占槽**的条目（纯函数）。
+ *
+ * 槽位键 = `workRoot`（ADR D6.1）：同一仓的多个 linked worktree 各自一槽；
+ * 同一工作树内一次只能一个占槽（ADR D6.2）。
+ *
+ * `work_root` 缺失的**存量条目**不参与判定——它们的工作树未知，
+ * 宁可漏判也不误判（存量条目由 `backfillPairEntry` 回填后才进入槽位表）。
+ */
+export function slotOccupants(
+  pairs: Record<string, any> | undefined,
+  workRoot: string,
+): Array<{ session_id: string; state: SlotState; work_root: string }> {
+  if (!pairs || typeof pairs !== "object") return []
+  const out: Array<{ session_id: string; state: SlotState; work_root: string }> = []
+  for (const [sessionID, entry] of Object.entries(pairs)) {
+    if (!entry || typeof entry !== "object") continue
+    const wr = entry.work_root
+    if (typeof wr !== "string" || wr !== workRoot) continue
+    const state = entry.state
+    if (!isSlotState(state) || !SLOT_OCCUPYING.includes(state)) continue
+    out.push({ session_id: sessionID, state, work_root: wr })
+  }
+  return out
+}
+
+/** 占槽者（第一个）；无占槽者返回 undefined。 */
+export function slotHolder(
+  pairs: Record<string, any> | undefined,
+  workRoot: string,
+): { session_id: string; state: SlotState; work_root: string } | undefined {
+  return slotOccupants(pairs, workRoot)[0]
+}
+
+/**
+ * 存量 pair 条目的**一次性回填**（AC40）。
+ *
+ * - 缺 `work_root` ⇒ 按 `canonical_root` 补（退化为原粒度，**不误判为同树**）。
+ * - 缺 `state` ⇒ 按**活体判据**补（`busy` ⇒ `active`，否则 `idle`）。
+ *   ⚠️ **不得一律默认 `idle`**——那等于给存量后端放行第二个写入者。
+ * - **已有字段一律不改**（部分迁移条目：只缺哪个补哪个）。
+ *
+ * 返回**新对象**，不改原对象（纯函数，可单测）。
+ */
+export function backfillPairEntry(entry: any, fallbackWorkRoot: string, busy: boolean): any {
+  const base = entry && typeof entry === "object" ? { ...entry } : {}
+  if (typeof base.work_root !== "string" || base.work_root.length === 0) {
+    base.work_root = fallbackWorkRoot
+  }
+  if (!isSlotState(base.state)) {
+    base.state = busy ? "active" : "idle"
+  }
+  return base
+}
+
+/**
+ * 活体判据（ADR D4 / AC21）：是否**正在跑**。
+ *
+ * 三级取值源（AC21）：
+ * 1. `time.busy` 存在且（`idle` 未定义/为 0 或 `busy > idle`）⇒ running。
+ * 2. 无 `busy` 但**有未终结活动**（最后消息时间晚于最后空闲时间）⇒ running
+ *    （首次运行中的 session 从未 idle 过，AC22 的窗口期）。
+ * 3. 否则 ⇒ 不在跑。
+ *
+ * ⚠️ **不可用作「消费」判据**：Phase 0 实测 pending 窗口的 `time` 只有
+ * `created`/`updated`，**无 `busy`/`idle`**（消费只由 context 的 id 比对判定）。
+ */
+export function isRunning(info: any, messages?: any[]): boolean {
+  const busy = toMillis(info?.time?.busy)
+  const idle = toMillis(info?.time?.idle)
+  if (busy > 0 && (idle === 0 || busy > idle)) return true
+  if (busy === 0 && Array.isArray(messages) && messages.length > 0) {
+    const last = lastMessageAt(messages)
+    if (last > idle) return true
+  }
+  return false
+}
+
+/** `session.context()` 里的消息 id 集合（Phase 0：消费判据的精确形式）。 */
+export function contextMessageIds(messages: any): Set<string> {
+  const arr = Array.isArray(messages) ? messages : []
+  const ids = new Set<string>()
+  for (const m of arr) {
+    const id = m?.id
+    if (typeof id === "string" && id.length > 0) ids.add(id)
+  }
+  return ids
+}
+
+/** 槽位占用说明（拒绝时给 front 的可执行提示）。 */
+export function describeHolder(holder: { session_id: string; state: SlotState; work_root: string }): string {
+  return `后端 ${holder.session_id}（state=${holder.state}）已占用该工作树；先 suspend 它再派发`
+}
+
+/**
+ * 同 `workRoot` 下**仍在跑**的占槽条目（供**两个派发面共用**的槽位检查，AC50① / D7.4）。
+ *
+ * 「已空闲或已消失」的占槽条目不阻塞新派发（等同 reconcile-on-read 的读侧，
+ * 真正的写回翻转由 `dispatch` 的 `claimSlot` 完成）。
+ */
+export async function slotBusyHolders(
+  ctx: any,
+  stateRoot: string,
+  workRoot: string,
+  excludeSessionID?: string,
+): Promise<Array<{ session_id: string; state: SlotState; work_root: string }>> {
+  const candidates = slotOccupants(readPairs(stateRoot), workRoot).filter(
+    (c) => c.session_id !== excludeSessionID,
+  )
+  const busy: Array<{ session_id: string; state: SlotState; work_root: string }> = []
+  for (const c of candidates) {
+    try {
+      const info = await ctx.session.get({ sessionID: c.session_id })
+      if (isRunning(info)) busy.push(c)
+    } catch {
+      // 后端已消失 ⇒ 不再占槽
+    }
+  }
+  return busy
+}
+
+
 /** kind 由 agent 推导，不由调用方声明（front 无法伪造类型）。 */
 export function kindOfAgent(agent: string): DelegateKind {
   return agent === "build" ? "engineering" : "knowledge"
@@ -264,6 +428,7 @@ export function validateBrief(input: any): {
   grants: Array<{ action: string; resource: string; effect: string }>
   resume_session?: string
   remove: boolean
+  goal_key?: GoalKey
 } {
   const projectDir = String(input.project_dir ?? "")
   if (projectDir.length === 0) throw fail("project_dir 必填")
@@ -310,6 +475,20 @@ export function validateBrief(input: any): {
     throw fail("知识 session 不接受 grants（只读语义不允许任何预批放宽）")
   }
 
+  // goal_key（ADR D3）：**可选但格式受检**。必填由 dispatch 工具按 kind 检查
+  // ——既有 delegate 路径不引入新必填字段（既有判据不得变化，AC50）。
+  let goal_key: GoalKey | undefined
+  const rawKey = input.goal_key
+  if (rawKey !== undefined && rawKey !== null) {
+    if (typeof rawKey !== "object") throw fail("goal_key 必须是对象 {repo?, intent}")
+    const intent = String((rawKey as any).intent ?? "")
+    if (!isKebabSlug(intent)) {
+      throw fail(`goal_key.intent 必须是 kebab slug（^[a-z0-9]+(-[a-z0-9]+)*$）: ${intent || "(空)"}`)
+    }
+    const repo = (rawKey as any).repo === undefined ? undefined : String((rawKey as any).repo)
+    goal_key = { repo: repo ?? "", intent }
+  }
+
   return {
     project_dir: projectDir,
     agent,
@@ -323,6 +502,7 @@ export function validateBrief(input: any): {
     grants,
     resume_session: resume,
     remove,
+    goal_key,
   }
 }
 
@@ -418,8 +598,49 @@ export function writeJsonAtomic(file: string, value: any): void {
   renameSync(tmp, file)
 }
 
+/**
+ * role.json 的 `sessions` 分区写入（**调用方必须已持有 `.role.lock`**）。
+ *
+ * 与 `registerSession` 的关系：`registerSession` = 取锁 + 写 pair + 写 role；
+ * 本函数 = 只写 role（供「槽位检查 + 登记 + role 分区」必须同处一个临界区的场景）。
+ */
+export function writeRoleSession(root: string, sessionID: string, agent: string): void {
+  const stateDir = path.join(root, ".rddf", "state")
+  const roleFile = path.join(stateDir, "role.json")
+  const role = readJson(roleFile) ?? {}
+  const sessions = role.sessions && typeof role.sessions === "object" ? role.sessions : {}
+  sessions[sessionID] = {
+    current_role: agent === "build" ? "builder" : agent,
+    auto_switch_window: null,
+    auto_answer: null,
+    updated_at: new Date().toISOString(),
+  }
+  role.sessions = sessions
+  role.current_role = role.current_role ?? sessions[sessionID].current_role
+  role.updated_at = new Date().toISOString()
+  writeJsonAtomic(roleFile, role)
+}
+
+/**
+ * pair.json 的**条目集合**读写（front-multi-backend 槽位表用）。
+ *
+ * - `readPairs`：**无锁**读（调用方负责一致性判定；槽位判定走「锁外读 → 锁内重验」）。
+ * - `writePairs`：**调用方必须已持有 `.role.lock`**（否则与 registerSession 竞态）。
+ */
+export function readPairs(root: string): Record<string, any> {
+  const pair = readJson(path.join(root, ".rddf", "state", "pair.json"))
+  if (!pair || typeof pair.pairs !== "object") return {}
+  return pair.pairs as Record<string, any>
+}
+
+/** pair.json 写入（调用方必须已持有 `.role.lock`）。 */
+export function writePairs(root: string, pairs: Record<string, any>): void {
+  const pairFile = path.join(root, ".rddf", "state", "pair.json")
+  writeJsonAtomic(pairFile, { version: "pair-v2", pairs })
+}
+
 /** ledger 行（JSONL）追加；调用方必须已持有 `.role.lock`。 */
-function appendLedgerLine(root: string, row: any): void {
+export function appendLedgerLine(root: string, row: any): void {
   const stateDir = path.join(root, ".rddf", "state")
   mkdirSync(stateDir, { recursive: true })
   appendFileSync(path.join(stateDir, "ledger.jsonl"), JSON.stringify(row) + "\n")
@@ -447,6 +668,10 @@ export function redactAndTruncate(text: string, max = 800): string {
  * 登记 pair + role.json 的 session 分区（single writer = 本插件）。
  * `kind=knowledge` 只写 pair（含 kind 字段），**不触碰 role.json**——
  * 否则会在 sessions 分区产生非法 `current_role`（如 "explore"）。
+ *
+ * `extra`（front-multi-backend）：`work_root`（工作树根 = 槽位键）/ `state`（槽位登记态）/
+ * `goal_key`（目标判等键）。**已存在的条目里这些字段不被覆盖**（除显式传入），
+ * 存量条目缺字段时由 `backfillPairEntry` 一次性回填。
  */
 export function registerSession(
   root: string,
@@ -455,6 +680,7 @@ export function registerSession(
   agent: string,
   kind: DelegateKind = kindOfAgent(agent),
   ledgerRow?: any,
+  extra?: { work_root?: string; state?: SlotState; goal_key?: GoalKey },
 ): void {
   const stateDir = path.join(root, ".rddf", "state")
   const lockDir = path.join(stateDir, ".role.lock")
@@ -472,22 +698,15 @@ export function registerSession(
       registered_at: existing?.registered_at ?? new Date().toISOString(),
       last_used_at: new Date().toISOString(),
     }
+    // front-multi-backend：槽位与目标字段。**未传入的字段沿用已有值**（不覆盖），
+    // 存量条目缺字段时保持缺失，由 `backfillPairEntry` 在观测路径回填（AC40）。
+    if (extra?.work_root !== undefined) pairs[sessionID].work_root = extra.work_root
+    if (extra?.state !== undefined) pairs[sessionID].state = extra.state
+    if (extra?.goal_key !== undefined) pairs[sessionID].goal_key = extra.goal_key
     writeJsonAtomic(pairFile, { version: "pair-v2", pairs })
 
     if (kind === "engineering") {
-      const roleFile = path.join(stateDir, "role.json")
-      const role = readJson(roleFile) ?? {}
-      const sessions = role.sessions && typeof role.sessions === "object" ? role.sessions : {}
-      sessions[sessionID] = {
-        current_role: agent === "build" ? "builder" : agent,
-        auto_switch_window: null,
-        auto_answer: null,
-        updated_at: new Date().toISOString(),
-      }
-      role.sessions = sessions
-      role.current_role = role.current_role ?? sessions[sessionID].current_role
-      role.updated_at = new Date().toISOString()
-      writeJsonAtomic(roleFile, role)
+      writeRoleSession(root, sessionID, agent)
     }
 
     if (ledgerRow) appendLedgerLine(root, ledgerRow)
@@ -732,6 +951,16 @@ export function delegateToolDefinition(ctx: any): any {
           const { stateRoot, workRoot, vcs } = canonicalRoot(brief.project_dir)
           const frontSessionID = toolContext?.sessionID
 
+          // —— 槽位检查（AC50① / ADR D7.4）：与 `dispatch` **共用同一张槽位表** ——
+          // 同工作树已有**仍在跑**的占槽后端 ⇒ 拒绝（不排队、不并发写同一工作树）。
+          // 「已空闲/已消失」的占槽条目不阻塞（真正的写回翻转由 dispatch 的 claimSlot 完成）。
+          const busyHolders = await slotBusyHolders(ctx, stateRoot, workRoot, brief.resume_session)
+          if (busyHolders.length > 0) {
+            throw fail(
+              `${describeHolder(busyHolders[0])}；既有 delegate 与 dispatch 共用槽位表（ADR D7.4）`,
+            )
+          }
+
           // —— resume 校验：必须在该工程仓库的 pair 登记表内 ——
           // 登记表本身就是访问控制（只能续接本工程登记过的 session）。
           // 不硬校验 front_session_id：每次新对话都是新 front session，硬校验会让
@@ -799,7 +1028,10 @@ export function delegateToolDefinition(ctx: any): any {
           // 登记必须发生在 prompt 之前：工程 session 开局就要读自己的 role.json 分区，
           // 否则它会去找全局 fallback，而全局 fallback 属于 external_directory（默认 deny）。
           // 落盘根 = stateRoot（worktree 下是主仓——两份状态分裂会导致 resume 查无此条）。
-          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, kind)
+          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, kind, undefined, {
+            work_root: workRoot,
+            state: "active",
+          })
           // 变更检测基准 = workRoot（在主仓跑 git status 数不到 worktree 的变更）。
           const statusBefore = vcs ? gitStatusPaths(workRoot) : []
 
@@ -922,6 +1154,10 @@ export function delegateToolDefinition(ctx: any): any {
             write_tool_calls: delivery.write_tool_calls,
             final_is_role_opening: delivery.final_is_role_opening,
             model_switched: delivery.model_switched,
+          }, {
+            // AC46①：同步 `delegate` 的 `wait` 返回即本轮结束 ⇒ **自翻转 idle**（不占槽）
+            work_root: workRoot,
+            state: "idle",
           })
 
           if (brief.remove) {
