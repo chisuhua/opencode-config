@@ -156,3 +156,107 @@
 - **实施报告 §4 的完成度陈述不成立**（把 AC25/AC48/AC54 列为已实现）——已在本报告 §1.2 更正。
 
 **已用轮次 1 / 3。** 下一轮：builder 补齐 AC25/AC48/AC54/AC18/AC47③/AC35④ + 文档三处；architect 决 AC13。
+
+
+---
+
+# 第 2 轮验收：2026-11-10
+
+| 字段 | 值 |
+|---|---|
+| 日期 | 2026-11-10 |
+| 验收者 | verifier |
+| 范围 | `72f0b4b`（D12 矩阵实现 + AC36 两处同步）+ `12cf6c0`（AC57 往返 + groups + §2.1 图对齐） |
+| 判据来源 | `proposal.md` 的 `## 验收标准`（AC1–AC58）+ ADR `ADR-front-multi-backend` Verification 1–49 / D12 |
+| 分流判定 | **未命中 `rdd-verifier` skill**（无 `iteration.json` ⇒ P3 gate 未触发）→ 走本地验收 1–5 步 |
+| 结论 | **PASS（附 1 条测试质量缺陷 + 4 项需外部条件/不可判定）** |
+| 已用轮次 | **2 / 3** |
+
+## 0. 验证顺序与结果
+
+| 步 | 内容 | 结果 |
+|---|---|---|
+| 1 | 编译 / 静态检查 | ✅ **零新增真类型错误**：`delegate-core.ts` 逐类与基线（HEAD~2）一致（2×TS2345 + 5×TS2591 + 4×TS7006）；`delegate-async.ts`（新文件）仅 5×TS2591 + 2×TS5097 = **既有基线类型**（缺 `@types/node`、`.ts` 扩展名），无真错误 |
+| 2 | 单元测试 | ✅ `bun test tests/` → **228 pass / 0 fail**（既有 172 零回归 + 新增 56） |
+| 3 | 集成（**独立夹具**，不复用 builder 的测试文件） | ✅ **49 PASS / 0 FAIL**（两个独立脚本：23 + 26） |
+| 4 | 边界与错误路径 | ✅ **8/8**（缺 goal_key / 非 kebab / 目录不存在 / 相对路径 / 空 session_id ×2 / 不存在的后端 ×2 ⇒ 明确结果而非抛错） |
+| 5 | 遗留清扫复核 | ✅ **0 遗留**（TODO / console.log / skip 测试 / 未替换 mock / 注释代码 全为无） |
+
+## 1. 第 1 轮 FAIL 的 6 项缺口 —— 全部独立验证闭合（23 PASS）
+
+| AC | 独立证据 | 判定 |
+|---|---|---|
+| **AC25** `stalled` 阈值 | 默认 5min ✓；`RDDF_STALLED_THRESHOLD_MS` 覆盖 ✓；超阈值⇒stalled、**等于阈值不算**、非 running 不算 ✓；**不落盘**（pair.json 无该字段）✓ | ✅ |
+| **AC47③** 悬挂标记 | 仅「占槽 + 不跑 + 超阈值」为 true ✓；刚派发不报 ✓；把 `time.updated` 推远后报 ✓ | ✅ |
+| **AC54** steer 残留 | 基线不在⇒`undetectable` ✓；有额外 user⇒`suspected` ✓；**只有本次简报⇒`none`（负例）** ✓；assistant 不算 ✓；集成：suspend 记录基线 ✓、干净恢复⇒none ✓、暂停期间注入陈旧 user⇒suspected ✓ | ✅ |
+| **AC48** 亡主接管 | 归属**存活** front ⇒ suspend 拒绝（错误含「另一个 front」）✓；**亡主** ⇒ 允许回收 ✓ + 落 `event:"taken_over"` ledger 行 ✓ | ✅ |
+| **AC18** grant 救援 | 续接同目标 + 补 grant 不被拒、session 复用 ✓ | ✅ |
+| **AC35④** 架构文档 | §4.4 单槽口径段存在 ✓；含槽位键/常驻-活跃/投递≠消费/翻转执行者 ✓；含锁形态两条硬禁 ✓；**§2.1 图所有边框行 = 80 显示列** ✓ | ✅ |
+
+## 2. D12 处置矩阵 —— 逐格独立验证（12 格全过）
+
+| 场景 | 期望 | 实测 |
+|---|---|---|
+| `dispatch(resume=已删)` | 新 session ≠ 已删 session ✓；旧条目 `tombstone` ✓；落 `outcome:"vanished"` 终态行（**无 `event` 字段**）✓ | ✅ |
+| 死槽解除 | 新派发被拒但**占槽者是新后端**（已删的不再占槽）✓；放开新后端后可再派发 ✓ | ✅ |
+| `suspend` 已删 + active | 释放槽位并置 `suspended` ✓ | ✅ |
+| `suspend` 已删 + idle | **幂等 no-op**（state 不变）✓ | ✅ |
+| `suspend` 已删 + tombstone | 拒绝 ✓ | ✅ |
+| `cancel` 已删 + 非墓碑 | `tombstone` + `vanished` 行 ✓ | ✅ |
+| `cancel` 已删 + 墓碑 | 幂等 no-op ✓ | ✅ |
+| 定位不到工程仓 | 返回明确结果、**不抛错** ✓ | ✅ |
+
+## 3. AC57 往返 + groups（独立验证，7/7）
+
+A 自然跑完（不调 `sessions`）→ 派 B 成功 ✓ → 名册**按 `work_root` 同组**列出 A(idle)/B(active) ✓ → **单步 resume A 被拒**（错误含占槽者 id）✓ → 两步切回（`suspend(B)` → `resume(A)`）成功且 `session.id` 未变、消息条数单调增长 ✓；`groups` 的 null 组排最后且不丢弃 ✓。
+
+## 4. 锁形态（静态独立核对）
+
+`withLock` 回调内**无 `await`**、**未调用** `appendLedger` / `registerSession` / `updateSlotState`（自取锁或自取锁包装）✓ ⇒ 满足 ADR D7.1 与证据规则 10 的两条硬禁。
+
+## 5. 唯一发现（测试质量，非实现缺陷）
+
+### F1 —— builder 的「死槽解除」回归用例是**空过**的
+
+`tests/delegate-async.test.ts` 的 `setupVanished` 里：
+
+```ts
+;(ctx as any).session.get = async (input: any) => {
+  if (input.sessionID === a.session_id) throw new Error("404 session not found")
+  const s = (ctx as any).session
+  return s.get.call(null, input)   // ← s.get 读到的已是**被覆盖后的自己**
+}
+```
+
+⇒ `s.get.call(...)` **自我递归** ⇒ 栈溢出。实测：`RangeError: Maximum call stack size exceeded`（独立脚本复现）。
+
+该异常被 `delegate-async.ts` 的 `readSessionInfo` 捕获 ⇒ 判为 `missing` ⇒ **活体判定失真**（把「活的」后端当成「已删的」）。
+
+⇒ 后果：该用例断言的「resume 已删后同 workRoot 可再派发」**并不能证明死槽已解除** —— 它在死槽 bug 存在时也会通过。
+
+**但实现本身是对的**：本轮用**独立夹具**逐格验证（§2），死槽确已解除。
+
+- **分类**：`implementation_gap`（测试质量）——**不是** `proposal_drift`
+- **严重度**：低（不掩盖实现缺陷，只让回归网失真）
+- **路由**：**builder** 修 `setupVanished` 的覆盖写法（保存原函数引用再调，或改用 `opts.missing` 机制）；修完须复跑该用例确认它**仍绿**（在正确夹具下）
+
+## 6. 不可判定项（需外部条件，**不判通过也不判失败**）
+
+| AC | 原因 |
+|---|---|
+| **AC1**（四工具「实际可调用」） | 权限矩阵已证（`opencode debug agents` 实测：front 五 action allow、其余 agent 全 deny）；**「实际可调用」需真实 front 会话** ⇒ 需重启服务 + E2E（T7.1） |
+| **AC11 / AC12**（真实 front 换代找回） | 单测覆盖 cursor 续扫与 roster 为空路径；**真实换代未跑** |
+| **AC44 有界时延**（连续 10 次 ≥8 次 60s 内进 `active`） | 需真实模型跑 10 次 |
+| **AC44 的 E2E 面** / 既有 E2E 回归 | 外部仓库 bats L2-16.. 未新增（T7.1） |
+| **AC57**（完整往返的 E2E 面） | 单测已覆盖；E2E 待 bats |
+
+## 7. 判定
+
+**PASS。**
+
+- 第 1 轮的 3 项**完全未实现**（AC25 / AC48 / AC54）+ 3 项缺证据/文档（AC18 / AC47③ / AC35④）→ **本轮全部闭合**（独立验证 23 PASS）。
+- D12 处置矩阵 12 格、AC57 往返 7 项、边界 8 项、锁形态静态核对 → 全过。
+- 静态零新增真类型错误；228 pass / 0 fail；遗留清扫 0 遗留。
+- **唯一发现 F1 是测试质量缺陷**（回归网失真），实现本身经独立夹具验证正确 ⇒ 不构成否决，但**建议 builder 修夹具后复跑**。
+
+**已用轮次 2 / 3。** 剩余不可判定项全部卡在**外部条件**（E2E bats 外部仓库 + 真实模型），不在本地可解范围。
