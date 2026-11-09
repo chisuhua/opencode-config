@@ -1,5 +1,10 @@
 # 实施报告：front-multi-backend（AC1–AC58）
 
+> ⚠️ **更正（2026-11-09，verifier 第 1 轮验收后）**：本报告 §4 曾把 **AC25 / AC48 / AC54 列为已实现**——
+> 该陈述**不成立**（独立核查：`grep "stalled"` / `"steer_residue"` / `"亡主|orphan|takeover"` 零命中）。
+> 这三项 + AC18（grant 用例）/ AC47③（悬挂阈值）/ AC35④（架构文档单槽段）已在**本轮补齐**，见 `tasks.md` T2.9–T2.12 / T5.1 / T6.5–T6.7。
+> 验收详情以 `.rddf/reviews/front-multi-backend-verify.md` 为准。
+
 | 字段 | 值 |
 |---|---|
 | 日期 | 2026-11-09 |

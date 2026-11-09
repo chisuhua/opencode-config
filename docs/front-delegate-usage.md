@@ -8,7 +8,8 @@
 
 - **front session**：跟你对话的前台。它不碰代码，只做三件事——判意图、读状态、组委托。
 - **工程 session**：真正干活的 session（agent=`build`，跑完整角色矩阵），在目标工程目录里改文件、跑测试。
-- **delegate 工具**：front → 工程 session 的**唯一**通道（一个 opencode 插件工具，`~/.config/opencode/plugins/delegate.ts`）。
+- **delegate 插件的五个工具**：front → 工程 session 的**唯一门控出口**（`~/.config/opencode/plugins/delegate.ts`）：
+  `delegate`（同步等结果）/ `dispatch`（异步派发）/ `sessions`（只读看进度）/ `suspend`（暂停可续）/ `cancel`（终止）。
 
 ```
 你 ──对话──▶ front ──delegate 工具──▶ 工程 session（build）──▶ 改文件 / 跑测试
@@ -20,9 +21,10 @@
 
 | 性质 | 含义 |
 |---|---|
-| **唯一工程通道** | front 的一切**工程行动**（文件变更）都经 `delegate`；没有第二条写通道。理解性的只读调研可另召五个只读 subagent（v2.5） |
+| **唯一门控出口** | front 的一切**工程行动**（文件变更）都经 `delegate` 插件；没有第二条写通道。注意「唯一」指**门控边界**（同一插件 + 每工具独立权限 action + 全局 deny + 仅 front allow），**不是工具名**——五个工具共用一套门控。理解性的只读调研可另召五个只读 subagent |
 | **权限层强制** | front 的能力边界由 `opencode.jsonc` 的权限块决定，不是 prompt 里的承诺 |
-| **front 专属** | `delegate` 只对 front 可见；其他 agent（含 build）调用时工具根本不存在 |
+| **front 专属** | 五个工具都只对 front 可见；其他 agent（含 build）调用时工具根本不存在 |
+| **同一工作树单槽** | 同一个 git 工作树里，**同一时刻只允许一个后端在跑**（避免两个后端并发写同一批文件）。要并行 ⇒ 用不同的仓或不同的 git worktree |
 | **知识 session** | `delegate` 也可用只读 agent（`explore`/`librarian`/`oracle`/`metis`/`critic`）建"知识 session"：无写权限、不登记角色、产物是回答 |
 
 ## 2. 快速上手
@@ -222,11 +224,52 @@ front 从该工程的 `pair.json` 找到登记的工程 session，续接它（`r
 
 需要读另一个仓库 → `external_directory` 默认 deny → front 会问你是否放开该路径（走 grants）。
 
+### 场景 G：同时推进多个任务（并发派发）
+
+> "这三个模块的改造并行做，别一个一个等。"
+
+front 会用 **`dispatch`**（异步派发）分别派出去，每个后端**立即返回**、互不等待。
+
+⚠️ **`dispatch` 返回 ≠ 任务完成**——它只证明"简报已投递并被确认取走"，**不证明活儿干完了**。
+要结论必须问进度（场景 H）或用 `delegate` 同步等。
+
+⚠️ **同一个工作树仍是一次一个**（单槽）。三个模块在同一仓的同一工作树里 ⇒ 只能串行；
+要真并行，先给每个后端准备独立工作树（`git worktree add`），再分别 `dispatch` 到各自目录。
+
+### 场景 H：问后端进度
+
+> "刚才那三个后端现在什么状态？"
+
+front 用 **`sessions`** 查看。它是**只读**的——只看不动，**不会**给后端投递任何消息（所以查多少次都不会污染后端上下文）。
+
+返回里会给出整体结论（进行中 / 已终结 / 无可验证交付）以及**每个后端的明细**。
+`无可验证交付` 的意思是"跑完了但没找到可验证的产物"，**不等于**"没有产出"（产物可能落在 git 视野外）。
+
+### 场景 I：临时切走，稍后再回来
+
+> "先停下 A，让 B 跑；A 那个别丢，晚点接着做。"
+
+front 会用 **`suspend`** 暂停 A（**保留上下文**，不是杀掉），再 `dispatch`/`delegate` 让 B 上。
+之后想回到 A，用**同一个目标**续接即可，A 的历史还在。
+
+⚠️ 如果 A 刚派发、简报还没被确认取走（状态 `dispatching`），front **不能** suspend 它——
+这时只能用 `cancel`（因为那份没被取走的简报会在恢复时抢先执行）。
+
+### 场景 J：这个任务不要了
+
+> "算了，A 那个不做了。"
+
+front 用 **`cancel`**。这是**终止**：后端被标为墓碑，**永久不能再续接**，再派必须新建。
+若后端其实已经跑完了，`cancel` 是空操作（不会误伤）。想保留上下文就改用 `suspend`。
+
 ## 10. 排障
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| front 工具列表里没有 `delegate` | 插件没加载 / 服务没重启 | `opencode service restart`，再 `opencode plugin list` 看 `front-delegate` 在不在 |
+| front 工具列表里没有 `delegate` / `dispatch` / `sessions` / `suspend` / `cancel` | 插件没加载 / 服务没重启 | `opencode service restart`，再 `opencode plugin list` 看 `front-delegate` 在不在 |
+| 派发被拒，错误里有个后端 id | 同一工作树已有活跃后端（单槽） | 让 front 先 `suspend` 那个后端再派；或换到另一个 git worktree |
+| `dispatch` 返回 `state: "dispatching"` | 简报已入队但**未被确认消费** | 该后端暂不可 `suspend`；让 front 稍后用 `sessions` 复查，或 `cancel` 后重派 |
+| `sessions` 报「槽位疑似悬挂」 | 登记说占槽、实际已不在跑且超出阈值 | 让 front `suspend` 回收（幂等），之后可重新派发 |
 | front 改了配置没生效 | 后台服务缓存了配置 | `opencode service restart` |
 | front 读某个目录被拒 | `external_directory` 路径白名单 | 正常行为；需要就授权 |
 | `outcome: busy` | 目标工程 session 还在跑 | 等一会儿重试 |
@@ -242,6 +285,8 @@ front 从该工程的 `pair.json` 找到登记的工程 session，续接它（`r
    只能靠工程 session 自报）。详见 ADR 风险段。
 3. **工程 session 的 `shell` 权限来自 build 自身规则**，比 front 宽得多——这是有意的（工程 session 要真干活）。
 4. **front 的状态摘要是磁盘快照**，不是工程 session 的内存现场。
+5. **单槽保证有个前提**：后端 session **只经由这五个工具操作**。你若在 TUI 里直接对后端 session 打字或追加指令，
+   会产生插件看不见的排队指令，可能在后端恢复时被注入——这属于**明确声明的超出范围**。
 
 ## 12. 相关文档
 

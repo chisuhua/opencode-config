@@ -17,6 +17,10 @@ process.env.RDDF_CONSUME_TIMEOUT_MS = "200"
 
 import {
   aggregateStates,
+  detectSteerResidue,
+  isDangling,
+  isStalled,
+  stalledThresholdMs,
   cancelToolDefinition,
   contextMessageIds,
   dispatchToolDefinition,
@@ -594,5 +598,163 @@ describe("既有 delegate 与槽位表（AC50）", () => {
     }
     expect(err).toContain(backend.session_id)
     expect(err).toContain("槽位")
+  })
+})
+
+// ─────────────────── 存活推导：stalled / dangling（AC25 / AC47③） ───────────────────
+
+describe("stalled 阈值（AC25）", () => {
+  test("默认常量 5 分钟，可用 RDDF_STALLED_THRESHOLD_MS 覆盖", () => {
+    expect(stalledThresholdMs()).toBe(5 * 60 * 1000)
+    process.env.RDDF_STALLED_THRESHOLD_MS = "1000"
+    expect(stalledThresholdMs()).toBe(1000)
+    delete process.env.RDDF_STALLED_THRESHOLD_MS
+  })
+
+  test("running 且超阈值 ⇒ stalled；等于阈值不算；不在跑不算", () => {
+    const now = 1_000_000
+    expect(isStalled({ running: true, lastActivityAt: now - 2000, now, thresholdMs: 1000 })).toBe(true)
+    expect(isStalled({ running: true, lastActivityAt: now - 1000, now, thresholdMs: 1000 })).toBe(false)
+    expect(isStalled({ running: false, lastActivityAt: now - 9999, now, thresholdMs: 1000 })).toBe(false)
+    expect(isStalled({ running: true, lastActivityAt: 0, now, thresholdMs: 1000 })).toBe(false)
+  })
+
+  test("stalled 是推导态、不落盘（pair.json 不出现该字段）", async () => {
+    const dir = repo("stall-nopersist")
+    const { ctx } = createFakeCtx()
+    const r = await run(dispatchToolDefinition(ctx), baseInput(dir))
+    expect(JSON.stringify(readPairs(dir))).not.toContain("stalled")
+    expect(JSON.stringify(readPairs(dir))).toContain(r.session_id)
+  })
+})
+
+describe("槽位悬挂标记（AC47③）", () => {
+  test("仅当「占槽 + 不 running + 超阈值」才 dangling", () => {
+    const now = 1_000_000
+    const t = { now, thresholdMs: 1000 }
+    expect(isDangling({ state: "active", running: false, lastActivityAt: now - 5000, ...t })).toBe(true)
+    expect(isDangling({ state: "active", running: false, lastActivityAt: now - 500, ...t })).toBe(false)
+    expect(isDangling({ state: "active", running: true, lastActivityAt: now - 5000, ...t })).toBe(false)
+    expect(isDangling({ state: "idle", running: false, lastActivityAt: now - 5000, ...t })).toBe(false)
+    expect(isDangling({ state: "suspended", running: false, lastActivityAt: now - 5000, ...t })).toBe(false)
+  })
+
+  test("sessions 输出 slot.dangling 字段（超阈值时才 true）", async () => {
+    const dir = repo("dangling-out")
+    const { ctx, sessions } = createFakeCtx()
+    const r = await run(dispatchToolDefinition(ctx), baseInput(dir))
+    // 刚派发：不超阈值 ⇒ 不悬挂
+    let out = await run(sessionsToolDefinition(ctx), {}, "f")
+    expect(out.items[0].slot.dangling).toBe(false)
+    // 把最后活动时间推到很久以前 + 标记不在跑
+    const s = sessions.get(r.session_id)
+    s.busy = false
+    s.idle = Date.now()
+    s.updated = Date.now() - 10 * 60 * 1000
+    out = await run(sessionsToolDefinition(ctx), {}, "f")
+    expect(out.items[0].slot.dangling).toBe(true)
+  })
+})
+
+// ─────────────────── steer 残留（AC54） ───────────────────
+
+describe("steer 残留检测（AC54）", () => {
+  test("基线不在 context ⇒ undetectable；有额外 user ⇒ suspected；只有本次简报 ⇒ none", () => {
+    expect(detectSteerResidue([{ id: "m1" }], "m_missing", "brief")).toBe("undetectable")
+    expect(
+      detectSteerResidue(
+        [{ id: "m1" }, { id: "stale", type: "user" }, { id: "brief", type: "user" }],
+        "m1",
+        "brief",
+      ),
+    ).toBe("suspected")
+    expect(detectSteerResidue([{ id: "m1" }, { id: "brief", type: "user" }], "m1", "brief")).toBe("none")
+    // assistant 消息不算残留
+    expect(
+      detectSteerResidue([{ id: "m1" }, { id: "brief", type: "user" }, { id: "a1", type: "assistant" }], "m1", "brief"),
+    ).toBe("none")
+  })
+
+  test("suspend 记录暂停基线；干净 resume ⇒ none", async () => {
+    const dir = repo("res-none")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(readPairs(dir)[a.session_id].suspended_at_message_id).toBeTruthy()
+    await run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id })
+    expect(readPairs(dir)[a.session_id].steer_residue).toBe("none")
+  })
+
+  test("恢复时 context 里混入陈旧 user 消息 ⇒ suspected", async () => {
+    const dir = repo("res-suspect")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    // 模拟：暂停期间被注入的 steer 在恢复时被提升（一条陈旧 user 消息）
+    sessions.get(a.session_id).messages.push({ id: "msg_stale", type: "user", text: "stale steer" })
+    await run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id })
+    expect(readPairs(dir)[a.session_id].steer_residue).toBe("suspected")
+  })
+})
+
+// ─────────────────── 亡主接管（AC48） ───────────────────
+
+describe("亡主接管（AC48）", () => {
+  test("归属另一个**存活** front ⇒ suspend 拒绝（不静默顶掉）", async () => {
+    const dir = repo("orphan-alive")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 造一个**存在**的 front 会话，并把条目归属改成它
+    const front = await ctx.session.create({ location: { directory: dir }, agent: "general" })
+    const pairs = readPairs(dir)
+    pairs[a.session_id].front_session_id = front.id
+    writeFileSync(path.join(dir, ".rddf/state/pair.json"), JSON.stringify({ version: "pair-v2", pairs }))
+
+    let err = ""
+    try {
+      await suspendToolDefinition(ctx).execute({ session_id: a.session_id }, { sessionID: "ses_new_front" })
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain("另一个 front")
+    expect(err).toContain(front.id)
+  })
+
+  test("归属**已消失**的 front ⇒ suspend 允许回收，并落 taken_over ledger 行", async () => {
+    const dir = repo("orphan-dead")
+    const { ctx } = createFakeCtx({ missing: ["ses_gone_forever"] })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const pairs = readPairs(dir)
+    pairs[a.session_id].front_session_id = "ses_gone_forever"
+    writeFileSync(path.join(dir, ".rddf/state/pair.json"), JSON.stringify({ version: "pair-v2", pairs }))
+
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id }, "ses_new_front")
+    expect(r.suspended).toBe(true)
+    const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+    expect(ledger).toContain('"event":"taken_over"')
+    expect(ledger).toContain("ses_gone_forever")
+  })
+})
+
+// ─────────────────── grant 救援不误杀（AC18） ───────────────────
+
+describe("grant 救援路径（AC18）", () => {
+  test("既有 delegate 续接同一目标时带 grants 不被拒", async () => {
+    const dir = repo("grant-rescue")
+    const { ctx } = createFakeCtx()
+    const { delegateToolDefinition } = await import("../lib/delegate-core.ts")
+    const tool = delegateToolDefinition(ctx)
+    // 第一次委托建 session
+    const first = JSON.parse(
+      (await tool.execute(baseInput(dir, "goal-a"), { sessionID: "ses_front_test" })).content,
+    )
+    expect(first.session_id).toBeTruthy()
+
+    // 续接同一 session 并补 grant（救援路径）——不得被拒
+    const resumed = await tool.execute(
+      { ...baseInput(dir, "goal-a"), resume_session: first.session_id, grants: [{ action: "shell", resource: "*" }] },
+      { sessionID: "ses_front_test" },
+    )
+    expect(JSON.parse(resumed.content).session_id).toBe(first.session_id)
   })
 })

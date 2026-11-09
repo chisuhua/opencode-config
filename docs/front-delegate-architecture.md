@@ -193,7 +193,29 @@ agent：  agent.front.permission.delegate = "allow" → 唯一例外
 - **新活动判定**：用「**最后消息 id 变了 或 消息条数变了**」，之后才采信 `outcome`。
   `outcome` 单独用会把"运行中的 run2"报成"run1 成功"。
 
-### 4.4 delegate 工具的内部算法
+### 4.4 异步派发面的槽位模型（单槽）
+
+`dispatch` / `sessions` / `suspend` / `cancel` 与既有 `delegate` **共用同一张槽位表**
+（落 `pair.json`，键 = **`workRoot`**）。要点：
+
+| 概念 | 规则 |
+|---|---|
+| **槽位键** | `workRoot`（`abs(git rev-parse --show-toplevel)`）⇒ 同一仓的不同 linked worktree **各自一槽**；同一工作树内一次一个 |
+| **占槽态** | `dispatching`（简报已投递但**未确认消费**）/ `active`（已确认消费）。两种都占槽 |
+| **非占槽态** | `idle`（已登记未占槽）/ `suspended`（被暂停、可续）/ `tombstone`（终态） |
+| **常驻 vs 活跃** | 同一工作树可**常驻多个**后端（`idle`/`suspended`），同一时刻只有一个占槽 |
+| **切换** | `suspend(当前)` → `dispatch/resume(目标)`，**两步由 front 编排**（跨 session 的 interrupt+prompt 无法与上游投递原子化） |
+| **投递 ≠ 消费** | `prompt()` 返回 = **已入队**；消费 = 该简报的 `message.id` 出现在 `session.context()` 的消息 id 集合里。`dispatching` 只可 `cancel`（旧简报会抢先跑） |
+| **翻转执行者** | 同步 `delegate` 在 `wait` 返回时自翻转 `idle`；`dispatch` 派发的后端靠**每次派发时的 reconcile**（锁外查活体 → 锁内重验 → 锁内翻转） |
+| **悬挂标记** | 登记占槽 + 实际不 busy + 超 `stalled` 阈值 ⇒ 展示层报「槽位疑似悬挂」；**回收仍由 reconcile 完成** |
+
+**锁的形态（不可违反）**：`withLock` 是**同步** `() => void`、不可重入、10s deadline ⇒
+
+1. **锁内不得 `await`**（活体查询 / `interrupt` / `prompt` 全在锁外）；
+2. **锁内不得调用自取锁的函数**（`appendLedger` / `registerSession` 会二次取锁 ⇒ 死锁）；
+   锁内只用已持锁版本：`appendLedgerLine` / `writePairs` / `writeRoleSession`。
+
+### 4.5 delegate 工具的内部算法
 
 `delegateToolDefinition(ctx).execute(input, toolContext)` 的 18 步（对应 `lib/delegate-core.ts`）：
 
@@ -238,7 +260,7 @@ blocked_reason → 问用户 → 用户同意 → session.update(补一条 grant
 
 **不**新建 session、**不**全量重跑（早期设计假设 permissions 只能建时写，实测被推翻 → ADR D5.1）。
 
-### 4.5 `external_directory` 的边界（最容易误判的一条）
+### 4.6 `external_directory` 的边界（最容易误判的一条）
 
 上游确认（`packages/core/src/file-access.ts`）：
 
@@ -255,7 +277,7 @@ front 用 `cat /etc/passwd` **成功执行**（泄漏内容）。
 处置：front 的 shell 规则追加 **`"* /*": deny`**（命令文本含 `" /"` 即拒 → 禁绝对路径），
 跨目录访问一律走 `read`/`grep`/`glob`。这同时意味着：**front 读工程代码要用 grep/read 工具，不是 shell**。
 
-### 4.6 状态文件与并发
+### 4.7 状态文件与并发
 
 | 文件 | 位置 | schema | 写入方 |
 |---|---|---|---|
@@ -269,7 +291,7 @@ front 用 `cat /etc/passwd` **成功执行**（泄漏内容）。
   `withLock` 内做全部 RMW。**两侧写入方都必须取同一把锁**——只有一侧加锁等于无锁
   （ADR D6 明确要求工程 session 侧的角色切换写盘也改用这把锁，**该改动尚未落地**）。
 
-### 4.7 与 rdd-workflow 的边界
+### 4.8 与 rdd-workflow 的边界
 
 - front/delegate **不依赖** rdd-workflow：它只是"把任务交给一个 build agent 的工程 session"。
 - 工程 session 内部**可以**用 rdd-* skill（rdd-builder P0/P1.5/…），那是工程 session 的事。

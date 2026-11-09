@@ -30,10 +30,12 @@ import {
   fail,
   isRunning,
   isSlotState,
+  lastMessageID,
   lookupPair,
   readPairs,
   scopeEditRules,
   slotOccupants,
+  toMillis,
   validateBrief,
   withLock,
   writePairs,
@@ -89,6 +91,43 @@ export function newBriefMessageID(): string {
  * - 任一 running ⇒ 整体「进行中」，且**不进入 worst-of**（只对已终结后端算）。
  * - 全部已终结后端 `unverified` ⇒ 「无可验证交付」（措辞**不含**「没有产出」）。
  */
+/**
+ * AC54：steer 残留检测。
+ *
+ * 输入：恢复后的 `context`、**暂停时**的基线 message id、本次投递的简报 message id。
+ * 判据：基线之后的**新增消息**里，除本次简报外是否还有 `user`/`synthetic` 消息
+ * —— 陈旧的 steer 被提升后就是一条 `user` 消息。
+ *
+ * - 基线不在 context 里（历史被截断/删除）⇒ `undetectable`
+ * - 有额外 `user`/`synthetic` ⇒ `suspected`
+ * - 否则 ⇒ `none`
+ *
+ * ⚠️ 这是**事后检测**，拦不住执行本身（ADR D9 的残余风险）；`undetectable` 必须如实报，不得当成 `none`。
+ */
+export function detectSteerResidue(
+  messages: any,
+  baselineID: string,
+  briefMessageID: string,
+): "none" | "suspected" | "undetectable" {
+  const arr = Array.isArray(messages) ? messages : []
+  const idx = arr.findIndex((m) => m?.id === baselineID)
+  if (idx < 0) return "undetectable"
+  const extra = arr
+    .slice(idx + 1)
+    .filter((m) => m?.id !== briefMessageID && (m?.type === "user" || m?.type === "synthetic"))
+  return extra.length > 0 ? "suspected" : "none"
+}
+
+/** AC48：登记 front 是否仍存活（`get` 抛错 ⇒ 视为亡主）。 */
+export async function frontAlive(ctx: any, frontSessionID: string): Promise<boolean> {
+  try {
+    const info = await ctx.session.get({ sessionID: frontSessionID })
+    return !!info
+  } catch {
+    return false
+  }
+}
+
 export function aggregateStates(
   items: Array<{ state: string; running: boolean; outcome?: string | null }>,
 ): { overall: "completed" | "partial_unverified" | "in_progress" | "no_verifiable_delivery"; headline: string } {
@@ -119,6 +158,64 @@ export function aggregateStates(
 export function exceedsLimit(active: number, limit: number): boolean {
   return active >= limit
 }
+
+// ─────────────────── 存活推导：stalled 与悬挂标记（AC25 / AC47③） ───────────────────
+
+/**
+ * `stalled` 阈值默认值：5 分钟（AC25）。
+ *
+ * 可用 `RDDF_STALLED_THRESHOLD_MS` 覆盖（**默认常量 + 配置项**，两者都有单测）。
+ */
+export const DEFAULT_STALLED_THRESHOLD_MS = 5 * 60 * 1000
+
+export function stalledThresholdMs(): number {
+  const v = Number(process.env.RDDF_STALLED_THRESHOLD_MS)
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_STALLED_THRESHOLD_MS
+}
+
+/**
+ * `stalled` = **仍在跑** 且 距上次活动超过阈值（ADR D4 / AC25）。
+ *
+ * **查询时推导态、不落盘**（写进 `pair.json` 会变成第二份真相）。
+ * 边界：`elapsed === threshold` **不算** stalled（严格大于）。
+ */
+export function isStalled(input: {
+  running: boolean
+  lastActivityAt: number
+  now?: number
+  thresholdMs?: number
+}): boolean {
+  if (!input.running) return false
+  const last = toMillis(input.lastActivityAt)
+  if (last <= 0) return false
+  const now = input.now ?? Date.now()
+  const threshold = input.thresholdMs ?? stalledThresholdMs()
+  return now - last > threshold
+}
+
+/**
+ * 槽位悬挂标记（AC47③）：`state` 仍在占槽，但**实际已不在跑**且已超 `stalled` 阈值。
+ *
+ * 与 `isStalled` 的区别：`stalled` 描述「在跑但没进展」，`dangling` 描述
+ * 「登记说占槽、实际没在跑」——后者是**登记态与观测态不一致**的信号。
+ * 展示层信号，**不承担回收职责**（回收由 reconcile-on-read 完成，D7.3）。
+ */
+export function isDangling(input: {
+  state: string
+  running: boolean
+  lastActivityAt: number
+  now?: number
+  thresholdMs?: number
+}): boolean {
+  if (input.state !== "active" && input.state !== "dispatching") return false
+  if (input.running) return false
+  const last = toMillis(input.lastActivityAt)
+  if (last <= 0) return false
+  const now = input.now ?? Date.now()
+  const threshold = input.thresholdMs ?? stalledThresholdMs()
+  return now - last > threshold
+}
+
 
 // ───────────────────────────── 内部工具 ─────────────────────────────
 
@@ -316,6 +413,17 @@ export async function listDelegatedSessions(ctx: any): Promise<any[]> {
 }
 
 // ───────────────────────────── 状态与索引同步 ─────────────────────────────
+
+/** 锁内合并写 pair 条目的若干字段（调用方无需持锁；内部自取）。 */
+export function setPairFields(stateRoot: string, sessionID: string, fields: Record<string, unknown>): void {
+  mkdirSync(stateDirOf(stateRoot), { recursive: true })
+  withLock(lockDirOf(stateRoot), () => {
+    const pairs = readPairs(stateRoot)
+    if (!pairs[sessionID]) return
+    pairs[sessionID] = { ...pairs[sessionID], ...fields }
+    writePairs(stateRoot, pairs)
+  })
+}
 
 /** 锁内翻转 + 自取锁的包装（独立步骤用；不可在已持锁时调用）。 */
 export function updateSlotState(stateRoot: string, sessionID: string, state: SlotState): void {
@@ -577,6 +685,26 @@ export function dispatchToolDefinition(ctx: any): any {
         await syncMetadataState(ctx, sid, "active")
       }
 
+      // ── AC54：steer 残留检测（只在「续接曾被暂停的后端」时有基线可比）──
+      let residue: "none" | "suspected" | "undetectable" = "none"
+      const resumedEntry = lookupPair(stateRoot, sid, workRoot)
+      const baselineID = resumedEntry?.suspended_at_message_id
+      if (brief.resume_session && baselineID) {
+        let msgs: any = []
+        try {
+          msgs = await ctx.session.context({ sessionID: sid })
+        } catch {
+          msgs = []
+        }
+        residue = detectSteerResidue(msgs, baselineID, messageID)
+      } else if (brief.resume_session && !baselineID) {
+        // 续接一个「没有暂停基线」的后端（例如上一次是 cancel 后重建）⇒ 无从比对
+        residue = "undetectable"
+      }
+      if (residue !== "none") {
+        setPairFields(stateRoot, sid, { steer_residue: residue })
+      }
+
       return {
         content: JSON.stringify(
           {
@@ -654,7 +782,7 @@ export function sessionsToolDefinition(ctx: any): any {
 
         const state = isSlotState(entry?.state) ? entry.state : "idle"
         const outcome = missing ? "vanished" : ((info as any)?.outcome ?? null)
-        const lastActivity = (info as any)?.time?.updated ?? (info as any)?.time?.created ?? null
+        const lastActivity = toMillis((info as any)?.time?.updated ?? (info as any)?.time?.created)
         items.push({
           session_id: sessionID,
           goal_key: entry?.goal_key ?? md.goal_key ?? null,
@@ -670,8 +798,12 @@ export function sessionsToolDefinition(ctx: any): any {
           slot: {
             key: entry?.work_root ?? workRoot ?? null,
             holder: state === "active" || state === "dispatching" ? sessionID : null,
-            dangling: state === "active" && !running,
+            // AC47③：仅当「登记占槽 + 实际不 busy + 超 stalled 阈值」才报悬挂
+            dangling: isDangling({ state, running, lastActivityAt: lastActivity }),
+            stalled: isStalled({ running, lastActivityAt: lastActivity }),
           },
+          // AC54：steer 残留可观测性（suspend 时记录基线，resume 时比对；无法判定时如实报 undetectable）
+          steer_residue: entry?.steer_residue ?? "none",
         })
       }
       const agg = aggregateStates(
@@ -713,6 +845,32 @@ export function suspendToolDefinition(ctx: any): any {
       const { stateRoot, entry } = located
       const state = isSlotState(entry?.state) ? entry.state : "idle"
 
+      // ── AC48：归属检查（旧 front 的 active 槽位**不被静默顶掉**）──
+      // `front_session_id` 本来是软信号；但「回收别人的槽位」必须有据：
+      // 登记 front 仍存活 ⇒ 拒绝；已消失（亡主）⇒ 允许回收并落 ledger 行。
+      const ownerFront = entry?.front_session_id
+      const me = _toolContext?.sessionID
+      if (typeof ownerFront === "string" && ownerFront.length > 0 && ownerFront !== me) {
+        const alive = await frontAlive(ctx, ownerFront)
+        if (alive) {
+          throw fail(
+            `后端 ${sessionID} 归属于另一个 front（${ownerFront}）且该 front 仍存活：不可静默顶掉它的槽位；` +
+              `如需接管，请先确认对方会话已结束`,
+          )
+        }
+        // 亡主：允许回收，并落接管台账（之后仍按 state 分派继续）
+        appendLedger(stateRoot, {
+          event: "taken_over",
+          recorded_at: new Date().toISOString(),
+          backend_session_id: sessionID,
+          previous_front_session_id: ownerFront,
+          taken_by_front_session_id: me ?? null,
+          canonical_root: stateRoot,
+          work_root: entry?.work_root ?? null,
+          outcome: null,
+        })
+      }
+
       // 按 state 分派（AC51）
       if (state === "tombstone") throw fail(`后端 ${sessionID} 已终止（墓碑），不可暂停`)
       if (state === "dispatching") {
@@ -753,8 +911,19 @@ export function suspendToolDefinition(ctx: any): any {
         }
       }
 
+      // AC54：记录**暂停时刻**的最后一条消息 id（resume 时据此判断新增消息里是否混入陈旧 steer）
+      let suspendedAtMessageID: string | undefined
+      try {
+        suspendedAtMessageID = lastMessageID(messages)
+      } catch {
+        suspendedAtMessageID = undefined
+      }
       // 释放槽位 + 标记 suspended（幂等：不在跑且不占槽时同样落到 suspended）
       updateSlotState(stateRoot, sessionID, "suspended")
+      setPairFields(stateRoot, sessionID, {
+        suspended_at_message_id: suspendedAtMessageID ?? null,
+        steer_residue: "none",
+      })
       await syncMetadataState(ctx, sessionID, "suspended")
       return {
         content: JSON.stringify(

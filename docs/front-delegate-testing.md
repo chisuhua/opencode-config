@@ -19,9 +19,11 @@
 ```bash
 cd ~/.config/opencode
 
-bun test tests/                          # 全部（当前 157 项，约 4 秒）
-bun test tests/delegate-core.test.ts     # 纯逻辑（76 项）
-bun test tests/delegate-tool.test.ts     # 假 ctx 端到端（35 项）
+bun test tests/                          # 全部（当前 216 项，约 4 秒）
+bun test tests/delegate-core.test.ts     # 独占的委托纯逻辑（76 项）
+bun test tests/delegate-tool.test.ts     # 假 ctx 端到端（既有同步面）
+bun test tests/delegate-async.test.ts    # 异步派发面（dispatch/sessions/suspend/cancel，44 项）
+bun test tests/canonical-root.test.ts    # stateRoot/workRoot 归一（15 项）
 bun test tests/config-guards.test.ts     # 守卫漂移检测（13 项）
 bun test tests/model-fallback-core.test.ts # 模型降级链内核（33 项）
 
@@ -35,10 +37,13 @@ npm test                                 # 等价（package.json 被 .gitignore 
 ## 3. 目录与职责
 
 ```
-lib/delegate-core.ts          纯逻辑内核 + 工具定义工厂（无 opencode 宿主依赖）
-plugins/delegate.ts           插件壳：只把工具注册进 opencode 的工具表（11 行）
+lib/delegate-core.ts          纯逻辑内核 + 工具定义工厂（无 opencode 宿主依赖）+ 槽位原语（两派发面共用）
+lib/delegate-async.ts         异步派发面：dispatch / sessions / suspend / cancel + 槽位生命周期 + 消费确认
+plugins/delegate.ts           插件壳：只把五个工具注册进 opencode 的工具表
 tests/delegate-core.test.ts   纯逻辑单元测试
-tests/delegate-tool.test.ts   假 ctx 端到端单元测试
+tests/delegate-tool.test.ts   假 ctx 端到端单元测试（既有同步面）
+tests/delegate-async.test.ts  异步面单测（槽位 / 消费确认 / 暂停终止 / 名册 / 亡主接管 / steer 残留）
+tests/canonical-root.test.ts  stateRoot/workRoot 归一（主仓 / linked worktree / submodule）
 tests/config-guards.test.ts   守卫漂移检测（配置 == scripts/agent-guard-rules.ts 真源）
 tests/model-fallback-core.test.ts 模型降级链内核单元测试
 tests/fixtures/               真实会话回归夹具（如 no-work 形状）

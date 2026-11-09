@@ -36,6 +36,10 @@
 | T2.6 | 槽位生命周期 `planSlot`/`claimSlot`（锁外查询 → 锁内重验 → 锁内翻转） | AC26/AC46/AC47 | ✅ |
 | T2.7 | 全局并发上限（`RDDF_MAX_ACTIVE_BACKENDS`，默认 3） | AC31 | ✅ |
 | T2.8 | knowledge 不占工作树槽位、不计入上限 | AC32 | ✅ |
+| T2.9 | **`stalled` 阈值**（默认 5min + `RDDF_STALLED_THRESHOLD_MS` 覆盖 + 单测；**推导态不落盘**） | AC25 | ✅ 本轮补齐 |
+| T2.10 | **`slot.dangling` 用阈值判定**（占槽 + 不 running + 超阈值才为 true） | AC47③ | ✅ 本轮补齐 |
+| T2.11 | **steer 残留检测**：`suspend` 记 `suspended_at_message_id`；resume 比对新增 `user`/`synthetic` ⇒ `none`/`suspected`/`undetectable` | AC54 | ✅ 本轮补齐 |
+| T2.12 | **亡主接管**：归属另一个 front 时判其存活 —— 活 ⇒ 拒绝；亡 ⇒ 允许回收 + ledger `event:"taken_over"` | AC48 | ✅ 本轮补齐 |
 
 ## T3 既有路径
 
@@ -56,8 +60,8 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T5.1 | `tests/delegate-async.test.ts`（33 条） | ✅ |
-| T5.2 | 全量回归 | ✅ **205 pass / 0 fail** |
+| T5.1 | `tests/delegate-async.test.ts`（**44** 条） | ✅ 本轮 +11（stalled/dangling/steer 残留/亡主接管/grant 救援） |
+| T5.2 | 全量回归 | ✅ **216 pass / 0 fail** |
 
 ## T6 文档
 
@@ -67,6 +71,9 @@
 | T6.2 | `docs/front-delegate-architecture.md`：§2.1 四工具 / §4.3 delivery=steer（「会排队」清除）/ §6.1 口径扩写 | AC35 | ✅ |
 | T6.3 | `docs/dual-session-delegation.md`：`event` 字段 + `vanished` + `state` + 故障表 | AC36 | ✅ |
 | T6.4 | `ADR-front-knowledge-capability` D5 行产生时机表 | AC36 | ⛔ **architect 归属**（ADR 内容，builder 不得单方面改） |
+| T6.5 | **`docs/front-delegate-usage.md`（用户手册）**：§1 五工具 + 单槽性质 + 场景 G–J（并发 / 看进度 / 切换 / 放弃）+ 排障两行 + 范围假设 | — | ✅ 本轮补齐 |
+| T6.6 | **`docs/front-delegate-testing.md`**：测试清单 157→216、补 `delegate-async.test.ts` / `canonical-root.test.ts` / `lib/delegate-async.ts` | — | ✅ 本轮补齐 |
+| T6.7 | **`docs/front-delegate-architecture.md` §4.4 槽位模型（单槽）**：键/五态/常驻-活跃/切换/投递≠消费/翻转执行者/悬挂 + 锁形态；后续小节顺延至 4.8 | AC35④ | ✅ 本轮补齐 |
 
 ## T7 需外部条件 / 跨角色（⛔ 不得当通过）
 
@@ -76,4 +83,5 @@
 | T7.2 | AC44 有界时延（连续 10 次，≥8 次 60s 内进 `active`） | AC44 | 需真实模型跑 10 次 |
 | T7.3 | **AC13「已消失可见 + ledger 补记 vanished」** | AC13 | ⛔ **设计张力**：`list` 不返回已删 session ⇒ 兜底路径看不到它；而 ADR D2.1 否决了全局 registry。⇒ `design_drift` → **architect 决策**（见 design.md §5） |
 | T7.4 | AC57 的「自然跑完 → B → 再回 A」完整序列 | AC57 | ⚠️ 部分（suspend→resume 已测；自然跑完→切回只覆盖了名册可见） |
+| T7.6 | `docs/MULTI-AGENT-DESIGN.md`（`:101`「唯一登记型通道」+ 工具面）与 `docs/CHANGELOG.md`（change 2 条目） | AC35 | ⛔ **治理面文件**（`~/.config/opencode/docs/**`）⇒ **architect**（改它们须 oracle + critic 审） |
 | T7.5 | AC35 的 §2.1 ASCII 全景图箱体对齐 | AC35 | ⚠️ 纯格式，改文字后可能不齐 |
