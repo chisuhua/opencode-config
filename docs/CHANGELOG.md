@@ -20,7 +20,8 @@
 > ⑦ **双根归一**：`stateRoot`（状态落盘）与 `workRoot`（工作树）分离，linked worktree 下 pair 落主仓、变更检测在 worktree（`ADR-canonical-root-normalization`，commit `23584cd`）。
 > ⑧ **上游语义实测**：`get()` 在 run 中**确实**返回 `time.busy`（此前探针 Q2/R4 冲突，R4 正确）；`list` 的 item 带 `metadata`（为空时省略字段）。
 > 验证：`bun test tests/` **216 pass / 0 fail**；Phase 0 消费判据探针 16/16；权限矩阵 `opencode debug agents` 实测。ADR：`docs/adr/ADR-front-multi-backend.md`（D1–D12）；实施与验收记录见 `.rddf/reviews/front-multi-backend-*.md`。
-> ⚠️ **未完成**：E2E bats L2-16..（外部仓库）、AC44 连续 10 次时延、**AC13 判据改写（planner）+ D12 派发面处置矩阵的实现**、AC36 余下两处同步（`docs/dual-session-delegation.md` 的 event 枚举补 `taken_over`、`prompts/front.md` 补 `vanished` 与 `event` 字段说明）、`proposal.md` AC4 脚注「reconcile 会写行」的旧表述修正。
+> ⚠️ **未完成**：E2E bats L2-16..（外部仓库）、AC44 连续 10 次时延（需真实模型）、AC57 的「自然跑完→B→回A」完整序列（仅部分覆盖）、架构文档 §2.1 全景图的 ASCII 对齐（纯格式）。
+> ✅ **本轮已补齐**：AC13 判据改写（planner，按 D12 改成五段）、**D12 派发面处置矩阵的实现**（builder：死槽已解除）、AC36 余下两处同步（`docs/dual-session-delegation.md` 补 `taken_over`、`prompts/front.md` 补 `vanished` 与 `event` 说明）、`proposal.md` AC4 脚注修正。
 
 > **v2.6 增补（2026-11-09，ADR-delegate-delivery-evidence 落地）**：上面 v2.6 段的「**outcome 枚举不变**」一句已过时（历史不改，此处增补）：`outcome` 现扩展为 `succeeded` / **`unverified`** / `failed` / `interrupted` / `unknown` / `busy`。
 > - `unverified` = 宿主报成功但本轮没有可验证的交付证据（`no_work_evidence=true` 时触发；判定链见 ADR D2）。

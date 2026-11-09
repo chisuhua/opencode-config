@@ -60,8 +60,8 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T5.1 | `tests/delegate-async.test.ts`（**44** 条） | ✅ 本轮 +11（stalled/dangling/steer 残留/亡主接管/grant 救援） |
-| T5.2 | 全量回归 | ✅ **216 pass / 0 fail** |
+| T5.1 | `tests/delegate-async.test.ts`（**54** 条） | ✅ +11（stalled/dangling/steer 残留/亡主接管/grant 救援）+10（**D12 处置矩阵 10 条**：resume 已删→墓碑+vanished 行+新建 / 同 workRoot 可再派发 / suspend 已删→释放槽位 / cancel 已删→墓碑+vanished 行 / cancel 已删+墓碑→幂等 / 定位不到→不抛错 / 给 project_dir→可定位） |
+| T5.2 | 全量回归 | ✅ **226 pass / 0 fail** |
 
 ## T6 文档
 
@@ -84,8 +84,8 @@
 | T7.3 | **AC13「已消失可见 + ledger 补记 vanished」** | AC13 | ⛔ **设计张力**：`list` 不返回已删 session ⇒ 兜底路径看不到它；而 ADR D2.1 否决了全局 registry。⇒ `design_drift` → **architect 决策**（见 design.md §5） |
 | T7.4 | AC57 的「自然跑完 → B → 再回 A」完整序列 | AC57 | ⚠️ 部分（suspend→resume 已测；自然跑完→切回只覆盖了名册可见） |
 | T7.6 | `docs/MULTI-AGENT-DESIGN.md` + `docs/CHANGELOG.md`（治理面）+ `ADR-front-knowledge-capability` D5 表 | AC35 / AC36 | ✅ **已完成**（architect，oracle + critic 双审：治理面判定 PASS-WITH-NOTES → critic APPROVE） |
-| T7.7 | **D12 派发面处置矩阵的实现**：`dispatch(resume=已删)` ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` + 同 goal_key 新建；`suspend`/`cancel` 对已删后端按矩阵返回（**不得**抛「无法定位」） | AC13 | ⛔ **未实现**（已正向验证：`suspend`/`cancel` 仍抛「无法定位后端…」，`dispatch(resume=已删)` 仍落 `dispatch_failed` 且保留槽位 ⇒ **死槽风险仍在**）。判定已定（ADR D12），实施排期由用户定 |
-| T7.8 | AC36 余下两处同步：`docs/dual-session-delegation.md` 的 event 枚举补 **`taken_over`**；`prompts/front.md` 的 ledger 说明补 **`vanished`** 与 **`event` 字段** | AC36 | ⛔ **builder**（本轮由 oracle 审出，两份文档均是 builder 归属） |
+| T7.7 | **D12 派发面处置矩阵的实现**：`dispatch(resume=已删)` ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` + 同 goal_key 新建；`suspend`/`cancel` 对已删后端按矩阵返回（**不得**抛「无法定位」） | AC13 | ✅ **已完成**（builder）。`locateBackend` 改为**不抛错**（返回 `located`/`missing`）；新增按 ctx 隔离的「session_id → stateRoot」记忆映射（补「已删后端拿不到 location ⇒ 定位不到」这个缺口）+ `cancel`/`suspend` 的**可选 `project_dir`** 提示；`dispatch` 的 resume 分支**先查活性**，命中已删即墓碑 + 落 `outcome:"vanished"` 终态行 + 同 goal_key 新建。**死槽已解除**（单测：resume 已删后同 workRoot 可再派发） |
+| T7.8 | AC36 余下两处同步：`docs/dual-session-delegation.md` 的 event 枚举补 **`taken_over`**；`prompts/front.md` 的 ledger 说明补 **`vanished`** 与 **`event` 字段** | AC36 | ✅ **已完成**（builder）：`dual-session-delegation.md` 的 event 枚举补 `taken_over` + 加「有 event ⇒ 动作行；无 event ⇒ 终态行」的分派规则 + 补 `goal_key`/`work_root` 字段 + 排障表加 2 行（`outcome: vanished` / 「无法定位该后端所属的工程仓」）；`prompts/front.md` 的状态清单补两行制说明 + 加「名册里没有 ≠ 从未派发」的读法纪律 |
 | T7.9 | `proposal.md` 的 **AC4 脚注**旧表述「reconcile 会写行（AC13）」修正 —— 与 ADR V08 的修正及 D5 新增的「reconcile 不写 ledger」注**直接矛盾** | AC4 | ✅ **已完成**（planner；顺带修 AC4 里「允许写 ledger（补记终态行）」的说法——观测面按 D12 已**不补记** ledger） |
 | T7.10 | **AC13 判据按 ADR D12 改写**（五段：观测面不列不补记 / 派发面处置 / 终止-暂停矩阵 / 痕迹 / 读侧语义）；映射表 V09 行同步；新增 N18（能力边界）+ N19（实现尚未落地 ⇒ ②③ 段判「不可判定」） | AC13 | ✅ **已完成**（planner；改写 8 行 / 320 行 = 0.03 ⇒ 未达 metis 的 1/3 门槛，不触发审查） |
 | T7.5 | AC35 的 §2.1 ASCII 全景图箱体对齐 | AC35 | ⚠️ 纯格式，改文字后可能不齐 |

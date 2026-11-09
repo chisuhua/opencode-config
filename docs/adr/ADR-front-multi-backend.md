@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | **Accepted**（2026-11-09，两轮改写后定稿；**未实施完成**——AC13 的处置待 planner 按 D12 改写判据）。审稿记录见 `.rddf/reviews/adr-front-multi-backend-review.md` |
+| Status | **Accepted**（2026-11-09，两轮改写后定稿；AC13 的判据已按 D12 改写为五段、派发面处置矩阵已实现并有单测覆盖；**整体仍未实施完成**——E2E bats L2-16..、AC44 连续 10 次时延、AC57 完整序列、架构文档 §2.1 ASCII 对齐待做，见 `openspec/changes/front-multi-backend/tasks.md`）。审稿记录见 `.rddf/reviews/adr-front-multi-backend-review.md` |
 | Date | 2026-11-09（初稿与本次改写同日） |
 | Author | architect |
 | 本次改写（摘要） | ⑥ **D12 已删后端的可见性（能力边界）+ 后续触碰处置矩阵**（V09 随之改写；V08 修正「reconcile 会写行」的误述）。详见审稿报告。 |

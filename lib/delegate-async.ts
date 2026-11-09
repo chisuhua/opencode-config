@@ -459,19 +459,100 @@ export async function countActiveBackends(ctx: any): Promise<number> {
   return n
 }
 
+/**
+ * 插件侧记住的「后端 session_id → stateRoot」映射。
+ *
+ * **用途**：后端被外部删除后，`ctx.session.get` 拿不到 `location` ⇒ 无法反推它属于哪个
+ * 工程仓 ⇒ 读不到它的 pair 条目 ⇒ 无法按 ADR D12 的矩阵处置（墓碑 / 落 vanished 行）。
+ * 这个映射在**插件进程存活期间**补上这条缺口；跨进程重启会丢（此时靠调用方传
+ * `project_dir` 兜底）。
+ */
+const backendRootCaches = new WeakMap<object, Map<string, string>>()
+
+function rootCache(ctx: any): Map<string, string> {
+  let m = backendRootCaches.get(ctx)
+  if (!m) {
+    m = new Map()
+    backendRootCaches.set(ctx, m)
+  }
+  return m
+}
+
+/** 记住「后端 session_id → stateRoot」（按 ctx 隔离，避免跨实例/跨测试串味）。 */
+export function rememberBackendRoot(ctx: any, sessionID: string, stateRoot: string): void {
+  if (typeof sessionID === "string" && sessionID.length > 0) rootCache(ctx).set(sessionID, stateRoot)
+}
+
+/** 回查「后端 session_id → stateRoot」；未记住则 undefined。 */
+export function recallBackendRoot(ctx: any, sessionID: string): string | undefined {
+  return backendRootCaches.get(ctx)?.get(sessionID)
+}
+
 /** 定位一个后端所属的仓库根（stateRoot/workRoot）+ 其 pair 条目。 */
+/**
+ * 定位一个后端所属的仓库根（stateRoot/workRoot）+ 其 pair 条目。
+ *
+ * ⚠️ **不再抛错**（ADR D12）：已删后端拿不到 `location` ⇒ 可能定位不到 ⇒
+ * 返回 `located:false` + `missing:true`，由调用方按 D12 矩阵返回**明确结果**，
+ * **不得**抛「无法定位工作目录」把调用方逼死路。
+ *
+ * 定位来源（按优先级）：① 调用方给的 `project_dir` 提示；② session 自己的 `location`
+ * （存活时）；③ 插件侧记忆映射（`rememberBackendRoot`）。
+ */
 export async function locateBackend(
   ctx: any,
   sessionID: string,
-): Promise<{ stateRoot: string; workRoot: string; entry: any; info: any; missing: boolean }> {
+  hintDir?: string,
+): Promise<{
+  stateRoot?: string
+  workRoot?: string
+  entry?: any
+  info?: any
+  missing: boolean
+  located: boolean
+}> {
   const { info, missing } = await readSessionInfo(ctx, sessionID)
-  const dir = (info as any)?.location?.directory
-  if (typeof dir !== "string" || dir.length === 0) {
-    throw fail(`无法定位后端 ${sessionID} 的工作目录（session 已不存在？）`)
+  let dir: string | undefined
+  if (typeof hintDir === "string" && hintDir.length > 0) dir = hintDir
+  if (!dir) {
+    const loc = (info as any)?.location?.directory
+    if (typeof loc === "string" && loc.length > 0) dir = loc
+  }
+  if (!dir) {
+    const remembered = recallBackendRoot(ctx, sessionID)
+    if (remembered) {
+      const roots = canonicalRoot(remembered)
+      const entry = lookupPair(roots.stateRoot, sessionID, roots.workRoot)
+      return { ...roots, entry, info, missing, located: true }
+    }
+    return { info, missing, located: false }
   }
   const { stateRoot, workRoot } = canonicalRoot(dir)
   const entry = lookupPair(stateRoot, sessionID, workRoot)
-  return { stateRoot, workRoot, entry, info, missing }
+  rememberBackendRoot(ctx, sessionID, stateRoot)
+  return { stateRoot, workRoot, entry, info, missing, located: true }
+}
+
+/** 落一条「终态行」（**无 `event` 字段**；`outcome:"vanished"` = 后端被外部删除）。 */
+export function appendVanishedRow(
+  stateRoot: string,
+  sessionID: string,
+  entry: any,
+  workRoot: string | undefined,
+): void {
+  appendLedger(stateRoot, {
+    recorded_at: new Date().toISOString(),
+    kind: entry?.kind ?? "engineering",
+    front_session_id: entry?.front_session_id ?? null,
+    backend_session_id: sessionID,
+    agent: entry?.agent ?? null,
+    goal: entry?.goal ?? null,
+    scope: entry?.scope ?? [],
+    goal_key: entry?.goal_key ?? null,
+    work_root: workRoot ?? entry?.work_root ?? null,
+    canonical_root: stateRoot,
+    outcome: "vanished",
+  })
 }
 
 // ───────────────────────────── 工具：dispatch ─────────────────────────────
@@ -528,6 +609,8 @@ export function dispatchToolDefinition(ctx: any): any {
 
       // —— resume 校验：pair 登记表既是 ACL 也是目标一致性的判据 ——
       let existing: any = undefined
+      // resume 命中已删后端时：旧条目墓碑 + 落 vanished 行 + 按同一 goal_key **新建**（ADR D12）
+      let resumedVanished = false
       if (brief.resume_session) {
         existing = lookupPair(stateRoot, brief.resume_session, workRoot)
         if (!existing) {
@@ -544,6 +627,15 @@ export function dispatchToolDefinition(ctx: any): any {
         const prevIntent = existing.goal_key?.intent
         if (typeof prevIntent === "string" && prevIntent.length > 0 && prevIntent !== goalKey.intent) {
           throw fail(`resume_session 的 goal_key 不一致（${prevIntent} ≠ ${goalKey.intent}）：不同目标须新建 session`)
+        }
+        // ── ADR D12 派发面处置：resume 命中**已删**后端 ──
+        // 上游 404 = **正面证据**（不是"看不到"）⇒ 必须处置，否则旧条目的
+        // `state=dispatching` 会**永久占死该 workRoot**（cancel/suspend 也定位不到它）。
+        const { missing: vanished } = await readSessionInfo(ctx, brief.resume_session)
+        if (vanished) {
+          setSlotState(stateRoot, brief.resume_session, "tombstone")
+          appendVanishedRow(stateRoot, brief.resume_session, existing, workRoot)
+          resumedVanished = true
         }
       }
 
@@ -566,7 +658,7 @@ export function dispatchToolDefinition(ctx: any): any {
       ]
       let sessionID = brief.resume_session as string | undefined
       let created = false
-      if (!sessionID) {
+      if (!sessionID || resumedVanished) {
         const c = await ctx.session.create({
           location: { directory: brief.project_dir },
           agent: brief.agent,
@@ -575,6 +667,7 @@ export function dispatchToolDefinition(ctx: any): any {
         })
         sessionID = c.id
         created = true
+        rememberBackendRoot(ctx, sessionID as string, stateRoot)
       }
 
       // —— 槽位：锁外活体查询 → 锁内重验 + 登记（AC26）——
@@ -714,6 +807,12 @@ export function dispatchToolDefinition(ctx: any): any {
             work_root: workRoot,
             canonical_root: stateRoot,
             delivery_known: consumed,
+            ...(resumedVanished
+              ? {
+                  recovered_from_vanished: brief.resume_session,
+                  message: `原后端已被外部删除：已按 ADR D12 记墓碑 + 落 outcome:"vanished"，并按同一 goal_key 新建后端续接`,
+                }
+              : {}),
             ...(consumed ? {} : { message: "简报尚未被确认消费（仍在队列中）；该后端暂不可 suspend，请稍后重查或 cancel 后重派" }),
           },
           null,
@@ -833,6 +932,10 @@ export function suspendToolDefinition(ctx: any): any {
       type: "object",
       properties: {
         session_id: { type: "string", description: "要暂停的后端 session id" },
+        project_dir: {
+          type: "string",
+          description: "该后端所在工程仓的绝对路径（**仅当后端已被外部删除、需要定位其台账时需要**）",
+        },
       },
       required: ["session_id"],
       additionalProperties: false,
@@ -841,9 +944,86 @@ export function suspendToolDefinition(ctx: any): any {
     async execute(input: any, _toolContext: any) {
       const sessionID = String(input?.session_id ?? "")
       if (!sessionID) throw fail("session_id 必填")
-      const located = await locateBackend(ctx, sessionID)
+      const hintDir = typeof input?.project_dir === "string" && input.project_dir.length > 0 ? input.project_dir : undefined
+      const located = await locateBackend(ctx, sessionID, hintDir)
       const { stateRoot, entry } = located
       const state = isSlotState(entry?.state) ? entry.state : "idle"
+
+      // 定位不到工程仓（session 无 location 信息）属异常形态 ⇒ 明确返回，**不抛错**
+      if (!stateRoot) {
+        return {
+          content: JSON.stringify(
+            { session_id: sessionID, suspended: false, state, message: "无法定位该后端所属的工程仓（session 无 location 信息）" },
+            null,
+            2,
+          ),
+        }
+      }
+
+      // ── ADR D12：已删后端（上游 404 = 正面证据）——
+      if (located.missing) {
+        if (!located.located || !stateRoot) {
+          // 定位不到它的工程仓 ⇒ 无法写 pair/ledger ⇒ **返回明确结果，不抛错**
+          return {
+            content: JSON.stringify(
+              {
+                session_id: sessionID,
+                suspended: false,
+                state,
+                message:
+                  "该后端已被外部删除，但无法定位该后端所属的工程仓（未提供 project_dir）⇒ 未做台账标记；" +
+                  "如需标记请补 project_dir 后重试",
+              },
+              null,
+              2,
+            ),
+          }
+        }
+        // D12 矩阵（已删）：
+        //   dispatching/active ⇒ 释放槽位并置 suspended
+        //   idle/suspended     ⇒ **幂等 no-op**（本就不占槽，state 不变）
+        //   tombstone          ⇒ 拒绝（终态）
+        if (state === "tombstone") {
+          return {
+            content: JSON.stringify(
+              { session_id: sessionID, suspended: false, state, message: "该后端已是墓碑，无可暂停" },
+              null,
+              2,
+            ),
+          }
+        }
+        if (state === "idle" || state === "suspended") {
+          return {
+            content: JSON.stringify(
+              {
+                session_id: sessionID,
+                suspended: false,
+                idempotent: true,
+                state,
+                vanished: true,
+                message: "该后端已被外部删除：它本就不占槽，幂等 no-op（state 不变）",
+              },
+              null,
+              2,
+            ),
+          }
+        }
+        updateSlotState(stateRoot, sessionID, "suspended")
+        await syncMetadataState(ctx, sessionID, "suspended")
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              suspended: true,
+              state: "suspended",
+              vanished: true,
+              message: "该后端已被外部删除：已按 ADR D12 释放其工作树槽位并置为 suspended",
+            },
+            null,
+            2,
+          ),
+        }
+      }
 
       // ── AC48：归属检查（旧 front 的 active 槽位**不被静默顶掉**）──
       // `front_session_id` 本来是软信号；但「回收别人的槽位」必须有据：
@@ -955,6 +1135,10 @@ export function cancelToolDefinition(ctx: any): any {
       properties: {
         session_id: { type: "string", description: "要终止的后端 session id" },
         remove: { type: "boolean", description: "是否同时删除该 session，默认 false（保留以便审计）" },
+        project_dir: {
+          type: "string",
+          description: "该后端所在工程仓的绝对路径（**仅当后端已被外部删除、需要定位其台账时需要**）",
+        },
       },
       required: ["session_id"],
       additionalProperties: false,
@@ -964,15 +1148,72 @@ export function cancelToolDefinition(ctx: any): any {
       const sessionID = String(input?.session_id ?? "")
       if (!sessionID) throw fail("session_id 必填")
       const remove = input?.remove === true
-      const located = await locateBackend(ctx, sessionID)
+      const hintDir = typeof input?.project_dir === "string" && input.project_dir.length > 0 ? input.project_dir : undefined
+      const located = await locateBackend(ctx, sessionID, hintDir)
       const { stateRoot, entry } = located
       const state = isSlotState(entry?.state) ? entry.state : "idle"
+
+      // ── ADR D12：已删后端（上游 404 = 正面证据）——
+      if (located.missing) {
+        if (!located.located || !stateRoot) {
+          return {
+            content: JSON.stringify(
+              {
+                session_id: sessionID,
+                interrupted: false,
+                state,
+                message:
+                  "该后端已被外部删除，但无法定位该后端所属的工程仓（未提供 project_dir）⇒ 未做台账标记；" +
+                  "如需标记请补 project_dir 后重试",
+              },
+              null,
+              2,
+            ),
+          }
+        }
+        if (state === "tombstone") {
+          return {
+            content: JSON.stringify(
+              { session_id: sessionID, interrupted: false, state: "tombstone", message: "该后端已是墓碑，无需重复终止" },
+              null,
+              2,
+            ),
+          }
+        }
+        // D12 矩阵：已删 + 非墓碑 ⇒ 置墓碑 + 落 outcome:"vanished" 终态行
+        updateSlotState(stateRoot, sessionID, "tombstone")
+        appendVanishedRow(stateRoot, sessionID, entry, located.workRoot)
+        await syncMetadataState(ctx, sessionID, "tombstone")
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              interrupted: false,
+              state: "tombstone",
+              vanished: true,
+              message: "该后端已被外部删除：已按 ADR D12 置为墓碑并落 outcome:\"vanished\" 终态行",
+            },
+            null,
+            2,
+          ),
+        }
+      }
 
       // 已墓碑 ⇒ 幂等 no-op
       if (state === "tombstone") {
         return {
           content: JSON.stringify(
             { session_id: sessionID, interrupted: false, state: "tombstone", message: "该后端已是墓碑，无需重复终止" },
+            null,
+            2,
+          ),
+        }
+      }
+
+      if (!stateRoot) {
+        return {
+          content: JSON.stringify(
+            { session_id: sessionID, interrupted: false, state, message: "无法定位该后端所属的工程仓（session 无 location 信息）" },
             null,
             2,
           ),

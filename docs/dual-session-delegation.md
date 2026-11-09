@@ -108,9 +108,10 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 
 | 字段 | 含义 |
 |---|---|
-| `event` | **独立字段（不塞进 `outcome`）**：`dispatched`（异步派发已投递）/ `dispatch_failed`（投递失败或结果未知）/ `cancelled`（被终止）。⚠️ 这些行**没有** `outcome` 语义，消费者按 `event` 分派 |
+| `event` | **独立字段（不塞进 `outcome`）**：`dispatched`（异步派发已投递）/ `dispatch_failed`（投递失败或结果未知）/ `cancelled`（被终止）/ `taken_over`（回收他 front 遗留的槽位）。⚠️ 这些行**没有** `outcome` 语义（`outcome` 恒为 `null`），消费者按「**有 `event` ⇒ 动作行；无 `event` ⇒ 终态行**」分派 |
 | `outcome` | `succeeded` / **`unverified`（宿主报成功但无交付证据，不得当完成）** / `failed` / `interrupted` / `unknown`（没有新活动，结论不可信）/ `busy`（上次运行仍在进行，别排队）/ **`vanished`（后端被外部删除；与「从未派发」的区分点是该后端曾有 `event:"dispatched"` 行）** |
 | `state` | 槽位登记态（仅异步派发面）：`dispatching` / `active` / `idle` / `suspended` / `tombstone` |
+| `goal_key` / `work_root` | 目标判等键（`{repo, intent}`）与工作树根（**槽位键**）。⚠️ `work_root` 缺失 ⇒ 该条目**不参与**槽位判定（存量条目由 `backfillPairEntry` 回填后才进入槽位表） |
 | `blocked_reason` | 被权限拦住了 —— **不要换写法绕过**，把被拒操作报给用户，问是否追加 grant |
 | `out_of_scope_files` | 本次改了 scope 外的文件 —— 必须点名告知用户 |
 | `changed_files` | 本次委托期间新增/变更的文件（前后 `git status` 差集） |
@@ -148,6 +149,8 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 | `outcome: busy` | 目标 session 还在跑 | 等待，不要新建顶替 |
 | `outcome: unknown` | 没有新活动 | 明确说"未拿到可信结果"，可重试一次 |
 | `outcome: unverified` | 宿主报成功但没有可验证的交付证据 | 转述证据字段，问用户重试还是换做法；不得说完成 |
+| `outcome: vanished` | 后端被**外部删除** | 该后端已不可续接；重新派发会按同一 `goal_key` **新建**后端（旧条目已墓碑）。⚠️ 名册里看不到它 ≠ 从未派发（看 `event:"dispatched"` 行） |
+| `suspend`/`cancel` 报「无法定位该后端所属的工程仓」 | 该后端已被外部删除，**且**调用方未提供 `project_dir` ⇒ 定位不到它属于哪个仓 | 补 `project_dir`（该后端所在工程仓绝对路径）后重试；否则**无法**做台账标记 |
 | 改了 `opencode.jsonc` 但不生效 | 后台 service 缓存了配置 | `opencode service restart` |
 | 新增/修改插件后不生效 | 同上（插件在 location 激活时加载） | `opencode service restart` |
 | `ServiceUnavailableError: Location plugins did not finish activating` | ① 插件构建失败 ② MCP 启动阻塞 ③ 插件 setup 迟迟不 settle | 先看 `--print-logs` 的 `failed to load plugin`；再查 MCP；最后怀疑插件 API |

@@ -289,7 +289,7 @@ ADR `docs/adr/ADR-front-multi-backend.md`（**Accepted，2026-11-09 改写后**�
 - **N16 已验证 —— 符号链接不会造出第二槽位**：`workRoot` = `path.resolve(git rev-parse --show-toplevel)`，而 git 返回**物理路径** ⇒ 同一工作树经符号链接访问得到**同一个** `workRoot`（实测：真实路径与符号链接路径解析结果相同）。⇒ **无需**额外的 realpath 归一。
 - **N17 已知残留 —— ADR D11.4 与 V42 的措辞张力**：D11.4 写「`suspend` 一个**不在跑**的后端 ⇒ 幂等 no-op」，V42 写「`suspend` 该后端**幂等释放**槽位」——在"`active` 但实际不 busy"这一形态上二者措辞不同。本 proposal 采**同时满足两者**的读法（**释放它所占据的槽位**；无槽可释放时才叫 no-op），见 AC51 ②。⇒ **建议 architect 回填 D11.4 的措辞**，避免实施期各自解读。
 - **N18 能力边界 —— 已删后端**（ADR D12，已定案）：插件 ctx **无 `project`/`location` 域**（`SessionDomain` 只 Pick session 方法）⇒ **无法枚举 repo** ⇒ 「让已删后端在名册里可见」的三种做法均不可行（扫 pair.json 恒盲 / 调用方传列表 / 全局清单 = 第三真相源）。⇒ **`sessions` 不列已删后端、观测面不补记**（与 D2.1「索引随删除消失是特性」一致）；**派发面**拿到 404 **正面证据**时必须按 D12 的唯一矩阵处置（否则死槽）。**AC13 的判据据此分四段**，不得按「sessions 里没有 ⇒ 从未派发」读。
-- **N19 实现尚未落地 —— D12 派发面处置矩阵**（AC13 的 ②③ 两段）：截至 2026-11-09，`locateBackend` 对已删 session 仍抛「无法定位后端」，`dispatch(resume=已删)` 仍落 `event:"dispatch_failed"` 且**保留槽位** ⇒ **死槽风险仍在**（已正向实跑验证）。⇒ **AC13 的 ②③ 段在实现补齐前判「不可判定」**，不得判通过。
+- **N19 D12 派发面处置矩阵（AC13 的 ②③ 两段）**：矩阵**已落地**（`tasks.md` T7.7，2026-11-09）——`locateBackend` 不再抛错、新增按 ctx 隔离的「session_id → stateRoot」记忆映射与 `cancel`/`suspend` 的可选 `project_dir` 提示；`dispatch(resume=已删)` ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` + 同 goal_key 新建 ⇒ **死槽已解除**。⇒ ②③ 两段改判「**单测已覆盖**；E2E 待 bats L2-16..**」（见 tasks.md T7.1）。
 - **N12 映射表修正 —— 前一版的 V 编号整体错位（既有缺陷）**：前一版映射表按主题编号、自 V05 起与 ADR 实际条目错位 ⇒ 「可逆映射」名不副实。**本表已按 ADR 文件实际条目重排**。**verifier 复核映射时请以 ADR 原文为准**，若发现本表仍有错位，按 ADR 实际条目更正并记录（**不影响 AC 判据本身**，AC 集合与 ADR Verification 的对应关系不变）。
 - **N11 已知残留 —— 消费确认的判据待实测**：见证据规则 9 与 AC44。**未完成锚定实测前，AC44 判不可判定**（不是失败）；触发降级时 AC51/AC52/AC53/AC54 作废并如实记录。
 

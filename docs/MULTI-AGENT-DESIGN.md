@@ -974,10 +974,11 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 | `delegate` 续接：复用同一 session（session 数不增）+ 非法 grant 被拒 | ✅ 实跑 |
 | `delegate` 单元测试：`bun test tests/delegate-core.test.ts tests/delegate-tool.test.ts`（brief 契约 / grants 白名单 / scope→edit 规则 / 规则顺序即策略 / 阻断提取 / 越界判定 / pair+role 登记 / 目录锁并发 / 假 ctx 端到端 / 交付面证据与 `unverified`）| ✅ 全绿 |
 | **四工具门控**：`delegate_dispatch`/`delegate_sessions`/`delegate_suspend`/`delegate_cancel` 各自独立 action ⇒ 全局 deny + 仅 front allow，其余 agent 全 deny | ✅ `opencode debug agents` 实测（2026-11-09）|
-| **单槽与切换**：同一 `workRoot` 第二个活跃后端被拒（错误含占槽 id）；两 linked worktree 各派一个**都成功**；`suspend` 释放槽位后可派发；既有 `delegate` 与新工具**共用同一张槽位表** | ✅ `bun test tests/delegate-async.test.ts`（44 项）|
+| **单槽与切换**：同一 `workRoot` 第二个活跃后端被拒（错误含占槽 id）；两 linked worktree 各派一个**都成功**；`suspend` 释放槽位后可派发；既有 `delegate` 与新工具**共用同一张槽位表** | ✅ `bun test tests/delegate-async.test.ts`（54 项，含 D12 矩阵 10 条）|
 | **消费确认**：「简报已被消费」= 其 `message.id` 出现在 `session.context()` 的消息 id 集合里；pending 的简报**不在** context；`interrupt({resume:false})` **不删** pending 行 ⇒ 幽灵注入真实存在 | ✅ Phase 0 探针 16/16（`.rddf/reviews/front-multi-backend-consume-probe.md`）|
 | `stateRoot`/`workRoot` 归一：linked worktree 下 pair 落主仓、变更检测在 worktree；submodule 归 superproject | ✅ `bun test tests/canonical-root.test.ts`（15 项）+ 验收报告 PASS 18/18 |
-| 全量单测 | ✅ `bun test tests/` **216 pass / 0 fail**（2026-11-09）|
+| 全量单测 | ✅ `bun test tests/` **226 pass / 0 fail**（2026-11-09）|
+| **已删后端的处置矩阵·派发面**（ADR D12 ②③）：`dispatch(resume=已删)` ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` + 同 goal_key 新建 ⇒ **同工作树可再派发**；`suspend`/`cancel` 对已删后端按矩阵**关键格**返回**明确结果**（**不抛「无法定位」**）。⚠️ 仅**派发面**有单测覆盖；**观测面**（`sessions` 不列已删）属能力边界，见 ADR D12 | ✅ `bun test tests/delegate-async.test.ts`（54 项，含矩阵 10 条）|
 | `model-fallback` 单元测试：`bun test tests/model-fallback-core.test.ts`（33 项：错误分类含内容策略/上下文超限短路与裸 403 仍降级 / 链推进 / 冷却跳过 / 429 退避 / 不降级场景 / 链耗尽 / 绕回链首 / 冷却表跨 session 共享 / 状态不可变）| ✅ 全绿（全量 `bun test tests/` 157 pass）|
 | `model-fallback` 端到端（当前生效链）：`opencode run --standalone --agent build -m openstarry/deepseek-v4.1-flash`，openstarry 403「订阅额度不足」→ **一次**切到 `commandcode` → 成功作答；日志每次失败只落一行切换记录（无重复撞墙）| ✅ 实跑（2026-11-08）|
 | `model-fallback` 端到端（内置默认链，配置文件覆盖前）：坏 `MINIMAX_API_KEY` 驱动 `opencode run --agent build`，实测 `minimax-cn` 401 → `openstarry` 403 → `opencode-go` 成功作答| ✅ 实跑（2026-11-06）|

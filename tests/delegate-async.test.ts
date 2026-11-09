@@ -758,3 +758,143 @@ describe("grant 救援路径（AC18）", () => {
     expect(JSON.parse(resumed.content).session_id).toBe(first.session_id)
   })
 })
+
+// ─────────────────── ADR D12 派发面处置矩阵（AC13 ②③） ───────────────────
+
+describe("已删后端的处置矩阵（ADR D12 / AC13）", () => {
+  /** 造一个「已派发 → 后端被外部删除」的状态：pair 条目还在，session 查不到。 */
+  async function setupVanished(dir: string, opts: { missing?: string[] } = {}) {
+    const { ctx } = createFakeCtx({ missing: opts.missing })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 让 get 开始抛错（模拟外部删除），但保留 pair 条目
+    ;(ctx as any).session.get = async (input: any) => {
+      if (input.sessionID === a.session_id) throw new Error("404 session not found")
+      const s = (ctx as any).session
+      return s.get.call(null, input)
+    }
+    return { ctx, a }
+  }
+
+  test("② 派发面：resume 命中已删 ⇒ 旧条目墓碑 + 落 vanished 行 + 同 goal_key 新建", async () => {
+    const dir = repo("van-dispatch")
+    const { ctx, a } = await setupVanished(dir)
+
+    const r = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), resume_session: a.session_id },
+    )
+    // 新建了一个**新** session（不是复用已删的）
+    expect(r.session_id).not.toBe(a.session_id)
+    expect(r.recovered_from_vanished).toBe(a.session_id)
+    // 旧条目已墓碑（不占槽）
+    expect(readPairs(dir)[a.session_id].state).toBe("tombstone")
+    // ledger 落了 outcome:"vanished" 终态行
+    const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+    expect(ledger).toContain('"outcome":"vanished"')
+    expect(ledger).toContain(a.session_id)
+  })
+
+  test("② 关键回归：resume 已删后，同一 workRoot 可再次派发（不再被死条目占死）", async () => {
+    const dir = repo("van-noslot")
+    const { ctx, a } = await setupVanished(dir)
+    // 先触发一次「resume 已删」的处置
+    await run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id })
+    // 同一工作树再派一个**新**任务 ⇒ 必须成功（死槽已解除）
+    const again = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-b"))
+    expect(again.state).toBe("active")
+  })
+
+  test("③ suspend：已删 + active ⇒ 释放槽位并置 suspended（不抛错）", async () => {
+    const dir = repo("van-suspend")
+    const { ctx, a } = await setupVanished(dir)
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    expect(r.vanished).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("suspended")
+  })
+
+  test("③ cancel：已删 + 非墓碑 ⇒ 置墓碑 + 落 vanished 行（不抛错）", async () => {
+    const dir = repo("van-cancel")
+    const { ctx, a } = await setupVanished(dir)
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.state).toBe("tombstone")
+    expect(r.vanished).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("tombstone")
+    const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+    expect(ledger).toContain('"outcome":"vanished"')
+  })
+
+  test("③ cancel：已删 + 已墓碑 ⇒ 幂等 no-op", async () => {
+    const dir = repo("van-cancel-tomb")
+    const { ctx, a } = await setupVanished(dir)
+    const pairs = readPairs(dir)
+    pairs[a.session_id].state = "tombstone"
+    writeFileSync(path.join(dir, ".rddf/state/pair.json"), JSON.stringify({ version: "pair-v2", pairs }))
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.interrupted).toBe(false)
+    expect(r.state).toBe("tombstone")
+  })
+
+  test("③ 定位不到工程仓时 ⇒ 返回明确结果，**不抛错**", async () => {
+    const dir = repo("van-nolocate")
+    const { ctx } = createFakeCtx({ missing: ["ses_unknown"] })
+    // 该 session 从未被本插件见过 ⇒ 记忆映射里没有 ⇒ 定位不到
+    const r = await run(suspendToolDefinition(ctx), { session_id: "ses_unknown" })
+    expect(r.suspended).toBe(false)
+    expect(String(r.message)).toContain("无法定位")
+    const r2 = await run(cancelToolDefinition(ctx), { session_id: "ses_unknown" })
+    expect(r2.interrupted).toBe(false)
+    expect(String(r2.message)).toContain("无法定位")
+  })
+
+  test("③ 给了 project_dir ⇒ 能定位已删后端并完成处置", async () => {
+    const dir = repo("van-hint")
+    const { ctx, a } = await setupVanished(dir)
+    // 换一个没有该后端记忆的 ctx（模拟 front 换代），靠 project_dir 定位
+    const { ctx: ctx2 } = createFakeCtx({ missing: [a.session_id] })
+    const r = await run(cancelToolDefinition(ctx2), { session_id: a.session_id, project_dir: dir })
+    expect(r.state).toBe("tombstone")
+    expect(r.vanished).toBe(true)
+  })
+  test("③ suspend：已删 + idle ⇒ 幂等 no-op（state 不变，D12 矩阵）", async () => {
+    const dir = repo("van-suspend-idle")
+    const { ctx, a } = await setupVanished(dir)
+    const pairs = readPairs(dir)
+    pairs[a.session_id].state = "idle"
+    writeFileSync(path.join(dir, ".rddf/state/pair.json"), JSON.stringify({ version: "pair-v2", pairs }))
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(r.idempotent).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("idle") // 未改
+  })
+
+  test("③ suspend：已删 + 墓碑 ⇒ 拒绝", async () => {
+    const dir = repo("van-suspend-tomb")
+    const { ctx, a } = await setupVanished(dir)
+    const pairs = readPairs(dir)
+    pairs[a.session_id].state = "tombstone"
+    writeFileSync(path.join(dir, ".rddf/state/pair.json"), JSON.stringify({ version: "pair-v2", pairs }))
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(String(r.message)).toContain("墓碑")
+  })
+
+  test("② dispatch：resume 一个**已墓碑**的后端 ⇒ 拒绝（终态不可续接）", async () => {
+    const dir = repo("van-dispatch-tomb")
+    const { ctx, a } = await setupVanished(dir)
+    const pairs = readPairs(dir)
+    pairs[a.session_id].state = "tombstone"
+    writeFileSync(path.join(dir, ".rddf/state/pair.json"), JSON.stringify({ version: "pair-v2", pairs }))
+    let err = ""
+    try {
+      await dispatchToolDefinition(ctx).execute(
+        { ...baseInput(dir, "goal-a"), resume_session: a.session_id },
+        { sessionID: "ses_front_test" },
+      )
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain("墓碑")
+  })
+
+})
