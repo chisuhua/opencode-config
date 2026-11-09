@@ -86,7 +86,7 @@ ADR `docs/adr/ADR-front-multi-backend.md`（**Accepted，2026-11-09 改写后**�
 | **AC2** | 除 front 外任一 agent（build / plan / general / 五个 subagent）调用 `dispatch`/`sessions`/`suspend`/`cancel` → **权限层**拒绝（非模型拒绝） | E2E；降级：静态 —— **全局 `permission` 块存在四条显式 `deny`** 且仅 `agent.front.permission` 为 `allow`（**不是**查"无 allow"——缺省策略下无 allow 仍是 allow）。⚠️ 静态证据若需**临时改生产配置**（`opencode.jsonc.opencode-go`），**必须记录改前内容并在验证后原样还原**（还原失败即判证据无效） |
 | **AC3** | `cancel` 的 action 可被**单独 deny** 而 `dispatch`/`sessions`/`suspend` 仍 allow（验证 action 细分生效，非同挂一个 action） | 静态：实际配置文件的两个块 + `debug agents`；⚠️ 临时改配置须**原样还原**（同 AC2 的还原要求） |
 | **AC39** | `suspend` 的 action 可被**单独 deny** 而 `dispatch`/`sessions`/`cancel` 仍 allow（验证**四工具**的 action 相互独立） | 静态：实际配置文件 + `debug agents`；⚠️ 临时改配置须**原样还原**（同 AC2 的还原要求） |
-| **AC4** | **观测面不污染**（`sessions` 的「只读」= **只读后端会话**：不 prompt、不改后端 metadata；**允许**写本地 `pair.json`（存量回填）与 ledger（补记终态行），二者**不计入**污染判据）：`sessions` 调用前后，被观测后端的 **`session.context` 消息条数与最后一条消息 id 均不变**，且 `time.updated` 不变（**不投递 prompt 的直接证据**）。⚠️ **不测 ledger 行数**——reconcile 会写行（AC13），且 prompt 投递不会立即产生 ledger 行，行数不变证明不了没投递 | 单测（`sessions` 实现中无 `ctx.session.prompt` 调用 + fake ctx 断言 `prompt` 零调用）；E2E（调用前后取 context 快照 diff） |
+| **AC4** | **观测面不污染**（`sessions` 的「只读」= **只读后端会话**：不 prompt、不改后端 metadata；**允许**写本地 `pair.json`（存量回填，AC40），**不计入**污染判据）：`sessions` 调用前后，被观测后端的 **`session.context` 消息条数与最后一条消息 id 均不变**，且 `time.updated` 不变（**不投递 prompt 的直接证据**）。⚠️ **不测 ledger 行数**——**prompt 投递不会立即产生 ledger 行**，行数不变证明不了没投递；⚠️ **reconcile 不写 ledger**（槽位回收只改 `pair.json`，见 ADR `ADR-front-knowledge-capability` D5 与 `ADR-front-multi-backend` V08）——**观测面也不补记 ledger**（ADR D12） | 单测（`sessions` 实现中无 `ctx.session.prompt` 调用 + fake ctx 断言 `prompt` 零调用）；E2E（调用前后取 context 快照 diff） |
 | **AC5** | **`dispatch` 不等任务完成即返回**：调用后**不等待后端跑完**即返回 `session_id`（真实后端仍在跑）。⚠️ **但返回前须等「消费确认」**（AC44）——"消费确认"≠"任务完成"（前者只等简报已被 promote） | E2E（派一个长任务，断言返回时后端 `time.busy` 仍在）；降级：单测（`execute` 不调 `wait`，但含消费确认调用） |
 | **AC6** | **`dispatch` 显式 `delivery:"queue"`**：代码级强制（不依赖上游默认值 steer） | 静态：`lib/delegate-core.ts` 中 `prompt` 调用点含 `delivery: "queue"` 字面量 |
 | **AC7** | **`dispatch` 有硬超时，且按失败步骤分别处置**（fake ctx 的 `create`/`prompt`/`update` 返回**永不 settle 的 Promise** → 在超时上限内以**明确错误**返回）：① **`create` 超时/失败** ⇒ 什么都没建 ⇒ 清理（无残留 session）、**不占槽**、ledger 留痕 `event:"dispatch_failed"`；② **session 已建但 `pair`/`ledger`/`metadata` 写失败** ⇒ 清理已建 session、**不占槽**、ledger 留痕；③ **`prompt` 或消费确认超时** ⇒ 服务端可能已受理 ⇒ **保留 session + 保留槽位 + `state=dispatching`**，返回「投递结果未知，请 `sessions` 确认」，唯一恢复路径 = `cancel` 后重派（见 AC49）。⚠️ 不得出现「session 已删但槽位保留」的组合（那会让 `cancel` 无对象、工作树永久堵死）。⚠️ 不是"构造挂死的后端"——dispatch 不 wait 后端，后端挂死不会让 dispatch 挂住 | 单测（三个失败点各一例：断言各自的清理/留痕/占槽行为 + 断言无「session 已删而槽位保留」组合） |
@@ -101,7 +101,7 @@ ADR `docs/adr/ADR-front-multi-backend.md`（**Accepted，2026-11-09 改写后**�
 | **AC10** | **`sessions` 列出本 front 名下全部后端**（≥2 个，分属不同工程目录），每项含**已定义的 schema 字段**（见 AC29）**并按 `work_root` 分组** | E2E（派两个后端到不同目录 → `sessions` 列出两个）；降级：单测（fake `session.list` 夹具 + 断言分组字段） |
 | **AC11** | **兜底路径扫全量**：构造 >50 个 session（其中 ≥2 个是被派发的后端且 `time.updated` **最旧**）→ 换代后的 `sessions` 仍能列出这两个（验证 cursor 续扫，不因 limit 窗口漏扫） | E2E；降级：单测（fake `session.list` 返回 2 页 + 1 条沉底，断言续扫） |
 | **AC12** | **front 换代可找回**：新 front session id 下，兜底路径仍能列出旧后端 | E2E；降级：单测（roster 为空时走 list 路径） |
-| **AC13** | **外部删除可见（幂等）**：后端 session 被删后，`sessions` 报该项"已消失"，并在 ledger 补记终态行（**区别于"从未派发"**——后者无 dispatched 行）；**同一次消失只补一行**（重复查询不重复补）；补记的 `outcome` 取值**明确规定为 `vanished`**（AC36 的枚举扩展） | E2E（删后端 → `sessions` 报消失 + ledger 出现终态行）；降级：单测（fake list 缺项 → 断言补记一次、二次查询不补） |
+| **AC13** | **已删后端的处置（按 ADR D12 的能力边界 + 唯一矩阵，分四段判）**：<br>**① 观测面**——后端被外部删除后，`sessions` 的输出**不含**该项（metadata 索引随 session 删除消失，是 D2.1 的**特性**）；且**调用 `sessions` 前后该 repo 的 `ledger.jsonl` 行数与末行内容均不变**（观测面**不补记**）。<br>**② 派发面**——`dispatch(resume_session=X)` 命中**已删** X ⇒ **不得**留下 `state=dispatching` 的悬挂条目：旧条目置 `tombstone`、ledger 落 **`outcome:"vanished"`** 终态行（AC36 的枚举扩展）、按同一 `goal_key` **新建** session 续接 ⇒ **同一 `workRoot` 可再次派发**。<br>**③ 终止 / 暂停面**——对**已删** X：`suspend` 在条目为 `dispatching`/`active` 时**释放槽位并置 `suspended`**、在 `idle`/`suspended` 时幂等 no-op、在 `tombstone` 时拒绝；`cancel` 在非墓碑条目时**置 `tombstone` 并落 `outcome:"vanished"`**、在墓碑时幂等 no-op。**四组都不得因「无法定位工作目录」而抛错**（那会让调用方无路可走）。<br>**④ 痕迹**——该 repo 的 `ledger.jsonl` 里原有 `event:"dispatched"` 行**仍在**（区分于「从未派发」）；`pair.json` 条目也仍在，但 **reconcile 只改 `state`、不写 ledger** ⇒ 翻转后 pair 不再携带「消失」证据，**区分点只剩 ledger 那条 `dispatched`**。<br>**⑤ 读侧语义**——`sessions` 里没有该后端 **≠「从未派发」≠「没有终态」≠「一定被删」**（**索引写丢是第三种可能**：metadata 写失败被静默吞，见 ADR D2.1「可丢弃索引」） | 单测（①`sessions` 输出不含该项 + 调用前后 ledger 行数与末行不变；②`dispatch(resume=已删)` ⇒ 无 `dispatching` 悬挂条目 + 落 `vanished` 行 + 同 workRoot 可再派；③`suspend`/`cancel` 对已删 X 返回明确结果而非抛错；④`dispatched` 行仍在）；E2E（删后端 → 走 ①③④） |
 | **AC14** | **metadata 整体替换语义**：单次 update 后 metadata 的**完整字段仍在**（**含新增的 `work_root`/`state`**）。⚠️ **不保证条目级不丢**——roster 数组是 read-modify-write，并发 dispatch 时允许丢条目（兜底路径为准），AC 不得被读成"条目永不丢" | 单测（单次 update 字段完整性）；注明并发丢条目为可接受（Notes N3） |
 
 ### C. 一 session 一目标
@@ -211,7 +211,7 @@ ADR `docs/adr/ADR-front-multi-backend.md`（**Accepted，2026-11-09 改写后**�
 | V06（dispatch 落三处——含 `work_root`） | **AC9** |
 | V07（pair 条目含 `work_root`/`state` + 存量回填） | **AC40** |
 | V08（观测面不污染 + `sessions` 列出名下后端） | **AC4** + **AC10** |
-| V09（外部删除可见 + 补记终态） | **AC13** |
+| V09（已删后端：观测面不列不补记 / 派发面处置 / 终止面矩阵 / 痕迹 / 读侧语义） | **AC13**（五段逐段对应） |
 | V10（front 换代找回） | **AC12**（+ AC11 扫全量） |
 | V11（兜底路径扫全量） | **AC11** |
 | V12（metadata 完整字段——含 `work_root`/`state`） | **AC14** |
@@ -288,6 +288,8 @@ ADR `docs/adr/ADR-front-multi-backend.md`（**Accepted，2026-11-09 改写后**�
 - **N15 已知残留 —— `goal_key` 在多 worktree 下不唯一**：AC41 明确允许同仓不同 worktree 各有一个同 goal_key 的后端 ⇒ `goal_key` **不再是唯一键**，任何"按 goal_key 找后端"的实现（审计、ledger 关联）会歧义 ⇒ 实现须用 `(work_root, goal_key)` 或 `session_id` 定位，不得只用 `goal_key`。
 - **N16 已验证 —— 符号链接不会造出第二槽位**：`workRoot` = `path.resolve(git rev-parse --show-toplevel)`，而 git 返回**物理路径** ⇒ 同一工作树经符号链接访问得到**同一个** `workRoot`（实测：真实路径与符号链接路径解析结果相同）。⇒ **无需**额外的 realpath 归一。
 - **N17 已知残留 —— ADR D11.4 与 V42 的措辞张力**：D11.4 写「`suspend` 一个**不在跑**的后端 ⇒ 幂等 no-op」，V42 写「`suspend` 该后端**幂等释放**槽位」——在"`active` 但实际不 busy"这一形态上二者措辞不同。本 proposal 采**同时满足两者**的读法（**释放它所占据的槽位**；无槽可释放时才叫 no-op），见 AC51 ②。⇒ **建议 architect 回填 D11.4 的措辞**，避免实施期各自解读。
+- **N18 能力边界 —— 已删后端**（ADR D12，已定案）：插件 ctx **无 `project`/`location` 域**（`SessionDomain` 只 Pick session 方法）⇒ **无法枚举 repo** ⇒ 「让已删后端在名册里可见」的三种做法均不可行（扫 pair.json 恒盲 / 调用方传列表 / 全局清单 = 第三真相源）。⇒ **`sessions` 不列已删后端、观测面不补记**（与 D2.1「索引随删除消失是特性」一致）；**派发面**拿到 404 **正面证据**时必须按 D12 的唯一矩阵处置（否则死槽）。**AC13 的判据据此分四段**，不得按「sessions 里没有 ⇒ 从未派发」读。
+- **N19 实现尚未落地 —— D12 派发面处置矩阵**（AC13 的 ②③ 两段）：截至 2026-11-09，`locateBackend` 对已删 session 仍抛「无法定位后端」，`dispatch(resume=已删)` 仍落 `event:"dispatch_failed"` 且**保留槽位** ⇒ **死槽风险仍在**（已正向实跑验证）。⇒ **AC13 的 ②③ 段在实现补齐前判「不可判定」**，不得判通过。
 - **N12 映射表修正 —— 前一版的 V 编号整体错位（既有缺陷）**：前一版映射表按主题编号、自 V05 起与 ADR 实际条目错位 ⇒ 「可逆映射」名不副实。**本表已按 ADR 文件实际条目重排**。**verifier 复核映射时请以 ADR 原文为准**，若发现本表仍有错位，按 ADR 实际条目更正并记录（**不影响 AC 判据本身**，AC 集合与 ADR Verification 的对应关系不变）。
 - **N11 已知残留 —— 消费确认的判据待实测**：见证据规则 9 与 AC44。**未完成锚定实测前，AC44 判不可判定**（不是失败）；触发降级时 AC51/AC52/AC53/AC54 作废并如实记录。
 
