@@ -8,8 +8,8 @@
 | Date | 2026-11-09 |
 | Author | architect |
 | Parent | 部分取代 `docs/adr/ADR-front-agent-redesign.md` 的 D2（`delegate` 的同步单发序列）与 D3（brief 契约的 scope 部分），**并把该篇 D2 的「唯一工程通道」口径扩写为「唯一门控插件出口」**（见 D1 的不变式说明）；**不改**该篇 D1（四分类）、D4（front 工具面白名单）、D5（preflight grants）、D6（登记与并发协议）、D7（guide 归宿）、D8（调试纪律）；与 `ADR-front-knowledge-capability` 的 D2（只读 subagent 门控）、D4（agent 白名单与 kind）、D5（ledger 记忆层）**决策面正交**，但 ledger schema 面有单点耦合（见 D2.2）。与 `ADR-canonical-root-normalization` **决策面正交**（本篇只在 goal_key 里引用归一后的 `canonical_root`），但**实施顺序有依赖**：归一篇应先落地 |
-| 关联 change | `backlog: front-multi-backend`（**尚未立项**——本篇由 architect 起草，change 由 planner 立项；立项后回填 AC 映射与指针） |
-| AC 映射 | **暂缺**（change 未立项）。本文件 Verification 1–22 为前瞻判据，立项后由 planner 映射到 AC 编号 |
+| 关联 change | `openspec/changes/front-multi-backend/`（已立项 2026-11-09，planner 起草） |
+| AC 映射 | 本文件 Verification 1–28 → proposal 的 **AC1–AC30**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表；AC11/AC30 为扩展项） |
 | 审稿报告 | `.rddf/reviews/adr-front-multi-backend-review.md` |
 | 前置事实 | 19 条运行时探针（HTTP 层 8 + 插件内直测 8 + oracle 后补 3），全部带真实返回摘录，落在 `.rddf/reviews/front-multi-backend-probes.md`。**本篇的每个技术断言都有探针背书，无推测项** |
 

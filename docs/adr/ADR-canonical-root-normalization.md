@@ -8,8 +8,8 @@
 | Date | 2026-11-09 |
 | Author | architect |
 | Parent | 部分取代 `docs/adr/ADR-front-agent-redesign.md` 的 D6（登记与并发协议）中的 `canonical_root` 口径：原裁定未定义 worktree 场景的归一规则，与 `prompts/build.md:195,199` 已写明的「worktree → canonical 归一（`git rev-parse --git-common-dir`）」**口径不一致**；本篇把它写成**可执行的判别式**。该篇 D6 的 pair-v2 schema、锁协议、single-writer 规则**继续有效**。与 `ADR-front-multi-backend` **决策面正交**（后者只在 goal_key 里引用归一后的 `canonical_root`），但**实施顺序有依赖**：本篇应先于后者落地 |
-| 关联 change | `backlog: canonical-root-normalization`（**尚未立项**——由 planner 立项后回填 AC 映射与指针） |
-| AC 映射 | **暂缺**（change 未立项）。本文件 Verification 1–8 为前瞻判据 |
+| 关联 change | `openspec/changes/canonical-root-normalization/`（已立项 2026-11-09，planner 起草） |
+| AC 映射 | 本文件 Verification 1–9 → proposal 的 **AC1–AC12**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表；AC6/AC11/AC12 为扩展项） |
 | 审稿报告 | `.rddf/reviews/adr-front-multi-backend-review.md`（两篇同批评审报告，见该报告 §4） |
 | 前置事实 | 3 种 git 场景的实测（主仓 / linked worktree / submodule），原始输出见 `.rddf/reviews/front-multi-backend-probes.md` 的 P4 节 |
 
