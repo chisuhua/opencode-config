@@ -398,7 +398,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 - [ ] 同一 `workRoot` 可**常驻多个**后端 session（各自 `state=idle`），`sessions` 能把它们**列在一起并按 `work_root` 分组**。
 - [ ] **scope 前缀重叠检测不实现**：静态断言实现中**不存在**该逻辑（死代码不得保留；D8.2）。
 - [ ] 槽位检查与登记在**同一次锁临界区**内（并发触发两次派发，只有一个成功）。
-- [ ] **既有 `delegate` 受同一张槽位表约束**：同工作树已有 `active` 后端时，既有同步 `delegate` 也被拒（**这是本次改写对既有路径的唯一行为变更**，须显式测试）。
+- [ ] **既有 `delegate` 受同一张槽位表约束**：同工作树已有 `active` 后端时，既有同步 `delegate` 也被拒；且 `delegate` 返回后其条目 `state=idle`、条目落 `work_root`/`state`（**三处变更面见 D7.4**，须显式测试）。
 - [ ] **消费确认（D7.2，实施期最先锚定）**：`dispatch` 返回前必须确认简报**已被消费**；未确认 ⇒ 条目停在 `state=dispatching`。⚠️ **先实测**："简报文本出现在 `session.context`" 是否等价于 promote 已发生（上游 drain 是 `peek → awaitActivation → prepareContext → promote`，`runner/llm.ts:70,75,186-192`）⇒ 若**不可靠**，本条**触发降级**（退回「单槽但不可切换」），并**如实记录**，不得用"看起来对"冒充。
 - [ ] `dispatching`（未确认消费）的后端 → `suspend` **拒绝**、`cancel` 可用（未确认消费的简报仍可能 pending ⇒ 不可保留可续性）。
 - [ ] **翻转执行者（D7.1）**：① 既有同步 `delegate` 返回后，其条目 `state=idle`（不占槽）；② `dispatch` 派发的后端**跑完但无人调用 `sessions`** → 下一次派发到同一 `workRoot` **成功**（reconcile-on-read 生效）；③ **第二次顺序 `delegate` 到同一工作树成功**（不被自己前一轮留下的 `active` 条目挡住——这是对既有主路径的回归判据）。
