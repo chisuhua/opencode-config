@@ -89,3 +89,77 @@ ADR-front-multi-backend（编排能力，后落地）
 **APPROVE。** 两篇 ADR 满足 arch 档四要素（元数据 / 背景与问题 / 决策 / 选项对比表 ≥3 行 / 独立后果代价章 / 前瞻 Verification），无 BLOCKER，SHOULD_FIX 已闭合，决策面与既有三篇 ADR 无未声明冲突。
 
 **Status 转换**：`Proposed` → `Accepted`（**未实施**）。关联 change 尚未立项（`backlog: front-multi-backend` / `backlog: canonical-root-normalization`），AC 映射暂缺，待 planner 立项后回填。
+
+---
+
+# 第二轮：2026-11-09 改写评审（槽位键改 workRoot + 单槽切换模型）
+
+## 改写起因
+
+用户诉求：「改键到 workRoot，同时检查在同一个 worktree 下，是否允许多个后端 session 同时进行工作，但只有一个后端 session 处于活跃状态……允许 front session 控制下进行切换活跃的 session」。
+
+改写前的并发隔离是「同 `canonical_root`（stateRoot）互斥」⇒ 同一仓的多个 linked worktree 被"同 repo 互斥"堵死，worktree 隔离能力等于没实现。已落地的 `ADR-canonical-root-normalization`（commit `23584cd`）把根拆成 `stateRoot` / `workRoot`，正是为此提供前置。
+
+## 改写要点
+
+| # | 改动 | 位置 |
+|---|---|---|
+| 1 | 槽位键 `canonical_root` → **`workRoot`**；原「互斥」细化为**单槽**（常驻 vs 活跃分离） | D6.1 / D6.2 |
+| 2 | 状态机 5 态 `dispatching/active/idle/suspended/tombstone`，含转移边 | D6.3 |
+| 3 | **「投递 ≠ 消费」** ⇒ dispatch 返回前必须确认简报已被消费，未确认停在 `dispatching`（只可 cancel） | D7.2 |
+| 4 | `active → idle` 的**翻转执行者**（delegate 自翻转 / reconcile-on-read / suspend 确认停机）+ **锁的形态**（锁外查询 → 锁内重验 → 锁内翻转） | D7.1 |
+| 5 | 槽位回收 + **亡主接管**（front 换代）+ 投递失败保留槽位 | D7.2 / D7.3 |
+| 6 | 工具面三→四：新增 `suspend`（暂停可续）vs `cancel`（终止墓碑） | D1 / D9 |
+| 7 | **删除 scope 前缀重叠检测**（单槽已构造性排除并发写 ⇒ 死代码） | D8.2 |
+| 8 | 范围假设显式收窄：构造性保证仅在「后端只经本插件四工具被操作」时成立 | D8.3 |
+| 9 | `work_root` 进 metadata 索引与 pair 条目；`goal_key.repo` 仍为 `canonical_root` | D2.3 / D3 |
+| 10 | 存量条目一次性回填（数据迁移，属决策） | D2.3 |
+
+Verification 判据 28 → **49 条**；决策段 246 行（≤250）；最长 D 段 39 行（≤40）。
+
+## oracle 第 1 轮（3 处闭合性缺口 + 3 处次要缺口，全部吸收）
+
+| 缺口 | 结论 | 处置 |
+|---|---|---|
+| 「投递即消费」为假（admission ≠ consumption） | **成立**，已用上游源码复核 | D7.2 消费确认 + 降级路径 |
+| `active → idle` 翻转无执行者 | **成立** | D7.1 翻转执行者表 + reconcile-on-read |
+| front 换代后槽位无接管路径（工作树被砖死） | **成立** | D7.3 亡主接管 |
+| dispatch 超时后的槽位处置未定义 | 成立 | 并入 D7.2（保留槽位，不得静默放槽） |
+| 存量回填未写 `state` | 成立 | D2.3（按活体判据，不得默认 idle） |
+| 用户 TUI 直接操作绕过保证 | 成立 | D8.3 显式范围假设 |
+
+**上游源码证据**（opencode v2.2.5，`/tmp/opencode/upstream-v225`）：
+- `packages/core/src/session/runner/llm.ts:70,75,186-192` —— drain = `nextPromotable`（peek，**不消费**）→ `plugins.awaitActivation`（**可无限阻塞**）→ `prepareContext` → `promote`（**真正消费**）⇒ 投递 ≠ 消费
+- `packages/core/src/session/execution.ts:151-170` —— `interrupt({resume:false})` **不删除** pending 行；仅 `resume:true` 才走提升路径
+- `packages/core/src/session/inbox.ts:470-487` —— `nextPromotable` 先提 steer、再按 `enqueued_seq` 取最旧 queued ⇒ parked 旧简报会抢先跑
+- `packages/core/src/session/sql.ts:142` —— `delivery` 列只在 inbox 表，**消息表没有** ⇒ `session.context()` 大概率拿不到 `delivery` ⇒ steer 残留**大概率不可检测**
+- `packages/plugin/src/promise/adapter.ts:622-645` —— 插件可调的 session 方法全集里**无 inbox**
+
+## critic 第 1 轮（REJECT，3 BLOCKER + 4 SHOULD_FIX + 3 NITS）
+
+| 级别 | 问题 | 处置 |
+|---|---|---|
+| **BLOCKER 1** | 「投递失败 ⇒ reconcile 兜底回收」与「`dispatching` 只可 cancel」自相矛盾；按字面实现即制造幽灵注入 | reconcile **仅适用于 `state=active`**；`dispatching` 条目一律不翻转；投递失败唯一恢复路径 = `cancel` 后重派 |
+| **BLOCKER 2** | 「同 `withLock` 临界区内完成翻转/停机确认」与同步锁签名不可兼得（`withLock` 是 `() => void`、10s deadline，锁内不能 await） | 新增「锁的形态」：**锁外查询 → 锁内重验登记态 → 锁内翻转**；锁内只做同步读改写，**不修订** redesign D6 的锁协议 |
+| **BLOCKER 3** | 风险章「同一 goal_key 重复 resume 即拒」与 D3「相同 goal_key resume → 允许」直接矛盾 | 改为**由 per-session busy 判据 + 单槽表拦截**；明写 goal_key 校验只回答"是不是同一个目标" |
+| SHOULD_FIX 1 | Parent 行「不改 redesign D6」与 pair-v2 schema 扩展不符 | 精确化为「锁协议沿用不改；schema 追加 `work_root`/`state`」 |
+| SHOULD_FIX 2 | 「对既有 delegate 的唯一行为变更 = 一条槽位检查」不准确 | 列全三处：新增槽位检查 + 返回时写 `state:"idle"` + 条目落 `work_root`/`state` |
+| SHOULD_FIX 3 | D1 表「立即返回」与「返回前确认消费」字面冲突 | 改为「不等任务完成即返回 …… 返回前须等消费确认」 |
+| SHOULD_FIX 4 | 存量回填只在 Verification | 提升为 D2.3 决策段（数据迁移） |
+| NITS ×3 | Status 行内嵌流程状态 / `D7.2`→`D7.4` 引用 / 强制接管补工具序列 | 全部修 |
+
+## critic 第 2 轮（复审，仅验闭合）
+
+**APPROVE。mergeable: yes。0 BLOCKER、0 SHOULD_FIX、1 NIT。**
+
+- BLOCKER 1 闭合：`:196` / `:213` / `:219` 三处文本 + D6.3 状态表 `dispatching` 行**无 → `idle` 边** ⇒ 状态机与文字判据三方一致
+- BLOCKER 2 闭合：`:201`「锁的形态」段 + D7.4 / D11.2 / D11.3 三处一致引用，**无残留「锁内 await」表述**；Parent 行与「不修订锁协议」声明无冲突
+- BLOCKER 3 闭合：`:352` 已改；D3 段与 Verification 未动，两处同向
+- NIT（已采纳）：D7.2 补「**消费确认 ≠ 任务完成**」消歧
+
+## 未决项（ADR 已自述，未伪装成已决）
+
+1. **「已消费」的可观测判据未实测** —— 已写降级落点：若实测不可靠 ⇒ **退回「单槽但不可切换」**（只保留单槽，不提供 `suspend`）。
+2. **steer 残留大概率不可检测** —— 缓解只到「报存疑」（`baseline_message_id` 比对），且明写**不能保证检出**。
+3. **存量 pair 条目回填**已定为决策（D2.3），但迁移的执行细则由实施期定。
+4. `proposal.md` 的 AC 编号与映射表**仍待 planner 同步**（architect 不写 proposal）；在此之前以 ADR 的 Verification 文本为准。
