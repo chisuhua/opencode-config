@@ -199,8 +199,8 @@ agent：  agent.front.permission.delegate = "allow" → 唯一例外
 | # | 步骤 | 关键点 | 出错时的表现 |
 |---|---|---|---|
 | 1 | `validateBrief(input)` | 只校验存在/类型/结构；**不猜语义** | 抛错，**不建 session**（无副作用） |
-| 2 | `canonicalRoot(project_dir)` | `git rev-parse --show-toplevel`；非 git 目录回退 `realpath` 且 `vcs=false` | — |
-| 3 | resume 校验 | pair 登记表命中 + `canonical_root` 一致；`front_session_id` 只作**软信号** | 抛错（未登记 / root 不匹配） |
+| 2 | `canonicalRoot(project_dir)` → `{stateRoot, workRoot, vcs}` | **两个根**：`stateRoot = superproject 非空 ? superproject : dirname(abs(--git-common-dir))`；`workRoot = abs(--show-toplevel)`；非 git 目录两者都回退 `realpath` 且 `vcs=false`。**必须先判 superproject**（submodule 下 common-dir 指向 `.git/modules/…`） | — |
+| 3 | resume 校验 | **读回退**：`lookupPair(stateRoot)` 未命中再查 `workRoot`（存量 pair.json 物理在 worktree）；**双值接受**：`canonical_root` 等于 stateRoot 或 workRoot 任一即通过；`front_session_id` 只作**软信号** | 抛错（未登记 / root 不匹配） |
 | 4 | 组装 permissions | `[常量deny, scope edit 规则, grants]` | — |
 | 5 | create 或复用 session | 复用时不传 permissions（沿用建时定型） | — |
 | 6 | **`registerSession`** | 写 pair.json + role.json —— **必须在 prompt 之前** | 晚写 → 工程 session 角色退化为 `general` |
@@ -258,8 +258,8 @@ front 用 `cat /etc/passwd` **成功执行**（泄漏内容）。
 
 | 文件 | 位置 | schema | 写入方 |
 |---|---|---|---|
-| `role.json` | `<canonical_root>/.rddf/state/role.json` | 既有 role-v2：顶层镜像 + `sessions` 分区 + `history` | 工程 session（角色切换）+ delegate（分区 upsert） |
-| `pair.json` | `<canonical_root>/.rddf/state/pair.json` | `pair-v2`：`pairs: { <engineering_session_id>: { front_session_id, canonical_root, agent, registered_at, last_used_at } }` | delegate（single writer） |
+| `role.json` | `<stateRoot>/.rddf/state/role.json` | 既有 role-v2：顶层镜像 + `sessions` 分区 + `history` | 工程 session（角色切换）+ delegate（分区 upsert） |
+| `pair.json` | `<stateRoot>/.rddf/state/pair.json` | `pair-v2`：`pairs: { <engineering_session_id>: { front_session_id, canonical_root, agent, registered_at, last_used_at } }` | delegate（single writer） |
 
 并发规则：
 
@@ -413,7 +413,7 @@ await ctx.tool.transform((editor: any) => {
   - 只读 agent → `kind=knowledge`：`scope` 可省略/为空，**恒注入单条 `edit:* deny`**（绝不注入 scope allow），**grants 必须为空**，只登记 `pair.json`（`kind: "knowledge"`）、不写 `role.json` 的 `sessions` 分区。
   - 白名单对 `resume_session` 同样生效：resume 时校验 pair 条目的 `agent`，不在白名单则拒。
   - 换 agent 时仍要注意：**不同 agent 的 ask 清单不同**，`CONSTANT_DENY` 需要按目标 agent 调整。
-- **多工程**：现在 `canonical_root` 由 `project_dir` 推导，pair.json 按工程仓各存一份。
+- **多工程**：`stateRoot` 由 `project_dir` 推导（worktree 归一为主仓），pair.json 按工程仓各存一份。
   跨仓协作（如 hub-spoke）需要 `external_directory` grant —— 走 §6.5 的 grants 通道。
 - **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / `final_is_role_opening` / `model_switched` / 截断脱敏后的 `last_assistant_text`）。
   - 写入者只有本插件；与 pair/role 共用 `.rddf/state/.role.lock`。

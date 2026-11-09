@@ -95,7 +95,7 @@ ADR `docs/adr/ADR-canonical-root-normalization.md`（Accepted）描述的是一�
 - **AC17 是环境锚定判据**：它证明的是"装好的这台机器上三个 git 输出符合预期"，不是"所有 git 版本都如此"。上游 git 行为变更时该 AC 会先红。
 - **AC14 是回归判据**：语义从"单值相等"放宽为"读回退 + 任一相等"（ADR D3.1），实现时若只做其中一层，AC8 或 AC9 会分别暴露。
 - **AC10 是"覆盖面如实"判据**：它要求**失败方向也有断言**（从别的 worktree/主仓回来必须仍"未登记"）。这是防止实现者为了让测试变绿而偷偷加"扫描所有 worktree"——那会违反 ADR 的取舍。
-- **`prompts/build.md` 的 superproject 优先规则缺失**：该文件只写「`git rev-parse --git-common-dir` 归一」，没有 superproject 优先。AC15/AC16 要求补齐，但 `prompts/build.md` 是治理面文件（architect 归属），**builder 实施时能否直接改需确认**。
+- **`prompts/build.md` 的 superproject 优先规则缺失**：该文件只写「`git rev-parse --git-common-dir` 归一」，没有 superproject 优先。AC15/AC16 要求补齐。**用户已裁定（2026-11-09）：`prompts/build.md` 归 builder 实施**，不阻塞本 change。
 - **回退读会多一次文件读取**：非 worktree 场景 stateRoot == workRoot，实际只读一次；worktree 场景最多两次。可接受（非热路径）。
 
 ## Notes to verifier（不参与通过/失败判定）

@@ -110,19 +110,72 @@ export function toMillis(value: unknown): number {
   return Number.isNaN(parsed) ? 0 : parsed
 }
 
-export function canonicalRoot(dir: string): { root: string; vcs: boolean } {
+/** git 调用注入点（默认 execFileSync）。AC18：单测可注入，不改 module。 */
+export type GitRunner = (args: string[], cwd: string) => string
+
+const defaultGitRunner: GitRunner = (args, cwd) =>
+  execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+
+/**
+ * 归一两个根（ADR-canonical-root-normalization D1/D2）：
+ *
+ *   stateRoot = superproject 非空 ? superproject : dirname(abs(--git-common-dir))
+ *   workRoot  = abs(--show-toplevel)
+ *
+ * - stateRoot：状态文件（pair/role/ledger）的落盘根。worktree 下是主仓——两份状态
+ *   分裂会导致 resume 查无此条。
+ * - workRoot：`git status` 差集与 scope 相对解析的基准。worktree 下就是 worktree——
+ *   在主仓跑 git status 数不到 worktree 的变更（artifacts 恒 0 → unverified 误报）。
+ * - 非 worktree 场景两者恒等 ⇒ 行为零变化。
+ * - submodule：`--git-common-dir` 指向 `.git/modules/…`（非工作区路径），故必须先判
+ *   `--show-superproject-working-tree`（非 submodule 时返回空串）。
+ */
+export function canonicalRoot(
+  dir: string,
+  gitRunner: GitRunner = defaultGitRunner,
+): { stateRoot: string; workRoot: string; vcs: boolean } {
   try {
-    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd: dir,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-    const root = out.trim()
-    if (root) return { root, vcs: true }
+    const toplevel = gitRunner(["rev-parse", "--show-toplevel"], dir).trim()
+    if (!toplevel) throw fail("empty toplevel")
+    const workRoot = path.resolve(toplevel)
+    const superproject = gitRunner(["rev-parse", "--show-superproject-working-tree"], dir).trim()
+    if (superproject) {
+      // submodule：状态归属 superproject 工作树，不是 .git/modules/…
+      return { stateRoot: path.resolve(superproject), workRoot, vcs: true }
+    }
+    const common = absoluteCommonDir(gitRunner, dir)
+    return { stateRoot: common ? path.dirname(common) : workRoot, workRoot, vcs: true }
   } catch {
-    // 非 git 目录：回退到路径本身
+    // 非 git 目录：回退到路径本身（两个根相同，零行为变化）
+    const fallback = path.resolve(dir)
+    return { stateRoot: fallback, workRoot: fallback, vcs: false }
   }
-  return { root: path.resolve(dir), vcs: false }
+}
+
+/**
+ * `--git-common-dir` 的绝对路径。
+ *
+ * git ≥ 2.31 用 `--path-format=absolute`；旧版回退到「裸 `--git-common-dir` + 以
+ * **调用 cwd** 为基准 resolve」——主仓下裸命令返回相对路径 `.git`，用进程 cwd 会错位。
+ * 返回 undefined 表示拿不到（调用方退回 workRoot）。
+ */
+function absoluteCommonDir(gitRunner: GitRunner, dir: string): string | undefined {
+  try {
+    const withFormat = gitRunner(
+      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      dir,
+    ).trim()
+    if (withFormat) return path.resolve(withFormat)
+  } catch {
+    // git < 2.31：--path-format 未知选项
+  }
+  try {
+    const bare = gitRunner(["rev-parse", "--git-common-dir"], dir).trim()
+    if (bare) return path.resolve(dir, bare)
+  } catch {
+    /* 拿不到就不归一 */
+  }
+  return undefined
 }
 
 export function gitStatusPaths(root: string): string[] {
@@ -441,11 +494,26 @@ export function registerSession(
   })
 }
 
-export function lookupPair(root: string, sessionID: string): any {
-  const pairFile = path.join(root, ".rddf", "state", "pair.json")
-  const pair = readJson(pairFile)
-  if (!pair || typeof pair.pairs !== "object") return undefined
-  return pair.pairs[sessionID]
+/**
+ * 查 pair 登记（ADR-canonical-root-normalization D3.1 ①：读回退）。
+ *
+ * 先查 stateRoot（归一后的正确位置）；找不到再查 workRoot —— **存量 pair.json 物理
+ * 落在 workRoot**（旧代码用 `--show-toplevel` 算根）。只查 stateRoot 会在比较
+ * `canonical_root` 之前就判"未登记"，双值接受永远执行不到。
+ *
+ * 覆盖面（D3.2 实测）：只覆盖"从同一个 worktree 回来"。从别的 worktree / 主仓回来
+ * 仍查不到——与修复前一致，不引入回归。
+ */
+export function lookupPair(root: string, sessionID: string, fallbackRoot?: string): any {
+  const read = (r: string) => {
+    const pair = readJson(path.join(r, ".rddf", "state", "pair.json"))
+    if (!pair || typeof pair.pairs !== "object") return undefined
+    return pair.pairs[sessionID]
+  }
+  const hit = read(root)
+  if (hit !== undefined) return hit
+  if (fallbackRoot && path.resolve(fallbackRoot) !== path.resolve(root)) return read(fallbackRoot)
+  return undefined
 }
 
 /** scope 前缀 → 绝对路径（相对工程根解析；工程外的前缀保留原样）。 */
@@ -660,7 +728,8 @@ export function delegateToolDefinition(ctx: any): any {
         options: { permission: "delegate", codemode: false },
         async execute(input: any, toolContext: any) {
           const brief = validateBrief(input)
-          const { root, vcs } = canonicalRoot(brief.project_dir)
+          // AC6 逐点绑定（ADR D2）：状态落盘用 stateRoot，变更检测/scope 解析用 workRoot。
+          const { stateRoot, workRoot, vcs } = canonicalRoot(brief.project_dir)
           const frontSessionID = toolContext?.sessionID
 
           // —— resume 校验：必须在该工程仓库的 pair 登记表内 ——
@@ -672,12 +741,20 @@ export function delegateToolDefinition(ctx: any): any {
           let effectiveAgent = brief.agent
           let kind = brief.kind
           if (brief.resume_session) {
-            existing = lookupPair(root, brief.resume_session)
+            // 读回退（D3.1 ①）：存量 pair.json 物理落在 workRoot。
+            existing = lookupPair(stateRoot, brief.resume_session, workRoot)
             if (!existing) {
-              throw fail(`resume_session 未登记: ${brief.resume_session}（只能续接本工程仓库 pair.json 中登记的 session）`)
+              throw fail(
+                `resume_session 未登记: ${brief.resume_session}（只能续接本工程仓库 pair.json 中登记的 session；` +
+                  `从当初派发它的那个 worktree 发起才能找到存量条目）`,
+              )
             }
-            if (existing.canonical_root !== root) {
-              throw fail(`resume_session 的 canonical_root 不匹配: ${existing.canonical_root} != ${root}`)
+            // 双值接受（D3.1 ②）：存量 canonical_root 是 worktree 路径（旧口径）。
+            // 只接受同一仓库的 stateRoot/workRoot —— 跨仓冒充仍拒（D3.3）。
+            if (existing.canonical_root !== stateRoot && existing.canonical_root !== workRoot) {
+              throw fail(
+                `resume_session 的 canonical_root 不匹配: ${existing.canonical_root} ∉ {${stateRoot}, ${workRoot}}`,
+              )
             }
             // 白名单对 resume 同样生效（否则 create 校验、resume 放行 = 结构性绕过）。
             const existingAgent = String(existing.agent ?? "build")
@@ -696,9 +773,10 @@ export function delegateToolDefinition(ctx: any): any {
 
           // 只读 session 恒注入单条 edit deny，绝不注入 scope 派生 allow
           // （session 规则排在 agent 规则之后、last-match-wins，会覆盖只读 agent 自身的 edit: deny）。
+          // scope 解析基准 = workRoot（scope 描述的是"要改哪个工作区的哪个路径"）。
           const editRules =
             kind === "engineering"
-              ? scopeEditRules(root, brief.scope)
+              ? scopeEditRules(workRoot, brief.scope)
               : [{ action: "edit", resource: "*", effect: "deny" }]
 
           const permissions = [
@@ -720,8 +798,10 @@ export function delegateToolDefinition(ctx: any): any {
 
           // 登记必须发生在 prompt 之前：工程 session 开局就要读自己的 role.json 分区，
           // 否则它会去找全局 fallback，而全局 fallback 属于 external_directory（默认 deny）。
-          registerSession(root, sessionID, frontSessionID, effectiveAgent, kind)
-          const statusBefore = vcs ? gitStatusPaths(root) : []
+          // 落盘根 = stateRoot（worktree 下是主仓——两份状态分裂会导致 resume 查无此条）。
+          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, kind)
+          // 变更检测基准 = workRoot（在主仓跑 git status 数不到 worktree 的变更）。
+          const statusBefore = vcs ? gitStatusPaths(workRoot) : []
 
           const before = await ctx.session.get({ sessionID })
           const beforeMessages = await ctx.session.context({ sessionID })
@@ -742,7 +822,7 @@ export function delegateToolDefinition(ctx: any): any {
             scope: brief.scope,
           }
           if (busy) {
-            appendLedger(root, {
+            appendLedger(stateRoot, {
               ...ledgerBase,
               outcome: "busy",
               blocked_reason: null,
@@ -764,7 +844,7 @@ export function delegateToolDefinition(ctx: any): any {
             }
           }
 
-          const promptText = buildBrief(brief, root)
+          const promptText = buildBrief(brief, workRoot)
           await ctx.session.prompt({ sessionID, text: promptText })
 
           // 超时上限：默认 30 分钟；测试可用 DELEGATE_WAIT_TIMEOUT_MS 缩短。
@@ -803,16 +883,16 @@ export function delegateToolDefinition(ctx: any): any {
           const { blocked_reason, blocked_action, blocked_all } = extractBlocked(messages)
           const assistantText = lastAssistantText(messages)
 
-          const statusAfter = vcs ? gitStatusPaths(root) : []
+          const statusAfter = vcs ? gitStatusPaths(workRoot) : []
           const beforeSet = new Set(statusBefore)
           // 只报告本次委托期间新增/变更的文件（委托前就存在的脏文件不算越界）
           const changed = statusAfter.filter((file) => !beforeSet.has(file))
           const scopeAbs = brief.scope.map((s) => {
             const t = s.replace(/^\.\//, "").replace(/\/+$/, "")
-            return isAbsolute(t) ? path.resolve(t) : path.resolve(root, t)
+            return isAbsolute(t) ? path.resolve(t) : path.resolve(workRoot, t)
           })
           const outOfScope = changed.filter((file) => {
-            const absolute = path.resolve(root, file)
+            const absolute = path.resolve(workRoot, file)
             return !scopeAbs.some((prefix) => absolute === prefix || absolute.startsWith(prefix + path.sep))
           })
 
@@ -829,7 +909,7 @@ export function delegateToolDefinition(ctx: any): any {
           // 机读化：宿主报成功但无交付证据 → `unverified`（宿主原值保留在 host_outcome）。
           if (noWorkEvidence) outcome = "unverified"
 
-          registerSession(root, sessionID, frontSessionID, effectiveAgent, kind, {
+          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, kind, {
             ...ledgerBase,
             outcome,
             host_outcome: hostOutcome,
@@ -854,7 +934,7 @@ export function delegateToolDefinition(ctx: any): any {
 
           const summary = {
             session_id: sessionID,
-            project_root: root,
+            project_root: workRoot,
             vcs,
             agent: effectiveAgent,
             kind,

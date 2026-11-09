@@ -315,19 +315,22 @@ describe("scope 越界检测", () => {
 // ───────────────────────────── 项目识别 ─────────────────────────────
 
 describe("项目识别与变更检测", () => {
-  test("git 仓库 → canonical root + vcs=true", () => {
+  test("git 仓库 → stateRoot == workRoot（主仓场景两根恒等）+ vcs=true", () => {
     const repo = gitRepo("repo-a")
     const r = canonicalRoot(repo)
     expect(r.vcs).toBe(true)
-    expect(path.resolve(r.root)).toBe(path.resolve(repo))
+    // 主仓：两个根都在仓库根，零行为变化（AC1）
+    expect(path.resolve(r.stateRoot)).toBe(path.resolve(repo))
+    expect(path.resolve(r.workRoot)).toBe(path.resolve(repo))
   })
 
-  test("非 git 目录 → 绝对路径 + vcs=false", () => {
+  test("非 git 目录 → 绝对路径 + vcs=false（两根相同，零行为变化）", () => {
     const plain = path.join(TMP, "plain")
     mkdirSync(plain, { recursive: true })
     const r = canonicalRoot(plain)
     expect(r.vcs).toBe(false)
-    expect(path.resolve(r.root)).toBe(path.resolve(plain))
+    expect(path.resolve(r.stateRoot)).toBe(path.resolve(plain))
+    expect(path.resolve(r.workRoot)).toBe(path.resolve(plain))
   })
 
   test("gitStatusPaths 解析 porcelain 输出（含新增/修改/重命名）", () => {

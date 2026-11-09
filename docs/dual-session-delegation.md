@@ -96,8 +96,11 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 
 - 工程 session **没有 UI**：任何 `ask` 会永久挂死 → ask 类目一律落成 `deny`（快速失败）。
 - `scope` → `edit` 规则：scope 内 allow、其余 `edit` deny（**scope 的强制点**）。
-- 登记：建立后立刻写 `<工程>/.rddf/state/pair.json`（pair-v2）与 `role.json` 的 `sessions` 分区
+- 登记：建立后立刻写 `<stateRoot>/.rddf/state/pair.json`（pair-v2）与 `role.json` 的 `sessions` 分区
   ⇒ 工程 session 开局就拿到自己的角色（`builder`），不会退化成 `general`。
+  - **`stateRoot` 与 `workRoot` 是两个根**：`stateRoot` 是状态文件落点（worktree 下归一到主仓，
+    否则主仓读不到、resume 查无此条）；`workRoot` 是 `git status` 差集与 scope 相对解析的基准
+    （在主仓跑数不到 worktree 的变更）。非 worktree 场景两者恒等。
 
 ### 步骤 4：结果解读
 

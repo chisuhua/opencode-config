@@ -49,5 +49,5 @@ ADR `docs/adr/ADR-canonical-root-normalization.md` 已 Accepted（oracle + criti
 
 - 影响面：`lib/delegate-core.ts`（`canonicalRoot` 返回值形状 + 其 6 处用途的根分派 + 可注入 `gitRunner`）、`tests/delegate-core.test.ts` / `tests/delegate-tool.test.ts`（canonical 相关用例 + 三种 git 场景）、`prompts/build.md`（**superproject 优先规则**，AC15/AC16 要求）、`docs/front-delegate-architecture.md`（§4.3 session 模型表的 canonical 口径）、`docs/dual-session-delegation.md`。
 - 兼容性：`canonicalRoot()` 是**公开导出符号**，返回形状变更（一个值 → 两个根）⇒ 既有单测必须同步改。`pair.json` schema **不变**（`canonical_root` 字段仍是字符串，只是取值口径变严 + 读回退）。
-- ⚠️ **归属待确认**：`prompts/build.md` 是**治理面文件**（architect 归属，`~/.config/opencode/**`）。builder 实施时能否直接改需用户确认；若不能，AC15/AC16 的文档部分需由 architect 先行落地。
+- ✅ **归属已裁定**：`prompts/build.md` 归 **builder 实施**（用户 2026-11-09 明确）。AC15/AC16 的文档部分由本 change 一并落地。
 - 风险：`--path-format=absolute` 需 git ≥ 2.31（回退路径须显式实现，且裸 `--git-common-dir` 在主仓返回相对路径 `.git`，回退必须以调用 cwd 为基准）；`--show-superproject-working-tree` 的空串语义若被上游改掉，判别式会误判（必须先判空再判路径）；`.git` 为文件（非目录）的 submodule 形态未实测；**ADR D3 的"双值接受已覆盖存量"论证不完整**（需读回退，待 architect 补正）。
