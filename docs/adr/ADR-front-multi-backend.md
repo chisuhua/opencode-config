@@ -274,6 +274,8 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 **为什么不用上游的 `ctx.session.wait`（备选与取舍）**：上游提供了权威的 settle 原语 `session.wait` = `get` + `execution.awaitIdle`（`session.ts:278-281`），而 `awaitIdle` 在 settle **之后会重查一次**（上游注释原文：「re-check after it settles to cover a successor execution started by a late doorbell」，`run-coordinator.ts:164-170`）⇒ 它**天然覆盖**上面那条「清理期间到达的新 wake ⇒ 后继 execution」的缺口，且它同时满足本篇的两个分支（空闲 ⇒ 立即返回；在跑 ⇒ 等到终态落定）。它**插件可见**（`adapter.ts:641`），本仓的既有同步 `delegate` 就在用它（`lib/delegate-core.ts:1091`，配超时竞速）。**本篇仍不用它**，理由两条：① **跨 server 实例不可靠**——`awaitIdle` 只看**本进程内**的 execution 表（`run-coordinator` 的 `executions` 是进程内 Map），后端若跑在**另一个实例**上，该表查不到 ⇒ 立即返回 ⇒ 不能作为停机判据；而水位线 `time.idle` 是 DB 级、跨实例可见。② **run 中途被 interrupt 时的返回语义未实测**（探针缺口：`.rddf/reviews/front-multi-backend-probes.md`「`ctx.session.wait()` 在 run 中途被 interrupt 时的返回语义未测」）⇒ 实测前不能把它写进判据。⇒ 「改用 `session.wait`」登记为**待实测的备选**（需先补上述实测）；本篇保留水位线判据。
 
+⚠️ **该选择已被部分取代**：后续探针已补齐上述两项实测（单实例 `wait` 覆盖后继实测 2921ms；跨实例 `wait` 3ms 返回 = 不可靠）⇒ 判据改为「`wait` + 判活 + 水位线」合取，见 **`ADR-front-stop-confirmation`**（本篇 **D11.3 的分支结构与有界要求继续有效**）。
+
 **「停机确认」是释放槽位的前置**：单槽的价值建立在"同一工作树同时只有一个写入者"上；放掉一个仍在写的槽 = 立刻并发写。停机确认在**锁外**完成，锁内**重验该条目仍是 `active`** 才翻转为 `suspended`。
 
 **D11.4 语义约束**
