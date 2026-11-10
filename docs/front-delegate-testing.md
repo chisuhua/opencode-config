@@ -83,22 +83,15 @@ tests/README.md               本目录的说明（覆盖范围、fixture 约定
 
 ## 5. fixture 约定
 
-被委托的**示例工程 = `rdd-workflow-e2e`**，实际路径 `/workspace/main/rdd-workflow-e2e`
-（注意：`/workspace/project/rdd-workflow-e2e` 不存在）。
+被委托的工程 = **测试自建的最小 git 仓库**（`tests/delegate-tool.test.ts::fixtureProject`）：
+临时目录 + `README.md` + `tests/` 目录 + `git init` / `add -A` / 一次 commit。
 
-fixture 构造（`tests/delegate-tool.test.ts::fixtureProject`）：
+**为什么不复制真实仓库**：早期版本复制 `rdd-workflow-e2e` 的工作树，代价是
+（a）单元测试变成**依赖外部路径**（换机器 / CI 直接失败），与「完全离线」矛盾；
+（b）每个用例都要 `cpSync` 整个仓库，慢且脆。
+单元测试只需要「可写、可提交、可算 diff」，最小 fixture 足够。
 
-1. 复制其**工作树**到临时目录，**排除 `.git`**；
-2. 重新 `git init` + `git add -A` + 一次 commit。
-
-为什么排除 `.git`：git 对象文件是只读（444），复制后不可写 → `cpSync` 会以 EACCES 失败。
-为什么重新 init：测试需要**可提交、可算 diff**的工程；原仓库的 `.git` 复制过来也没意义。
-
-为什么用临时副本而不是直接用真仓库：测试会写文件（scope 内/外的越界用例），**不能污染示例仓库的 git 状态**。
-每个测试用例用独立目录（`rdd-workflow-e2e-N`），避免第二次调用时 `git commit` 报
-"nothing to commit"。
-
-要换示例工程：改 `tests/delegate-tool.test.ts` 顶部的 `EXAMPLE_PROJECT` 常量即可。
+为什么每个用例用独立目录：同一目录复用会导致第二次 `git commit` 报 "nothing to commit"。
 
 ## 6. 假 ctx 契约
 
@@ -139,7 +132,7 @@ describe("scopeEditRules", () => {
 ### 端到端测试（`delegate-tool.test.ts`）
 
 ```ts
-const project = fixtureProject()                       // rdd-workflow-e2e 的临时副本
+const project = fixtureProject()                       // 自建最小 git 仓库
 const { ctx, calls, sessions } = createFakeCtx({        // 假 ctx
   onPrompt: (session) => writeFileSync(path.join(project, "tests/x.py"), "# ok\n"),
 })
@@ -194,6 +187,24 @@ opencode run --agent plan "列出你可用的工具名，若有 delegate 请说�
 | 改 `opencode.jsonc` 的 front 权限块 | `opencode debug agents` 看矩阵 + 3 条越权用例实测被拒 |
 | 改 `prompts/front.md` | 理解性 + 实施性各跑一次（换 prompt **路径**或重启服务，否则内容不生效） |
 | 改 `delegate` 的输入字段 | 同步 `tests/delegate-core.test.ts` 的 schema 断言 + `prompts/front.md` 的 brief 表 |
+| 升级 opencode / 怀疑上游语义变了 | `scripts/check-upstream-anchors.sh`（语义锚点检查，见下） |
+
+### 上游语义漂移检查
+
+ADR 的停机判据、`NotFound` 判定、`interrupt` 语义都依赖上游行为。历史上 ADR 用**行号**
+引用上游源码，opencode 升级后行号会静默漂移 —— 所以本仓只锚定**语义**：
+
+```bash
+scripts/check-upstream-anchors.sh            # 默认 $OPENCODE_SRC 或 /workspace/project/opencode
+scripts/check-upstream-anchors.sh --src DIR  # 指定上游源码根
+```
+
+- 17 个锚点（`Session.NotFoundError` tag、`interrupt` 异步 settle、`session.wait` =
+  `get` + `awaitIdle`、`awaitIdle` 重判后继、`time.idle` 严格单调、插件可见方法集、
+  server `{interrupted}` 形状）。
+- 退出码：`0` = 全命中（或源码不在 ⇒ SKIP），`2` = **漂移**（需要重新核对 ADR 前提，
+  **不要只改行号**）。
+- 不进 CI：需要上游源码 checkout；升级 opencode 后手动跑一次。
 
 ## 10. CI 接入建议
 
@@ -213,7 +224,6 @@ opencode run --agent plan "列出你可用的工具名，若有 delegate 请说�
 |---|---|
 | `Export named 'xxx' not found in module '../lib/delegate-core.ts'` | core 里漏了 `export` |
 | `SyntaxError: Unexpected end of file` | 抽段/拼接文件时括号配平出错 → `bun build lib/delegate-core.ts --target=bun --outfile /dev/null` 先验语法 |
-| `EACCES ... .git/objects/...` | fixture 复制了 `.git` → 只复制工作树 |
 | `git commit ... nothing to commit` | fixture 目录被复用 → 每个用例独立目录 |
 | `test.for is not a function` | bun 1.3 无 `test.for` → 用普通 `for` 循环 |
 | 断言失败但"代码看起来对" | 假 ctx 的语义与真实宿主不一致 → 对照 §6 逐条核 |

@@ -399,6 +399,29 @@ describe("dispatch：消费确认（AC44/AC45）", () => {
     expect(r.delivery_known).toBe(false)
   })
 
+  test("投递抛错（结果未知）⇒ 落 dispatch_failed + delivery_known:false + 槽位保留（AC30/AC49）", async () => {
+    const dir = repo("disp-prompt-fail")
+    const { ctx } = createFakeCtx()
+    // prompt 抛错 ⇒ 投递结果未知：**不得**释放槽位、**不得**删除 session
+    ctx.session.prompt = async () => {
+      throw new Error("ECONNRESET: prompt delivery failed")
+    }
+    const r = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    expect(r.state).toBe("dispatching")
+    expect(r.delivery_known).toBe(false)
+    const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+    expect(ledger).toContain('"dispatch_failed"')
+    expect(ledger).toContain("ECONNRESET")
+    // 槽位仍被占（再派会被拒，错误含该后端 id）
+    let err = ""
+    try {
+      await dispatchToolDefinition(ctx).execute(baseInput(dir, "goal-b"), { sessionID: "ses_front_test" })
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain(r.session_id)
+  })
+
   test("dispatching ⇒ suspend 被拒（AC45）", async () => {
     const dir = repo("disp-pending2")
     const { ctx } = createFakeCtx({ notConsume: true })
@@ -905,6 +928,24 @@ describe("已删后端的处置矩阵（ADR D12 / AC13）", () => {
     expect(String(r2.message)).toContain("无法定位")
   })
 
+  test("③ 查询失败（原因不明）⇒ suspend/cancel 都**不处置**，明确报「无法确认」", async () => {
+    const dir = repo("van-unknown")
+    const { ctx, a } = await setupVanished(dir)
+    // 把「已删」换成「原因不明」：非 NotFoundError ⇒ 不得当作已删除
+    ctx.session.get = async (input: any) => {
+      if (input.sessionID === a.session_id) throw new Error("ECONNRESET: db unavailable")
+      throw new Error("ECONNRESET: db unavailable")
+    }
+    const rs = await run(suspendToolDefinition(ctx), { session_id: a.session_id, project_dir: dir })
+    expect(rs.suspended).toBe(false)
+    expect(String(rs.message)).toContain("无法确认")
+    const rc = await run(cancelToolDefinition(ctx), { session_id: a.session_id, project_dir: dir })
+    expect(rc.interrupted).toBe(false)
+    expect(String(rc.message)).toContain("无法确认")
+    // 未处置：pair 条目原样（不会被墓碑/释放）
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
   test("③ 给了 project_dir ⇒ 能定位已删后端并完成处置", async () => {
     const dir = repo("van-hint")
     const { ctx, a } = await setupVanished(dir)
@@ -1022,14 +1063,30 @@ describe("AC57 常驻与往返切换（自然跑完 → B → 回到 A）", () =
 })
 
 describe("缺失判定的窄口径（查询失败 ≠ 已删除）", () => {
-  test("isSessionMissingError：上游 tagged 错误 ⇒ 缺失；其它错误 ⇒ 不缺失", async () => {
+  test("isSessionMissingError：只认 tagged 与 session 语义措辞（裸 404 / HandlerNotFound 都不算）", async () => {
     const { isSessionMissingError } = await import("../lib/delegate-async.ts")
-    const nf: any = new Error("Session.NotFoundError: session not found")
-    nf._tag = "Session.NotFoundError"
+    // 正向：上游实测 tag = SessionNotFoundError（线上 404 响应体同名字段）
+    const nf: any = new Error("Session not found: ses_x")
+    nf._tag = "SessionNotFoundError"
     expect(isSessionMissingError(nf)).toBe(true)
-    expect(isSessionMissingError(new Error("404 session not found"))).toBe(true)
+    // 负向：**结构化 404 但不含 session 语义** ⇒ 不算（否则 wait 端点缺失的
+    // HandlerNotFound 404 会被误判成「后端已删除」，绕过 ADR S8 的 degraded 分支）
+    expect(isSessionMissingError({ status: 404, message: "gone" })).toBe(false)
+    expect(isSessionMissingError({ statusCode: "404" })).toBe(false)
+    expect(isSessionMissingError(new Error("HandlerNotFound: session.wait"))).toBe(false)
+    // 正向：session 语义措辞（旧版/包装错误）
+    expect(isSessionMissingError(new Error("session not found: ses_x"))).toBe(true)
+    expect(isSessionMissingError(new Error("session ses_x not found"))).toBe(true)
+    expect(isSessionMissingError(new Error("Session.NotFoundError: unknown"))).toBe(true)
+    expect(isSessionMissingError(new Error("no such session ses_x"))).toBe(true)
+    // 负向：**消息里带 404 但与 session 无关** ⇒ 不得当作已删除（否则误放槽）
+    expect(isSessionMissingError(new Error("ECONNRESET after reading 404 bytes"))).toBe(false)
+    expect(isSessionMissingError(new Error("upstream returned 40412 records"))).toBe(false)
+    expect(isSessionMissingError(new Error("HTTP 404 route not found"))).toBe(false)
+    // 负向：其它错误
     expect(isSessionMissingError(new Error("boom"))).toBe(false)
     expect(isSessionMissingError(new Error("connection timeout"))).toBe(false)
+    expect(isSessionMissingError(null)).toBe(false)
   })
 
   test("查询失败（原因不明）⇒ 活着的后端**仍占槽**，不被 reconcile 释放", async () => {
@@ -1479,6 +1536,25 @@ describe("停机确认（ADR-front-stop-confirmation）", () => {
     }
   })
 
+  test("AC9 wait 端点缺失（404 HandlerNotFound）⇒ degraded，不得当成「后端已删」（S8）", async () => {
+    setW("300")
+    const dir = repo("stop-handler-missing")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    ctx.session.wait = async () => {
+      const e: any = new Error("HandlerNotFound: session.wait")
+      e.status = 404
+      throw e
+    }
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(r.stop_judge).toBe("degraded")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
   test("AC8 退化三分支 + stop_judge 三值 + ledger 留痕（S7/S7b）", async () => {
     setW("300")
     // (a) wait 缺失 + 空闲 ⇒ 拒绝（无正面证据）
@@ -1499,17 +1575,20 @@ describe("停机确认（ADR-front-stop-confirmation）", () => {
     {
       const dir = repo("stop-ac8b")
       process.env.RDDF_SUSPEND_ALLOW_DEGRADED = "1"
-      const { ctx, sessions } = createFakeCtx({ noWait: true })
-      const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
-      const s = sessions.get(a.session_id)!
-      s.time = { idle: Date.now() + 10_000 }
-      s.messages = []
-      const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
-      expect(r.suspended).toBe(true)
-      expect(r.stop_judge).toBe("degraded-forced")
-      const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
-      expect(ledger).toContain("suspend_degraded")
-      delete process.env.RDDF_SUSPEND_ALLOW_DEGRADED
+      try {
+        const { ctx, sessions } = createFakeCtx({ noWait: true })
+        const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+        const s = sessions.get(a.session_id)!
+        s.time = { idle: Date.now() + 10_000 }
+        s.messages = []
+        const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+        expect(r.suspended).toBe(true)
+        expect(r.stop_judge).toBe("degraded-forced")
+        const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+        expect(ledger).toContain("suspend_degraded")
+      } finally {
+        delete process.env.RDDF_SUSPEND_ALLOW_DEGRADED
+      }
     }
     // (c) wait 缺失 + 基线在跑 ⇒ 水位线是正面证据 ⇒ 允许
     {
@@ -1578,6 +1657,46 @@ describe("停机确认（ADR-front-stop-confirmation）", () => {
     const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
     expect(r.suspended).toBe(true)
     expect(r.stop_judge).toBe("wait")
+  })
+
+  test("D5⑥ 释放后复检命中「又有新执行」⇒ 如实留痕 stop_raced（不假装关闭窗口）", async () => {
+    setW("500")
+    const dir = repo("stop-raced")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const backend = sessions.get(a.session_id)!
+    backend.time = { idle: Date.now() + 10_000 }
+    backend.messages = []
+
+    // 一旦 pair 翻成 suspended（= 释放已完成），后续读到的就是「新 execution 已起」
+    ctx.session.get = ((orig) => async (input: any) => {
+      if (readPairs(dir)[input.sessionID]?.state === "suspended") {
+        const now = Date.now()
+        backend.time = { busy: now, idle: now - 1_000 }
+        backend.messages = [{ id: "m_raced", time: { created: now } }]
+      }
+      return orig(input)
+    })(ctx.session.get)
+
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    expect(r.stop_raced).toBe(true)
+    const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+    expect(ledger).toContain('"stop_raced"')
+  })
+
+  test("sessions 是只读观测：不输出 stop_judge（载体重合会误导消费者）", async () => {
+    setW("500")
+    const dir = repo("stop-judge-carrier")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.stop_judge).toBe("wait") // suspend 的返回值上有
+    const listed = await run(sessionsToolDefinition(ctx), {})
+    expect(JSON.stringify(listed)).not.toContain("stop_judge")
   })
 
   test("AC15 prompts/front.md 文案：不得暗示「重试 suspend」（X10）", () => {

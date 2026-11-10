@@ -6,43 +6,33 @@
  *   brief 校验 → 工程 session 建立（权限定型）→ 简报投递 → 结果回传 →
  *   pair / role 登记 → 续接 → 阻断识别 → 越界检测 → busy 保护。
  *
- * 被委托的示例工程 = rdd-workflow-e2e（复制到临时目录，避免污染其 git 状态）。
+ * 被委托的工程 = **自建最小 git 仓库**（临时目录；不依赖任何外部仓库）。
  *
  * 运行：bun test tests/
  */
 import { afterAll, describe, expect, test } from "bun:test"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 
 import { canonicalRoot, delegateToolDefinition, enterStopGuard, leaveStopGuard } from "../lib/delegate-core.ts"
 
-const EXAMPLE_PROJECT = "/workspace/main/rdd-workflow-e2e"
 const TMP = mkdtempSync(path.join("/tmp/opencode", "delegate-tool-test-"))
 
 /**
- * 以 rdd-workflow-e2e 为例构造被委托工程。
- * 只复制工作树（排除 .git：git 对象文件只读，复制后不可写），再重新 git init —— 测试只需要
- * 一个可写、可提交、可算 diff 的工程副本。
+ * 自建最小工程（**不依赖任何外部仓库**，与 README「完全离线」一致）：
+ * 只需要一个可写、可提交、可算 diff 的 git 仓库 + `tests/` 目录。
  */
 let fixtureCounter = 0
 
 function fixtureProject(): string {
-  if (!existsSync(EXAMPLE_PROJECT)) throw new Error(`示例工程不存在: ${EXAMPLE_PROJECT}`)
-  // 每次调用独立目录：同一目录复用会导致第二次 git commit "nothing to commit"
-  const dest = path.join(TMP, `rdd-workflow-e2e-${++fixtureCounter}`)
-  cpSync(EXAMPLE_PROJECT, dest, {
-    recursive: true,
-    filter: (src) => !src.includes(`${path.sep}.git${path.sep}`) && !src.endsWith(`${path.sep}.git`),
-  })
+  const dest = path.join(TMP, `fixture-${++fixtureCounter}`)
+  mkdirSync(path.join(dest, "tests"), { recursive: true })
+  writeFileSync(path.join(dest, "README.md"), "# fixture project\n")
+  writeFileSync(path.join(dest, "tests", "existing.py"), "# existing case\n")
   execFileSync("git", ["init", "-q"], { cwd: dest })
   execFileSync("git", ["add", "-A"], { cwd: dest })
   execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "fixture"], { cwd: dest })
-  // 约定（docs/front-delegate-testing.md §5）：清掉示例工程里活的登记/账本，
-  // 否则 fixture 会带着上一轮真实运行的 pair/role/ledger，断言不再确定。
-  for (const f of ["pair.json", "role.json", "ledger.jsonl"]) {
-    rmSync(path.join(dest, ".rddf/state", f), { force: true })
-  }
   return dest
 }
 

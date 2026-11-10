@@ -458,12 +458,21 @@ function lockDirOf(stateRoot: string): string {
  * - `dispatch(resume=…)` 会**误墓碑**一个活着的后端并新建重复后端。
  *
  * ⇒ 判不出来时一律走**保守侧**：当作「它还在」（占槽、不处置）。
+ *
+ * ⚠️ **不得裸判 `404` 子串 / 结构化 status**：传输层错误的消息里完全可能带 `404`
+ * （如 `ECONNRESET after 404 bytes`），而 **`wait` 端点缺失**时上游同样给 404
+ * （`HandlerNotFound`）——两者都**不是**「该 session 已删除」。把这类错误判成已删除会
+ * 直接触发上面的误放槽，且会让 ADR S8 的「wait 4xx ⇒ degraded」失效。只认：
+ * 1. 上游 tagged 错误（实测：`_tag: "SessionNotFoundError"`）；
+ * 2. **session 语义**的消息措辞（`Session not found` / `no such session` / `notfound`）。
+ * 两者都不命中 ⇒ `unknown` ⇒ 保守当「仍在」。
  */
 export function isSessionMissingError(err: any): boolean {
   const tag = err?._tag ?? err?.tag ?? err?.constructor?._tag ?? err?.name
   if (typeof tag === "string" && /notfound/i.test(tag.replace(/[._\s]/g, ""))) return true
   const msg = String(err?.message ?? err ?? "")
-  return /not\s*found|404|no such session|notfound/i.test(msg)
+  // `\b` 防止把 `HandlerNotFound` 这类「句柄缺失」误判成 session 缺失
+  return /session[^.]{0,40}\bnot\s*found\b|session\.not\s*found|no\s+such\s+session/i.test(msg)
 }
 
 /**

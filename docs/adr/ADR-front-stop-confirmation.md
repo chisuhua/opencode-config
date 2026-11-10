@@ -150,7 +150,7 @@
 
 **退化（D4）**
 
-- [ ] **S7 退化三分支**：`ctx.session.wait` 缺失时——(a) `running0=true` 且水位线前移 ⇒ 可释放；(b) `running0=false` ⇒ **拒绝**并给出「请用 cancel 或设置 `RDDF_SUSPEND_ALLOW_DEGRADED=1`」；(c) 设了该变量 ⇒ 放行**且** `sessions` 返回 `stop_judge:"degraded-forced"` 并落 `event:"suspend_degraded"` 行（**留痕必须有断言**）。
+- [ ] **S7 退化三分支**：`ctx.session.wait` 缺失时——(a) `running0=true` 且水位线前移 ⇒ 可释放；(b) `running0=false` ⇒ **拒绝**并给出「请用 cancel 或设置 `RDDF_SUSPEND_ALLOW_DEGRADED=1`」；(c) 设了该变量 ⇒ 放行**且** `suspend` 返回 `stop_judge:"degraded-forced"`（`sessions` 不输出该字段，见 S7b）并落 `event:"suspend_degraded"` 行（**留痕必须有断言**）。
 - [ ] **S7b 正常态标记**：`wait` 可用时 **`suspend` 返回值**含 `stop_judge:"wait"`；缺失或调用 4xx 时为 `"degraded"`（`sessions` 不输出该字段）。
 
 **其他**
