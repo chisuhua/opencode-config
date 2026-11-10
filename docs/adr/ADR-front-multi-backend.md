@@ -4,16 +4,16 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | **Accepted**（2026-11-09，两轮改写后定稿；AC13 的判据已按 D12 改写为五段、派发面处置矩阵已实现并有单测覆盖；**整体仍未实施完成**——E2E bats L2-16..、AC44 连续 10 次时延、AC57 完整序列、架构文档 §2.1 ASCII 对齐待做，见 `openspec/changes/front-multi-backend/tasks.md`）。审稿记录见 `.rddf/reviews/adr-front-multi-backend-review.md` |
+| Status | **Accepted**（2026-11-09；实施进行中，剩余项见 `openspec/changes/front-multi-backend/tasks.md`）。审稿记录见 `.rddf/reviews/adr-front-multi-backend-review.md` |
 | Date | 2026-11-09（初稿与本次改写同日） |
 | Author | architect |
-| 本次改写（摘要） | ⑥ **D12 已删后端的可见性（能力边界）+ 后续触碰处置矩阵**（V09 随之改写；V08 修正「reconcile 会写行」的误述）。详见审稿报告。 |
+| 本次改写（摘要） | ① 槽位键改 `workRoot`（原 `canonical_root`）+ 单槽切换模型；② **D12 已删后端的可见性（能力边界）+ 后续触碰处置矩阵**（V09 随之改写；V08 修正「reconcile 会写行」的误述）；③ **D11.3 停机判据订正**——`interrupt` 的返回值（`true`/`false`）都不是停机判据，判据是「判活为假 + 终态落定（水位线前移）」；AC13 判据按 D12 改写为五段；④ **停机判据的两处如实化 + 备选取舍**——「陈旧 busy」形态**不被兜住**（登记为残留风险，不被兜住就不再声称被兜住）、并写明**为什么不用上游 `ctx.session.wait`**（能覆盖后继 execution，但跨 server 实例不可靠、interrupt 中的返回语义未实测 ⇒ 登记为待实测备选）。详见审稿报告。 |
 | 首轮改写（摘要） | ① D6 槽位键 `canonical_root`→**`workRoot`**，并把「互斥」细化为**单槽**（常驻 vs 活跃分离）；② 新增 **D7 槽位生命周期**（翻转执行者 / 消费确认 / 回收与亡主接管）、**D8 构造性保证与范围假设**、**D11 切换两步编排**；③ 原 D7 改为 **D9 终止（墓碑）vs 暂停（可续）** 的边界；④ D1 工具面三→四（加 `suspend`）；⑤ D2.3/D3 索引与检索键加 `work_root`。改写理由、证据与评审记录见审稿报告 |
 | Parent | 部分取代 `docs/adr/ADR-front-agent-redesign.md` 的 D2（`delegate` 的同步单发序列）与 D3（brief 契约的 scope 部分），**并把该篇 D2 的「唯一工程通道」口径扩写为「唯一门控插件出口」**（见 D1 的不变式说明）；**不改**该篇 D1（四分类）、D4（front 工具面白名单）、D5（preflight grants）、D7（guide 归宿）、D8（调试纪律）；**D6（登记与并发协议）的锁协议沿用不改**（槽位翻转仍走其同步 RMW，见 D7.1），但其 **pair-v2 schema 追加 `work_root` / `state` 两字段**（本次改写，见 D2.1/D2.3）；与 `ADR-front-knowledge-capability` 的 D2（只读 subagent 门控）、D4（agent 白名单与 kind）、D5（ledger 记忆层）**决策面正交**，但 ledger schema 面有单点耦合（见 D2.2）。与 `ADR-canonical-root-normalization` **原为决策面正交，本次改写后变为强依赖**：D6 的槽位键直接取其 D1 定义的 `workRoot`（该篇已落地，commit `23584cd`），其 `stateRoot/workRoot` 拆分正是本篇「同工作树单槽」的前置 |
 | 关联 change | `openspec/changes/front-multi-backend/`（已立项 2026-11-09，planner 起草） |
 | AC 映射 | 本文件 Verification 1–**49**（本次改写把判据集从 28 条扩到 49 条：新增 `suspend` 门控、`work_root`/`state` 索引、单槽与实现约束、消费确认与翻转执行者、回收与亡主接管、终止/暂停、切换与回收）。**映射表在 proposal 的「AC ↔ ADR Verification 映射」段**——本次新增/改写判据对应的 AC 编号由 planner 在同步 proposal 时补齐并回填；**回填前以本文件的 Verification 文本为准** |
 | 审稿报告 | `.rddf/reviews/adr-front-multi-backend-review.md`（初稿 + **本次改写**的 oracle/critic 记录追加在同一文件） |
-| 前置事实 | 19 条运行时探针（HTTP 层 8 + 插件内直测 8 + oracle 后补 3），全部带真实返回摘录，落在 `.rddf/reviews/front-multi-backend-probes.md`。**本篇的技术断言都有探针或上游源码背书**；**未探针的假设在正文中显式标注**（如 D12 选项表第④条的「跨 server 实例删除是否送达」）。<br>**本次改写新增上游源码证据**（opencode v2.2.5）：`packages/core/src/session/execution.ts:151-170`（interrupt 的 resume 语义）、`packages/core/src/session/inbox.ts:470-487`（inbox 提升顺序）、`packages/plugin/src/promise/adapter.ts:622-645`（插件可见的 session 方法全集）——见 D6/D7/D9 |
+| 前置事实 | 19 条运行时探针（HTTP 层 8 + 插件内直测 8 + oracle 后补 3），全部带真实返回摘录，落在 `.rddf/reviews/front-multi-backend-probes.md`。**本篇的技术断言都有探针或上游源码背书**；**未探针的假设在正文中显式标注**（如 D12 选项表第④条的「跨 server 实例删除是否送达」）。<br>**本次改写新增上游源码证据**（opencode v2.2.5）：`packages/core/src/session/execution.ts:151-170`（interrupt 的 resume 语义）、`packages/core/src/session/execution.ts:27-31`（**interrupt 只保证「已接受」、清理异步 settle**）、`packages/core/src/session/run-coordinator.ts:142-162`（**interrupt 返回 false 的三种成因**：无执行 / `stopping` 中（仍在跑）/ settle 窗口（fiber 已退、终态未发布））、`packages/core/src/session/projector.ts:527,798-800`（**`time.idle` = 唯一写入点的严格单调终态水位线**）⇒ 停机判据见 D11.3、`packages/core/src/session/inbox.ts:470-487`（inbox 提升顺序）、`packages/plugin/src/promise/adapter.ts:622-645`（插件可见的 session 方法全集）——见 D6/D7/D9/D11.3 |
 
 ## 背景与问题
 
@@ -64,9 +64,7 @@ front 今天的委托能力是**同步单发**：`delegate` 一次调用 = 建/�
 
 **为什么拆工具而不是给 `delegate` 加 `async` 参数**：参数是**静默开关**——忘写 `async:true` 就静默退化为 30 分钟阻塞，多后端场景下其余后端全部饿死且**无报错信号**；拆工具后误用形态变成「dispatch 完立刻汇报结果」，是**可见的体验问题**而非正确性问题。
 
-**为什么 `suspend` 是独立工具而不是 `cancel` 的参数开关**：同一判据——**默认值不可逆**。若 `cancel({mode:"suspend"})` 而模型漏写 `mode`，默认落到 `terminate` 会**永久杀死一个本该续接的后端**；而 `suspend` 漏写时落到 `cancel` 则是**可恢复的**（重建 session 即可，代价是丢上下文）。⇒ 不可逆的默认值必须由**独立的工具名**承载，让误用形态从「静默丢失」变成「用错工具」（可见）。
-
-**为什么 action 细分而不是四工具同挂 `delegate`**：插件出口仍唯一（不变式 1 不丢），但治理面可按 action 粒度放行（如允许派发与观测、禁止取消）——功能等价、权限面更细，代价仅几行配置。
+**为什么 `suspend` 是独立工具而不是 `cancel` 的参数开关**：同一判据——**默认值不可逆**。若 `cancel({mode:"suspend"})` 而模型漏写 `mode`，默认落到 `terminate` 会**永久杀死一个本该续接的后端**；而 `suspend` 漏写时落到 `cancel` 则是**可恢复的**（重建 session 即可，代价是丢上下文）。⇒ 不可逆的默认值必须由**独立的工具名**承载，让误用形态从「静默丢失」变成「用错工具」（可见）。 **为什么 action 细分而不是四工具同挂 `delegate`**：插件出口仍唯一（不变式 1 不丢），但治理面可按 action 粒度放行（如允许派发与观测、禁止取消）——功能等价、权限面更细，代价仅几行配置。
 
 **与「单一工程出口」不变式的关系（必须写明，否则后续读者会拿 §6.1 原文否决实现）**：`docs/front-delegate-architecture.md` §6.1 不变式 1 原文是「一切工程行动只能经 `delegate`。不要给 front 加第二个出口」。本篇**不修改这条不变式的实质**，只扩写它的**口径**：
 
@@ -86,7 +84,7 @@ front 今天的委托能力是**同步单发**：`delegate` 一次调用 = 建/�
 | 历史事实 | `ledger.jsonl`（每工程仓） | 做过什么 | 权威、append-only |
 | 名册索引 | **宿主 session metadata** | 枚举 + 展示态 | **可丢弃索引，丢了可重建，不是真相源** |
 
-**为什么不用治理面全局 roster 文件**：会成为第三份真相源（ADR-front-knowledge-capability D5 已红线），且并发写需锁、跨项目可见性违背权限面、**会悬挂**（后端删了文件条目还在）。metadata 索引三个优势：随 session 删除自动消失（探针 P8：remove 后 404，**不悬挂**）、无新增文件、无新增锁。
+**为什么不用治理面全局 roster 文件**：会成为第三份真相源（ADR-front-knowledge-capability D5 已红线），并发写需锁、跨项目可见性违背权限面、**会悬挂**。metadata 索引三个优势：随 session 删除自动消失（探针 P8：remove 后 404，**不悬挂**）、无新增文件、无新增锁。
 
 **D2.2 dispatch 时必须落 ledger `dispatched` 行**：这是「从未派发」与「派发后消失」可区分的**唯一支点**。没有它，D5 的 unknown 兜底是盲的。append-only 账本把「派发」本身也变成事实。ledger schema 需新增 `dispatched` 态（与 `ADR-front-knowledge-capability` D5 的行产生时机表有单点耦合，须同步）。
 
@@ -94,15 +92,13 @@ front 今天的委托能力是**同步单发**：`delegate` 一次调用 = 建/�
 
 **`work_root` 为什么必须在索引里**：`canonical_root`（= stateRoot）在 linked worktree 场景下是**主仓**，同一主仓的多个 worktree 共享同一值 ⇒ 无法区分「A 在 wt1、B 在 wt2」；而槽位键、名册分组、切换选择都按**工作树**分。⇒ `work_root`（取自 `ADR-canonical-root-normalization` D1）必须显式落在索引与 pair 条目里。
 
-**`state` 的取值域**：以 **D6.3 的状态枚举表**为准（`dispatching` / `active` / `idle` / `suspended` / `tombstone`）。**`state` 是登记态**（持久化在 pair.json），与 D4 的**观测态**（`time.busy` 推导的 running/stalled）是两回事——前者回答「谁占着槽」，后者回答「谁在跑」。
-
-**存量条目的一次性回填（数据迁移）**：无 `work_root`/`state` 的存量条目在首次观测时按 **`work_root = canonical_root`**（退化为原粒度，不误判为同树）+ **`state` 按活体判据**（busy ⇒ `active`，否则 `idle`）回填。⚠️ **不得一律默认 `idle`**——那等于给存量后端放行第二个写入者。
+**`state` 的取值域**：以 **D6.3 的状态枚举表**为准（`dispatching` / `active` / `idle` / `suspended` / `tombstone`）。**`state` 是登记态**（持久化在 pair.json），与 D4 的**观测态**（`time.busy` 推导的 running/stalled）是两回事——前者回答「谁占着槽」，后者回答「谁在跑」。 **存量条目的一次性回填（数据迁移）**：无 `work_root`/`state` 的存量条目在首次观测时按 **`work_root = canonical_root`**（退化为原粒度，不误判为同树）+ **`state` 按活体判据**（busy ⇒ `active`，否则 `idle`）回填。⚠️ **不得一律默认 `idle`**——那等于给存量后端放行第二个写入者。
 
 **D2.4 检索入口**：`sessions` 工具 list 后按 metadata 过滤。两条路径并存：
 - **快路径**：front 自身 session 的 metadata 维护 roster 数组（`{roster:[backend_id,...]}`）。探针 R6 实测**可行**且**经 host 活动后不覆盖** → 查询 O(1)、不占 title、不用扫全库。
 - **兜底路径**：**全库 list + cursor 续扫**，按 `metadata.delegated_by === "front-delegate"` 过滤。用于 front 换代后重建名册（roster 随 front session 一起消失）。
 
-**兜底路径的两条硬约束（探针 P2c / P7 背书，不可省略）**：
+**兜底路径的三条硬约束（探针 P2c / P7 背书，不可省略）**：
 1. **必须 cursor 续扫到全量**，不能只扫一页。list 按 **`time_updated` 降序**、默认 limit=50 ⇒ **长期 idle 的后端会沉出窗口**。兜底路径必须循环 `cursor.next` 直到扫完或找齐。
 2. **不能用 `directory` 过滤做重建**——重建要发现的恰恰是"有哪些目录"，用 `directory` 过滤等于要求事先知道答案。
 3. **`search` 只能作可选优化**：它按 title LIKE 收窄，需**固定 title 前缀标记**（如 `[fd]`），代价是 title 噪声 + 与 metadata 两套标记要一致 ⇒ 若采用必须由插件单一写点保证，并在 D2.3 的 schema 里定义该前缀。
@@ -121,9 +117,7 @@ goal_key = { repo: canonical_root, intent: <kebab-slug> }
 
 **resume 时校验 goal_key 一致**：不一致 ⇒ **拒绝续接、要求新 session**（不是警告，是硬拒）。这不只是设计洁癖——**宿主机制层面**：steer 会注入当前轮并改写它，把新简报灌进正在执行的 run 就是上下文污染（探针 P6 实测）。
 
-**`goal_key.repo` 保持 `canonical_root`，但检索/调度键用 `work_root`**：判等回答「是不是同一个目标」——同一项目的不同工作树仍是同一项目，故 `repo` 取 stateRoot；而「这个后端住在哪个工作树、该槽被谁占着」是**调度问题** ⇒ 用 `work_root`。两者不可混：把 `work_root` 塞进 `goal_key.repo` 会让「同一目标换 worktree 续接」被误判为不同目标。**与救援路径不冲突**：「原地补 grant 续跑」（ADR-front-agent-redesign D5.1）本就是同一目标的延续。
-
-**判等的方向性（必须写明，否则防线范围会被高估）**：goal_key 校验是**单向硬强制**——
+**`goal_key.repo` 保持 `canonical_root`，但检索/调度键用 `work_root`**：判等回答「是不是同一个目标」——同一项目的不同工作树仍是同一项目，故 `repo` 取 stateRoot；而「后端住在哪个工作树、该槽被谁占着」是**调度问题** ⇒ 用 `work_root`。两者不可混（把 `work_root` 塞进 `goal_key.repo` 会让「同一目标换 worktree 续接」被误判为不同目标）。**与救援路径不冲突**：「原地补 grant 续跑」（ADR-front-agent-redesign D5.1）本就是同一目标的延续。 **判等的方向性（必须写明，否则防线范围会被高估）**：goal_key 校验是**单向硬强制**——
 - ✅ **换 slug 续接 ⇒ 机制拒绝**（这是硬强制点）。
 - ❌ **同 slug 异目标 ⇒ 机制无法识别**（front 复用 slug 时校验通过，该方向退化为 prompt 纪律，见风险章）。**取舍理由**：自然语言判等是魔法数字重灾区，而「front 复用 slug」是**可审计**的错误（ledger 里能看到同一 slug 出现在不同 goal 描述上），比「误判为不同目标」（该续接的被拒、用户被迫重跑）危害小。
 
@@ -136,8 +130,11 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 ```
 
 - **`outcome` 不可用于判活**：run 未结束时该字段**整个不存在**（探针 Q2），「未开始 / 进行中 / 僵尸」三义。
-- **保守规则**：`busy` 在 run 刚起的一小段时间内**仍为 null**（探针 R4 的 t0 时刻）⇒ 判据必须容忍"busy 未定义但有未终结活动"，**宁可报 running 不报完成、宁可报 unknown 不报 verified**。
 - `stalled` 是**查询时推导态、不落盘**；判据为「running 且距上次活动超过阈值」。
+
+**方向性（不可互换）**：上面这条判据用于**展示**时**宁可报 running**；**停机方向**（D11.3）用它做**必要**条件、但**不充分**——停机的判据是「**判活为假**」，**且仅当基线在跑时**再要求终态落定的正面证据（基线本就没在跑 ⇒ 无附加要求，见 D11.3 的分支）。**第二级兜底**（**无 `busy` 但有未终结活动**：最后消息时间 > 最后 idle ⇒ **仍判 running**）是「判活为假」成立的前提之一（漏判 ⇒ 误放槽 ⇒ 并发写）。⚠️ 该兜底的前提是「`busy` 未定义或为 0」⇒ **`busy` 从不清空**造成的 stale-busy 形态（新一轮 execution 刚起、`Started` 尚未投影）**不被它覆盖**；而在 D11.3 的 **`running0 = false` 分支下也不要求水位线前移** ⇒ 该形态**不被兜住**（已登记为残留风险，见「后果 / 代价」的风险条目）。
+
+**保守规则**：`busy` 在 run 刚起的一小段时间内**仍为 null**（探针 R4 的 t0 时刻）⇒ 判据必须容忍"busy 未定义但有未终结活动"，**宁可报 running 不报完成、宁可报 unknown 不报 verified**。
 
 ### D5 聚合语义：整体 = 最差的那个，且永远列明细
 
@@ -157,7 +154,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 | `canonical_root`（stateRoot，原设计） | **每仓一个槽** | 同一仓的多个 worktree 被"同 repo 互斥"堵死 ⇒ **worktree 隔离能力等于没实现** |
 | **`workRoot`（本次改写采用）** | **每工作树一个槽** | 同仓不同 worktree 可各占一槽；同工作树内一次一个 |
 
-依据：`workRoot` = `abs(--show-toplevel)`，linked worktree 下**就是 worktree 自身路径**（`ADR-canonical-root-normalization` D1，已落地 `23584cd`）；两个 linked worktree 有**独立 git index 与独立工作树** ⇒ 写同一文件**互不覆盖**（实测），且 git **禁止两个 worktree checkout 同一分支** ⇒ ref 锁争用被上游兜住大半（残留：detached HEAD / 手动 `update-ref`，是**可检测的失败**）。
+依据：`workRoot` = `abs(--show-toplevel)`，linked worktree 下**就是 worktree 自身路径**（`ADR-canonical-root-normalization` D1，已落地 `23584cd`）；两个 linked worktree 有**独立 git index 与独立工作树** ⇒ 写同一文件**互不覆盖**（实测），git **禁止两个 worktree checkout 同一分支** ⇒ ref 锁争用被上游兜住大半（残留：detached HEAD / 手动 `update-ref`，是**可检测的失败**）。
 
 **D6.2 单槽：常驻与活跃分离**
 
@@ -187,9 +184,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 | `dispatch` 派发的后端 | **下一次派发/恢复时 reconcile**（reconcile-on-read） | **仅适用于 `state=active`** 的条目：活体判据（D4）显示已空闲 ⇒ 翻转为 `idle` 并放行。**`dispatching` 条目一律不翻转**（其简报可能仍 pending，放行即幽灵注入） |
 | `suspend` | suspend 自身 | 确认停机后翻转为 `suspended` |
 
-⇒ **槽位不会被"跑完但无人观测"永久占死**：每次派发先 reconcile 一次。
-
-**锁的形态（不可省略）**：`withLock` 是**同步** `() => void`（`lib/delegate-core.ts:370`，10s 硬 deadline）⇒ **锁内不能 await**。故所有翻转一律走「**锁外查询 → 锁内重验登记态 → 锁内翻转**」：活体查询（`session.get`）与 `interrupt` 等**异步动作在锁外**完成，进入锁后**重验条目仍是预期的那一个**再改状态。锁内只做**同步读改写**（沿用 `ADR-front-agent-redesign` D6 的锁协议，不修订它）。
+⇒ **槽位不会被"跑完但无人观测"永久占死**：每次派发先 reconcile 一次。 **锁的形态（不可省略）**：`withLock` 是**同步** `() => void`（`lib/delegate-core.ts:370`，10s 硬 deadline）⇒ **锁内不能 await**。故所有翻转一律走「**锁外查询 → 锁内重验登记态 → 锁内翻转**」：活体查询（`session.get`）与 `interrupt` 等**异步动作在锁外**完成，进入锁后**重验条目仍是预期的那一个**再改状态。锁内只做**同步读改写**（沿用 `ADR-front-agent-redesign` D6 的锁协议，不修订它）。
 
 **D7.2 「投递 ≠ 消费」——必须确认消费（本次改写的第二处修正）**
 
@@ -197,9 +192,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 ⇒ **投递（prompt 返回）≠ 消费（promote）**，两者之间有可被阻塞的窗口。若在窗口内 suspend，被杀的是 drain，**简报行仍 pending** ⇒ 之后 resume 时 `nextPromotable` 按 `enqueued_seq` 取**最旧 queued**（`packages/core/src/session/inbox.ts:478-486`）⇒ **旧简报抢先整轮执行** = 幽灵注入。
 
-⇒ **修正**：`dispatch` 返回前必须**确认简报已被消费**（判据待锚定，见 Verification），确认后才置 `active`；未确认 ⇒ 停在 `dispatching`，该后端**只可 cancel**（墓碑），**不可 suspend 保留**。⚠️ **消费确认 ≠ 任务完成**：前者只等"简报已被 promote"（D1 表的"不等任务完成"指后者），两者是不同的等待对象。
-
-⚠️ **降级路径（必须写死）**：若实施期实测证明**无法可靠观测"已消费"** ⇒ `suspend` 的安全锚消失 ⇒ **本篇退回「单槽但不可切换」方案**（见选项对比表）。
+⇒ **修正**：`dispatch` 返回前必须**确认简报已被消费**（判据见 Phase 0 报告与 Verification），确认后才置 `active`；未确认 ⇒ 停在 `dispatching`，该后端**只可 cancel**（墓碑），**不可 suspend 保留**。⚠️ **消费确认 ≠ 任务完成**：前者只等"简报已被 promote"（D1 表的"不等任务完成"指后者），两者是不同的等待对象。 ⚠️ **降级路径（必须写死）**：若实施期实测证明**无法可靠观测"已消费"** ⇒ `suspend` 的安全锚消失 ⇒ **本篇退回「单槽但不可切换」方案**（见选项对比表）。
 
 **投递失败 / 结果未知的槽位处置**：`dispatch` 的 execute 超时/异常 ⇒ 服务端可能已受理 ⇒ **保留槽位**（保守侧：防止未确认死亡的后端与新派发并发写），返回「投递结果未知，请 `sessions` 确认」。**不得静默放槽**。⚠️ **该路径不经 reconcile**：`dispatching` 条目的简报**可能仍 pending**（正是上面的窗口），reconcile 放行它 = 旧简报抢先跑 ⇒ 投递失败的唯一恢复路径是 **`cancel`（墓碑）后重派**；`dispatching` 条目在 `cancel` 之前**永久占槽**（有意的保守，见 D6.2）。
 
@@ -229,7 +222,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 **D8.3 范围假设（构造性保证的成立前提）**
 
-保证仅在「**后端 session 只经本插件四工具被操作**」时成立。用户在 TUI 里直接对后端 session 打字/追加指令 ⇒ 产生**插件不可见的 pending steer**（`interrupt` 不删 steer 行；`nextPromotable` 先提 steer，`inbox.ts:475-476`）⇒ 恢复时可能被注入陈旧指令。⇒ **显式声明为超出范围**；唯一防线是 D9 的「事后报存疑」（**不能保证检出**）。
+保证仅在「**后端 session 只经本插件四工具被操作**」时成立。⚠️ **该假设只排除「用户/外部不经插件的操作」这一类**；**插件自身四工具之间的并发不在它的覆盖范围内**（可达路径与后果见 D11.3 的原子性缺口段与「后果 / 代价」的风险条目）。用户在 TUI 里直接对后端 session 打字/追加指令 ⇒ 产生**插件不可见的 pending steer**（`interrupt` 不删 steer 行；`nextPromotable` 先提 steer，`inbox.ts:475-476`）⇒ 恢复时可能被注入陈旧指令。⇒ **显式声明为超出范围**；唯一防线是 D9 的「事后报存疑」（**不能保证检出**）。
 
 ### D9 终止 vs 暂停：`cancel` 墓碑 / `suspend` 可续
 
@@ -242,9 +235,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 两者上游调用相同，差别**只在插件侧的登记态**（`suspended` vs `tombstone`）——插件不依赖上游清理行为，自己决定后端还能不能续。
 
-**为什么 `cancel` 要墓碑、`suspend` 不要**：墓碑防的是"parked 旧简报在未来某次 resume 时幽灵注入"。D7.2 的消费确认让 dispatch 路径不产生 parked 项 ⇒ `suspend` 恢复时不会有旧简报抢先跑，故无需墓碑；而 `cancel` 的语义是"目标作废"，**主动杀死**比留着一个可能带陈旧上下文的 session 更安全 ⇒ 保留墓碑。
-
-**残留风险（如实记录）：steer 残留**。上游 `interrupt({resume:false})` **不删除** pending steer 行（`packages/core/src/session/execution.ts:151-170`：仅 `resume:true` 才走 `nextPromotable` 提升路径），而 `nextPromotable` **优先提升 steer**。⇒ 被 `suspend` 的 session 若在运行期间被注入过 steer，恢复后的第一轮**优先被提升并注入当前轮**。
+**为什么 `cancel` 要墓碑、`suspend` 不要**：墓碑防的是"parked 旧简报在未来某次 resume 时幽灵注入"。D7.2 的消费确认让 dispatch 路径不产生 parked 项 ⇒ `suspend` 恢复时不会有旧简报抢先跑，故无需墓碑；而 `cancel` 的语义是"目标作废"，**主动杀死**比留着一个可能带陈旧上下文的 session 更安全 ⇒ 保留墓碑。 **残留风险（如实记录）：steer 残留**。上游 `interrupt({resume:false})` **不删除** pending steer 行（`packages/core/src/session/execution.ts:151-170`：仅 `resume:true` 才走 `nextPromotable` 提升路径），而 `nextPromotable` **优先提升 steer**。⇒ 被 `suspend` 的 session 若在运行期间被注入过 steer，恢复后的第一轮**优先被提升并注入当前轮**。
 
 - **可观测性待锚定**：`delivery` 只存在于 **inbox 表**（`packages/core/src/session/sql.ts:142`），**消息表没有该列**（`promotedFromMessage` 只是从 inbox 行回填 delivery，`packages/core/src/session/inbox.ts:125-142`）⇒ `session.context()` **大概率拿不到** `delivery` ⇒ **steer 残留很可能不可检测**。本篇**不假定**，列为**实施期必须锚定的上游语义**。
 - **缓解（保守侧）**：`suspend` 记录暂停时刻的 `baseline_message_id`；恢复后若首批消息中出现**暂停之前**的内容 ⇒ 报「该后端上下文可能含陈旧指令，建议新建」——与 `ADR-delegate-delivery-evidence` 的 `unverified` 语义同构（宁可报存疑，不报成功）。**若锚定结果证明不可观测 ⇒ 该缓解降级为"如实报不可检出"，不得用"看起来没问题"冒充通过。**
@@ -267,9 +258,23 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 **D11.3 只有确认停机才释放槽位**
 
-`suspend` 必须在**确认目标 session 已停机**后才释放槽位并标记 `suspended`。若 `interrupt` 未真正停机（返回 `interrupted:false` 而 session 实际仍在跑）⇒ **不得释放槽位**，保持 `active` 并报错。
+`suspend` 必须在**确认目标 session 已停机**后才释放槽位并标记 `suspended`。**「已停机」的判据 = 终态落定，不是 `interrupt` 的返回值，也不是「看起来不忙」。**
 
-理由：单槽的价值建立在"同一工作树同时只有一个写入者"上；放掉一个仍在写的槽 = 立刻并发写。⇒ **「停机确认」是释放槽位的前置**。停机确认（`interrupt` + 活体复查）在**锁外**完成，锁内**重验该条目仍是 `active`** 才翻转为 `suspended`。
+**为什么 `interrupt` 的返回值不能用**（上游 `run-coordinator.ts:142-162`）：`true` 只表示**已接受**中断——清理**异步 settle**（`execution.ts:27-31`：「Resolves once the interruption is accepted; **cleanup settles asynchronously**」）⇒ 它**可能还在跑**；`false` 有**三种**成因：① 本来就没有活跃执行；② **已在停机过程中**（前一次 interrupt 已接受、清理在途 ⇒ **仍在跑**）；③ **settle 窗口**（fiber 已退出、终态尚未落定 ⇒ **未停机**）。**两者都不能当停机判据。**
+
+**判据 = 终态落定**：`time.idle` 是**运行期唯一写入点**的**严格单调**水位线（`projector.ts:527`：`max(time, coalesce(time_idle+1, time))`；另一处写入是 `transfer.ts:164` 的 session 导入/转移，**不在 suspend 路径上**），且**只在** `Execution.Succeeded/Failed/Interrupted` 投影时前移（`:798-800`）⇒ **水位线前移 ⇔ 该 execution 的 fiber 已跑完 finalizer、终态已发布 ⇒ 它不会还在写**。
+
+⇒ 停机确认 = 先在 `interrupt` **前**取一次快照（`v0 = time.idle`、判活结论 `running0`，判活口径见 D4），再**有界等待**到「**判活为假**」且满足下列**分支**要求：**`running0 = true`（本次要中断一个在跑的 execution）⇒ 水位线必须前移**（`time.idle > v0`）——只有终态投影能前移它，这就是「已收尾」的**正面证据**（仅「不忙」不够：fiber 已退、finalizer 仍在跑时同样「不忙」）；**`running0 = false`（本来就没有活跃执行）⇒ 无附加要求**——没有 execution 可等，`v0` 不会前移，**不得**因水位线不动而判超时（否则最常见的「挂起一个空闲后端」必然失败）。**超时仍未满足 ⇒ 不得释放槽位**，保持 `active` 并报错。
+
+⚠️ **「看起来不忙」（D4 判据的取反）不能单独当停机判据**：它有两个**假停机窗口**——① `time.busy` 未投影窗口（`Execution.Started` 尚未投影）；② `time.busy` 从不清空（只在下次 `Started` 时被覆盖）⇒ 「新一轮 execution 刚起」同样读作「不忙」。⚠️ 窗口①的两种子形态要分开看：**从未空闲过**的 session 读到 `busy = null`（实测 t0 时刻）；**曾空闲过**的 session 读到的是**陈旧 busy**（`< idle`）⇒ 两级判活**都不成立**。⇒ D4 的**第二级兜底**只覆盖「busy 未定义/为 0」的形态（它的前提就是 `busy = 0`）⇒ **陈旧 busy 形态不被兜住**，且在 `running0 = false` 分支下水位线要求也不生效 ⇒ 该形态是**残留风险**（见「后果 / 代价」的风险条目）。
+
+⚠️ **判不出来（读失败 / 原因不明）⇒ 保守当作「未停机」**：不释放槽位、保持 `active` 并报错（与 D7.2、D2.3 的保守侧同源）。**session 已不存在 ⇒ 视为已停机**（没有东西可写，见 D12）。⚠️ **有界**是硬要求：停机确认是 `suspend` 的 execute（**在 front 回合内被 await 的工具调用**）里的**等待**，无界等待会把 front 的回合钉死（与 D1.1 的硬超时同源）；**窗口下限必须 > 0**（「查一次」已被 E2E 证伪），取值应由上游 settle 延迟的实测分布决定（本篇不写死）。
+
+⚠️ **原子性缺口（显式声明）**：「确认停机」→「释放槽位」之间可能有**新一轮 execution 启动**（上游 interrupt 会认领已记录的 wake，但**清理期间到达的新 wake 会在 settle 时启动后继 execution**，`run-coordinator.ts:154-156`）⇒ 轮询**关不掉**此缺口。⚠️ **D8.3 的范围假设兜不住它**：那条假设只排除「用户/外部不经插件的操作」，而**插件自己的四工具就能制造这个 wake**——`dispatch(resume=X)` 会给 X 投递简报并 rung 上游 doorbell（上游 `session.ts:187`：`input.resume !== false` ⇒ `wake`；插件调用点**不传** `resume:false`），而 `claimSlot` 把 resume 目标**排除**在活体判定之外 ⇒ 同一回合 `dispatch(resume=X)` 与 `suspend(X)` 并发时，清理期间到达的 wake 会在 settle 时起一个**后继 execution**（上游 `run-coordinator.ts:109-114`）⇒ 可能**假停机**（水位线已前移、判活为假）⇒ 释放槽位后后端随即开始写同一工作树 ⇒ **两个写入者**。⇒ 该可达路径**不在本篇的保证内**，作为**显式残留风险**登记在「后果 / 代价」的风险章（根治需给异步 `dispatch` 的 resume 目标补活体守卫，**属另立 change**）。**单 front 顺序路径**（先 `suspend(X)` 确认停机、再 `dispatch(resume=X)`）不受影响。
+
+**为什么不用上游的 `ctx.session.wait`（备选与取舍）**：上游提供了权威的 settle 原语 `session.wait` = `get` + `execution.awaitIdle`（`session.ts:278-281`），而 `awaitIdle` 在 settle **之后会重查一次**（上游注释原文：「re-check after it settles to cover a successor execution started by a late doorbell」，`run-coordinator.ts:164-170`）⇒ 它**天然覆盖**上面那条「清理期间到达的新 wake ⇒ 后继 execution」的缺口，且它同时满足本篇的两个分支（空闲 ⇒ 立即返回；在跑 ⇒ 等到终态落定）。它**插件可见**（`adapter.ts:641`），本仓的既有同步 `delegate` 就在用它（`lib/delegate-core.ts:1091`，配超时竞速）。**本篇仍不用它**，理由两条：① **跨 server 实例不可靠**——`awaitIdle` 只看**本进程内**的 execution 表（`run-coordinator` 的 `executions` 是进程内 Map），后端若跑在**另一个实例**上，该表查不到 ⇒ 立即返回 ⇒ 不能作为停机判据；而水位线 `time.idle` 是 DB 级、跨实例可见。② **run 中途被 interrupt 时的返回语义未实测**（探针缺口：`.rddf/reviews/front-multi-backend-probes.md`「`ctx.session.wait()` 在 run 中途被 interrupt 时的返回语义未测」）⇒ 实测前不能把它写进判据。⇒ 「改用 `session.wait`」登记为**待实测的备选**（需先补上述实测）；本篇保留水位线判据。
+
+**「停机确认」是释放槽位的前置**：单槽的价值建立在"同一工作树同时只有一个写入者"上；放掉一个仍在写的槽 = 立刻并发写。停机确认在**锁外**完成，锁内**重验该条目仍是 `active`** 才翻转为 `suspended`。
 
 **D11.4 语义约束**
 
@@ -277,15 +282,11 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 - `suspend` **不删除** session（默认不 remove，与 `cancel` 一致）⇒ 上下文保留，可 resume；
 - `suspend` 一个**已墓碑**的后端 ⇒ **拒绝**（墓碑是终态）；
 - `suspend` 一个**`dispatching`（未确认消费）的后端** ⇒ **拒绝**（只可 cancel，见 D7.2）；
-- `suspend` 一个**不在跑**的后端 ⇒ 幂等 no-op。
+- `suspend` 一个**当前无活跃执行**的后端 ⇒ 幂等 no-op（⚠️ 仍须按 D11.3 做停机确认，不以 `interrupt` 返回值为准）。
 
 ### D12 已删后端的可见性（能力边界）与后续触碰处置
 
-**结论**：`sessions` **不列**已删后端，观测面**不补记**终态行；但**派发面**一旦拿到「该 session 不存在」的**正面证据**，**必须**处置——否则会留下死条目把整个工作树占死。
-
-**为什么可见性做不到**（2026-11-09 实证）：`ctx.session.list()` 不返回已删 session，而**插件 ctx 只能枚举「仍有存活 session」的 repo**（item 带 `location`/`projectID`，但已删项根本不出现）⇒ 目标场景（被删后端是该 repo **唯一** session）**恰在盲区正中**。四条替代做法的取舍见选项对比表。
-
-**后续触碰处置（必须做，否则死槽）**：派发面从上游拿到 404 / not-found（**正面证据**，不是「看不到」）时，按**唯一矩阵**处置（消除二义）：
+**结论**：`sessions` **不列**已删后端，观测面**不补记**终态行；但**派发面**一旦拿到「该 session 不存在」的**正面证据**，**必须**处置——否则会留下死条目把整个工作树占死。 **为什么可见性做不到**（2026-11-09 实证）：`ctx.session.list()` 不返回已删 session，**插件 ctx 只能枚举「仍有存活 session」的 repo**（item 带 `location`/`projectID`，但已删项根本不出现）⇒ 目标场景（被删后端是该 repo **唯一** session）**恰在盲区正中**。四条替代做法的取舍见选项对比表。 **后续触碰处置（必须做，否则死槽）**：派发面从上游拿到 404 / not-found（**正面证据**，不是「看不到」）时，按**唯一矩阵**处置（消除二义）：
 
 | 条目 `state` × session 已删 | `dispatch(resume=X)` | `suspend` | `cancel` |
 |---|---|---|---|
@@ -295,9 +296,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 ⚠️ **本矩阵取代 D9 / V36–V39 中「`interrupted:false` ⇒ 纯 no-op、不墓碑」的一半适用范围**：那条规则针对 **session 仍存在但不在跑**（可续接）；**已不存在时没有「可续接的上下文」**，故按终态处置——界线是**「不在跑」vs「已不存在」**，不是"是否回 `interrupted:true`"。⚠️ 新建 session 失败（`create` 抛错）⇒ 视同 dispatch 新建失败：**不占槽**（旧条目已 `tombstone`），`outcome:"vanished"` 行已落。
 
-⇒ 与「观测面不补记」不矛盾：观测面是**被动不可见**，派发面是**主动拿到否定证据**。
-
-**痕迹与读侧语义**：该 repo 的 `ledger.jsonl` 里 `event:"dispatched"` 行仍在；`pair.json` 条目仍在，但 **reconcile 会把「已消失的 `active`」静默翻成 `idle`** ⇒ 翻转后 pair 不再携带「消失」证据，**区分点只剩 ledger 那条 `dispatched`**。**读侧语义**：`sessions` 未在册 = **未观测到存活后端**，≠「从未派发」、≠「没有终态」、≠「一定被删」（**索引写丢是第三种可能**——metadata 写失败被静默吞，见 D2.1「可丢弃索引」）。
+⇒ 与「观测面不补记」不矛盾：观测面是**被动不可见**，派发面是**主动拿到否定证据**。 **痕迹与读侧语义**：该 repo 的 `ledger.jsonl` 里 `event:"dispatched"` 行仍在；`pair.json` 条目仍在，但 **reconcile 会把「已消失的 `active`」静默翻成 `idle`** ⇒ 翻转后 pair 不再携带「消失」证据，**区分点只剩 ledger 那条 `dispatched`**。**读侧语义**：`sessions` 未在册 = **未观测到存活后端**，≠「从未派发」、≠「没有终态」、≠「一定被删」（**索引写丢是第三种可能**——metadata 写失败被静默吞，见 D2.1「可丢弃索引」）。
 
 ## 选项对比表
 
@@ -358,6 +357,8 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 - **插件 ctx 无 `inbox` API**：队列内容不可直接观测（探针 R5 + 上游 `adapter.ts:622-645` 复核）⇒ 一切依赖"队列里有什么"的推断都不成立；D7.2 + D8.1 正是为此，**"无 parked 项"只能靠构造、不能靠检查**。
 - **「已消费」可能不可观测 ⇒ 范围降级**：D7.2 的消费确认依赖"简报文本出现在 `session.context`"这类判据；若实测证明不可靠，**本篇退回「单槽但不可切换」**（只保留单槽，不提供 `suspend`）⇒ 用户要的"切换"能力消失。⇒ 该判据**必须在实施期最先锚定**（先实测，再决定 D7.2 是保留还是触发降级）。
 - **工作树目录需显式准备**：本篇不代管 worktree 生命周期 ⇒ 同仓并行必须由 front/用户先 `git worktree add`；漏了这步的用户会得到"同仓只能串行"的结果。⇒ **prompt 契约必须写明**（D6.4）。
+- **插件自身四工具并发可制造「清理期间的新 wake」（残留风险，不在本篇保证内）**：同一回合 `dispatch(resume=X)` 与 `suspend(X)` 并发 ⇒ `dispatch` 给 X 投递简报并 rung 上游 doorbell（上游 `session.ts:187`，插件不传 `resume:false`）⇒ 清理期间到达的 wake 在 settle 时起后继 execution（`run-coordinator.ts:109-114`）⇒ 可能**假停机**（水位线已前移、判活为假）⇒ 释放槽位后后端随即开始写同一工作树 ⇒ **两个写入者**（本篇存在的唯一理由被打破）。缓解：**单 front 顺序路径**（先 `suspend` 确认停机、再 `dispatch(resume)`）不受影响；根治候选有二：① 给异步 `dispatch` 的 resume 目标补**活体守卫**（**另立 change**）；② 改用上游 `ctx.session.wait`（能覆盖后继 execution，但跨 server 实例不可靠、且 interrupt 中的返回语义未实测 ⇒ 见 D11.3 的备选与取舍）。
+- **「陈旧 busy」形态可假停机（残留风险，不在本篇保证内）**：session **曾空闲过**（`idle > 0`）而新一轮 execution 刚起、`Execution.Started` 尚未投影 ⇒ 读到的是**陈旧 busy**（`< idle`）⇒ D4 两级判活**都不成立**（第二级兜底的前提是 `busy = 0`）⇒ 又因 `running0 = false` 分支**不要求水位线前移** ⇒ 判停机并释放槽位，而后端可能随即开始写同一工作树 ⇒ **两个写入者**。缓解：窗口窄（需 `Started` 投影延迟 + 该 session 曾空闲过）；根治：同上一条的 ①/②（活体守卫 / `session.wait`），或在 `running0 = false` 分支补「曾空闲过 ⇒ 仍要求水位线前移」——⚠️ 但后者会让「挂起一个跑完过的空闲后端」**必然超时**（水位线不动）⇒ 不可单独采用。
 - **双 front 并发管同一后端**：`pair.json` 的 front_session_id 只作**软信号**（ADR-front-agent-redesign D2 既有裁定），故两个 front 可同时 resume 同一后端 ⇒ 会排两份简报。⇒ **由既有的 per-session busy 判据 + 单槽表拦截**（同工作树已有活跃后端 ⇒ 拒绝），**不在 D3 的 goal_key 校验里拦**——goal_key 校验只回答"是不是同一个目标"，**同 goal_key 续接必须放行**（那是续接的定义，见 D3）。
 - **同 slug 异目标无法机制识别**（D3 已写明方向性）：front 复用 slug 时防线退化为 prompt 纪律。缓解是**可审计**——ledger 里能看到同一 slug 出现在不同 goal 描述上，可事后发现。
 - **成本放大**：N 个后端 = N 倍 token。虽有上限（D10），但上限值本身需要观察真实消耗后调整。
@@ -422,14 +423,14 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 **终止与暂停（D9）**
 
 - [ ] `cancel` 后该后端被标为墓碑（`state=tombstone`），`sessions` 不再列为在跑；再次 `dispatch` 到同一后端 → **拒绝**（要求新建）。
-- [ ] `cancel` 返回 `{interrupted:true}`（在跑时）或 `{interrupted:false}`（不在跑时，幂等 no-op）。
+- [ ] `cancel` 返回 `{interrupted:true|false}`（**取值语义见 D11.3**：true = 已接受中断；false = **不区分**「本来没在跑」/「已在停机过程中」/「settle 窗口」——**不得**用它推断停机）。
 - [ ] `suspend` 后该后端标为 `suspended`（**不是**墓碑）→ **仍可 resume**（dispatch/resume 同一后端不因"曾被暂停"被拒）。
-- [ ] `suspend` 一个不在跑的后端 → 幂等 no-op（`{interrupted:false}`）；`suspend` 一个已墓碑的后端 → **拒绝**。
+- [ ] `suspend` 一个**当前无活跃执行**的后端 → 幂等 no-op（`{interrupted:false}`；⚠️ 该取值**不蕴含**「已停机」，停机仍以 D11.3 的水位线为准）；`suspend` 一个已墓碑的后端 → **拒绝**。
 
 **切换与回收（D11）**
 
 - [ ] **切换两步可用**：`suspend(A)` 后 A 让出槽位 → 随后 `dispatch/resume(B)`（同一 workRoot）**成功**；A 仍在名册中可枚举。
-- [ ] **停机确认**：`interrupt` 未真正停机（`interrupted:false` 而 session 实际仍在跑）→ **不释放槽位**（保持 `active`）并报错；不得出现"两个 active 同一 workRoot"。
+- [ ] **停机确认**（判据 = 「判活为假」+ 终态正面证据，见 D11.3；**不是** `interrupt` 的返回值、**也不是**「看起来不忙」）。**可执行序列**：**步骤 1** 先 `session.get` 记 `v0 = time.idle` 与判活结论 `running0`；**步骤 2** 调 `suspend`；**步骤 3** 再 `session.get` 读 `v1`。断言：**a)** 对**在跑**的后端（`running0 = true`）⇒ `v1 > v0`（水位线前移）且 `suspend` 返回 `suspended:true`；**b)** 对**空闲**的后端（`running0 = false`）⇒ `suspend` **立即**返回 `suspended:true`（**不**等水位线前移、**不**超时）；⚠️ 本条**不**覆盖 D11.3 的「陈旧 busy」形态（残留风险，见「后果 / 代价」的风险条目）；**c)** 构造不停机——假 ctx 令判活恒为真（或令 `time.idle` 停在 `v0`）⇒ 断言 `suspended:false`、`pair.json` 条目仍 `active`、**不释放槽位**、报错文案含「未释放槽位」；**d)** 读失败 / 原因不明 ⇒ 同样**不释放**（保守当未停机）。四种情形都不得出现「两个 active 同一 workRoot」。**实现约束**：释放槽位的写必须发生在 `waitStopped` 返回之后（代码结构保证，评审看这一点而非靠落盘时间戳推断先后）。
 - [ ] **槽位悬挂可见**：后端崩溃/被删导致 `active` 但不 busy 且超 `stalled` 阈值 → `sessions` 报「槽位疑似悬挂」（**展示层信号**；实际回收由 reconcile-on-read 承担，D7.3）；`suspend` 该后端**幂等释放**槽位，随后同工作树可再次派发。
 - [ ] `suspend` **不删除** session（默认不 remove）⇒ 上下文保留，可 resume。
 - [ ] **steer 残留**：恢复后首批消息若含暂停之前的内容 → 报「上下文可能含陈旧指令，建议新建」（`unverified` 语义）。⚠️ 若实施期实测确认**插件无法从 `session.context` 区分 steer 消息** ⇒ 该判据**降级为"如实报不可检出"**，**不得**用"看起来没问题"冒充通过。

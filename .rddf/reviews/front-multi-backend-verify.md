@@ -416,3 +416,142 @@ verifier 不采信 builder 的自测结论，**自己重做变异测试**（3 �
 **AC57 的 E2E 面已关闭**（L2-22）。本 change 至此**全部 58 条 AC 均有可判定证据**（除已在 Notes 记录的降级/范围假设类说明）。
 
 **仍需 architect 处理的唯一一项**：ADR D11.3 的措辞订正（`interrupted` 返回值 ≠ 停机判据）。
+
+---
+
+# 第 5 轮（增量复核）：2026-11-10 —— 停机判据对齐 ADR D11.3
+
+> **性质**：增量复核。第 4 轮之后，ADR `D11.3` 的停机判据被订正为「判活为假 + 终态水位线前移（基线在跑时）」，
+> 实现随之重写 ⇒ 对变更部分做增量复核。
+
+## 1. 变更
+
+| # | 变更 | 触发 |
+|---|---|---|
+| 1 | `waitStopped` 从「`isRunning` 取反」改为「**取 `interrupt` 前快照**（`v0=time.idle`、`running0`）→ 判活为假 **且**（`running0` 时）`time.idle > v0`」 | critic BLOCKER：文档与实现是两套判据；「看起来不忙」有假停机窗（fiber 已退、finalizer 在跑） |
+| 2 | 读失败 / 原因不明 ⇒ **不释放槽位**（此前 `waitStopped` 忽略 `unknown`、`isRunning(undefined)` 判假 ⇒ 视为停机 ⇒ 误放槽） | 同上（保守侧反转，方向与 change 目标相反） |
+| 3 | 全局上限拒绝信息带**占额者清单**（`id@work_root`） | 「3/3」无法定位是谁占的（E2E 排查实证） |
+
+## 2. 结果
+
+| 项 | 结果 |
+|---|---|
+| 静态检查 | ✅ 零新增真类型错误 |
+| 单元测试 | ✅ **238 pass / 0 fail**（+4：空闲后端立即成功 / settle 窗口不释放 / 读失败不释放 / 占额者清单） |
+| E2E L2-20（suspend 释放槽位） | ✅（替代模型，干净环境） |
+| E2E L2-22（往返切换） | ✅（替代模型，干净环境） |
+
+## 3. 全量 E2E 未能复跑（环境限制，如实记录）
+
+`opencode run` 对默认模型返回 `AI.Error.RateLimit`：「当前已达到 Token Plan 用量上限」（`~/.local/share/opencode/log/opencode.log`），
+所有真实委托在建 session 前即退出 ⇒ 全量 23 条无法用默认模型复跑。
+
+替代模型（`L2_FRONT_MODEL=commandcode/deepseek/deepseek-v4.1-flash`）下：**L2-20 / L2-22 单独跑绿**，
+但**全量跑在 L2-19/20/22 失败**，错误均为「并发上限已达（3/3）」，诊断显示占额者是**本场景自己多派发的后端**
+（`engproj-slot` 2 个 + `engproj-dispatch` 1 个）⇒ 属**该模型在单场景内多次派发**的行为差异，**不是插件缺陷**
+（同两条用例在干净环境单独跑均绿；默认模型此前全量 23/23 绿）。
+
+⇒ **本 change 的停机判据变更：单测 238 全绿 + 两条 suspend 相关 E2E 绿**；全量 E2E 待默认模型额度恢复后复跑。
+
+---
+
+# 第 6 轮（verifier 增量验收）：2026-11-10
+
+> **验收者**：verifier（只验不改）。**判据来源**：① 用户本次要求（验收「`waitStopped` 按 ADR D11.3 重写」这一增量）；
+> ② proposal `## 验收标准`（AC51 / AC52 / AC53 / AC57）；③ ADR `D11.3` 与 Verification「停机确认」四条断言（a/b/c/d）。
+> **分流**：`rdd-verifier` skill 可加载，但 **P3 archive gate 未触发**（无 `.rddf/state/iteration.json`；
+> `rddf rdd-verify --dry-run` → "No eligible changes to verify"）⇒ 走**本地 1–5 步**验收。
+
+## 1. 静态检查
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| `lib/delegate-async.ts`（本轮改动文件） | ✅ **零真类型错误** | `bunx tsc --noEmit --skipLibCheck lib/delegate-async.ts` 输出为空（仅 TS2591/TS5097 噪声，已滤） |
+| `lib/delegate-core.ts` | ⚠️ 6 条 `TS7006`/`TS2345` | **既有问题**：该文件本轮**未改动**（`git status` 只见 `delegate-async.ts`）⇒ 非本轮回归，**不在本次 scope** |
+| `tests/delegate-async.test.ts` | ⚠️ `TS2307: Cannot find module 'bun:test'` | 环境问题（bun 类型声明未装）⇒ 非实现缺陷 |
+
+## 2. 单元测试
+
+✅ **238 pass / 0 fail**（1013 expect）。其中「停机确认」相关 **5 条**单独跑亦全绿（`bun test -t "停机确认"` → 5 pass）。
+
+## 3. 集成 / E2E（真跑，未用缓存推断）
+
+| 场景 | 结果 |
+|---|---|
+| L2-20（`suspend` 释放槽位 + `state=suspended`） | ✅ |
+| L2-22（往返切换：A → suspend → B → suspend → resume A，A 同一 `session_id`） | ✅ |
+| **全量 23 条（默认模型，干净环境）** | ✅ **23/23 全绿** |
+
+> 前一轮记录的「默认模型 Token Plan 额度耗尽」**已恢复**（重跑 L2-3 默认模型即绿）⇒ 全量证据已补齐，无需降级结论。
+
+## 4. 边界与错误路径（**独立脚本**，不复用 `tests/` 夹具）
+
+脚本 `/tmp/opencode/probe/verify-stop-criteria.ts`，直接构造 fake ctx 调 `snapshotStopBaseline` / `waitStopped`：**12 PASS / 0 FAIL**。
+
+| # | 边界 | 期望 | 实测 |
+|---|---|---|---|
+| ① | 基线「不在跑」（空闲后端） | 判活为假即停机；**不等**水位线前移、**不**耗满窗口 | ✅（耗时 < 1s） |
+| ② | 基线「在跑」+ 水位线前移 | 判停机（终态落定的正面证据） | ✅ |
+| ③ | 基线「在跑」+ 水位线**不动**（settle 窗口：fiber 已退、终态未投影） | **不**判停机 ⇒ 不放行槽位 | ✅ |
+| ④ | 读失败（原因不明） | 基线为 `null`（调用方据此不释放）；轮询中失败 ⇒ **不**判停机 | ✅ |
+| ⑤ | session 已删（上游 `NotFoundError`） | 视为停机（没有东西可写，ADR D12） | ✅ |
+| ⑥ | 始终在跑 | 窗口耗尽 ⇒ 「未停机」；**有界**（不无限等待） | ✅ |
+
+## 5. 遗留清扫复核
+
+✅ **0 遗留**：改动文件里无 `TODO`/`FIXME`/`XXX`/`console.log`/`debugger`（唯一命中是本报告正文里描述历次清扫的文字）；无 `.skip`/`.todo` 测试；新增行里无被注释掉的实现块；无未替换 mock；无临时文件残留。工作区仅 `cli.json`（用户 UI 偏好，不提交）。
+
+## 6. 逐条判据判定
+
+| 判据 | 判定 | 证据 |
+|---|---|---|
+| ADR D11.3 a（`running0=true` ⇒ 水位线前移 ⇒ 释放） | ✅ | 单测「interrupt 先返回、后停机」+ 独立脚本 ② + E2E L2-20/L2-22 |
+| ADR D11.3 b（`running0=false` ⇒ 立即成功，不等水位线） | ✅ | 单测「空闲后端 ⇒ 不等水位线前移」+ 独立脚本 ① |
+| ADR D11.3 c（构造不停机 ⇒ `suspended:false`、条目仍 `active`、文案含「未释放槽位」） | ✅ | 单测「interrupt 后一直不停」+「判活为假但水位线未前移」+ 独立脚本 ③⑥ |
+| ADR D11.3 d（读失败/原因不明 ⇒ 不释放） | ✅ | 单测「读后端状态失败」+ 独立脚本 ④ |
+| AC51（`suspend` 语义：`suspended` 非墓碑、仍可 resume） | ✅ | 单测「suspended 后可 resume」 |
+| AC52（切换两步可用：A 让出槽位 → `dispatch(B)` 成功，A 仍可枚举） | ✅ | 单测「切换两步」+ E2E L2-22 |
+| AC53（停机确认 ⇒ 未确认停机不释放槽位，不得出现两个 `active` 同一 workRoot） | ✅ | 单测（停机确认 5 条）+ 独立脚本 ③④⑥ + E2E L2-20 |
+| AC57（往返切换稳态） | ✅ | E2E L2-22 |
+
+## 7. 结论
+
+**PASS（增量验收）。** 实现与 ADR D11.3 一致，证据齐备：静态（零真错误）+ 238 单测 + 12 条独立边界脚本 + **E2E 23/23 全绿**。
+
+**一项文档漂移（不判失败，路由给文档责任方）**：proposal 的 **AC53 判据文本仍是旧措辞**（「`interrupt` 未真正停机（`interrupted:false` 而 session 实际仍在跑）」）——
+该措辞仍被实现满足（实现**更严**：不看 `interrupted`，看判活 + 水位线），但措辞会误导后续实施 ⇒ 建议由 **planner/architect** 把 AC53 文本同步为
+「未**确认停机**（判活为假 ∧（基线在跑时）水位线前移）⇒ 不释放槽位」。**分类**：文档漂移（非 `implementation_gap`）。
+
+**已用轮次**：verifier 本 change 共 6 轮（1–4 为 builder 自查/增量复核，5 为 builder 的第 5 轮增量记录，**本轮为第 1 次独立 verifier 验收**）。
+
+---
+
+# 第 7 轮（增量复核）：2026-11-10 —— critic 第 3/4 轮返工后的增量
+
+> **性质**：增量复核。critic 第 4 轮（SHOULD_FIX）要求把「`session.context` 读失败」改保守；同时 ADR 文本按 critic 第 3/4 轮的
+> BLOCKER 修订（F1 如实化、F2 补「为什么不用 `ctx.session.wait`」的备选与取舍）。
+
+## 1. 变更
+
+| # | 变更 | 触发 |
+|---|---|---|
+| 1 | `ctx.session.context` 读失败**不再**被当成「没有未终结消息」⇒ 新增 `readSessionMessages`（返回 `ok`）：基线取不到 ⇒ 拒绝；轮询中失败 ⇒ 不判停机 | critic 第 4 轮 SHOULD_FIX：D4 第二级兜底失效 ⇒ 可能误判停机 ⇒ 误放槽 |
+| 2 | ADR D11.3 补「**为什么不用上游 `ctx.session.wait`**」段（备选 + 两条不用它的理由 + 待实测登记） | critic 第 4 轮 BLOCKER F2：决策缺备选与取舍理由 |
+| 3 | ADR D4/D11.3/风险章三处如实化（「stale-busy 不被兜住」等） | critic 第 4 轮 BLOCKER F1 |
+| 4 | `DEFAULT_STOP_TIMEOUT_MS` 注释收紧（「夹具/E2E 观测，**非**上游分布实测」） | critic 第 4 轮 NIT |
+| 5 | proposal **AC53** 判据文本同步为 ADR D11.3 口径 | critic 第 2/3/4 轮均提（文档漂移） |
+
+## 2. 结果
+
+| 项 | 结果 |
+|---|---|
+| 静态检查 | ✅ `lib/delegate-async.ts` 零真类型错误 |
+| 单元测试 | ✅ **239 pass / 0 fail**（+1：消息读失败 ⇒ 不释放槽位） |
+| 独立边界脚本 | ✅ **12 PASS / 0 FAIL**（判据语义未变，结论继续适用） |
+| E2E | ✅ L2-19 / L2-20 / L2-22（覆盖上限诊断路径与 suspend 路径）；全量 23/23 全绿（本轮末改之前） |
+| ADR 结构 | ✅ 决策段 249/250、最长 D 段 38/40、判据 49 |
+
+## 3. 判定
+
+**PASS（增量）。** 变更 1 是**行为**变更（读失败更保守 ⇒ 更少释放槽位），单测 + 独立脚本覆盖；
+变更 2–5 为文档/注释，不改判据语义。

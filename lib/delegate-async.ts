@@ -248,7 +248,10 @@ export function isDangling(input: {
 /**
  * 停机确认窗口（`suspend` 等后端真正停下）：默认 8s。
  *
- * 上游 interrupt 的清理是异步 settle 的 ⇒ 需要给它一点时间。
+ * **取值依据**：上游 `interrupt` 的清理是**异步 settle**（`execution.ts:27-31`）⇒ 必须给它时间。
+ * ⚠️ 观测到的 settle 延迟来自**假夹具**（300ms 内 settle）与**一次 E2E**（L2-22 的 `suspend` 在窗口内
+ * 成功、未触发超时）——**不是上游 settle 延迟分布的实测** ⇒ 取 **8s** 是「按夹具量级留两个数量级余量」
+ * 的保守取值，而非实测推导。上游若改变 settle 时序需重新观测。可配 `RDDF_STOP_TIMEOUT_MS` 覆盖。
  */
 export const DEFAULT_STOP_TIMEOUT_MS = 8_000
 
@@ -258,31 +261,84 @@ export function stopTimeoutMs(): number {
 }
 
 /**
- * 等一个后端**确认停机**（活体复查）。
+ * 读一个 session 的消息。
  *
- * ⚠️ **不能只看 `interrupt` 的返回值**：上游 `interrupt` 是「先确认接受、清理异步 settle」
- * ⇒ 返回 `interrupted:true` 时它**可能还在跑**；返回 `interrupted:false` 时是「本来就没有
- * 活跃执行」（idle no-op）⇒ 也可能仍有一个**上一轮**的尾巴在跑。
- * ⇒ 唯一可靠判据是**活体复查**（`time.busy` / 最后消息时间，见 `isRunning`）。
+ * ⚠️ **读失败 ≠ 「没有未终结消息」**：D4 的第二级兜底靠消息时间判断「busy 未投影但仍有活动」，
+ * 若把失败当成空消息，该兜底会**失效** ⇒ 可能把仍在跑的后端判成停机 ⇒ 误放槽 ⇒ 并发写。
+ * ⇒ 失败必须**显式**返回 `ok:false`，由调用方走保守侧（ADR D11.3「读失败 ⇒ 保守当未停机」）。
+ */
+async function readSessionMessages(ctx: any, sessionID: string): Promise<{ messages: any[]; ok: boolean }> {
+  try {
+    const messages = await ctx.session.context({ sessionID })
+    return { messages: Array.isArray(messages) ? messages : [], ok: true }
+  } catch {
+    return { messages: [], ok: false }
+  }
+}
+
+/**
+ * 停机判据的**基线**（ADR `D11.3`）：必须在 `interrupt` **之前**取。
+ */
+export type StopBaseline = {
+  /** `interrupt` 前的 `time.idle` 水位线（0 = 未定义）。 */
+  idle: number
+  /** `interrupt` 前是否在跑（D4 的判活口径）。 */
+  running: boolean
+}
+
+/**
+ * 取停机判据的基线（**必须在 `interrupt` 之前**调用，见 ADR D11.3）。
  *
- * 返回 true = 已确认停机；false = 窗口内仍未停机（调用方**不得**释放槽位）。
+ * 返回 `null` = 读失败且**原因不明** ⇒ 调用方**不得**释放槽位（保守侧：宁可判不出停机，
+ * 也不能把仍在写的后端放出去 ⇒ 两个后端并发写同一工作树）。
+ */
+export async function snapshotStopBaseline(ctx: any, sessionID: string): Promise<StopBaseline | null> {
+  const { info, missing, unknown } = await readSessionInfo(ctx, sessionID)
+  if (missing) return { idle: 0, running: false } // 已不存在 ⇒ 没有东西可等
+  if (unknown) return null
+  const { messages, ok } = await readSessionMessages(ctx, sessionID)
+  if (!ok) return null // 判活算不出来 ⇒ 基线取不到 ⇒ 调用方不释放槽位（保守侧）
+  return { idle: toMillis(info?.time?.idle), running: isRunning(info, messages) }
+}
+
+/**
+ * 等一个后端**确认停机**（ADR `D11.3` 的判据）。
+ *
+ * ⚠️ **`interrupt` 的返回值不是停机判据**（上游 `run-coordinator.ts:142-162`）：
+ * `true` 只表示**已接受**中断——清理**异步 settle**（`execution.ts:27-31`）⇒ 它**可能还在跑**；
+ * `false` 有**三种**成因：无执行 / 已在停机过程中（**仍在跑**）/ settle 窗口（fiber 已退、
+ * 终态未发布）。两者都不能用来推断「停了」。
+ *
+ * ⇒ 判据 = 「**判活为假**」+ 基线在跑时再要求「**终态水位线前移**」：
+ * - `baseline.running === false`（本来就没在跑）⇒ 判活为假即可（没有 execution 可等，
+ *   水位线**不会**前移，不得因此判超时——否则最常见的「挂起一个空闲后端」必然失败）；
+ * - `baseline.running === true`（本次中断一个在跑的 execution）⇒ 还要求 `time.idle > baseline.idle`。
+ *   `time.idle` 是运行期**唯一写入点**的**严格单调**水位线（`projector.ts:527`），只在
+ *   `Execution.Succeeded/Failed/Interrupted` 投影时前移 ⇒ 前移 ⇔ fiber 已跑完 finalizer。
+ *   「看起来不忙」**不够**：fiber 已退、finalizer 仍在跑时同样「不忙」。
+ *
+ * 返回 true = 已确认停机；false = 窗口内仍未确认（读失败 / 判不出来 / 超时）
+ * ⇒ 调用方**不得**释放槽位。
  */
 export async function waitStopped(
   ctx: any,
   sessionID: string,
+  baseline: StopBaseline,
   timeoutMs = stopTimeoutMs(),
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
-    const { info, missing } = await readSessionInfo(ctx, sessionID)
-    if (missing) return true // 已不存在 ⇒ 视为停机
-    let messages: any = []
-    try {
-      messages = await ctx.session.context({ sessionID })
-    } catch {
-      messages = []
+    const { info, missing, unknown } = await readSessionInfo(ctx, sessionID)
+    if (missing) return true // 已不存在 ⇒ 视为停机（没有东西可写，见 ADR D12）
+    if (!unknown) {
+      const { messages, ok } = await readSessionMessages(ctx, sessionID)
+      if (ok && !isRunning(info, messages)) {
+        // 判活为假：基线本来就没在跑 ⇒ 停机；基线在跑 ⇒ 还要求终态水位线前移
+        if (!baseline.running) return true
+        if (toMillis(info?.time?.idle) > baseline.idle) return true
+      }
     }
-    if (!isRunning(info, messages)) return true
+    // 读失败（unknown）⇒ 不判停机，继续等到窗口尽头（保守侧）
     if (Date.now() >= deadline) return false
     await sleep(200)
   }
@@ -565,24 +621,53 @@ export async function syncMetadataState(ctx: any, sessionID: string, state: Slot
  * 权威态的读法：metadata 里的 `canonical_root` = stateRoot ⇒ 读该仓的 `pair.json`
  * 取该 session 的 `state`；读不到（仓已删/条目缺失）时**退回** metadata 的值。
  */
+function authoritativeSlotState(b: any): SlotState | undefined {
+  const md = (b as any)?.metadata ?? {}
+  let state = md.state
+  const stateRoot = typeof md.canonical_root === "string" ? md.canonical_root : undefined
+  const sid = (b as any)?.id
+  if (stateRoot && typeof sid === "string") {
+    try {
+      const entry = lookupPair(stateRoot, sid)
+      if (entry && isSlotState(entry.state)) state = entry.state
+    } catch {
+      /* 读不到就退回 metadata 的值 */
+    }
+  }
+  return isSlotState(state) ? state : undefined
+}
+
+function holdsQuota(b: any): boolean {
+  const state = authoritativeSlotState(b)
+  return state === "active" || state === "dispatching"
+}
+
+/** 后端占槽的**工作树**（权威值在 `pair.json`；metadata 索引可能过期 ⇒ 只作兜底）。 */
+function authoritativeWorkRoot(b: any): string {
+  const md = (b as any)?.metadata ?? {}
+  const stateRoot = typeof md.canonical_root === "string" ? md.canonical_root : undefined
+  const sid = (b as any)?.id
+  if (stateRoot && typeof sid === "string") {
+    try {
+      const entry = lookupPair(stateRoot, sid)
+      const wr = entry?.work_root
+      if (typeof wr === "string" && wr.length > 0) return wr
+    } catch {
+      /* 读不到就退回 metadata 的值 */
+    }
+  }
+  return typeof md.work_root === "string" ? md.work_root : "?"
+}
+
+/**
+ * 一个后端**当前**的槽位态（读权威态 `pair.json`，读不到才退回 metadata 索引）。
+ *
+ * metadata 是**可丢弃索引**、可能过期 ⇒ 判「谁占着额度」必须以 pair 为准。
+ */
 export async function countActiveBackends(ctx: any): Promise<number> {
   const backends = await listDelegatedSessions(ctx)
   let n = 0
-  for (const b of backends) {
-    const md = (b as any)?.metadata ?? {}
-    const sid = (b as any)?.id
-    let state = md.state
-    const stateRoot = typeof md.canonical_root === "string" ? md.canonical_root : undefined
-    if (stateRoot && typeof sid === "string") {
-      try {
-        const entry = lookupPair(stateRoot, sid)
-        if (entry && isSlotState(entry.state)) state = entry.state
-      } catch {
-        /* 读不到就退回 metadata 的值 */
-      }
-    }
-    if (isSlotState(state) && (state === "active" || state === "dispatching")) n++
-  }
+  for (const b of backends) if (holdsQuota(b)) n++
   return n
 }
 
@@ -777,7 +862,14 @@ export function dispatchToolDefinition(ctx: any): any {
       const active = await countActiveBackends(ctx)
       const limit = maxActiveBackends()
       if (exceedsLimit(active, limit)) {
-        throw fail(`并发上限已达（${active}/${limit}）：先 cancel 或 finish 某个后端再派发`)
+        // 诊断：把占额者报出来（否则「3/3」无法定位是谁占的）
+        const holders = (await listDelegatedSessions(ctx))
+          .filter((b: any) => holdsQuota(b))
+          .map((b: any) => `${b.id}@${authoritativeWorkRoot(b)}`)
+        throw fail(
+          `并发上限已达（${active}/${limit}）：先 cancel 或 finish 某个后端再派发` +
+            (holders.length ? `（占额：${holders.join(", ")}）` : ""),
+        )
       }
 
       // —— create / 复用 ——
@@ -1212,6 +1304,25 @@ export function suspendToolDefinition(ctx: any): any {
         )
       }
 
+      // 停机判据的基线必须在 interrupt **之前**取（ADR D11.3）
+      const stopBaseline = await snapshotStopBaseline(ctx, sessionID)
+      if (!stopBaseline) {
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              suspended: false,
+              state,
+              message:
+                "无法读取后端状态（原因不明），未释放槽位（停机判不出来 ⇒ 保守当作仍在运行）；" +
+                "请稍后重试或用 cancel",
+            },
+            null,
+            2,
+          ),
+        }
+      }
+
       // interrupt（不 resume：丢弃待提升的 steer）
       let interrupted = false
       try {
@@ -1221,21 +1332,13 @@ export function suspendToolDefinition(ctx: any): any {
         interrupted = false
       }
 
-      // ── 停机确认（AC53）：**有界轮询**活体，直到确认停机 ──
-      // ⚠️ 上游 `interrupt` 是「**先确认接受、清理异步 settle**」
-      // （execution.ts：「Interruption acknowledges before cleanup settles」）⇒
-      // interrupt 返回后会话**还会跑一小会儿** ⇒ 只查一次会**误判「未停机」**，
-      // 导致 suspend 对正在跑的后端几乎必然失败（E2E L2-22 实测暴露）。
-      // ⇒ 轮询到「确认停机」或超时；**确认停机才释放槽位**（保守侧不变）。
-      const stopped = await waitStopped(ctx, sessionID)
-      const { info: stopInfo } = await readSessionInfo(ctx, sessionID)
-      let stopMessages: any = []
-      try {
-        stopMessages = await ctx.session.context({ sessionID })
-      } catch {
-        stopMessages = []
-      }
-      if (!stopped && isRunning(stopInfo, stopMessages)) {
+      // ── 停机确认（AC53 / ADR D11.3）：有界等待「判活为假 + 终态落定」──
+      // ⚠️ 上游 `interrupt` 是「先确认接受、清理异步 settle」（execution.ts）
+      // ⇒ 返回后会话**还会跑一小会儿** ⇒ 只查一次会误判「未停机」，
+      // 导致 suspend 对在跑的后端几乎必然失败（E2E L2-22 实测暴露）。
+      // ⇒ 等到「确认停机」或超时；**未确认停机 ⇒ 一律不释放槽位**（含读失败）。
+      const stopped = await waitStopped(ctx, sessionID, stopBaseline)
+      if (!stopped) {
         return {
           content: JSON.stringify(
             {
@@ -1252,7 +1355,9 @@ export function suspendToolDefinition(ctx: any): any {
         }
       }
 
-      // AC54：记录**暂停时刻**的最后一条消息 id（resume 时据此判断新增消息里是否混入陈旧 steer）
+      // AC54 的基线：暂停时刻的最后一条消息 id（resume 时判断新增消息里是否混入陈旧 steer）
+      // （放在「未停机」早退之后：读到的路径上一定用得上）
+      const { messages: stopMessages } = await readSessionMessages(ctx, sessionID)
       let suspendedAtMessageID: string | undefined
       try {
         suspendedAtMessageID = lastMessageID(stopMessages)

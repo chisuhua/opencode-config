@@ -264,3 +264,74 @@ change 2 实施 + verifier 第 1 轮验收发现 **AC13 无法实现**：判据�
 - **T7.8 AC36 余下两处同步**（builder：`dual-session-delegation.md` / `prompts/front.md`）
 - **T7.9 proposal AC4 脚注修正**（planner）
 - **T7.2 / T7.3**（E2E bats / AC44 时延，需用户授权外部仓库 + 真实模型）
+
+---
+
+# 第三轮改写（2026-11-10）：D11.3 停机判据订正 —— 审稿记录
+
+> **范围**：只订正「停机确认」的判据（`interrupt` 的返回值 ≠ 停机判据）。决策本体未变。
+> **评审预算**：本 ADR 的 critic 轮次 1/2/3（第 2、3 轮均由用户明确批准）；**oracle** 1 轮 + 1 次复审额度。
+
+## 轮次 1：oracle（先于 critic，顺序不可颠倒）
+
+**结论**：方向成立，但「新措辞仍写反 + 判据不足」。
+
+| # | 发现 | 处置 |
+|---|---|---|
+| O1 | `interrupted:false` 的归因**写反**：上游 `run-coordinator.ts:145/151` 的 `false` 有**三种**成因（无执行 / 已在停机过程中（**仍在跑**）/ settle 窗口（fiber 已退、终态未发布））⇒ 「只表示本来就没有活跃执行」不成立 | ✅ 改为如实列举三种成因 |
+| O2 | 「活体复查」判据**不足**：两个假停机窗口（`time.busy` 未投影；`busy` 从不清空）⇒ 改用**终态水位线**（`time.idle` = 运行期唯一写入点的严格单调水位线，`projector.ts:527`） | ✅ D11.3 改写为水位线判据 |
+
+## 轮次 2：critic（arch 档）—— REJECT（`mergeable: no`）
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| B1 | BLOCKER | D11.3 的「水位线前移」对「**本来就没在跑**」的后端无定义 ⇒ 必然超时 ⇒ 与 D11.4/Verification 的「幂等 no-op」矛盾（这是 `suspend` 最常见的入口） | ✅ 判据改为**分支式**：`running0=true` ⇒ 要求水位线前移；`running0=false` ⇒ 无附加要求 |
+| B2 | BLOCKER | 文档内两套互斥判据（D4 取反 vs D11.3 合取）；且实现是「`isRunning` 取反」⇒ Verification ① 对实现不可能通过；附带 `waitStopped` 忽略 `unknown` ⇒ 读失败被当停机 ⇒ 误放槽 | ✅ D4 与 D11.3 收敛为同一条；实现按新判据重写（`snapshotStopBaseline` + `waitStopped(ctx,id,baseline)`）；读失败 ⇒ 不释放 |
+| B3 | BLOCKER | 「`time.busy ≤ time.idle`（无新一轮 execution 在跑）」的括注被文档自己否证 ⇒ 把未关闭的假停机窗写成已关闭 | ✅ 删掉该括注；「排除新一轮」的残留窗口留在**显式声明**的原子性缺口段 |
+| S1–S5 | SHOULD_FIX | 前置事实失准（「false 的三种成因里两种仍在跑」→ ③ 是 fiber 已退、终态未发布）；「唯一写入点」→「运行期唯一写入点」（`transfer.ts:164`）；Verification ① 改成**可执行序列**（去掉事后不可观测的先后断言）；Status 承载版本史（元数据头膨胀）；D8.3 未显式覆盖 D11.3 的蕴含 | ✅ 全部已改 |
+
+## 轮次 3：critic（arch 档）—— REJECT（`mergeable: no`）
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| BLOCKER-1 | BLOCKER | 我写进 D8.3 的「该假设同时覆盖 D11.3 的原子性缺口：本插件四工具不会有清理期间到达的新 wake」**前提为假**：上游 `session.ts:187`（`input.resume !== false` ⇒ `wake`）+ `run-coordinator.ts:109-114`（settle 时 `pendingWake` 起后继 execution），而插件 `prompt` 不传 `resume:false`、`claimSlot` 把 resume 目标排除在活体判定外 ⇒ **插件自己的四工具并发**即可制造该 wake | ✅ D8.3 改为如实（「只排除用户/外部不经插件的操作」）；D11.3 的原子性缺口段改写为「**D8.3 兜不住**」+ 写明可达路径与后果；风险章新增**显式残留风险**条目；根治归属改为「异步 `dispatch` 的 resume 活体守卫（另立 change）」 |
+| BLOCKER-2 | BLOCKER | D4 的**无条件式**（「判活为假 **加上** 终态落定」）与 D11.3 的**分支式**互斥 —— 正是 B1 的旧坑 | ✅ D4 改为条件式（「仅当基线在跑时再要求终态落定的正面证据」） |
+
+## 轮次 4：critic（用户批准后开的闭合复核）—— REJECT（`mergeable: no`）
+
+| # | 级别 | 发现 | 处置 |
+|---|---|---|---|
+| F1 | BLOCKER | 我为修 BLOCKER-2 而加的那句「stale-busy 形态由 D11.3 的水位线要求兜住」**是假的**：该形态下两级判活都不成立，而 `running0=false` 分支**不要求水位线前移** ⇒ 不被兜住 | ✅ 如实化（「不被兜住」⇒ 登记为残留风险）；D11.3 的窗口①描述补全（「busy 为 null」只是「从未空闲过」的子情形，曾空闲过 ⇒ 读到**陈旧 busy**）；风险章新增「陈旧 busy 可假停机」条目 |
+| F2 | BLOCKER | 「根治需给异步 `dispatch` 的 resume 目标补活体守卫（另立 change）」是**未经比较的已决结论**：上游有权威原语 `ctx.session.wait`（= `get` + `awaitIdle`，settle 后**重查**，注释原文即「to cover a successor execution started by a late doorbell」），插件可见、既有 `delegate` 已在用 ⇒ 属「决策缺备选与取舍理由」 | ✅ D11.3 新增「**为什么不用上游的 `ctx.session.wait`**」段：写明它能覆盖后继 execution 且满足两个分支，**不用它的两条理由**（① 跨 server 实例：`awaitIdle` 只看进程内 execution 表，水位线是 DB 级跨实例可见；② run 中途被 interrupt 的返回语义**未实测**，探针缺口 `probes.md:357`）⇒ 登记为**待实测的备选**；风险章的根治归属改为「① 活体守卫 / ② `session.wait`（需先补实测）」 |
+| S6 | SHOULD_FIX | 「读失败 ⇒ 保守」只覆盖了一半：实现把 `ctx.session.context` 抛错 catch 成空消息 ⇒ 第二级兜底失效 ⇒ 可能误判停机 | ✅ 实现改保守：新增 `readSessionMessages`（返回 `ok`），失败时基线取不到 / 轮询中不判停机；新增回归用例 |
+| N1 | NIT | `DEFAULT_STOP_TIMEOUT_MS` 的取值依据把**夹具**延迟说成上游实测 | ✅ 收紧措辞（「不是上游 settle 延迟分布的实测」） |
+
+## 收尾验证（实跑）
+
+| 项 | 结果 |
+|---|---|
+| `bun test tests/` | ✅ **239 pass / 0 fail** |
+| 独立边界脚本（`/tmp/opencode/probe/verify-stop-criteria.ts`） | ✅ **12 PASS / 0 FAIL** |
+| `bunx tsc --noEmit --skipLibCheck lib/delegate-async.ts` | ✅ 零真错误 |
+| E2E（外部仓库，默认模型，干净环境） | ✅ **全量 23/23 全绿**；本轮末改后又跑 L2-19/L2-20/L2-22 ✅ |
+| ADR 结构自检 | ✅ 决策段 249/250、最长 D 段 38/40、判据 49 条 |
+
+## 登记在 backlog（本 ADR 不返工）
+
+- 异步 `dispatch` 对 resume 目标**无活体守卫**（AC19/D8.1「对正在运行的后端 resume ⇒ 拒绝」目前只在同步 `delegate` 面）。
+- `isSessionMissingError` 用 `/404/` 文案宽判 ⇒ 含 "404" 的传输错误会被判成「已删除」。
+- 探针缺口：`ctx.session.wait()` 在 run 中途被 interrupt 时的返回语义未测（⇒ F2 的备选需先补）。
+
+## 轮次 5：critic（第 4 轮，闭合复核，用户批准）—— **APPROVE**（`mergeable: yes`）
+
+| finding | 判定 | 证据 |
+|---|---|---|
+| **F1**（stale-busy 声明自相矛盾） | ✅ **已闭合** | D4 `:135` 改如实（「不被兜住」+ 指向风险条目）；D11.3 `:269` 补全窗口①两子形态；风险章 `:361` 新增「陈旧 busy 可假停机」条目（含取舍：补水位线要求 ⇒ 空闲后端必然超时 ⇒ 不可单独采用）。critic 复核上游 `projector.ts:790-796/798-800` 与本仓 `isRunning` 第二级前提 `busy === 0` ⇒ 「不被兜住」为真；全文 22 处相关表述逐条核对，**无残留旧声明** |
+| **F2**（判据选型缺备选与取舍） | ✅ **已闭合** | D11.3 `:275` 新增「为什么不用上游 `ctx.session.wait`」段；critic 逐条复核上游引用（`session.ts:278-281`、`run-coordinator.ts:164-171` 注释原文逐字一致、`run-coordinator.ts:66` 的进程内 `new Map`、`adapter.ts:641`、本仓 `delegate-core.ts:1091`、探针缺口 `probes.md:357`）⇒ **取舍理由有源码背书**；风险章根治归属同步 |
+| **S6**（读失败保守只覆盖一半） | ✅ **已闭合**（实现侧） | `readSessionMessages` 返回 `{messages, ok}`；基线取不到 ⇒ 拒绝；轮询中 `ok=false` ⇒ 不判停机 ⇒ 窗口耗尽 ⇒ 仍 `suspended:false` + 不释放；回归用例打在 `context` 抛错这条真实路径上 |
+
+**本轮 diff 扫描**：未发现新 BLOCKER。critic 另确认两个**不是**问题的点：`session.context` 上游仅在 not-found / DB 故障时抛错 ⇒ 新的保守侧不会打断「挂起空闲后端」主路径；AC54 基线读失败 ⇒ `lastMessageID([])` 为 `""` ⇒ 下游走 `undetectable` 保守侧 ⇒ 安全。
+
+**本轮后补的三处小修**（SHOULD_FIX/NIT，非返工条件）：Verification AC(b) 补「**不**覆盖陈旧 busy 形态」；元数据「本次改写摘要」补第 ④ 条（如实化 + `session.wait` 取舍）；AC54 的 context 读移到「未停机」早退之后（省一次无用读）。
+
+**backlog 更新**：`session.wait` 备选仍挂在「需先补实测」下（**未因本轮关闭而移除**）；另记 critic 提示的行号级引用漂移风险（`session.ts:278-281` / `run-coordinator.ts:164-171` / `adapter.ts:641` 三处是行号引用，opencode 升级后会静默漂移 ⇒ 建议纳入「上游语义漂移」回归清单）。

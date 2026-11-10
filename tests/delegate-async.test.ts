@@ -1058,6 +1058,77 @@ describe("停机确认：interrupt 的清理是异步的（AC53 / D11.3）", () 
     expect(readPairs(dir)[a.session_id].state).toBe("suspended")
   })
 
+  test("空闲后端 ⇒ 不等水位线前移，立即成功（最常见的「挂起一个空闲后端」）", async () => {
+    const dir = repo("stop-idle")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 模拟「后端已自然跑完」：不忙、无未终结消息、水位线已存在
+    const s = sessions.get(a.session_id)!
+    s.busy = false
+    s.messages = []
+    s.idle = Date.now()
+    const t0 = Date.now()
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    // 不得因「水位线不动」而卡到窗口尽头（基线本来就没在跑）
+    expect(Date.now() - t0).toBeLessThan(2_000)
+    expect(readPairs(dir)[a.session_id].state).toBe("suspended")
+  })
+
+  test("判活为假但水位线未前移（settle 窗口）⇒ 不释放槽位", async () => {
+    const dir = repo("stop-settle")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    // interrupt **之前**：在跑；**之后**：判活为假（无 busy）、但 time.idle 停在 0（终态未投影）
+    let interrupted = false
+    ctx.session.get = async () => {
+      const time = interrupted ? { idle: 0, updated: Date.now() } : { busy: Date.now(), idle: 0, updated: Date.now() }
+      return { id: s.id, time }
+    }
+    ctx.session.context = async () => [] // 无未终结消息 ⇒ 第二级兜底不判 running
+    ctx.session.interrupt = async () => {
+      interrupted = true
+      return { interrupted: true }
+    }
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("消息读失败（context 抛错）⇒ **不**当成「没有未终结消息」，不释放槽位", async () => {
+    const dir = repo("stop-ctx-fail")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // context 读失败 ⇒ D4 的第二级兜底失效 ⇒ 判活算不出来 ⇒ 保守当「仍在运行」
+    ctx.session.context = async () => {
+      throw new Error("SQLITE_BUSY: db locked")
+    }
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("读后端状态失败（原因不明）⇒ 不释放槽位，明确报「无法读取后端状态」", async () => {
+    const dir = repo("stop-unknown")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 非 NotFoundError ⇒ 原因不明 ⇒ 保守当「仍在运行」（放到这里等于误放槽 ⇒ 并发写）。
+    // 第 1 次（locate）成功、之后失败：专门打在「基线取不到」这条分支上。
+    const s = sessions.get(a.session_id)!
+    let n = 0
+    ctx.session.get = async () => {
+      n++
+      if (n === 1) return { id: s.id, time: { busy: Date.now(), idle: 0, updated: Date.now() } }
+      throw new Error("ECONNRESET: db unavailable")
+    }
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    // 读失败**原因不明** ⇒ 拒绝且不释放槽位（保守当仍在运行）
+    expect(String(r.message)).toContain("无法读取后端状态")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
   test("interrupt 后**一直**不停 ⇒ 不释放槽位，报「停机确认窗口内仍在运行」", async () => {
     const dir = repo("stop-never")
     const { ctx } = createFakeCtx()
@@ -1072,6 +1143,21 @@ describe("停机确认：interrupt 的清理是异步的（AC53 / D11.3）", () 
 })
 
 describe("全局上限计数读权威态（AC31）", () => {
+  test("达到全局上限 ⇒ 拒绝信息里带**占额者清单**（否则「3/3」无法定位）", async () => {
+    const dirA = repo("cap-holder-a")
+    const dirB = repo("cap-holder-b")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dirA, "goal-a"))
+    process.env.RDDF_MAX_ACTIVE_BACKENDS = "1"
+    try {
+      await expect(run(dispatchToolDefinition(ctx), baseInput(dirB, "goal-b"))).rejects.toThrow(
+        new RegExp(`占额：${a.session_id}`),
+      )
+    } finally {
+      delete process.env.RDDF_MAX_ACTIVE_BACKENDS
+    }
+  })
+
   test("metadata 过期（仍是 active）但 pair 已 idle ⇒ **不**计入上限", async () => {
     const dir = repo("cap-authority")
     const { ctx } = createFakeCtx()
