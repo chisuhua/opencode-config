@@ -105,7 +105,13 @@ function createFakeCtx(opts: FakeOpts = {}) {
       wait: async () => ({}),
       get: async (input: any) => {
         const s = sessions.get(input.sessionID)
-        if (!s || opts.missing?.includes(input.sessionID)) throw new Error(`未知 session: ${input.sessionID}`)
+        // ⚠️ 缺失必须**像上游**那样报错（tagged Session.NotFoundError）：
+        // 实现用**窄判定**区分「确实不存在」与「查询失败，原因不明」
+        if (!s || opts.missing?.includes(input.sessionID)) {
+          const e: any = new Error(`Session.NotFoundError: session not found: ${input.sessionID}`)
+          e._tag = "Session.NotFoundError"
+          throw e
+        }
         const busyFlag = opts.running?.[input.sessionID] ?? s.busy
         return {
           id: s.id,
@@ -767,11 +773,14 @@ describe("已删后端的处置矩阵（ADR D12 / AC13）", () => {
   async function setupVanished(dir: string, opts: { missing?: string[] } = {}) {
     const { ctx } = createFakeCtx({ missing: opts.missing })
     const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
-    // 让 get 开始抛错（模拟外部删除），但保留 pair 条目
-    ;(ctx as any).session.get = async (input: any) => {
-      if (input.sessionID === a.session_id) throw new Error("404 session not found")
-      const s = (ctx as any).session
-      return s.get.call(null, input)
+    // 让 get 开始抛错（模拟外部删除），但保留 pair 条目。
+    // ⚠️ 必须**先保存原函数引用**再覆盖：直接读 `ctx.session.get` 拿到的是**被覆盖后的自己**
+    // ⇒ 自我递归 → RangeError → 被 `readSessionInfo` 吞成 missing ⇒ 活体判定失真
+    // （那样「死槽解除」用例会**空过**：死槽 bug 存在时它也通过）。
+    const originalGet = ctx.session.get
+    ctx.session.get = async (input: any) => {
+      if (input.sessionID === a.session_id) { const e: any = new Error("Session.NotFoundError: session not found"); e._tag = "Session.NotFoundError"; throw e }
+      return originalGet(input)
     }
     return { ctx, a }
   }
@@ -798,9 +807,20 @@ describe("已删后端的处置矩阵（ADR D12 / AC13）", () => {
   test("② 关键回归：resume 已删后，同一 workRoot 可再次派发（不再被死条目占死）", async () => {
     const dir = repo("van-noslot")
     const { ctx, a } = await setupVanished(dir)
-    // 先触发一次「resume 已删」的处置
-    await run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id })
-    // 同一工作树再派一个**新**任务 ⇒ 必须成功（死槽已解除）
+    // 先触发一次「resume 已删」的处置 ⇒ 它会**新建**一个后端（合法占槽）
+    const recovered = await run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id })
+    expect(recovered.session_id).not.toBe(a.session_id)
+    // 此刻占槽的是**新**后端（不是已删的那个）⇒ 再派会被拒，且拒绝信息里的 id 是新后端
+    let err = ""
+    try {
+      await dispatchToolDefinition(ctx).execute(baseInput(dir, "goal-b"), { sessionID: "ses_front_test" })
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain(recovered.session_id)
+    expect(err).not.toContain(a.session_id)
+    // 放开新后端 ⇒ 同一工作树**必须**能再派发（若已删的 a 仍占槽，这里会被拒 ⇒ 死槽未解除）
+    await run(suspendToolDefinition(ctx), { session_id: recovered.session_id })
     const again = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-b"))
     expect(again.state).toBe("active")
   })
@@ -963,3 +983,58 @@ describe("AC57 常驻与往返切换（自然跑完 → B → 回到 A）", () =
     ])
   })
 })
+
+describe("缺失判定的窄口径（查询失败 ≠ 已删除）", () => {
+  test("isSessionMissingError：上游 tagged 错误 ⇒ 缺失；其它错误 ⇒ 不缺失", async () => {
+    const { isSessionMissingError } = await import("../lib/delegate-async.ts")
+    const nf: any = new Error("Session.NotFoundError: session not found")
+    nf._tag = "Session.NotFoundError"
+    expect(isSessionMissingError(nf)).toBe(true)
+    expect(isSessionMissingError(new Error("404 session not found"))).toBe(true)
+    expect(isSessionMissingError(new Error("boom"))).toBe(false)
+    expect(isSessionMissingError(new Error("connection timeout"))).toBe(false)
+  })
+
+  test("查询失败（原因不明）⇒ 活着的后端**仍占槽**，不被 reconcile 释放", async () => {
+    const dir = repo("unknown-slot")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 让 get 对**所有** session 抛一个「原因不明」的错误
+    ctx.session.get = async () => {
+      throw new Error("upstream boom")
+    }
+    // 再派一个 ⇒ 必须被拒（a 仍占槽）
+    let err = ""
+    try {
+      await dispatchToolDefinition(ctx).execute(baseInput(dir, "goal-b"), { sessionID: "ses_front_test" })
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain(a.session_id)
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("查询失败（原因不明）⇒ resume **不处置**（不墓碑、不新建）", async () => {
+    const dir = repo("unknown-resume")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    ctx.session.get = async () => {
+      throw new Error("upstream boom")
+    }
+    let err = ""
+    try {
+      await dispatchToolDefinition(ctx).execute(
+        { ...baseInput(dir, "goal-a"), resume_session: a.session_id },
+        { sessionID: "ses_front_test" },
+      )
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain("原因不明")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+    const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+    expect(ledger).not.toContain('"outcome":"vanished"')
+  })
+})
+
+

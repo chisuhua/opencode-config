@@ -257,12 +257,43 @@ function lockDirOf(stateRoot: string): string {
   return path.join(stateRoot, ".rddf", "state", ".role.lock")
 }
 
-async function readSessionInfo(ctx: any, sessionID: string): Promise<{ info: any; missing: boolean }> {
+/**
+ * 判断一次 `session.get` 失败是否意味着「**该 session 确实不存在**」。
+ *
+ * ⚠️ **必须窄判**：上游对不存在的 session 抛 tagged `Session.NotFoundError`
+ * （`packages/core/src/session/error.ts:10`），而**其它错误**（DB 抖动、权限、传输失败）
+ * **不代表它已被删除**。
+ *
+ * 把所有错误都当成「已删除」的后果（都发生在同一条槽位路径上）：
+ * - `planSlot` 会把一个**活着的**后端判成空闲 ⇒ reconcile 释放它的槽位 ⇒
+ *   **两个后端并发写同一工作树**（破坏单写者不变式）；
+ * - `dispatch(resume=…)` 会**误墓碑**一个活着的后端并新建重复后端。
+ *
+ * ⇒ 判不出来时一律走**保守侧**：当作「它还在」（占槽、不处置）。
+ */
+export function isSessionMissingError(err: any): boolean {
+  const tag = err?._tag ?? err?.tag ?? err?.constructor?._tag ?? err?.name
+  if (typeof tag === "string" && /notfound/i.test(tag.replace(/[._\s]/g, ""))) return true
+  const msg = String(err?.message ?? err ?? "")
+  return /not\s*found|404|no such session|notfound/i.test(msg)
+}
+
+/**
+ * 读一个 session 的信息，三态：
+ * - `present`  —— 读到了；
+ * - `missing`  —— **确认**不存在（上游 NotFoundError）；
+ * - `unknown`  —— 读失败但**原因不明** ⇒ 保守当作「它还在」。
+ */
+export async function readSessionInfo(
+  ctx: any,
+  sessionID: string,
+): Promise<{ info: any; missing: boolean; unknown: boolean }> {
   try {
     const info = await ctx.session.get({ sessionID })
-    return { info, missing: false }
-  } catch {
-    return { info: undefined, missing: true }
+    return { info, missing: false, unknown: false }
+  } catch (e: any) {
+    if (isSessionMissingError(e)) return { info: undefined, missing: true, unknown: false }
+    return { info: undefined, missing: false, unknown: true }
   }
 }
 
@@ -280,8 +311,14 @@ export async function planSlot(
   const candidates = slotOccupants(pairs, workRoot)
   const busyOf: Record<string, boolean> = {}
   for (const c of candidates) {
-    const { info, missing } = await readSessionInfo(ctx, c.session_id)
-    // 后端已消失 ⇒ 不再占槽（视为空闲，可回收）
+    const { info, missing, unknown } = await readSessionInfo(ctx, c.session_id)
+    if (unknown) {
+      // 读失败但原因不明 ⇒ **保守**：当作它还在（占槽，不释放）——否则一次抖动就会
+      // 让两个后端并发写同一工作树。
+      busyOf[c.session_id] = true
+      continue
+    }
+    // 后端**确认**已消失 ⇒ 不再占槽（视为空闲，可回收）
     busyOf[c.session_id] = missing ? false : isRunning(info)
   }
   return { candidates, busyOf }
@@ -535,9 +572,10 @@ export async function locateBackend(
   entry?: any
   info?: any
   missing: boolean
+  unknown: boolean
   located: boolean
 }> {
-  const { info, missing } = await readSessionInfo(ctx, sessionID)
+  const { info, missing, unknown } = await readSessionInfo(ctx, sessionID)
   let dir: string | undefined
   if (typeof hintDir === "string" && hintDir.length > 0) dir = hintDir
   if (!dir) {
@@ -549,14 +587,14 @@ export async function locateBackend(
     if (remembered) {
       const roots = canonicalRoot(remembered)
       const entry = lookupPair(roots.stateRoot, sessionID, roots.workRoot)
-      return { ...roots, entry, info, missing, located: true }
+      return { ...roots, entry, info, missing, unknown, located: true }
     }
-    return { info, missing, located: false }
+    return { info, missing, unknown, located: false }
   }
   const { stateRoot, workRoot } = canonicalRoot(dir)
   const entry = lookupPair(stateRoot, sessionID, workRoot)
   rememberBackendRoot(ctx, sessionID, stateRoot)
-  return { stateRoot, workRoot, entry, info, missing, located: true }
+  return { stateRoot, workRoot, entry, info, missing, unknown, located: true }
 }
 
 /** 落一条「终态行」（**无 `event` 字段**；`outcome:"vanished"` = 后端被外部删除）。 */
@@ -657,7 +695,13 @@ export function dispatchToolDefinition(ctx: any): any {
         // ── ADR D12 派发面处置：resume 命中**已删**后端 ──
         // 上游 404 = **正面证据**（不是"看不到"）⇒ 必须处置，否则旧条目的
         // `state=dispatching` 会**永久占死该 workRoot**（cancel/suspend 也定位不到它）。
-        const { missing: vanished } = await readSessionInfo(ctx, brief.resume_session)
+        const { missing: vanished, unknown: unknownState } = await readSessionInfo(ctx, brief.resume_session)
+        if (unknownState) {
+          // 读失败但原因不明 ⇒ **不处置**（不墓碑、不新建）：无法区分"已删"与"暂时查不到"
+          throw fail(
+            `无法确认后端 ${brief.resume_session} 是否仍存在（查询失败，原因不明）：为避免误墓碑，本次不续接；请稍后重试`,
+          )
+        }
         if (vanished) {
           setSlotState(stateRoot, brief.resume_session, "tombstone")
           appendVanishedRow(stateRoot, brief.resume_session, existing, workRoot)
@@ -991,6 +1035,21 @@ export function suspendToolDefinition(ctx: any): any {
       }
 
       // ── ADR D12：已删后端（上游 404 = 正面证据）——
+      if (located.unknown) {
+        // 查询失败但原因不明 ⇒ 不处置（不释放槽、不墓碑），返回明确结果
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              suspended: false,
+              state,
+              message: "无法确认该后端是否仍存在（查询失败，原因不明）：未做任何处置，请稍后重试",
+            },
+            null,
+            2,
+          ),
+        }
+      }
       if (located.missing) {
         if (!located.located || !stateRoot) {
           // 定位不到它的工程仓 ⇒ 无法写 pair/ledger ⇒ **返回明确结果，不抛错**
@@ -1184,6 +1243,20 @@ export function cancelToolDefinition(ctx: any): any {
       const state = isSlotState(entry?.state) ? entry.state : "idle"
 
       // ── ADR D12：已删后端（上游 404 = 正面证据）——
+      if (located.unknown) {
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              interrupted: false,
+              state,
+              message: "无法确认该后端是否仍存在（查询失败，原因不明）：未做任何处置，请稍后重试",
+            },
+            null,
+            2,
+          ),
+        }
+      }
       if (located.missing) {
         if (!located.located || !stateRoot) {
           return {
