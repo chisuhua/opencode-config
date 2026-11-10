@@ -1,5 +1,17 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  appendFileSync,
+  readdirSync,
+  utimesSync,
+} from "node:fs"
+import os from "node:os"
 import path from "node:path"
 
 /**
@@ -772,6 +784,12 @@ export function registerSession(
   kind: DelegateKind = kindOfAgent(agent),
   ledgerRow?: any,
   extra?: { work_root?: string; state?: SlotState; goal_key?: GoalKey },
+  /**
+   * `bumpClaim=true` ⇒ 本次登记**认领**了槽位（归属变更 ⇒ `claim_gen` +1）；
+   * 默认（收尾写 outcome 等字段）⇒ **良性写** ⇒ 不 bump，但**必须保留**既有的
+   * `claim_gen`（整条重建会把计数器清零 ⇒ 旧快照重新匹配 ⇒ lost update 复活）。
+   */
+  opts?: { bumpClaim?: boolean },
 ): void {
   const stateDir = path.join(root, ".rddf", "state")
   const lockDir = path.join(stateDir, ".role.lock")
@@ -788,6 +806,8 @@ export function registerSession(
       kind,
       registered_at: existing?.registered_at ?? new Date().toISOString(),
       last_used_at: new Date().toISOString(),
+      // 归属版本：**保留**（不得因整条重建而归零）；认领时 +1。
+      claim_gen: opts?.bumpClaim ? nextClaimGen(existing) : readClaimGen(existing),
     }
     // front-multi-backend：槽位与目标字段。**未传入的字段沿用已有值**（不覆盖），
     // 存量条目缺字段时保持缺失，由 `backfillPairEntry` 在观测路径回填（AC40）。
@@ -814,6 +834,147 @@ export function registerSession(
  * 覆盖面（D3.2 实测）：只覆盖"从同一个 worktree 回来"。从别的 worktree / 主仓回来
  * 仍查不到——与修复前一致，不引入回归。
  */
+/**
+ * 归属版本（`claim_gen`）——`ADR-front-stop-ownership` D1。
+ *
+ * **整数单调**：任何**改变槽位归属**的写都 +1；**良性写**（字段级合并）不动。
+ * 缺省读作 `0`（旧 `pair.json` 无此字段）⇒ 第一次写时补齐。
+ */
+export function readClaimGen(entry: any): number {
+  const v = entry?.claim_gen
+  return typeof v === "number" && Number.isFinite(v) ? v : 0
+}
+
+/** 下一个归属版本（`+1`）。 */
+export function nextClaimGen(entry: any): number {
+  return readClaimGen(entry) + 1
+}
+
+/**
+ * 查条目**并告诉调用方它住在哪个 `pair.json`**（`lookupPair` 会回退到
+ * `fallbackRoot`；释放必须写回**同一个**文件，否则存量 worktree 条目会被
+ * 静默 no-op ⇒ 变成「拒绝释放」）。
+ */
+export function lookupPairWithRoot(
+  root: string,
+  sessionID: string,
+  fallbackRoot?: string,
+): { entry: any; root: string } | undefined {
+  const read = (r: string) => {
+    const pair = readJson(path.join(r, ".rddf", "state", "pair.json"))
+    if (!pair || typeof pair.pairs !== "object") return undefined
+    return pair.pairs[sessionID]
+  }
+  const hit = read(root)
+  if (hit !== undefined) return { entry: hit, root }
+  if (fallbackRoot && path.resolve(fallbackRoot) !== path.resolve(root)) {
+    const fb = read(fallbackRoot)
+    if (fb !== undefined) return { entry: fb, root: fallbackRoot }
+  }
+  return undefined
+}
+
+// ─────────────────── 跨实例 tripwire：实例戳（`ADR-front-stop-ownership` D2）───────────────────
+//
+// 目的：把「多实例部署」从**约定**变成**机器可判**。戳文件：`<stateRoot>/.rddf/state/.instance-<pid>-<uuid>.json`。
+//
+// **存活判定 = 同 host 且 pid 存活**（**不以 mtime/TTL 判死** ⇒ 不会把「活着但空闲的实例」
+// 误判成单实例 —— 那正是本篇要防的假停机方向）；跨 host 视为存活（保守 ⇒ 可能长期钉住
+// 严格模式 ⇒ 人工删戳是出口）。mtime 只用于诊断，**不参与判定**。
+//
+// **按 `(host, pid)` 去重**：同一进程在多个 location 各加载一次插件 ⇒ 会写出多枚戳 ⇒
+// 若按戳计数就会把**单实例**误判成多实例（这是默认加载形态，不是边角）。
+
+const INSTANCE_STAMP_PREFIX = ".instance-"
+
+/** pid 是否存活（EPERM ⇒ 存在但无权限 ⇒ 视为存活）。 */
+export function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e: any) {
+    return e?.code === "EPERM"
+  }
+}
+
+function instanceStampDir(stateRoot: string): string {
+  return path.join(stateRoot, ".rddf", "state")
+}
+
+function instanceStampFiles(stateRoot: string): string[] {
+  try {
+    return readdirSync(instanceStampDir(stateRoot)).filter((f) => f.startsWith(INSTANCE_STAMP_PREFIX) && f.endsWith(".json"))
+  } catch {
+    return []
+  }
+}
+
+/** 写/刷新**本进程**在 `stateRoot` 的实例戳（一个 pid 一枚；ENOENT ⇒ 重建）。 */
+export function ensureInstanceStamp(stateRoot: string): void {
+  const dir = instanceStampDir(stateRoot)
+  try {
+    mkdirSync(dir, { recursive: true })
+    const prefix = `${INSTANCE_STAMP_PREFIX}${process.pid}-`
+    const existing = instanceStampFiles(stateRoot).find((f) => f.startsWith(prefix))
+    const file = path.join(dir, existing ?? `${prefix}${Date.now()}.json`)
+    if (!existing) {
+      writeFileSync(
+        file,
+        JSON.stringify({ pid: process.pid, host: os.hostname(), started_at: new Date().toISOString() }) + "\n",
+      )
+    }
+    // mtime 只作诊断；刷新失败（文件被删）⇒ 重建，绝不抛错。
+    const now = new Date()
+    try {
+      utimesSync(file, now, now)
+    } catch {
+      writeFileSync(
+        file,
+        JSON.stringify({ pid: process.pid, host: os.hostname(), started_at: new Date().toISOString() }) + "\n",
+      )
+    }
+  } catch {
+    /* 戳写不进去不得影响主流程（最坏：少一次多实例检测） */
+  }
+}
+
+/** 删除**本进程**在 `stateRoot` 的实例戳（进程退出时调用）。 */
+export function removeInstanceStamp(stateRoot: string): void {
+  try {
+    const prefix = `${INSTANCE_STAMP_PREFIX}${process.pid}-`
+    for (const f of instanceStampFiles(stateRoot)) {
+      if (f.startsWith(prefix)) rmSync(path.join(instanceStampDir(stateRoot), f), { force: true })
+    }
+  } catch {
+    /* 清理失败不影响主流程（残留戳按 pid 存活判定 ⇒ 进程死了自然不算） */
+  }
+}
+
+/**
+ * 是否**多实例**部署（≥2 个**存活**的 `(host, pid)`）。
+ *
+ * ⚠️ 按 `(host, pid)` **去重**（同进程多枚戳只算一个）⇒ 单实例多插件副本不误判。
+ */
+export function detectForeignInstances(stateRoot: string): boolean {
+  const alive = new Set<string>()
+  for (const f of instanceStampFiles(stateRoot)) {
+    try {
+      const raw = readFileSync(path.join(instanceStampDir(stateRoot), f), "utf8")
+      const meta = JSON.parse(raw) as { pid?: number; host?: string }
+      const pid = typeof meta.pid === "number" ? meta.pid : Number(f.slice(INSTANCE_STAMP_PREFIX.length).split("-")[0])
+      if (!Number.isFinite(pid)) continue
+      const host = typeof meta.host === "string" && meta.host ? meta.host : os.hostname()
+      const key = `${host}:${pid}`
+      if (alive.has(key)) continue
+      const isAlive = host === os.hostname() ? pidAlive(pid) : true
+      if (isAlive) alive.add(key)
+    } catch {
+      /* 坏戳忽略（不据此判多实例） */
+    }
+  }
+  return alive.size > 1
+}
+
 export function lookupPair(root: string, sessionID: string, fallbackRoot?: string): any {
   const read = (r: string) => {
     const pair = readJson(path.join(r, ".rddf", "state", "pair.json"))
@@ -1129,10 +1290,16 @@ export function delegateToolDefinition(ctx: any): any {
           // 登记必须发生在 prompt 之前：工程 session 开局就要读自己的 role.json 分区，
           // 否则它会去找全局 fallback，而全局 fallback 属于 external_directory（默认 deny）。
           // 落盘根 = stateRoot（worktree 下是主仓——两份状态分裂会导致 resume 查无此条）。
-          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, kind, undefined, {
-            work_root: workRoot,
-            state: "active",
-          })
+          registerSession(
+            stateRoot,
+            sessionID,
+            frontSessionID,
+            effectiveAgent,
+            kind,
+            undefined,
+            { work_root: workRoot, state: "active" },
+            { bumpClaim: true }, // 认领 ⇒ 归属变更 ⇒ claim_gen +1
+          )
           // 变更检测基准 = workRoot（在主仓跑 git status 数不到 worktree 的变更）。
           const statusBefore = vcs ? gitStatusPaths(workRoot) : []
 

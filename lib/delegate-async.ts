@@ -35,8 +35,14 @@ import {
   readPairs,
   scopeEditRules,
   slotOccupants,
+  detectForeignInstances,
+  ensureInstanceStamp,
   enterStopGuard,
   leaveStopGuard,
+  lookupPairWithRoot,
+  nextClaimGen,
+  readClaimGen,
+  removeInstanceStamp,
   stillRunning,
   stopGuardAt,
   toMillis,
@@ -368,10 +374,18 @@ export async function waitStopped(
   sessionID: string,
   baseline: StopBaseline,
   timeoutMs = stopTimeoutMs(),
+  /**
+   * `strict` = **多实例部署**（`ADR-front-stop-ownership` D2）：`wait` 不提供任何
+   * execution 级证据 ⇒ 即便基线**不在跑**也要求水位线前移（唯一跨实例正面证据），
+   * 且 `stop_judge` 报 `"degraded"`（不得谎称拿到了 execution 级证据）。
+   */
+  opts?: { strict?: boolean },
 ): Promise<StopOutcome> {
   const deadline = Date.now() + timeoutMs
+  const strict = opts?.strict === true
   const waitFn = typeof ctx?.session?.wait === "function" ? ctx.session.wait : undefined
-  let judge: StopJudge = waitFn ? "wait" : "degraded"
+  // 严格模式下「基线不在跑」这一支也走**退化族**的判据（无 execution 级证据）。
+  let judge: StopJudge = strict && !baseline.running ? "degraded" : waitFn ? "wait" : "degraded"
   let waitSettled = false
   let waitErr: any
   let waitTimedOut = false
@@ -406,13 +420,16 @@ export async function waitStopped(
 
   if (!waitSettled) {
     // 退化路径
-    if (!baseline.running) return { stopped: false, judge, reason: "degraded_no_evidence" }
+    if (!baseline.running && !strict) return { stopped: false, judge, reason: "degraded_no_evidence" }
     // 基线在跑 ⇒ 用「判活为假 + 水位线前移」兜底（水位线是 DB 级的正面证据）
   }
 
   // ⑥/⑦：判活为假 +（基线在跑时）水位线前移；**各自至少判一次**（W 极小也不跳）
   let lastMessages: any[] | undefined
   let judged = false
+  // **矛盾**：`wait` 已返回（有界）却仍判活为真 ⇒ 两个观测互相矛盾 ⇒ `wait` 没提供
+  // 可用的信息（跨实例空转，或返回后又被唤起）⇒ reason 记 `wait_no_op`（≠ `still_running`）。
+  let contradiction = false
   for (;;) {
     const { info, missing, unknown } = await readSessionInfo(ctx, sessionID)
     if (missing) return { stopped: true, judge, reason: "missing", messages: lastMessages }
@@ -423,14 +440,21 @@ export async function waitStopped(
         judged = true
         const running = isRunning(info, messages)
         const idle = toMillis(info?.time?.idle)
-        const watermarkOk = !baseline.running || idle > baseline.idle
+        // 严格模式下，基线**不在跑**也要求水位线前移。
+        const watermarkOk = baseline.running || strict ? idle > baseline.idle : true
+        if (running && waitSettled) contradiction = true
         if (!running && watermarkOk) return { stopped: true, judge, messages }
       }
     }
     if (Date.now() >= deadline) break
     await sleep(200)
   }
-  return { stopped: false, judge, reason: judged ? "still_running" : "unreadable", messages: lastMessages }
+  return {
+    stopped: false,
+    judge,
+    reason: contradiction ? "wait_no_op" : judged ? "still_running" : "unreadable",
+    messages: lastMessages,
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -582,7 +606,8 @@ export function claimSlot(input: {
     for (const c of slotOccupants(pairs, workRoot)) {
       if (c.session_id === sessionID) continue
       if (busyOf[c.session_id] === false && c.state === "active") {
-        pairs[c.session_id] = { ...pairs[c.session_id], state: "idle" }
+        // reconcile 释放 = **归属变更** ⇒ 归属版本 +1（否则旧快照仍会匹配）。
+        pairs[c.session_id] = { ...pairs[c.session_id], state: "idle", claim_gen: nextClaimGen(pairs[c.session_id]) }
         released.push(c.session_id)
       }
     }
@@ -597,6 +622,8 @@ export function claimSlot(input: {
     if (input.register !== false) {
       pairs[sessionID] = {
         ...(pairs[sessionID] ?? {}),
+        // 认领 = **归属变更** ⇒ 归属版本 +1（既有条目保留并递增，不归零）。
+        claim_gen: nextClaimGen(pairs[sessionID]),
         front_session_id: input.frontSessionID ?? null,
         canonical_root: stateRoot,
         agent: input.agent,
@@ -622,8 +649,82 @@ export function claimSlot(input: {
 export function setSlotState(stateRoot: string, sessionID: string, state: SlotState): void {
   const pairs = readPairs(stateRoot)
   if (!pairs[sessionID]) return
-  pairs[sessionID] = { ...pairs[sessionID], state }
+  const prev = pairs[sessionID]
+  // 状态翻转 = **归属变更** ⇒ 归属版本 +1（`ADR-front-stop-ownership` D1）。
+  pairs[sessionID] = { ...prev, state, claim_gen: nextClaimGen(prev) }
   writePairs(stateRoot, pairs)
+}
+
+/** 授权类 reason（释放被拒）——词汇表见 ADR D1，**不得**新增未列出的取值。 */
+export type ReleaseReason =
+  | "slot_reclaimed"
+  | "slot_state_changed"
+  | "slot_entry_gone"
+  | "slot_already_released"
+
+export interface ReleaseOutcome {
+  ok: boolean
+  reason?: ReleaseReason
+  /** 释放后的归属版本（成功时）。 */
+  gen?: number
+}
+
+/**
+ * **授权释放**（`ADR-front-stop-ownership` D1）：锁内证明「我要释放的那份槽位
+ * **仍然是我判读时的那一份**」，否则不释放。
+ *
+ * **判定顺序（写死，ADR AC15）**：
+ * 1. 条目不存在 ⇒ `slot_entry_gone`；
+ * 2. 状态已是 `idle`/`suspended` ⇒ `slot_already_released`（幂等、**不 bump、不 interrupt**）；
+ * 3. `claim_gen ≠ 快照值` ⇒ `slot_reclaimed`；
+ * 4. 状态不在期望集合 ⇒ `slot_state_changed`。
+ *
+ * ⚠️ 顺序 2 必须在 3 之前：`claimSlot` 的 reconcile 会把**别人**的 `active` 翻成 `idle`
+ * 并 bump 其归属版本 ⇒ 先比代号会把「最常见的空闲 suspend」误报成「被别人认领」。
+ */
+export function releaseSlotAuthorized(input: {
+  /** 条目**实际所在**的 `pair.json` 根（`lookupPairWithRoot` 给出）。 */
+  pairRoot: string
+  sessionID: string
+  /** 判读时快照的归属版本。 */
+  expectedGen: number
+  /** 期望的状态集合（释放前必须仍是其中之一）。 */
+  expectedStates: SlotState[]
+  /** 释放后的新状态。 */
+  newState: SlotState
+  /** 同临界区一起回填的字段（如 `suspended_at_message_id`）。 */
+  extraFields?: Record<string, unknown>
+}): ReleaseOutcome {
+  const { pairRoot, sessionID, expectedGen, expectedStates, newState, extraFields } = input
+  let out: ReleaseOutcome = { ok: false }
+  mkdirSync(stateDirOf(pairRoot), { recursive: true })
+  withLock(lockDirOf(pairRoot), () => {
+    const pairs = readPairs(pairRoot)
+    const entry = pairs[sessionID]
+    if (!entry) {
+      out = { ok: false, reason: "slot_entry_gone" }
+      return
+    }
+    const state = entry.state
+    if (state === "idle" || state === "suspended") {
+      out = { ok: false, reason: "slot_already_released" }
+      return
+    }
+    if (readClaimGen(entry) !== expectedGen) {
+      out = { ok: false, reason: "slot_reclaimed" }
+      return
+    }
+    if (!expectedStates.includes(state)) {
+      out = { ok: false, reason: "slot_state_changed" }
+      return
+    }
+    // 释放 + 字段回填 + bump ⇒ **同一次临界区**（杜绝「只写一半」的路径）。
+    const gen = nextClaimGen(entry)
+    pairs[sessionID] = { ...entry, ...(extraFields ?? {}), state: newState, claim_gen: gen }
+    writePairs(pairRoot, pairs)
+    out = { ok: true, gen }
+  })
+  return out
 }
 
 /**
@@ -843,6 +944,8 @@ export async function locateBackend(
 ): Promise<{
   stateRoot?: string
   workRoot?: string
+  /** 条目**实际所在**的 `pair.json` 根（释放必须写回同一个文件）。 */
+  pairRoot?: string
   entry?: any
   info?: any
   missing: boolean
@@ -860,15 +963,15 @@ export async function locateBackend(
     const remembered = recallBackendRoot(ctx, sessionID)
     if (remembered) {
       const roots = canonicalRoot(remembered)
-      const entry = lookupPair(roots.stateRoot, sessionID, roots.workRoot)
-      return { ...roots, entry, info, missing, unknown, located: true }
+      const hit = lookupPairWithRoot(roots.stateRoot, sessionID, roots.workRoot)
+      return { ...roots, entry: hit?.entry, pairRoot: hit?.root, info, missing, unknown, located: true }
     }
     return { info, missing, unknown, located: false }
   }
   const { stateRoot, workRoot } = canonicalRoot(dir)
-  const entry = lookupPair(stateRoot, sessionID, workRoot)
+  const hit = lookupPairWithRoot(stateRoot, sessionID, workRoot)
   rememberBackendRoot(ctx, sessionID, stateRoot)
-  return { stateRoot, workRoot, entry, info, missing, unknown, located: true }
+  return { stateRoot, workRoot, entry: hit?.entry, pairRoot: hit?.root, info, missing, unknown, located: true }
 }
 
 /** 落一条「终态行」（**无 `event` 字段**；`outcome:"vanished"` = 后端被外部删除）。 */
@@ -982,7 +1085,7 @@ export function dispatchToolDefinition(ctx: any): any {
           )
         }
         if (vanished) {
-          setSlotState(stateRoot, brief.resume_session, "tombstone")
+          updateSlotState(stateRoot, brief.resume_session, "tombstone")
           appendVanishedRow(stateRoot, brief.resume_session, existing, workRoot)
           resumedVanished = true
         }
@@ -1188,6 +1291,13 @@ export function dispatchToolDefinition(ctx: any): any {
       if (residue !== "none") {
         setPairFields(stateRoot, sid, { steer_residue: residue })
       }
+      // ⚠️ **暂停基线一次性消费**（`ADR-front-stop-ownership` 附带变化）：本轮简报已投递 ⇒
+      // 旧的 `suspended_at_message_id` 基线**不再有效** ⇒ 必须清空。否则后续 resume 会拿
+      // 远古基线去比对 ⇒ 误报 `steer_residue:"suspected"`。
+      // （`registerSession` 改为保留式写后该字段会被保留 ⇒ 这里是它的配对清零点。）
+      if (brief.resume_session && baselineID) {
+        setPairFields(stateRoot, sid, { suspended_at_message_id: null })
+      }
 
       return {
         content: JSON.stringify(
@@ -1258,10 +1368,17 @@ export function sessionsToolDefinition(ctx: any): any {
               mkdirSync(stateDirOf(stateRoot), { recursive: true })
               withLock(lockDirOf(stateRoot), () => {
                 const pairs = readPairs(stateRoot)
-                if (pairs[sessionID]) {
-                  pairs[sessionID] = filled
-                  writePairs(stateRoot, pairs)
-                }
+                const cur = pairs[sessionID]
+                if (!cur) return
+                // ⚠️ **只补缺失字段**，**不得整条替换**（`ADR-front-stop-ownership` D1）：
+                // 锁外读到的 `entry` 可能已经过时（`claim_gen` / `state` 都被别的写者改过）
+                // ⇒ 整条替换会把**更新的归属版本**回滚（旧快照重新匹配 ⇒ lost update 复活）。
+                const merged: any = { ...cur }
+                if (merged.work_root === undefined && filled.work_root !== undefined) merged.work_root = filled.work_root
+                if (!isSlotState(merged.state) && isSlotState(filled.state)) merged.state = filled.state
+                if (merged.claim_gen === undefined && filled.claim_gen !== undefined) merged.claim_gen = filled.claim_gen
+                pairs[sessionID] = merged
+                writePairs(stateRoot, pairs)
               })
             } catch {
               /* 回填失败不阻塞观测 */
@@ -1464,9 +1581,42 @@ export function suspendToolDefinition(ctx: any): any {
       // 按 state 分派（AC51）
       if (state === "tombstone") throw fail(`后端 ${sessionID} 已终止（墓碑），不可暂停`)
       if (state === "dispatching") {
-        throw fail(
-          `后端 ${sessionID} 的简报尚未确认消费（state=dispatching），不可暂停保留（那份简报可能仍排队，恢复后会抢先执行）；请改用 cancel`,
-        )
+        // 授权类/状态类拒绝 ⇒ **结构化返回，不抛错**（AC18）：调用方需要机读字段。
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              suspended: false,
+              state,
+              reason: "slot_state_changed",
+              message:
+                `后端 ${sessionID} 的简报尚未确认消费（state=dispatching），不可暂停保留` +
+                `（那份简报可能仍排队，恢复后会抢先执行）；请改用 cancel`,
+            },
+            null,
+            2,
+          ),
+        }
+      }
+
+      // ── 授权快照（`ADR-front-stop-ownership` D1）：判读时的**归属版本** ──
+      // 释放前必须在锁内比对；期间任何归属变更（认领 / reconcile / 他人释放）都会让它失效。
+      const snapGen = readClaimGen(entry)
+
+      // ── 跨实例 tripwire（ADR D2）：本进程留戳 ⇒ 判定是否多实例部署 ──
+      ensureInstanceStamp(stateRoot)
+      const foreign = detectForeignInstances(stateRoot)
+      if (foreign) {
+        appendLedger(stateRoot, {
+          event: "foreign_instance",
+          recorded_at: new Date().toISOString(),
+          kind: entry?.kind ?? "engineering",
+          front_session_id: _toolContext?.sessionID ?? null,
+          backend_session_id: sessionID,
+          canonical_root: stateRoot,
+          work_root: located.workRoot ?? stateRoot,
+          outcome: null,
+        })
       }
 
       // ── 停机判据的基线必须在 interrupt **之前**取（ADR-front-stop-confirmation D1）──
@@ -1502,7 +1652,7 @@ export function suspendToolDefinition(ctx: any): any {
         }
 
         // ── 停机确认（AC53 / ADR D1）：`wait` + 判活为假 +（基线在跑时）水位线前移 ──
-        const outcome = await waitStopped(ctx, sessionID, stopBaseline)
+        const outcome = await waitStopped(ctx, sessionID, stopBaseline, stopTimeoutMs(), { strict: foreign })
         let stopped = outcome.stopped
         let judge = outcome.judge
 
@@ -1529,11 +1679,17 @@ export function suspendToolDefinition(ctx: any): any {
 
         if (!stopped) {
           const hint =
-            outcome.reason === "degraded_no_evidence"
-              ? "`session.wait` 不可用，且该后端当前无活跃执行（无正面证据）⇒ 未释放槽位；" +
-                "请用 cancel，或设置 RDDF_SUSPEND_ALLOW_DEGRADED=1 显式承担风险"
-              : "后端在停机确认窗口内仍在运行（可能又被唤起），未释放槽位；" +
-                "请稍后重试（再次 suspend）或用 cancel"
+            foreign
+              ? "检测到**多实例部署**（本 state dir 有 ≥2 个存活实例）⇒ `session.wait` 看不到本实例之外的执行，" +
+                "无法确认该后端已停 ⇒ 未释放槽位；请改用 cancel，或先确认该后端确实空闲"
+              : outcome.reason === "degraded_no_evidence"
+                ? "`session.wait` 不可用，且该后端当前无活跃执行（无正面证据）⇒ 未释放槽位；" +
+                  "请用 cancel，或设置 RDDF_SUSPEND_ALLOW_DEGRADED=1 显式承担风险"
+                : outcome.reason === "wait_no_op"
+                  ? "停机确认后该后端**仍在运行**（`wait` 已返回但判活仍为真：可能被再次唤起）⇒ 未释放槽位；" +
+                    "请勿反复 suspend，可改用 cancel"
+                  : "后端在停机确认窗口内仍在运行（可能又被唤起），未释放槽位；" +
+                    "请稍后重试（再次 suspend）或用 cancel"
           return {
             content: JSON.stringify(
               {
@@ -1542,6 +1698,7 @@ export function suspendToolDefinition(ctx: any): any {
                 state,
                 stop_judge: judge,
                 reason: outcome.reason ?? null,
+                ...(foreign ? { foreign_instance: true } : {}),
                 message: hint,
               },
               null,
@@ -1557,12 +1714,43 @@ export function suspendToolDefinition(ctx: any): any {
         } catch {
           suspendedAtMessageID = undefined
         }
-        // 释放槽位 + 标记 suspended（幂等：不在跑且不占槽时同样落到 suspended）
-        updateSlotState(stateRoot, sessionID, "suspended")
-        setPairFields(stateRoot, sessionID, {
-          suspended_at_message_id: suspendedAtMessageID ?? null,
-          steer_residue: "none",
+        // ── 释放槽位 + 标记 suspended（**授权释放**：锁内证明「仍是我判读时的那一份」）──
+        // `claim_gen` + 字段回填在**同一次临界区**完成（杜绝「只写一半」的路径）。
+        const release = releaseSlotAuthorized({
+          pairRoot: located.pairRoot ?? stateRoot,
+          sessionID,
+          expectedGen: snapGen,
+          expectedStates: ["active"],
+          newState: "suspended",
+          extraFields: {
+            suspended_at_message_id: suspendedAtMessageID ?? null,
+            steer_residue: "none",
+          },
         })
+        if (!release.ok) {
+          // 授权被拒 ⇒ **不改写、不释放**（槽位归当前占者）。
+          return {
+            content: JSON.stringify(
+              {
+                session_id: sessionID,
+                suspended: false,
+                state,
+                stop_judge: judge,
+                reason: release.reason ?? "slot_state_changed",
+                ...(foreign ? { foreign_instance: true } : {}),
+                message:
+                  release.reason === "slot_already_released"
+                    ? "该后端已不在占槽（此前已释放）⇒ 未做处置；不必再次 suspend"
+                    : release.reason === "slot_reclaimed"
+                      ? "该后端的槽位归属在停机窗口内已变更（已被另一路派发认领）⇒ 未释放槽位；" +
+                        "请先确认当前占槽者（用 sessions）再决定是否 cancel"
+                      : "该后端的登记态在停机窗口内已变更 ⇒ 未释放槽位；请用 sessions 确认后再试",
+              },
+              null,
+              2,
+            ),
+          }
+        }
         await syncMetadataState(ctx, sessionID, "suspended")
 
         // ── ADR D5 ⑥：释放后复检（`claimSlot` 已放行、`prompt` 落在停机窗口内的残留）──
@@ -1598,6 +1786,7 @@ export function suspendToolDefinition(ctx: any): any {
               interrupted,
               state: "suspended",
               stop_judge: judge,
+              ...(foreign ? { foreign_instance: true } : {}),
               ...(raced ? { stop_raced: true } : {}),
               message: "已暂停：上下文保留，之后可用 dispatch（同一 goal_key）恢复",
             },
@@ -1749,8 +1938,35 @@ export function cancelToolDefinition(ctx: any): any {
         }
       }
 
-      // 终止 ⇒ 墓碑 + 释放槽位
-      updateSlotState(stateRoot, sessionID, "tombstone")
+      // ── 终止 ⇒ 墓碑 + 释放槽位（**授权释放**：`ADR-front-stop-ownership` D1）──
+      // 归属已变 ⇒ **不墓碑、不释放**（槽位归当前占者）。
+      const release = releaseSlotAuthorized({
+        pairRoot: located.pairRoot ?? stateRoot,
+        sessionID,
+        expectedGen: readClaimGen(entry),
+        expectedStates: ["active", "dispatching"],
+        newState: "tombstone",
+      })
+      if (!release.ok) {
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              interrupted: true,
+              state,
+              reason: release.reason ?? "slot_state_changed",
+              message:
+                release.reason === "slot_already_released"
+                  ? "该后端已不在占槽（此前已释放）⇒ 未做处置"
+                  : release.reason === "slot_reclaimed"
+                    ? "该后端的槽位归属已变更（已被另一路派发认领）⇒ 未终止、未释放槽位；请用 sessions 确认后再试"
+                    : "该后端的登记态已变更 ⇒ 未终止、未释放槽位；请用 sessions 确认后再试",
+            },
+            null,
+            2,
+          ),
+        }
+      }
       await syncMetadataState(ctx, sessionID, "tombstone")
       appendLedger(stateRoot, {
         event: "cancelled",
@@ -1775,6 +1991,7 @@ export function cancelToolDefinition(ctx: any): any {
             interrupted: true,
             state: "tombstone",
             removed: remove,
+            reason: null,
             message: "已终止（墓碑）：不可再 resume，再派须新建",
           },
           null,

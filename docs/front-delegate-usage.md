@@ -157,6 +157,29 @@ grant `edit` 会让 `scope` 的强制点失效）。
 | `outcome: unknown` | 让 front 重试一次；两次都 unknown 就是环境问题，看排障表 |
 | 工程 session 说"任务没做完" | 追问它卡在哪一步；不要直接换个 session 重来（会丢上下文） |
 
+### `suspend` 失败时的三种形态（看 `reason`，不要一律重试）
+
+`suspend` 返回 `suspended:false` 时，**`reason` 决定下一步**：
+
+| `reason` | 含义 | 该做什么 |
+|---|---|---|
+| `slot_already_released`（常带 `idempotent:true`） | 该后端**已不在占槽**（此前已释放过） | **不用再 `suspend`、也不必 `cancel`** |
+| `wait_no_op` | 停机确认已返回、但仍判定**可能仍在跑**（可能被再次唤起） | **不要反复重试 `suspend`**；先停下其它派发，确认它确实在跑再用 `cancel` |
+| `degraded_no_evidence` | 该运行时的 `session.wait` 不可用 ⇒ 无正面证据 | 用 `cancel`（有意的保守侧，不是故障） |
+
+另有 `slot_reclaimed` / `slot_state_changed`：槽位归属在停机窗口内已被别的派发改动 ⇒
+本次**未释放**槽位 ⇒ 用 `sessions` 确认当前占槽者再决定。
+
+### 多实例部署（`foreign_instance:true`）
+
+若 `suspend` 的返回里带 `foreign_instance:true`，说明本 state dir 里**有 ≥2 个存活实例**
+（另一个 opencode 进程也在用这个仓）。此时本实例**看不到**别的实例上的 execution ⇒
+无法确认该后端已停 ⇒ 保守地**不释放槽位**。
+
+- 想终止它：用 `cancel`。
+- 它**本来就空闲**时：`cancel` 是空操作（不会终止）；槽位会由**下一次派发**的回收顺带释放。
+- 这是有意的保守侧（宁可占着槽，也不误放）。
+
 ## 7. front 的权限边界（权限层强制，非 prompt 承诺）
 
 | 能力 | front | 说明 |

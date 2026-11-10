@@ -97,6 +97,16 @@ for m in get create remove prompt interrupt wait context list; do
     "lib/ 直接调用的方法必须仍在插件可见面"
 done
 
+# ── A9：`executions` 是**进程内** Map ⇒ `awaitIdle` 跨实例必然空转 ──
+check "A9 executions 是进程内 Map" "packages/core/src/session/run-coordinator.ts" \
+  'const executions = new Map<Key, Execution<E, Reason>>\(\)' \
+  "跨实例时 ctx.session.wait 空转 ⇒ 停机判据退化为 DB 级证据"
+
+# ── A10：`time_busy` 是 Execution.Started 的**投影**（跨实例可见但滞后） ──
+check "A10 time_busy 是 Started 投影" "packages/core/src/session/projector.ts" \
+  'time_busy: event\.created' \
+  "投影滞后 ⇒ 跨实例下「判活为假」不可信 ⇒ 需 tripwire + 严格判据"
+
 # ── A8：HTTP interrupt 返回 { interrupted }（与插件侧返回值形状一致） ──
 check "A8 server interrupt 形状" "packages/server/src/handlers/session.ts" \
   'return \{ interrupted: yield\* session\.interrupt' \

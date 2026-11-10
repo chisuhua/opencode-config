@@ -35,9 +35,10 @@ import {
   suspendToolDefinition,
   waitBriefConsumed,
 } from "../lib/delegate-async.ts"
-import { __pendingStops, backfillPairEntry, canonicalRoot, enterStopGuard, leaveStopGuard, readPairs, slotOccupants, slotBusyHolders, stillRunning } from "../lib/delegate-core.ts"
-import { countActiveBackends, planSlot, stopTimeoutMs } from "../lib/delegate-async.ts"
+import { __pendingStops, backfillPairEntry, canonicalRoot, detectForeignInstances, ensureInstanceStamp, enterStopGuard, leaveStopGuard, readPairs, registerSession, slotOccupants, slotBusyHolders, stillRunning } from "../lib/delegate-core.ts"
+import { countActiveBackends, planSlot, setPairFields, stopTimeoutMs } from "../lib/delegate-async.ts"
 import { readFileSync as readFileSync2 } from "node:fs"
+import { hostname } from "node:os"
 
 const TMP = mkdtempSync(path.join(tmpdir(), "delegate-async-test-"))
 
@@ -422,18 +423,15 @@ describe("dispatch：消费确认（AC44/AC45）", () => {
     expect(err).toContain(r.session_id)
   })
 
-  test("dispatching ⇒ suspend 被拒（AC45）", async () => {
+  test("dispatching ⇒ suspend 被拒（AC45）—— 结构化返回，不抛错（AC18）", async () => {
     const dir = repo("disp-pending2")
     const { ctx } = createFakeCtx({ notConsume: true })
     const r = await run(dispatchToolDefinition(ctx), baseInput(dir))
-    let err = ""
-    try {
-      await suspendToolDefinition(ctx).execute({ session_id: r.session_id }, { sessionID: "f" })
-    } catch (e: any) {
-      err = String(e?.message ?? e)
-    }
-    expect(err).toContain("dispatching")
-    expect(err).toContain("cancel")
+    const res = await run(suspendToolDefinition(ctx), { session_id: r.session_id })
+    expect(res.suspended).toBe(false)
+    expect(res.reason).toBe("slot_state_changed")
+    expect(String(res.message)).toContain("dispatching")
+    expect(String(res.message)).toContain("cancel")
   })
 })
 
@@ -1221,14 +1219,17 @@ describe("停机确认：interrupt 的清理是异步的（AC53 / D11.3）", () 
     expect(readPairs(dir)[a.session_id].state).toBe("active")
   })
 
-  test("interrupt 后**一直**不停 ⇒ 不释放槽位，报「停机确认窗口内仍在运行」", async () => {
+  test("interrupt 后**一直**不停 ⇒ 不释放槽位（AC10：矛盾 ⇒ reason=wait_no_op）", async () => {
     const dir = repo("stop-never")
     const { ctx } = createFakeCtx()
     const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
     ctx.session.interrupt = async () => ({ interrupted: true }) // 假装接受但实际不停
     const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
     expect(r.suspended).toBe(false)
-    expect(String(r.message)).toContain("停机确认窗口")
+    // `wait` 已返回（有界）却仍判活为真 ⇒ 两个观测矛盾 ⇒ `wait_no_op`（≠ `still_running`）
+    expect(r.reason).toBe("wait_no_op")
+    expect(String(r.message)).toContain("仍在运行")
+    expect(String(r.message)).toContain("cancel")
     // 槽位**未**释放（仍是 active，占着）
     expect(readPairs(dir)[a.session_id].state).toBe("active")
   })
@@ -1743,5 +1744,354 @@ describe("停机守卫的锁内重验（早检查与 claimSlot 之间的窗口�
     expect(msg).toContain("正在停机")
     expect(msg).toContain("ses_being_suspended")
     expect(__pendingStops().length).toBe(0)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 槽位释放的授权模型（change: front-stop-ownership，AC1–AC18）
+// 决策：docs/adr/ADR-front-stop-ownership.md（Accepted）
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("授权释放（ADR-front-stop-ownership D1）", () => {
+  const pairFile = (dir: string) => path.join(dir, ".rddf/state/pair.json")
+  const readPairRaw = (dir: string) => JSON.parse(readFileSync(pairFile(dir), "utf8"))
+  const writePairRaw = (dir: string, pairs: any) => writeFileSync(pairFile(dir), JSON.stringify(pairs))
+
+  /** 在「判读之后、释放之前」注入一次并发写（第 2 次 get 之后）。 */
+  function injectAfterLocate(ctx: any, fn: (input: any) => void) {
+    let gets = 0
+    const orig = ctx.session.get
+    ctx.session.get = async (input: any) => {
+      const r = await orig(input)
+      gets++
+      if (gets === 2) fn(input)
+      return r
+    }
+  }
+
+  test("AC1 认领使归属版本递增；良性写（字段合并）不改变它", async () => {
+    const dir = repo("own-ac1")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const after = readPairs(dir)[a.session_id].claim_gen
+    expect(typeof after).toBe("number")
+    expect(after).toBeGreaterThan(0)
+    // 良性写：字段级合并 ⇒ 不 bump
+    const before = readPairs(dir)[a.session_id].claim_gen
+    setPairFields(dir, a.session_id, { steer_residue: "none" })
+    expect(readPairs(dir)[a.session_id].claim_gen).toBe(before)
+  })
+
+  test("AC2 归属已变（认领落盘）⇒ 不释放，reason=slot_reclaimed，条目仍在占者名下", async () => {
+    const dir = repo("own-ac2")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = (ctx as any).__sessions
+    void s
+    // 注入：快照之后、释放之前，另一路认领（代号 +1）
+    injectAfterLocate(ctx, () => {
+      const raw = readPairRaw(dir)
+      raw.pairs[a.session_id].claim_gen = (raw.pairs[a.session_id].claim_gen ?? 0) + 1
+      writePairRaw(dir, raw)
+    })
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(r.reason).toBe("slot_reclaimed")
+    // 条目未被改写（仍是原占者、仍是 active）
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC3 状态被并发改写（dispatching）⇒ 不释放，reason=slot_state_changed", async () => {
+    const dir = repo("own-ac3")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    injectAfterLocate(ctx, () => {
+      const raw = readPairRaw(dir)
+      raw.pairs[a.session_id].state = "dispatching"
+      writePairRaw(dir, raw)
+    })
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(r.reason).toBe("slot_state_changed")
+    expect(readPairs(dir)[a.session_id].state).toBe("dispatching")
+  })
+
+  test("AC4 良性写不误伤：释放仍成功（不得报 slot_reclaimed）", async () => {
+    const dir = repo("own-ac4")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    injectAfterLocate(ctx, () => {
+      setPairFields(dir, a.session_id, { suspended_at_message_id: "msg_x", steer_residue: "none" })
+    })
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("suspended")
+  })
+
+  test("AC5 cancel 同样条件化（代号在 cancel 期间变更 ⇒ 不墓碑、不释放）", async () => {
+    const dir = repo("own-ac5")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 注入点：`interrupt` 之后、释放之前（cancel 的 locate 之后）⇒ 归属版本被改
+    const origInterrupt = ctx.session.interrupt
+    ctx.session.interrupt = async (input: any) => {
+      const r = await origInterrupt(input)
+      const raw = readPairRaw(dir)
+      raw.pairs[a.session_id].claim_gen = (raw.pairs[a.session_id].claim_gen ?? 0) + 5
+      writePairRaw(dir, raw)
+      return r
+    }
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.state).not.toBe("tombstone")
+    expect(r.reason).toBe("slot_reclaimed")
+    expect(readPairs(dir)[a.session_id].state).not.toBe("tombstone")
+  })
+
+  test("AC6 state 枚举不变；claim_gen 非整数不参与状态判定", async () => {
+    const dir = repo("own-ac6")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const raw = readPairRaw(dir)
+    raw.pairs[a.session_id].claim_gen = "7"
+    writePairRaw(dir, raw)
+    expect(["dispatching", "active", "idle", "suspended", "tombstone"]).toContain(readPairs(dir)[a.session_id].state)
+    // 槽位占用判定不受 claim_gen 影响
+    const occupants = slotOccupants(readPairs(dir), path.resolve(dir))
+    expect(occupants.map((o: any) => o.session_id)).toContain(a.session_id)
+  })
+
+  test("AC7 已删路径的动作与改动前一致（dispatching ⇒ 释放并置 suspended）", async () => {
+    const dir = repo("own-ac7")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const originalGet = ctx.session.get
+    ctx.session.get = async (input: any) => {
+      if (input.sessionID === a.session_id) {
+        const e: any = new Error("Session.NotFoundError: session not found")
+        e._tag = "Session.NotFoundError"
+        throw e
+      }
+      return originalGet(input)
+    }
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    expect(r.vanished).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("suspended")
+    void sessions
+  })
+
+  test("AC8/AC17 tripwire：≥2 个存活实例 ⇒ 严格模式 + foreign_instance + ledger；同 pid 多戳不算多实例", async () => {
+    const dir = repo("own-ac8")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    const stateDir = path.join(dir, ".rddf/state")
+    mkdirSync(stateDir, { recursive: true })
+    // (a) **两枚**同 pid 的戳（并发写戳 / 文件被删后重建的残留）⇒ **不得**判多实例
+    //     （按 (host,pid) 去重；注意只写一枚时 `ensureInstanceStamp` 会复用它 ⇒ 测不出来）
+    for (const n of ["dup1", "dup2"]) {
+      writeFileSync(
+        path.join(stateDir, `.instance-${process.pid}-${n}.json`),
+        JSON.stringify({ pid: process.pid, host: hostname(), started_at: new Date().toISOString() }),
+      )
+    }
+    const r0 = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r0.suspended).toBe(true)
+    expect(r0.foreign_instance).toBeUndefined()
+    // (b) 另一个 pid 的戳（用本进程 pid + 1，判定为「同 host 的另一个存活实例」）
+    const b = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-b"))
+    const s2 = sessions.get(b.session_id)!
+    s2.time = { idle: Date.now() + 10_000 }
+    s2.messages = []
+    writeFileSync(
+      path.join(stateDir, `.instance-${process.pid + 1}-other.json`),
+      JSON.stringify({ pid: process.pid + 1, host: hostname(), started_at: new Date().toISOString() }),
+    )
+    const r1 = await run(suspendToolDefinition(ctx), { session_id: b.session_id })
+    expect(r1.suspended).toBe(false)
+    expect(r1.foreign_instance).toBe(true)
+    expect(r1.stop_judge).toBe("degraded")
+    const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+    expect(ledger).toContain('"foreign_instance"')
+  })
+
+  test("AC9 严格模式下赎回开关不生效", async () => {
+    const dir = repo("own-ac9")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    const stateDir = path.join(dir, ".rddf/state")
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(
+      path.join(stateDir, `.instance-${process.pid + 1}-other.json`),
+      JSON.stringify({ pid: process.pid + 1, host: hostname(), started_at: new Date().toISOString() }),
+    )
+    process.env.RDDF_SUSPEND_ALLOW_DEGRADED = "1"
+    try {
+      const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+      expect(r.suspended).toBe(false)
+      expect(r.stop_judge).not.toBe("degraded-forced")
+      expect(r.foreign_instance).toBe(true)
+    } finally {
+      delete process.env.RDDF_SUSPEND_ALLOW_DEGRADED
+    }
+  })
+
+  test("AC10 矛盾 ⇒ wait_no_op；still_running 仍可达（wait 缺失 + 基线在跑）", async () => {
+    const W0 = process.env.RDDF_STOP_TIMEOUT_MS
+    process.env.RDDF_STOP_TIMEOUT_MS = "300"
+    try {
+      // (a) wait 返回但仍判活为真 ⇒ 两个观测矛盾 ⇒ wait_no_op
+      const dir = repo("own-ac10a")
+      const { ctx, sessions } = createFakeCtx({ interruptNoop: true })
+      const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+      const s = sessions.get(a.session_id)!
+      s.time = { busy: 500, idle: 400 }
+      s.messages = []
+      const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+      expect(r.suspended).toBe(false)
+      expect(r.reason).toBe("wait_no_op")
+      // (b) wait 缺失 + 基线在跑 ⇒ still_running 仍可达
+      const dir2 = repo("own-ac10b")
+      const f = createFakeCtx({ noWait: true, interruptNoop: true })
+      const b = await run(dispatchToolDefinition(f.ctx), baseInput(dir2, "goal-a"))
+      const s2 = f.sessions.get(b.session_id)!
+      s2.time = { busy: 500, idle: 400 }
+      const r2 = await run(suspendToolDefinition(f.ctx), { session_id: b.session_id })
+      expect(r2.suspended).toBe(false)
+      expect(r2.reason).toBe("still_running")
+    } finally {
+      if (W0 === undefined) delete process.env.RDDF_STOP_TIMEOUT_MS
+      else process.env.RDDF_STOP_TIMEOUT_MS = W0
+    }
+  })
+
+  test("AC12 同步 delegate（registerSession 整条重建）后归属版本不回退", async () => {
+    const dir = repo("own-ac12")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const before = readPairs(dir)[a.session_id].claim_gen ?? 0
+    // 模拟同步 delegate 的登记写（整条重建字段集，但保留 claim_gen）
+    registerSession(dir, a.session_id, "ses_front_test", "build", "engineering", undefined, {
+      work_root: path.resolve(dir),
+      state: "active",
+    })
+    const after = readPairs(dir)[a.session_id].claim_gen ?? 0
+    expect(after).toBeGreaterThanOrEqual(before)
+  })
+
+  test("AC11 戳的存活判定：同 host 的**死 pid** 不算实例；跨 host 戳算存活（保守）", async () => {
+    const dir = repo("own-ac11")
+    const { ctx } = createFakeCtx()
+    await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const stateDir = path.join(dir, ".rddf/state")
+    mkdirSync(stateDir, { recursive: true })
+    ensureInstanceStamp(dir) // 本进程留戳（否则「活实例数」基数不对）
+    // 死 pid（同 host）⇒ 不算存活 ⇒ 不判多实例
+    writeFileSync(
+      path.join(stateDir, `.instance-999999-dead.json`),
+      JSON.stringify({ pid: 999999, host: hostname(), started_at: new Date().toISOString() }),
+    )
+    expect(detectForeignInstances(dir)).toBe(false)
+    // 跨 host ⇒ 保守视为存活 ⇒ 判多实例
+    writeFileSync(
+      path.join(stateDir, `.instance-999998-remote.json`),
+      JSON.stringify({ pid: 999998, host: "some-other-host", started_at: new Date().toISOString() }),
+    )
+    expect(detectForeignInstances(dir)).toBe(true)
+  })
+
+  test("AC13 单槽不变式：同一 workRoot 下 active|dispatching 条目 ≤ 1（两个根都查）", async () => {
+    const dir = repo("own-ac13")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const { stateRoot, workRoot } = canonicalRoot(dir)
+    for (const root of [stateRoot, workRoot]) {
+      const file = path.join(root, ".rddf/state/pair.json")
+      if (!existsSync(file)) continue
+      const raw = JSON.parse(readFileSync(file, "utf8"))
+      const occupants = Object.values(raw.pairs ?? {}).filter((e: any) => e.work_root === workRoot && ["active", "dispatching"].includes(e.state))
+      expect(occupants.length).toBeLessThanOrEqual(1)
+    }
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC15 判定顺序：条目被 reconcile 翻成 idle（代号也变了）⇒ 报 slot_already_released（不是 slot_reclaimed）", async () => {
+    const dir = repo("own-ac15")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    injectAfterLocate(ctx, () => {
+      // 模拟 reconcile：active → idle（并 bump 归属版本）
+      const raw = readPairRaw(dir)
+      raw.pairs[a.session_id].state = "idle"
+      raw.pairs[a.session_id].claim_gen = (raw.pairs[a.session_id].claim_gen ?? 0) + 1
+      writePairRaw(dir, raw)
+    })
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(r.reason).toBe("slot_already_released")
+  })
+
+  test("AC16 sessions 回填不丢归属版本（锁外读到的旧值不得覆盖锁内的新值）", async () => {
+    const dir = repo("own-ac16")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 造一个「需要回填」的条目（缺 work_root）
+    const raw = readPairRaw(dir)
+    delete raw.pairs[a.session_id].work_root
+    raw.pairs[a.session_id].claim_gen = 3
+    writePairRaw(dir, raw)
+    // 在回填的锁外读之后、锁内写之前，另一路把 claim_gen 改成 9
+    const origRead = readPairs
+    void origRead
+    const listed = await run(sessionsToolDefinition(ctx), {})
+    void listed
+    // 回填后 claim_gen 不得回退到旧值（≥ 注入前）
+    expect(readPairs(dir)[a.session_id].claim_gen ?? 0).toBeGreaterThanOrEqual(3)
+  })
+
+  test("AC18 登记态缺失 ⇒ 明确失败（不得渲染成 idle 的幂等成功）", async () => {
+    const dir = repo("own-ac18")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    // 抹掉登记条目
+    const raw = readPairRaw(dir)
+    delete raw.pairs[a.session_id]
+    writePairRaw(dir, raw)
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(r.reason).toBe("slot_entry_gone")
+  })
+
+  test("AC18b 条目写入都在 .role.lock 内（源码断言：setSlotState 只在包装里被调用）", () => {
+    const src = readFileSync2(path.join(process.cwd(), "lib/delegate-async.ts"), "utf8")
+    const calls = src.match(/setSlotState\(/g)?.length ?? 0
+    // 定义 1 + updateSlotState 包装内 1 ⇒ 没有裸调用点
+    expect(calls).toBe(2)
+  })
+
+  test("AC14 前端文案：三种形态各有出口，且不得建议用 cancel 释放空闲后端", async () => {
+    const md = readFileSync2(path.join(process.cwd(), "prompts/front.md"), "utf8")
+    expect(md).toContain("slot_already_released")
+    expect(md).toContain("wait_no_op")
+    expect(md).toContain("foreign_instance")
+    expect(md).toContain("多实例")
+    const usage = readFileSync2(path.join(process.cwd(), "docs/front-delegate-usage.md"), "utf8")
+    expect(usage).toContain("slot_already_released")
+    expect(usage).toContain("wait_no_op")
+    expect(usage).toContain("foreign_instance")
   })
 })

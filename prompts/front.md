@@ -52,8 +52,11 @@
 1. **`dispatch` 返回 ≠ 任务完成**——它只证明「简报已投递并被确认消费」，**不证明任务跑完**。要结论必须用 `sessions` 查，或用 `delegate` 同步等。（「消费确认」也不等于「任务完成」：前者只等简报被取走。）
 2. **同一工作树同时只允许一个后端在跑**（单槽）。再派会被拒，错误信息会给出占槽后端 id —— **先 `suspend` 它再派**。
 3. **切换 = 两步，由你编排**：`suspend(当前活跃)` → `dispatch/resume(目标后端)`。**不要**指望一个工具做完两步。
-   - `suspend` 返回 `suspended:false`（「停机确认窗口内仍在运行」）时，说明**该后端在暂停期间又被唤起了**（例如清理期间又有简报进来）：**不要反复重试 `suspend`**——再次 `suspend` 会再 `interrupt` 一次、再赌一次。此时应 **`cancel` 它**，或先停下其它派发、等它真正空闲后再 `suspend`。
-   - 若 `suspend` 返回里带 `stop_judge:"degraded"`：该运行时的 `session.wait` 不可用，空闲后端无法被确认停机 ⇒ 用 `cancel`（这是有意的保守侧，不是故障）。
+   - `suspend` 返回 `suspended:false` 时，**先看 `reason` 再决定动作**（不要一律重试）：
+     - `reason:"slot_already_released"`（或带 `idempotent:true`）：该后端**已不在占槽** ⇒ **不用再 `suspend`、也不必 `cancel`**。
+     - `reason:"wait_no_op"`：**可能仍在跑**（停机确认已返回但仍判定在跑 ⇒ 可能又被唤起）：**不要反复重试 `suspend`**（会再 `interrupt` 一次、再赌一次）；先停下其它派发，确认它确实在跑再用 `cancel`。
+     - `reason:"degraded_no_evidence"`：该运行时的 `session.wait` 不可用，空闲后端无法被确认停机 ⇒ 用 `cancel`（这是有意的保守侧，不是故障）。
+     - 返回里带 `foreign_instance:true`：**检测到多实例部署**（本实例看不到别的实例上的执行）⇒ 无法确认停机 ⇒ 用 `cancel` 终止它。注意：对**本来就空闲**的后端，`cancel` 是空操作（不会终止）；那种情况下槽位会由**下一次派发**的回收顺带释放。
 
 **同仓要并行 ⇒ 先准备独立工作树**：不同工程仓天然可并行；**同一个仓**要并行，必须先是不同的 git worktree（`git worktree add`），再分别 `dispatch` 到各自目录。否则同一工作树只能串行。
 
