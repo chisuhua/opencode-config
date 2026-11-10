@@ -14,6 +14,8 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 process.env.RDDF_CONSUME_TIMEOUT_MS = "200"
+// 停机确认窗口：生产默认 8s > bun 的 5s 默认测试超时 ⇒ 测试里用短窗口
+process.env.RDDF_STOP_TIMEOUT_MS = "300"
 
 import {
   aggregateStates,
@@ -1038,3 +1040,49 @@ describe("缺失判定的窄口径（查询失败 ≠ 已删除）", () => {
 })
 
 
+
+
+describe("停机确认：interrupt 的清理是异步的（AC53 / D11.3）", () => {
+  test("interrupt 先返回、后停机 ⇒ suspend 应等它停下并释放槽位", async () => {
+    const dir = repo("stop-async")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 模拟上游语义：**interrupt 先确认接受，清理稍后 settle**（300ms 后才不忙）
+    const s = sessions.get(a.session_id)!
+    ctx.session.interrupt = async () => {
+      setTimeout(() => { s.busy = false; s.idle = Date.now() }, 300)
+      return { interrupted: true }
+    }
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("suspended")
+  })
+
+  test("interrupt 后**一直**不停 ⇒ 不释放槽位，报「停机确认窗口内仍在运行」", async () => {
+    const dir = repo("stop-never")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    ctx.session.interrupt = async () => ({ interrupted: true }) // 假装接受但实际不停
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(String(r.message)).toContain("停机确认窗口")
+    // 槽位**未**释放（仍是 active，占着）
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+})
+
+describe("全局上限计数读权威态（AC31）", () => {
+  test("metadata 过期（仍是 active）但 pair 已 idle ⇒ **不**计入上限", async () => {
+    const dir = repo("cap-authority")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 权威态：pair 里已被 reconcile 翻成 idle（模拟后端自然跑完）
+    const pairs = readPairs(dir)
+    pairs[a.session_id].state = "idle"
+    writeFileSync(path.join(dir, ".rddf/state/pair.json"), JSON.stringify({ version: "pair-v2", pairs }))
+    // metadata 索引**未同步**（仍是 active）
+    const { countActiveBackends } = await import("../lib/delegate-async.ts")
+    const n = await countActiveBackends(ctx)
+    expect(n).toBe(0) // 权威态是 idle ⇒ 不占额度
+  })
+})

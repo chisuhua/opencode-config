@@ -245,6 +245,49 @@ export function isDangling(input: {
 
 // ───────────────────────────── 内部工具 ─────────────────────────────
 
+/**
+ * 停机确认窗口（`suspend` 等后端真正停下）：默认 8s。
+ *
+ * 上游 interrupt 的清理是异步 settle 的 ⇒ 需要给它一点时间。
+ */
+export const DEFAULT_STOP_TIMEOUT_MS = 8_000
+
+export function stopTimeoutMs(): number {
+  const v = Number(process.env.RDDF_STOP_TIMEOUT_MS)
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_STOP_TIMEOUT_MS
+}
+
+/**
+ * 等一个后端**确认停机**（活体复查）。
+ *
+ * ⚠️ **不能只看 `interrupt` 的返回值**：上游 `interrupt` 是「先确认接受、清理异步 settle」
+ * ⇒ 返回 `interrupted:true` 时它**可能还在跑**；返回 `interrupted:false` 时是「本来就没有
+ * 活跃执行」（idle no-op）⇒ 也可能仍有一个**上一轮**的尾巴在跑。
+ * ⇒ 唯一可靠判据是**活体复查**（`time.busy` / 最后消息时间，见 `isRunning`）。
+ *
+ * 返回 true = 已确认停机；false = 窗口内仍未停机（调用方**不得**释放槽位）。
+ */
+export async function waitStopped(
+  ctx: any,
+  sessionID: string,
+  timeoutMs = stopTimeoutMs(),
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const { info, missing } = await readSessionInfo(ctx, sessionID)
+    if (missing) return true // 已不存在 ⇒ 视为停机
+    let messages: any = []
+    try {
+      messages = await ctx.session.context({ sessionID })
+    } catch {
+      messages = []
+    }
+    if (!isRunning(info, messages)) return true
+    if (Date.now() >= deadline) return false
+    await sleep(200)
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -511,12 +554,33 @@ export async function syncMetadataState(ctx: any, sessionID: string, state: Slot
   }
 }
 
-/** 全局活跃后端计数（AC31）：跨工作树的占槽后端数。 */
+/**
+ * 全局活跃后端计数（AC31）：跨工作树的占槽后端数。
+ *
+ * ⚠️ **必须以 `pair.json` 的权威态为准**，不能只读 metadata 索引：
+ * metadata 是**可丢弃索引**，可能过期（例如 reconcile 已把后端翻成 `idle`，
+ * 或已被 suspend，但 metadata 仍是 `active`）⇒ 用过期值计数会**多算**，
+ * 造成「并发上限已达」的**误拒**（E2E L2-22 实测踩到：已 `idle` 的后端仍占着额度）。
+ *
+ * 权威态的读法：metadata 里的 `canonical_root` = stateRoot ⇒ 读该仓的 `pair.json`
+ * 取该 session 的 `state`；读不到（仓已删/条目缺失）时**退回** metadata 的值。
+ */
 export async function countActiveBackends(ctx: any): Promise<number> {
   const backends = await listDelegatedSessions(ctx)
   let n = 0
   for (const b of backends) {
-    const state = b?.metadata?.state
+    const md = (b as any)?.metadata ?? {}
+    const sid = (b as any)?.id
+    let state = md.state
+    const stateRoot = typeof md.canonical_root === "string" ? md.canonical_root : undefined
+    if (stateRoot && typeof sid === "string") {
+      try {
+        const entry = lookupPair(stateRoot, sid)
+        if (entry && isSlotState(entry.state)) state = entry.state
+      } catch {
+        /* 读不到就退回 metadata 的值 */
+      }
+    }
     if (isSlotState(state) && (state === "active" || state === "dispatching")) n++
   }
   return n
@@ -1157,22 +1221,30 @@ export function suspendToolDefinition(ctx: any): any {
         interrupted = false
       }
 
-      // 停机确认（AC53）：仍在跑 ⇒ **不释放槽位**
-      const { info } = await readSessionInfo(ctx, sessionID)
-      let messages: any = []
+      // ── 停机确认（AC53）：**有界轮询**活体，直到确认停机 ──
+      // ⚠️ 上游 `interrupt` 是「**先确认接受、清理异步 settle**」
+      // （execution.ts：「Interruption acknowledges before cleanup settles」）⇒
+      // interrupt 返回后会话**还会跑一小会儿** ⇒ 只查一次会**误判「未停机」**，
+      // 导致 suspend 对正在跑的后端几乎必然失败（E2E L2-22 实测暴露）。
+      // ⇒ 轮询到「确认停机」或超时；**确认停机才释放槽位**（保守侧不变）。
+      const stopped = await waitStopped(ctx, sessionID)
+      const { info: stopInfo } = await readSessionInfo(ctx, sessionID)
+      let stopMessages: any = []
       try {
-        messages = await ctx.session.context({ sessionID })
+        stopMessages = await ctx.session.context({ sessionID })
       } catch {
-        messages = []
+        stopMessages = []
       }
-      if (isRunning(info, messages)) {
+      if (!stopped && isRunning(stopInfo, stopMessages)) {
         return {
           content: JSON.stringify(
             {
               session_id: sessionID,
               suspended: false,
               state,
-              message: "后端仍在运行，未释放槽位（释放前必须确认停机）；请稍后重试或用 cancel",
+              message:
+                "后端在停机确认窗口内仍在运行，未释放槽位（释放前必须确认停机）；" +
+                "请稍后重试或用 cancel",
             },
             null,
             2,
@@ -1183,7 +1255,7 @@ export function suspendToolDefinition(ctx: any): any {
       // AC54：记录**暂停时刻**的最后一条消息 id（resume 时据此判断新增消息里是否混入陈旧 steer）
       let suspendedAtMessageID: string | undefined
       try {
-        suspendedAtMessageID = lastMessageID(messages)
+        suspendedAtMessageID = lastMessageID(stopMessages)
       } catch {
         suspendedAtMessageID = undefined
       }
