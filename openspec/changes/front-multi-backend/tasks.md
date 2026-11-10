@@ -79,8 +79,8 @@
 
 | # | 任务 | AC | 原因 / 路由 |
 |---|---|---|---|
-| T7.1 | E2E bats 用例 L2-16..（真实 front 调用四工具、真实派发、连续 10 次时延） | AC1/AC5/AC8/AC44/AC11 | 外部仓库 `/workspace/main/rdd-workflow-e2e`，需另提交 commit + 记录 SHA |
-| T7.2 | AC44 有界时延（连续 10 次，≥8 次 60s 内进 `active`） | AC44 | 需真实模型跑 10 次 |
+| T7.1 | E2E bats 用例 L2-16..（真实 front 调用四工具、真实派发、front 换代找回） | AC1/AC5/AC8/AC11/AC12/AC26/AC51 | ✅ **已完成**（外部仓库 `/workspace/main/rdd-workflow-e2e`，commit `dc7875c`（L2-21）+ `568ef28`（L2-16…L2-20）；**21/21 全绿**，真实模型 + 真实宿主；15 条既有用例用**新产物**重跑 ⇒ 新增槽位检查未破坏既有行为）|
+| T7.2 | AC44 有界时延（连续 10 次，≥8 次 60s 内进 `active`） | AC44 | ✅ **已完成**（**10/10 次**在 60s 内完成「投递→消费确认」；中位 0.2s、最大 1.4s。测 dispatch 关键路径的**下界**，工具侧另有 create 开销 + ≤200ms 轮询粒度）|
 | T7.3 | **AC13「已消失可见 + ledger 补记 vanished」** | AC13 | ⛔ **设计张力**：`list` 不返回已删 session ⇒ 兜底路径看不到它；而 ADR D2.1 否决了全局 registry。⇒ `design_drift` → **architect 决策**（见 design.md §5） |
 | T7.4 | AC57 的「自然跑完 → B → 再回 A」完整序列 | AC57 | ✅ **已完成**。**发现判据与设计冲突**：原 AC57 写「再次 `dispatch(A)` 成功」= 单步切回，但**单槽不允许**（B 占槽）⇒ 判据已补为 D11.1 的**两步**（先 `suspend(B)` 再 `resume(A)`），并显式写「**单步 resume A 必被拒**」；实现侧新增 `sessions` 的 **`groups`**（按 `work_root` 分组，AC43/AC57 的「同组列出」落点；AC29 的 schema 表同步补 `groups`） |
 | T7.6 | `docs/MULTI-AGENT-DESIGN.md` + `docs/CHANGELOG.md`（治理面）+ `ADR-front-knowledge-capability` D5 表 | AC35 / AC36 | ✅ **已完成**（architect，oracle + critic 双审：治理面判定 PASS-WITH-NOTES → critic APPROVE） |
