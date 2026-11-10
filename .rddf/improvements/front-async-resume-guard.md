@@ -1,5 +1,7 @@
 # improvement: front-async-resume-guard
 
+**实施状态**：已立项 → `openspec/changes/front-async-resume-guard/`（2026-11-10，planner 起草 proposal，**AC1–AC14**）。
+
 ## Why
 
 **异步派发面缺一条既有的安全判据**（实现缺口 + 验收缺口，**不是新决策**）。

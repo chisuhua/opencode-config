@@ -2,11 +2,11 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | **Proposed**（oracle 1 轮 + critic 2 轮（REJECT → 闭合复审 **APPROVE_WITH_CONDITIONS**，`mergeable: yes`）；**待用户签批转 Accepted**） |
+| Status | **Accepted**（2026-11-10 **用户签批**；oracle 1 轮 + critic 2 轮（REJECT → 闭合复审 **APPROVE_WITH_CONDITIONS**，`mergeable: yes`）+ metis gap 分析；审稿记录 `.rddf/reviews/adr-front-stop-confirmation-review.md`） |
 | Date | 2026-11-10 |
 | Author | architect |
 | Parent | **部分取代** `ADR-front-multi-backend` **D11.3 的「判据选型」**（其**分支结构**「基线不在跑 ⇒ 无附加要求」与**有界**要求继续有效）；承接该篇 D11.3 登记的备选「改用 `ctx.session.wait`」 |
-| 关联 change | `backlog: front-stop-confirmation` —— **improvement 已立**：`.rddf/improvements/front-stop-confirmation.md`（2026-11-10，planner）；配套的 `.rddf/improvements/front-async-resume-guard.md` 覆盖同一竞争面的「运行窗口」；**openspec change 待立项**（立项后回填路径与 AC 编号） |
+| 关联 change | **`openspec/changes/front-stop-confirmation/`**（2026-11-10 立项，planner 起草 proposal，**AC1–AC18**；其中 AC1–AC9 直接沿用本文件的 Verification S1–S11）。配套 `openspec/changes/front-async-resume-guard/`（AC1–AC14）覆盖同一竞争面的「运行窗口」。improvement：[`front-stop-confirmation.md`](../../.rddf/improvements/front-stop-confirmation.md) / [`front-async-resume-guard.md`](../../.rddf/improvements/front-async-resume-guard.md) |
 | AC 映射 | 待回填（change 未立项 ⇒ 允许暂缺） |
 
 ## 背景与问题

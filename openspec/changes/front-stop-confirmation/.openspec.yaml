@@ -1,0 +1,4 @@
+# 本 change 不产生 openspec 的 spec delta（本仓无 openspec/specs/）。
+schema: spec-driven
+created: 2026-11-10
+skip_specs: true

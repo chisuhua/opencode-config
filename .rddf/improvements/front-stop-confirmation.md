@@ -1,5 +1,7 @@
 # improvement: front-stop-confirmation
 
+**实施状态**：已立项 → `openspec/changes/front-stop-confirmation/`（2026-11-10，planner 起草 proposal，**AC1–AC18**；AC1–AC9 沿用 ADR Verification S1–S11）。
+
 ## Why
 
 `ADR-front-multi-backend` D11.3 的停机判据（判活为假 + 基线在跑时 `time.idle` 水位线前移）**留了两个可达的假停机窗口**（该篇风险章自陈），后果都是**两个写入者**：
