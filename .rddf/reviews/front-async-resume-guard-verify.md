@@ -1,6 +1,6 @@
 # 验收报告：front-async-resume-guard
 
-> **验收者**：verifier（只验不改）。**判据来源**：① 用户本次要求（验收本 change，AC1–AC14）；② `openspec/changes/front-async-resume-guard/proposal.md` 的 `## 验收标准`（AC1–AC14）；③ `design.md` 的落点/顺序声明。
+> **验收者**：verifier（只验不改）。**判据来源**：① 用户本次要求（验收本 change，AC1–AC14）；② `openspec/changes/archive/2026-11-10-front-async-resume-guard/proposal.md` 的 `## 验收标准`（AC1–AC14）；③ `design.md` 的落点/顺序声明。
 > **分流**：`rdd-verifier` skill 可加载，但 **P3 archive gate 未触发**（无 `.rddf/state/iteration.json`；`rddf rdd-verify --dry-run` → "No eligible changes"）⇒ 走**本地 1–5 步**。
 
 ## 1. 静态检查

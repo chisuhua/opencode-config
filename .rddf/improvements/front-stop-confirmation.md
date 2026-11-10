@@ -1,6 +1,6 @@
 # improvement: front-stop-confirmation
 
-**实施状态**：已立项 → `openspec/changes/front-stop-confirmation/`（2026-11-10，planner 起草 proposal，**AC1–AC18**；AC1–AC9 沿用 ADR Verification S1–S11）。
+**实施状态**：已立项 → `openspec/changes/archive/2026-11-10-front-stop-confirmation/`（2026-11-10，planner 起草 proposal，**AC1–AC18**；AC1–AC9 沿用 ADR Verification S1–S11）。
 
 ## Why
 

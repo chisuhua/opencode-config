@@ -1,6 +1,6 @@
 # improvement: front-async-resume-guard
 
-**实施状态**：已立项 → `openspec/changes/front-async-resume-guard/`（2026-11-10，planner 起草 proposal，**AC1–AC14**）。
+**实施状态**：已立项 → `openspec/changes/archive/2026-11-10-front-async-resume-guard/`（2026-11-10，planner 起草 proposal，**AC1–AC14**）。
 
 ## Why
 

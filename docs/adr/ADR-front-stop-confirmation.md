@@ -6,7 +6,7 @@
 | Date | 2026-11-10 |
 | Author | architect |
 | Parent | **部分取代** `ADR-front-multi-backend` **D11.3 的「判据选型」**（其**分支结构**「基线不在跑 ⇒ 无附加要求」与**有界**要求继续有效）；承接该篇 D11.3 登记的备选「改用 `ctx.session.wait`」 |
-| 关联 change | **`openspec/changes/front-stop-confirmation/`**（2026-11-10 立项，planner 起草 proposal，**AC1–AC18**；其中 AC1–AC9 直接沿用本文件的 Verification S1–S11）。配套 `openspec/changes/front-async-resume-guard/`（AC1–AC14）覆盖同一竞争面的「运行窗口」。improvement：[`front-stop-confirmation.md`](../../.rddf/improvements/front-stop-confirmation.md) / [`front-async-resume-guard.md`](../../.rddf/improvements/front-async-resume-guard.md) |
+| 关联 change | **`openspec/changes/archive/2026-11-10-front-stop-confirmation/`**（2026-11-10 立项 → **实施完成并归档**；planner 起草 proposal，**AC1–AC18**；其中 AC1–AC9 直接沿用本文件的 Verification S1–S11）。配套 `openspec/changes/archive/2026-11-10-front-async-resume-guard/`（AC1–AC14）覆盖同一竞争面的「运行窗口」。improvement：[`front-stop-confirmation.md`](../../.rddf/improvements/front-stop-confirmation.md) / [`front-async-resume-guard.md`](../../.rddf/improvements/front-async-resume-guard.md) |
 | AC 映射 | 待回填（change 未立项 ⇒ 允许暂缺） |
 
 ## 背景与问题
