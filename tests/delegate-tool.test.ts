@@ -15,7 +15,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 
-import { delegateToolDefinition } from "../lib/delegate-core.ts"
+import { canonicalRoot, delegateToolDefinition, enterStopGuard, leaveStopGuard } from "../lib/delegate-core.ts"
 
 const EXAMPLE_PROJECT = "/workspace/main/rdd-workflow-e2e"
 const TMP = mkdtempSync(path.join("/tmp/opencode", "delegate-tool-test-"))
@@ -781,4 +781,44 @@ afterAll(() => {
   } catch {
     /* 清理失败不影响测试结论 */
   }
+})
+
+// ─────────────────── 停机守卫：同步 delegate 入口不得被 excludeSessionID 绕过 ───────────────────
+
+describe("停机守卫（front-stop-confirmation D2 / front-async-resume-guard AC10）", () => {
+  test("AC10 同步 delegate：该工作树正在停机 ⇒ 拒绝（即便 resume 目标正是被停机者）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx()
+    // 先建一个已登记的后端（后续 resume 它）
+    const first = await runDelegate(ctx, { ...BASE, project_dir: project })
+    const backendID = first.session_id as string
+    expect(backendID).toBeTruthy()
+
+    const { stateRoot, workRoot } = canonicalRoot(project)
+    // 🎯 守卫指向的**正是**这个 resume 目标 —— 若检查被 `excludeSessionID` 排除，就会漏挡
+    const token = enterStopGuard(stateRoot, workRoot, backendID, "ses_other_front")
+    let msg = ""
+    try {
+      await runDelegate(ctx, { ...BASE, project_dir: project, resume_session: backendID })
+    } catch (e: any) {
+      msg = String(e?.message ?? e)
+    } finally {
+      leaveStopGuard(stateRoot, workRoot, token)
+    }
+    expect(msg).toContain("正在停机")
+    expect(msg).toContain("ses_other_front")
+    expect(msg).not.toContain("请先 suspend")
+  })
+
+  test("AC10 反向：守卫清掉后，同一 resume 恢复正常（证明拒绝确由守卫触发）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx()
+    const first = await runDelegate(ctx, { ...BASE, project_dir: project })
+    const backendID = first.session_id as string
+    const { stateRoot, workRoot } = canonicalRoot(project)
+    const token = enterStopGuard(stateRoot, workRoot, backendID, "ses_other_front")
+    leaveStopGuard(stateRoot, workRoot, token)
+    const again = await runDelegate(ctx, { ...BASE, project_dir: project, resume_session: backendID })
+    expect(again.session_id).toBe(backendID)
+  })
 })

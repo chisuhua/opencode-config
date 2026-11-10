@@ -18,11 +18,12 @@
 | T11 | E2E：真实运行中 `dispatch(resume=X)` 被拒 + 无新增 `dispatched` 行 | AC13 | ✅ E2E **L2-23** 绿（证据：错误文案命中守卫、ledger 的 `dispatched` 行仍为 1） |
 | T12 | 静态：`bunx tsc --noEmit` 零真错误；`bun test tests/` 全绿 | — | ✅ `tsc` 零新错误（`delegate-core` 6 条为既有 TS7006/TS2345）；`bun test` **247 pass**；E2E **24/24** |
 
-## 阻塞项
+## 原先的阻塞项（已解除）
 
 | # | 说明 |
 |---|---|
-| AC9 / AC10 | 依赖 `front-stop-confirmation` 的**停机守卫**（未实施）⇒ **本 change 内标 blocked**，待该 change 落地后补测（`dispatch` 的交叉优先级与该守卫的 `delegate` 入口） |
+| AC9 | ✅ **已由 `front-stop-confirmation` 覆盖**：`tests/delegate-async.test.ts` 的「AC17 交叉优先级：停机守卫优先于活体判定，文案不得含『请先 suspend』」 |
+| AC10 | ✅ **已补测**：`tests/delegate-tool.test.ts` 的「AC10 同步 delegate：该工作树正在停机 ⇒ 拒绝（即便 resume 目标正是被停机者）」+ 反向用例（守卫清掉后恢复）；**变异验证**：去掉 `delegate` 入口守卫 ⇒ 该用例失败 |
 
 ## 不在本 change
 

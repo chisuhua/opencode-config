@@ -38,8 +38,8 @@
 | **AC6** | `dispatch(resume=X)` 且 X 空闲 ⇒ 放行，行为与改动前逐字段一致 | 单测（既有回归） |
 | **AC7** | X 状态读失败（原因不明）⇒ **拒绝**，文案说明「无法确认」；槽位与条目均不变 | 单测 |
 | **AC8** | X **确认已删除**（上游 `NotFound`）⇒ 按 D12：旧条目墓碑 + `outcome:"vanished"` 行 + 同 `goal_key` 新建；不回退 | 单测（既有 D12 用例回归） |
-| **AC9** | **交叉优先级**：停机守卫与活体判定**同时命中** ⇒ 文案为「正在停机（由 front `<id>` 发起），请等它结束」，**不含**「请先 suspend」字样 | 单测（需 `front-stop-confirmation` 的守卫；**未立项前**该条标 blocked） |
-| **AC10** | `delegate(resume=X)` 且 X 正在被 `suspend` ⇒ **被拒**（验证 `lib/delegate-core.ts:957` 的 `excludeSessionID` **不排除**守卫） | 单测（依赖 AC9 的前置） |
+| **AC9** | **交叉优先级**：停机守卫与活体判定**同时命中** ⇒ 文案为「正在停机（由 front `<id>` 发起），请等它结束」，**不含**「请先 suspend」字样 | 单测（`front-stop-confirmation` 落地后覆盖：`tests/delegate-async.test.ts` 的「AC17 交叉优先级」） |
+| **AC10** | `delegate(resume=X)` 且 X 正在被 `suspend` ⇒ **被拒**（验证 `slotBusyHolders` 的 `excludeSessionID` **不排除**守卫） | 单测（`tests/delegate-tool.test.ts` 的两条 AC10 用例；变异验证：去掉入口守卫 ⇒ 失败） |
 | **AC11** | `dispatching` 态 ⇒ **拒绝**，文案指向 `cancel` / 等待进入 `active` | 单测 |
 | **AC12** | `tombstone` 态 ⇒ 拒绝且文案为「已终止」（**不得**被活体判定抢先报「正在跑」） | 单测（判定顺序） |
 | **AC13** | E2E：真实后端运行中 `dispatch(resume=X)` 被拒，且断言**没有**新的 `dispatched` 行 | E2E（外部仓，新增/复用一条 case） |
