@@ -35,8 +35,9 @@ import {
   suspendToolDefinition,
   waitBriefConsumed,
 } from "../lib/delegate-async.ts"
-import { backfillPairEntry, canonicalRoot, readPairs, slotOccupants, stillRunning, slotBusyHolders } from "../lib/delegate-core.ts"
-import { countActiveBackends, planSlot } from "../lib/delegate-async.ts"
+import { __pendingStops, backfillPairEntry, canonicalRoot, enterStopGuard, leaveStopGuard, readPairs, slotOccupants, slotBusyHolders, stillRunning } from "../lib/delegate-core.ts"
+import { countActiveBackends, planSlot, stopTimeoutMs } from "../lib/delegate-async.ts"
+import { readFileSync as readFileSync2 } from "node:fs"
 
 const TMP = mkdtempSync(path.join(tmpdir(), "delegate-async-test-"))
 
@@ -58,6 +59,12 @@ function repo(name: string): string {
 // ─────────────────── fake ctx（含 list 分页 / 消费可控的 prompt） ───────────────────
 
 interface FakeOpts {
+  /** 可控的 `session.wait`：默认 resolve；hold 需手动 release。 */
+  wait?: "resolve" | "hold" | "notfound" | "error"
+  /** 删除 `ctx.session.wait`（模拟实验端点被移除）。 */
+  noWait?: boolean
+  /** 每次 `session.get` 前调用（用于在早检查与 claimSlot 之间注入状态）。 */
+  onGet?: (input: any) => void
   /** prompt 时不把消息并入 context（模拟「已入队但未消费」） */
   notConsume?: boolean
   /** 模拟在跑：get 返回 busy > idle */
@@ -74,7 +81,8 @@ interface FakeOpts {
 
 function createFakeCtx(opts: FakeOpts = {}) {
   const sessions = new Map<string, any>()
-  const calls = { create: 0, prompt: 0, remove: 0, interrupt: 0 }
+  const calls = { create: 0, prompt: 0, remove: 0, interrupt: 0, wait: 0, context: 0 }
+  const waitResolvers: Array<() => void> = []
   let counter = 0
 
   const ctx: any = {
@@ -105,8 +113,22 @@ function createFakeCtx(opts: FakeOpts = {}) {
         s.busy = true
         return { id: input.id }
       },
-      wait: async () => ({}),
+      wait: async (input: any) => {
+        calls.wait++
+        const mode = opts.wait ?? "resolve"
+        if (mode === "resolve") return {}
+        if (mode === "notfound") {
+          const e: any = new Error(`Session.NotFoundError: ${input?.sessionID}`)
+          e._tag = "Session.NotFoundError"
+          throw e
+        }
+        if (mode === "error") throw new Error("ECONNRESET: wait failed")
+        // hold：挂起到测试手动 release
+        await new Promise<void>((res) => waitResolvers.push(res))
+        return {}
+      },
       get: async (input: any) => {
+        opts.onGet?.(input)
         const s = sessions.get(input.sessionID)
         // ⚠️ 缺失必须**像上游**那样报错（tagged Session.NotFoundError）：
         // 实现用**窄判定**区分「确实不存在」与「查询失败，原因不明」
@@ -134,6 +156,7 @@ function createFakeCtx(opts: FakeOpts = {}) {
         }
       },
       context: async (input: any) => {
+        calls.context++
         const s = sessions.get(input.sessionID)
         if (!s) throw new Error(`未知 session: ${input.sessionID}`)
         return s.messages
@@ -153,6 +176,8 @@ function createFakeCtx(opts: FakeOpts = {}) {
         if (!opts.interruptNoop) {
           s.busy = false
           s.idle = Date.now()
+          // 显式 time 覆盖（用于表达 stale-busy）也要反映「停机后」：busy 清、idle 前移
+          if (s.time) s.time = { idle: s.idle }
           if (opts.running) opts.running[input.sessionID] = false
         }
         return { interrupted: true }
@@ -174,7 +199,12 @@ function createFakeCtx(opts: FakeOpts = {}) {
       },
     },
   }
-  return { ctx, sessions, calls }
+  if (opts.noWait) delete (ctx.session as any).wait
+  const releaseWaits = () => {
+    const rs = waitResolvers.splice(0)
+    for (const r of rs) r()
+  }
+  return { ctx, sessions, calls, releaseWaits }
 }
 
 async function run(tool: any, input: any, sessionID = "ses_front_test") {
@@ -1319,5 +1349,280 @@ describe("准入判据 stillRunning（AC19 / D8.1）", () => {
     expect(item).toBeTruthy()
     // 展示层用 isRunning（busy 分支 + busy===0 兜底）⇒ stale-busy 不被判在跑（D4 口径不变）
     expect(item.running).toBe(false)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 停机确认：wait + 判活 + 水位线 + 进程内准入守卫（change: front-stop-confirmation）
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("停机确认（ADR-front-stop-confirmation）", () => {
+  const W0 = process.env.RDDF_STOP_TIMEOUT_MS
+  const D0 = process.env.RDDF_SUSPEND_ALLOW_DEGRADED
+  const setW = (v: string) => {
+    process.env.RDDF_STOP_TIMEOUT_MS = v
+  }
+  afterAll(() => {
+    if (W0 === undefined) delete process.env.RDDF_STOP_TIMEOUT_MS
+    else process.env.RDDF_STOP_TIMEOUT_MS = W0
+    if (D0 === undefined) delete process.env.RDDF_SUSPEND_ALLOW_DEGRADED
+    else process.env.RDDF_SUSPEND_ALLOW_DEGRADED = D0
+  })
+
+  test("AC1 wait 不返回（同进程有 execution）⇒ 不释放；stale-busy 形态也被拦住", async () => {
+    setW("300")
+    const dir = repo("stop-ac1")
+    const { ctx, sessions } = createFakeCtx({ wait: "hold" })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { busy: 100, idle: 200 } // 展示口径会判「不在跑」，但 execution 仍在
+    s.messages = [{ id: "m1", time: { created: 300 } }]
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(r.stop_judge).toBe("wait")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC4 判活恒真 ⇒ wait 返回也不释放（条件 2 的负向）", async () => {
+    setW("300")
+    const dir = repo("stop-ac4")
+    const { ctx, sessions } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { busy: 500, idle: 400 } // 一直在跑
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC3 成功释放时，返回时刻 ≥ 后继终态时刻（wait 覆盖后继）", async () => {
+    setW("2000")
+    const dir = repo("stop-ac3")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { busy: 500, idle: 400 } // 基线：在跑（⇒ 要求水位线前移）
+    let idleAt = 0
+    ctx.session.wait = async () => {
+      await new Promise((r) => setTimeout(r, 300))
+      idleAt = Date.now()
+      s.time = { idle: idleAt } // 后继结束、终态投影
+    }
+    const t0 = Date.now()
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    expect(Date.now()).toBeGreaterThanOrEqual(idleAt)
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(250)
+  })
+
+  test("AC10 释放后立即 dispatch(resume=X) 成功（守卫已清 + 槽位真的空了）", async () => {
+    setW("1000")
+    const dir = repo("stop-ac10")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    const again = await run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id })
+    expect(again.session_id).toBe(a.session_id)
+  })
+
+  test("AC11 并发两次 suspend：互不清对方的守卫；两路结束后守卫为空（X2）", async () => {
+    setW("300")
+    const dir = repo("stop-ac11")
+    const { ctx, sessions, releaseWaits } = createFakeCtx({ wait: "hold" })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+
+    const p1 = run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    const p2 = run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    await new Promise((r) => setTimeout(r, 80))
+    const mid = __pendingStops()
+    expect(mid.length).toBe(1)
+    expect(mid[0].owners.length).toBe(2) // 两个 owner token 同时存在
+
+    releaseWaits()
+    await Promise.all([p1, p2])
+    expect(__pendingStops().length).toBe(0)
+  })
+
+  test("AC7 wait 抛 NotFound ⇒ 视为已停机（释放）；其它错误 ⇒ 不释放（S5/S6）", async () => {
+    setW("300")
+    // (a) NotFound ⇒ 释放
+    {
+      const dir = repo("stop-ac7a")
+      const { ctx, sessions } = createFakeCtx({ wait: "notfound" })
+      const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+      const s = sessions.get(a.session_id)!
+      s.time = { idle: Date.now() + 10_000 }
+      s.messages = []
+      const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+      expect(r.suspended).toBe(true)
+      expect(readPairs(dir)[a.session_id].state).toBe("suspended")
+    }
+    // (b) 其它错误 ⇒ 不释放（空闲分支无正面证据）
+    {
+      const dir = repo("stop-ac7b")
+      const { ctx, sessions } = createFakeCtx({ wait: "error" })
+      const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+      const s = sessions.get(a.session_id)!
+      s.time = { idle: Date.now() + 10_000 }
+      s.messages = []
+      const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+      expect(r.suspended).toBe(false)
+      expect(r.stop_judge).toBe("degraded")
+      expect(readPairs(dir)[a.session_id].state).toBe("active")
+    }
+  })
+
+  test("AC8 退化三分支 + stop_judge 三值 + ledger 留痕（S7/S7b）", async () => {
+    setW("300")
+    // (a) wait 缺失 + 空闲 ⇒ 拒绝（无正面证据）
+    {
+      const dir = repo("stop-ac8a")
+      const { ctx, sessions } = createFakeCtx({ noWait: true })
+      const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+      const s = sessions.get(a.session_id)!
+      s.time = { idle: Date.now() + 10_000 }
+      s.messages = []
+      const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+      expect(r.suspended).toBe(false)
+      expect(r.stop_judge).toBe("degraded")
+      expect(String(r.message)).toContain("RDDF_SUSPEND_ALLOW_DEGRADED")
+      expect(readPairs(dir)[a.session_id].state).toBe("active")
+    }
+    // (b) 同上 + 显式赎回 ⇒ 放行且留痕
+    {
+      const dir = repo("stop-ac8b")
+      process.env.RDDF_SUSPEND_ALLOW_DEGRADED = "1"
+      const { ctx, sessions } = createFakeCtx({ noWait: true })
+      const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+      const s = sessions.get(a.session_id)!
+      s.time = { idle: Date.now() + 10_000 }
+      s.messages = []
+      const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+      expect(r.suspended).toBe(true)
+      expect(r.stop_judge).toBe("degraded-forced")
+      const ledger = readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+      expect(ledger).toContain("suspend_degraded")
+      delete process.env.RDDF_SUSPEND_ALLOW_DEGRADED
+    }
+    // (c) wait 缺失 + 基线在跑 ⇒ 水位线是正面证据 ⇒ 允许
+    {
+      const dir = repo("stop-ac8c")
+      const { ctx, sessions } = createFakeCtx({ noWait: true })
+      const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+      const s = sessions.get(a.session_id)!
+      s.time = { busy: 500, idle: 400 }
+      const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+      // interrupt 让 fake ctx 置 busy=false、idle=now ⇒ 水位线前移 ⇒ 允许
+      expect(r.suspended).toBe(true)
+      expect(r.stop_judge).toBe("degraded")
+    }
+  })
+
+  test("AC17 交叉优先级：停机守卫优先于活体判定，文案不得含「请先 suspend」（X4）", async () => {
+    setW("300")
+    const dir = repo("stop-ac17")
+    const { ctx, sessions, releaseWaits } = createFakeCtx({ wait: "hold" })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { version: 1, busy: 500, idle: 400 } // 既在跑、又正在停机
+    const p = run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    await new Promise((r) => setTimeout(r, 80))
+    let msg = ""
+    try {
+      await run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id })
+    } catch (e: any) {
+      msg = String(e?.message ?? e)
+    }
+    expect(msg).toContain("正在停机")
+    expect(msg).toContain("发起")
+    expect(msg).not.toContain("请先 suspend")
+    releaseWaits()
+    await p
+  })
+
+  test("AC14/AC16 守卫可观测且不落盘（X9/X8）：失败后 pair 无中间态、守卫为空", async () => {
+    setW("300")
+    const dir = repo("stop-ac14")
+    const { ctx, sessions } = createFakeCtx({ wait: "hold" })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(false)
+    const pairs = readPairs(dir)
+    // 五值枚举内、无中间态；且守卫为进程内（不落盘）
+    expect(["dispatching", "active", "idle", "suspended", "tombstone"]).toContain(pairs[a.session_id].state)
+    expect(JSON.stringify(pairs)).not.toContain("suspending")
+    expect(JSON.stringify(pairs)).not.toContain("stopping")
+    expect(__pendingStops().length).toBe(0)
+  })
+
+  test("AC18 W 钳制 + 极小 W 仍能对空闲后端成功（X6/X7）", async () => {
+    setW("600000")
+    expect(stopTimeoutMs()).toBe(60_000) // 上界钳制
+    setW("300")
+    const dir = repo("stop-ac18")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.suspended).toBe(true)
+    expect(r.stop_judge).toBe("wait")
+  })
+
+  test("AC15 prompts/front.md 文案：不得暗示「重试 suspend」（X10）", () => {
+    const md = readFileSync2(path.join(process.cwd(), "prompts/front.md"), "utf8")
+    expect(md).toContain("不要反复重试")
+    expect(md).toContain("cancel")
+    // 不得出现「重试 suspend」式的建议（只允许出现在「不要反复重试」的否定句里）
+    const bad = /(?:请|建议|应该)[^。\n]{0,12}重试[^。\n]{0,6}suspend/
+    expect(bad.test(md)).toBe(false)
+  })
+})
+
+describe("停机守卫的锁内重验（早检查与 claimSlot 之间的窗口）", () => {
+  test("AC9b 早检查通过后、claimSlot 之前置上守卫 ⇒ 仍被拒（锁内重验）", async () => {
+    const dir = repo("guard-lock-recheck")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 让目标**空闲**：否则先被「运行中」判据拦下（那是另一条路径，不是本条要测的）
+    const backend = sessions.get(a.session_id)!
+    backend.time = { idle: Date.now() + 10_000 }
+    backend.messages = []
+
+    const { stateRoot, workRoot } = canonicalRoot(dir)
+    let token: string | undefined
+    // 第 2 次 get = `planSlot`（位于活体判定**之后**、`claimSlot` 之前）⇒ 注入守卫
+    let gets = 0
+    ctx.session.get = ((orig) => async (input: any) => {
+      const r = await orig(input)
+      gets++
+      if (gets === 2 && !token) {
+        token = enterStopGuard(stateRoot, workRoot, "ses_being_suspended", "ses_other_front")
+      }
+      return r
+    })(ctx.session.get)
+
+    let msg = ""
+    try {
+      await run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id })
+    } catch (e: any) {
+      msg = String(e?.message ?? e)
+    } finally {
+      if (token) leaveStopGuard(stateRoot, workRoot, token)
+    }
+    expect(msg).toContain("正在停机")
+    expect(msg).toContain("ses_being_suspended")
+    expect(__pendingStops().length).toBe(0)
   })
 })

@@ -35,7 +35,10 @@ import {
   readPairs,
   scopeEditRules,
   slotOccupants,
+  enterStopGuard,
+  leaveStopGuard,
   stillRunning,
+  stopGuardAt,
   toMillis,
   validateBrief,
   withLock,
@@ -255,10 +258,25 @@ export function isDangling(input: {
  * 的保守取值，而非实测推导。上游若改变 settle 时序需重新观测。可配 `RDDF_STOP_TIMEOUT_MS` 覆盖。
  */
 export const DEFAULT_STOP_TIMEOUT_MS = 8_000
+/** 上界钳制：`suspend` 是 front 回合内的同步等待，不能被配置成无限期（ADR D1 的有界要求）。 */
+export const MAX_STOP_TIMEOUT_MS = 60_000
 
+/**
+ * 停机确认窗口（单一预算：`wait` 与判活轮询**共用**这一个 W）。
+ *
+ * **取值依据**：上游 `interrupt` 的清理是**异步 settle**（`execution.ts:27-31`）⇒ 必须给它时间。
+ * ⚠️ 观测到的 settle 延迟来自**假夹具**与**一次 E2E**——**不是上游分布实测** ⇒ 8s 是「按夹具量级
+ * 留两个数量级余量」的保守取值。上界钳制 60s（见 `MAX_STOP_TIMEOUT_MS`）。
+ */
 export function stopTimeoutMs(): number {
   const v = Number(process.env.RDDF_STOP_TIMEOUT_MS)
-  return Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_STOP_TIMEOUT_MS
+  const base = Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_STOP_TIMEOUT_MS
+  return Math.min(base, MAX_STOP_TIMEOUT_MS)
+}
+
+/** 显式赎回「无正面证据也放行」的退化路径（ADR D4）。默认**关闭**（保守侧）。 */
+export function allowDegradedSuspend(): boolean {
+  return process.env.RDDF_SUSPEND_ALLOW_DEGRADED === "1"
 }
 
 /**
@@ -321,28 +339,98 @@ export async function snapshotStopBaseline(ctx: any, sessionID: string): Promise
  * 返回 true = 已确认停机；false = 窗口内仍未确认（读失败 / 判不出来 / 超时）
  * ⇒ 调用方**不得**释放槽位。
  */
+export type StopJudge = "wait" | "degraded" | "degraded-forced"
+
+export interface StopOutcome {
+  stopped: boolean
+  judge: StopJudge
+  /** 未停机/降级的原因（诊断用）。 */
+  reason?: string
+  /** 最后一次判活所用到的消息（供 AC54 的 `suspended_at_message_id` 复用，**不额外读一次**）。 */
+  messages?: any[]
+}
+
+const WAIT_TIMEOUT = Symbol("wait-timeout")
+
+/**
+ * 等一个后端**确认停机**（`ADR-front-stop-confirmation` D1/D3/D4 的判据）。
+ *
+ * 三条件**合取**：① `ctx.session.wait` 有界返回（execution 级证据，覆盖「清理期间的后继」）；
+ * ② 判活为假；③（**仅当基线在跑时**）`time.idle` 相对快照前移（DB 终态可见）。
+ *
+ * 退化（ADR D4）：`wait` 缺失**或调用失败** ⇒ `judge="degraded"`：
+ * - 基线**在跑** ⇒ 水位线前移是正面证据 ⇒ 允许判停机（交给调用方决定是否放行）；
+ * - 基线**不在跑** ⇒ **没有正面证据** ⇒ `stopped:false`（`reason:"degraded_no_evidence"`）。
+ * 调用方可用 `RDDF_SUSPEND_ALLOW_DEGRADED=1` 显式赎回（`judge` 变 `degraded-forced` + ledger 留痕）。
+ */
 export async function waitStopped(
   ctx: any,
   sessionID: string,
   baseline: StopBaseline,
   timeoutMs = stopTimeoutMs(),
-): Promise<boolean> {
+): Promise<StopOutcome> {
   const deadline = Date.now() + timeoutMs
+  const waitFn = typeof ctx?.session?.wait === "function" ? ctx.session.wait : undefined
+  let judge: StopJudge = waitFn ? "wait" : "degraded"
+  let waitSettled = false
+  let waitErr: any
+  let waitTimedOut = false
+
+  if (waitFn) {
+    let w: Promise<any>
+    try {
+      w = Promise.resolve(waitFn.call(ctx.session, { sessionID }))
+    } catch (e) {
+      w = Promise.reject(e)
+    }
+    // ⚠️ 先取原 promise、再分叉：`catch` 只用于消除 unhandled rejection，**不得**吞错
+    // （否则分不出 `NotFound`（D3）与其它错误（退化））。
+    w.catch(() => {})
+    const outcome = await Promise.race([
+      w.then(
+        () => ({ ok: true as const }),
+        (e) => ({ ok: false as const, e }),
+      ),
+      sleep(Math.max(0, deadline - Date.now())).then(() => WAIT_TIMEOUT),
+    ])
+    if (typeof outcome === "symbol") waitTimedOut = true
+    else if (outcome.ok) waitSettled = true
+    else waitErr = outcome.e
+  }
+
+  // D3：`wait` 的第一跳就是 `get` ⇒ 后端已删会抛 `NotFound` ⇒ **视为已停机**（按 D12 释放）
+  if (waitErr && isSessionMissingError(waitErr)) return { stopped: true, judge, reason: "missing" }
+
+  if (waitErr) judge = "degraded" // 端点存在但调用失败 ⇒ 不能当作正面证据
+  if (waitTimedOut) return { stopped: false, judge, reason: "wait_timeout" }
+
+  if (!waitSettled) {
+    // 退化路径
+    if (!baseline.running) return { stopped: false, judge, reason: "degraded_no_evidence" }
+    // 基线在跑 ⇒ 用「判活为假 + 水位线前移」兜底（水位线是 DB 级的正面证据）
+  }
+
+  // ⑥/⑦：判活为假 +（基线在跑时）水位线前移；**各自至少判一次**（W 极小也不跳）
+  let lastMessages: any[] | undefined
+  let judged = false
   for (;;) {
     const { info, missing, unknown } = await readSessionInfo(ctx, sessionID)
-    if (missing) return true // 已不存在 ⇒ 视为停机（没有东西可写，见 ADR D12）
+    if (missing) return { stopped: true, judge, reason: "missing", messages: lastMessages }
     if (!unknown) {
       const { messages, ok } = await readSessionMessages(ctx, sessionID)
-      if (ok && !isRunning(info, messages)) {
-        // 判活为假：基线本来就没在跑 ⇒ 停机；基线在跑 ⇒ 还要求终态水位线前移
-        if (!baseline.running) return true
-        if (toMillis(info?.time?.idle) > baseline.idle) return true
+      if (ok) {
+        lastMessages = messages
+        judged = true
+        const running = isRunning(info, messages)
+        const idle = toMillis(info?.time?.idle)
+        const watermarkOk = !baseline.running || idle > baseline.idle
+        if (!running && watermarkOk) return { stopped: true, judge, messages }
       }
     }
-    // 读失败（unknown）⇒ 不判停机，继续等到窗口尽头（保守侧）
-    if (Date.now() >= deadline) return false
+    if (Date.now() >= deadline) break
     await sleep(200)
   }
+  return { stopped: false, judge, reason: judged ? "still_running" : "unreadable", messages: lastMessages }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -440,6 +528,16 @@ export interface SlotClaim {
   holder?: { session_id: string; state: SlotState; work_root: string }
   /** 被 reconcile 释放（翻转为 idle）的条目。 */
   released?: string[]
+  /** 命中「该工作树正在停机」的进程内守卫（`ADR-front-stop-confirmation` D2）。 */
+  stopping?: { backend_session_id: string; front_session_id?: string }
+}
+
+/** 停机守卫命中时的拒绝文案（**不得**含「请先 suspend」，否则模型会循环重试）。 */
+export function stopBlockedMessage(guard: { backend_session_id: string; front_session_id?: string }): string {
+  return (
+    `后端 ${guard.backend_session_id} 正在停机（由 front ${guard.front_session_id ?? "另一会话"} 发起），` +
+    `请等它结束再派发`
+  )
 }
 
 /**
@@ -463,6 +561,12 @@ export function claimSlot(input: {
   mkdirSync(stateDirOf(stateRoot), { recursive: true })
   let result: SlotClaim = { ok: true }
   withLock(lockDirOf(stateRoot), () => {
+    // ⓪ 停机守卫（锁内**重验**：早拒与锁内之间仍可能被置上）
+    const guard = stopGuardAt(stateRoot, workRoot)
+    if (guard) {
+      result = { ok: false, stopping: { backend_session_id: guard.backend_session_id, front_session_id: guard.front_session_id } }
+      return
+    }
     const pairs = readPairs(stateRoot)
     const released: string[] = []
     // ① reconcile：已空闲的占槽条目翻转为 idle（释放槽位）
@@ -827,6 +931,11 @@ export function dispatchToolDefinition(ctx: any): any {
       }
       const { stateRoot, workRoot } = canonicalRoot(brief.project_dir)
       const frontSessionID = toolContext?.sessionID
+
+      // ── 停机守卫（`ADR-front-stop-confirmation` D2）：该工作树正在停机 ⇒ 拒绝 ──
+      // 放在最前：两个判据（停机守卫 / 活体）同时命中时，**以停机守卫为准**（AC9）。
+      const stopping = stopGuardAt(stateRoot, workRoot)
+      if (stopping) throw fail(stopBlockedMessage(stopping))
       const goalKey: GoalKey = {
         repo: brief.goal_key?.repo || stateRoot,
         intent: brief.goal_key?.intent ?? "",
@@ -948,6 +1057,17 @@ export function dispatchToolDefinition(ctx: any): any {
         goalKey,
       })
       if (!claim.ok) {
+        // 停机守卫（锁内重验命中）⇒ 专用文案（不得退化成「先 suspend 它」）
+        if (claim.stopping) {
+          if (created) {
+            try {
+              await ctx.session.remove({ sessionID })
+            } catch {
+              /* 清理失败不掩盖主错误 */
+            }
+          }
+          throw fail(stopBlockedMessage(claim.stopping))
+        }
         // 互斥拒绝 ⇒ 不得留下已创建的 session（AC26③）
         if (created) {
           try {
@@ -1340,7 +1460,7 @@ export function suspendToolDefinition(ctx: any): any {
         )
       }
 
-      // 停机判据的基线必须在 interrupt **之前**取（ADR D11.3）
+      // ── 停机判据的基线必须在 interrupt **之前**取（ADR-front-stop-confirmation D1）──
       const stopBaseline = await snapshotStopBaseline(ctx, sessionID)
       if (!stopBaseline) {
         return {
@@ -1359,66 +1479,126 @@ export function suspendToolDefinition(ctx: any): any {
         }
       }
 
-      // interrupt（不 resume：丢弃待提升的 steer）
-      let interrupted = false
+      // ── 准入守卫（ADR D2）：**interrupt 之前**置上；`finally` 必清（token 精确移除，只删自己）──
+      const guardWorkRoot = located.workRoot ?? stateRoot
+      const guardToken = enterStopGuard(stateRoot, guardWorkRoot, sessionID, _toolContext?.sessionID)
       try {
-        const r = await ctx.session.interrupt({ sessionID, resume: false })
-        interrupted = r?.interrupted === true
-      } catch {
-        interrupted = false
-      }
+        // interrupt（不 resume：丢弃待提升的 steer）
+        let interrupted = false
+        try {
+          const r = await ctx.session.interrupt({ sessionID, resume: false })
+          interrupted = r?.interrupted === true
+        } catch {
+          interrupted = false
+        }
 
-      // ── 停机确认（AC53 / ADR D11.3）：有界等待「判活为假 + 终态落定」──
-      // ⚠️ 上游 `interrupt` 是「先确认接受、清理异步 settle」（execution.ts）
-      // ⇒ 返回后会话**还会跑一小会儿** ⇒ 只查一次会误判「未停机」，
-      // 导致 suspend 对在跑的后端几乎必然失败（E2E L2-22 实测暴露）。
-      // ⇒ 等到「确认停机」或超时；**未确认停机 ⇒ 一律不释放槽位**（含读失败）。
-      const stopped = await waitStopped(ctx, sessionID, stopBaseline)
-      if (!stopped) {
+        // ── 停机确认（AC53 / ADR D1）：`wait` + 判活为假 +（基线在跑时）水位线前移 ──
+        const outcome = await waitStopped(ctx, sessionID, stopBaseline)
+        let stopped = outcome.stopped
+        let judge = outcome.judge
+
+        // ADR D4 退化：**无正面证据**时默认拒绝；可用环境变量显式赎回（并留痕）
+        if (
+          !stopped &&
+          judge === "degraded" &&
+          outcome.reason === "degraded_no_evidence" &&
+          allowDegradedSuspend()
+        ) {
+          stopped = true
+          judge = "degraded-forced"
+          appendLedger(stateRoot, {
+            event: "suspend_degraded",
+            recorded_at: new Date().toISOString(),
+            kind: entry?.kind ?? "engineering",
+            front_session_id: _toolContext?.sessionID ?? null,
+            backend_session_id: sessionID,
+            canonical_root: stateRoot,
+            work_root: guardWorkRoot,
+            outcome: null,
+          })
+        }
+
+        if (!stopped) {
+          const hint =
+            outcome.reason === "degraded_no_evidence"
+              ? "`session.wait` 不可用，且该后端当前无活跃执行（无正面证据）⇒ 未释放槽位；" +
+                "请用 cancel，或设置 RDDF_SUSPEND_ALLOW_DEGRADED=1 显式承担风险"
+              : "后端在停机确认窗口内仍在运行（可能又被唤起），未释放槽位；" +
+                "请稍后重试（再次 suspend）或用 cancel"
+          return {
+            content: JSON.stringify(
+              {
+                session_id: sessionID,
+                suspended: false,
+                state,
+                stop_judge: judge,
+                reason: outcome.reason ?? null,
+                message: hint,
+              },
+              null,
+              2,
+            ),
+          }
+        }
+
+        // AC54 的基线：复用**最后一次判活**用到的消息（不再额外整段读一次 context）
+        let suspendedAtMessageID: string | undefined
+        try {
+          suspendedAtMessageID = lastMessageID(outcome.messages ?? [])
+        } catch {
+          suspendedAtMessageID = undefined
+        }
+        // 释放槽位 + 标记 suspended（幂等：不在跑且不占槽时同样落到 suspended）
+        updateSlotState(stateRoot, sessionID, "suspended")
+        setPairFields(stateRoot, sessionID, {
+          suspended_at_message_id: suspendedAtMessageID ?? null,
+          steer_residue: "none",
+        })
+        await syncMetadataState(ctx, sessionID, "suspended")
+
+        // ── ADR D5 ⑥：释放后复检（`claimSlot` 已放行、`prompt` 落在停机窗口内的残留）──
+        // 这条窗口**轮询关不掉**（它是「未来」）⇒ 只能如实留痕，不得假装关掉。
+        let raced = false
+        try {
+          const { info, missing, unknown } = await readSessionInfo(ctx, sessionID)
+          if (!missing && !unknown) {
+            const { messages, ok } = await readSessionMessages(ctx, sessionID)
+            if (ok && stillRunning(info, messages)) {
+              raced = true
+              appendLedger(stateRoot, {
+                event: "stop_raced",
+                recorded_at: new Date().toISOString(),
+                kind: entry?.kind ?? "engineering",
+                front_session_id: _toolContext?.sessionID ?? null,
+                backend_session_id: sessionID,
+                canonical_root: stateRoot,
+                work_root: guardWorkRoot,
+                outcome: null,
+              })
+            }
+          }
+        } catch {
+          /* 复检失败不影响「已确认停机」的结论 */
+        }
+
         return {
           content: JSON.stringify(
             {
               session_id: sessionID,
-              suspended: false,
-              state,
-              message:
-                "后端在停机确认窗口内仍在运行，未释放槽位（释放前必须确认停机）；" +
-                "请稍后重试或用 cancel",
+              suspended: true,
+              interrupted,
+              state: "suspended",
+              stop_judge: judge,
+              ...(raced ? { stop_raced: true } : {}),
+              message: "已暂停：上下文保留，之后可用 dispatch（同一 goal_key）恢复",
             },
             null,
             2,
           ),
         }
-      }
-
-      // AC54 的基线：暂停时刻的最后一条消息 id（resume 时判断新增消息里是否混入陈旧 steer）
-      // （放在「未停机」早退之后：读到的路径上一定用得上）
-      const { messages: stopMessages } = await readSessionMessages(ctx, sessionID)
-      let suspendedAtMessageID: string | undefined
-      try {
-        suspendedAtMessageID = lastMessageID(stopMessages)
-      } catch {
-        suspendedAtMessageID = undefined
-      }
-      // 释放槽位 + 标记 suspended（幂等：不在跑且不占槽时同样落到 suspended）
-      updateSlotState(stateRoot, sessionID, "suspended")
-      setPairFields(stateRoot, sessionID, {
-        suspended_at_message_id: suspendedAtMessageID ?? null,
-        steer_residue: "none",
-      })
-      await syncMetadataState(ctx, sessionID, "suspended")
-      return {
-        content: JSON.stringify(
-          {
-            session_id: sessionID,
-            suspended: true,
-            interrupted,
-            state: "suspended",
-            message: "已暂停：上下文保留，之后可用 dispatch（同一 goal_key）恢复",
-          },
-          null,
-          2,
-        ),
+      } finally {
+        // 守卫必清：成功/失败/异常都要清（否则同进程内该 workRoot 永久拒派）
+        leaveStopGuard(stateRoot, guardWorkRoot, guardToken)
       }
     },
   }

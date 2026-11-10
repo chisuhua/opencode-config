@@ -250,6 +250,63 @@ export function describeHolder(holder: { session_id: string; state: SlotState; w
   return `后端 ${holder.session_id}（state=${holder.state}）已占用该工作树；先 suspend 它再派发`
 }
 
+// ─────────────────── 停机窗口的**进程内**准入守卫（ADR-front-stop-confirmation D2）───────────────────
+//
+// 为什么**不落盘**：守卫的作用域是「**同一进程内**的新准入」（跨实例的准入本就不在本仓保证面）。
+// 落盘的中间态一旦在 8s 停机窗口内遇到进程退出，就会留下**永久占槽的死条目**（该工作树
+// 从此不可派发）—— 这是 `ADR-front-stop-confirmation` 明确否掉的方案（选项表 B6）。
+// 进程内标记：崩溃即丢，`pair.json` 里条目仍是 `active` ⇒ 走既有 reconcile 回收。
+
+export interface StopGuardEntry {
+  /** 本次停机尝试的唯一 token（并发两次 `suspend` 时**不得互解**）。 */
+  token: string
+  /** 正在被停机的后端。 */
+  backend_session_id: string
+  /** 发起停机的前端（用于错误文案「正在停机（由 front … 发起）」）。 */
+  front_session_id?: string
+}
+
+const pendingStops = new Map<string, StopGuardEntry[]>()
+let stopGuardSeq = 0
+
+const stopGuardKey = (stateRoot: string, workRoot: string) => `${stateRoot}\u0000${workRoot}`
+
+/** 置上守卫；返回本次的 token（`finally` 里用它精确移除，**只删自己**）。 */
+export function enterStopGuard(
+  stateRoot: string,
+  workRoot: string,
+  backendSessionID: string,
+  frontSessionID?: string,
+): string {
+  const token = `g${++stopGuardSeq}`
+  const key = stopGuardKey(stateRoot, workRoot)
+  const list = pendingStops.get(key) ?? []
+  list.push({ token, backend_session_id: backendSessionID, front_session_id: frontSessionID })
+  pendingStops.set(key, list)
+  return token
+}
+
+/** 移除本次守卫（引用计数语义：只删自己的 token，最后一个删完才移除键）。 */
+export function leaveStopGuard(stateRoot: string, workRoot: string, token: string): void {
+  const key = stopGuardKey(stateRoot, workRoot)
+  const list = pendingStops.get(key)
+  if (!list) return
+  const next = list.filter((e) => e.token !== token)
+  if (next.length === 0) pendingStops.delete(key)
+  else pendingStops.set(key, next)
+}
+
+/** 该工作树当前是否有停机进行中（有 ⇒ 返回其一，供错误文案）。 */
+export function stopGuardAt(stateRoot: string, workRoot: string): StopGuardEntry | undefined {
+  const list = pendingStops.get(stopGuardKey(stateRoot, workRoot))
+  return list && list.length > 0 ? list[0] : undefined
+}
+
+/** 测试钩子（只读）：当前所有停机守卫。生产代码不得依赖。 */
+export function __pendingStops(): Array<{ work_root: string; owners: StopGuardEntry[] }> {
+  return [...pendingStops.entries()].map(([k, v]) => ({ work_root: k.split("\u0000")[1] ?? k, owners: v }))
+}
+
 /**
  * 同 `workRoot` 下**仍在跑**的占槽条目（供**两个派发面共用**的槽位检查，AC50① / D7.4）。
  *
@@ -988,6 +1045,16 @@ export function delegateToolDefinition(ctx: any): any {
           // —— 槽位检查（AC50① / ADR D7.4）：与 `dispatch` **共用同一张槽位表** ——
           // 同工作树已有**仍在跑**的占槽后端 ⇒ 拒绝（不排队、不并发写同一工作树）。
           // 「已空闲/已消失」的占槽条目不阻塞（真正的写回翻转由 dispatch 的 claimSlot 完成）。
+          // ── 停机守卫（`ADR-front-stop-confirmation` D2 / AC10）──
+          // ⚠️ 必须**独立于** `excludeSessionID` 检查：否则 `delegate(resume=正在被 suspend 的后端)`
+          // 会被那个排除项放过去。
+          const stopGuard = stopGuardAt(stateRoot, workRoot)
+          if (stopGuard) {
+            throw fail(
+              `后端 ${stopGuard.backend_session_id} 正在停机（由 front ${stopGuard.front_session_id ?? "另一会话"} 发起），` +
+                `请等它结束再派发`,
+            )
+          }
           const busyHolders = await slotBusyHolders(ctx, stateRoot, workRoot, brief.resume_session)
           if (busyHolders.length > 0) {
             throw fail(
