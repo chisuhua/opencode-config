@@ -74,6 +74,6 @@
 ## 6. 关联工件
 
 - ADR：`docs/adr/ADR-front-stop-ownership.md`
-- 实施 change：`openspec/changes/front-stop-ownership/`（AC1–AC18；AC1–AC14 ↔ S1–S14 同号）
+- 实施 change：`openspec/changes/archive/2026-11-11-front-stop-ownership/`（AC1–AC18；AC1–AC14 ↔ S1–S14 同号）
 - 验收报告：`.rddf/reviews/front-stop-ownership-verify.md`（PASS 18/18）
 - 上游锚点：`scripts/check-upstream-anchors.sh`（17/17，对 `git archive v2.2.5` 导出目录）

@@ -6,8 +6,8 @@
 | Date | 2026-11-11 |
 | Author | architect |
 | Parent | **部分取代** `ADR-front-stop-confirmation` **D1 条件③ 的分支结构**（`running0=false ⇒ 无附加要求`）——**仅在「检测到多实例部署」时**取代（等价于父篇选项表 **B4**，本篇选项表 **C8** 登记其重新采纳与理由）；**单实例口径不变**。**不取代** `ADR-front-multi-backend`（D7/D11.2 的「锁内重验后再翻转」**继续有效**，本篇把它从「重验状态」补全为「重验**授权**」；**D12 矩阵不变**）；**不取代** `ADR-front-stop-confirmation` 的 D1 判据本体与 D2 进程内守卫；⚠️ 父篇 **Verification S7b**（「`wait` 可用 ⇒ `stop_judge:"wait"`」）**在严格模式下不成立**（改判 `"degraded"` + `foreign_instance:true`） |
-| 关联 change | `openspec/changes/front-stop-ownership/`（2026-11-11 立项 → 实施中；AC1–AC18）。improvement：[`front-stop-ownership.md`](../../.rddf/improvements/front-stop-ownership.md) |
-| AC 映射 | **AC1–AC14 ↔ S1–S14（同号）** + **AC15–AC18**（metis gap 分析新增的**实施期判据**：授权判定顺序 / 写者与锁边界 / tripwire 身份与容错 / 返回契约一致性）——见 `openspec/changes/front-stop-ownership/proposal.md` 的「AC ↔ ADR Verification 映射」段 |
+| 关联 change | `openspec/changes/archive/2026-11-11-front-stop-ownership/`（2026-11-11 立项 → **实施完成并归档**；AC1–AC18）。improvement：[`front-stop-ownership.md`](../../.rddf/improvements/front-stop-ownership.md) |
+| AC 映射 | **AC1–AC14 ↔ S1–S14（同号）** + **AC15–AC18**（metis gap 分析新增的**实施期判据**：授权判定顺序 / 写者与锁边界 / tripwire 身份与容错 / 返回契约一致性）——见 `openspec/changes/archive/2026-11-11-front-stop-ownership/proposal.md` 的「AC ↔ ADR Verification 映射」段 |
 | 前置事实 | 上游 opencode **v2.2.5**（运行中的 `opencode --version`）；本篇的上游断言全部锚定 v2.2.5 源码，并由 `scripts/check-upstream-anchors.sh` 回归（17/17 全绿）。⚠️ 本机 `/workspace/project/opencode` 的 checkout 是**开发 commit**（包版本 2.1.2）⇒ 锚点须用 `git archive v2.2.5` 导出后再跑 |
 
 ## 背景与问题

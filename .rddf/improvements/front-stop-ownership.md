@@ -1,7 +1,7 @@
 # front-stop-ownership — 槽位释放的授权模型（代号条件化 + 跨实例 tripwire）
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
-> **实施状态**：已立项 → `openspec/changes/front-stop-ownership/`（2026-11-11，planner 起草 proposal，AC1–AC18）。
+> **实施状态**：已立项 → `openspec/changes/archive/2026-11-11-front-stop-ownership/`（2026-11-11，planner 起草 proposal，AC1–AC18）。
 > 决策依据：`docs/adr/ADR-front-stop-ownership.md`（**Accepted** 2026-11-11 用户签批；oracle 1 轮 + critic 2 轮）。
 
 ## Why
@@ -21,7 +21,7 @@
 
 ## Acceptance
 
-- **AC1–AC14 ↔ ADR Verification S1–S14（同号）**：见 `openspec/changes/front-stop-ownership/proposal.md` 的映射表。
+- **AC1–AC14 ↔ ADR Verification S1–S14（同号）**：见 `openspec/changes/archive/2026-11-11-front-stop-ownership/proposal.md` 的映射表。
 - 关键判据（摘要）：归属版本递增且良性写不 bump（S1）；代号/状态不符 ⇒ 不释放（S2/S3）；良性写**不误伤**正常释放（S4）；`cancel` 同样条件化（S5）；`state` 枚举不变（S6）；**已删路径与改动前逐字一致**（S7）；tripwire 触发严格模式 + ledger + `foreign_instance`（S8）；严格模式不可赎回（S9）；矛盾检测 `wait_no_op`（S10）；戳生命周期（TTL/删戳/人工清理，S11）；同步 `delegate` 后归属版本**不回退**（S12）；单槽不变式 + 全量回归 + 上游锚点（S13）；前端文案（S14）。
 
 ## Capabilities

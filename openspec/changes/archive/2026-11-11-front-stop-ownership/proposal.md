@@ -4,13 +4,13 @@
 > 改进稿：`.rddf/improvements/front-stop-ownership.md`（5 段草稿）。
 > 本版已并入 metis gap 分析的 6 条 blocker 级修正（见 `tasks.md` 的「不做什么」与各 AC 的证据列）。
 
-## 背景
+## Why（背景）
 
 `ADR-front-stop-confirmation` D1 ⑧ 与 `ADR-front-multi-backend` D11.2 要求「**锁内重验后再翻转**」，实现却是无条件写 `state`（`lib/delegate-async.ts` 的 `updateSlotState` → `setSlotState`）。探针复现：停机窗口内让「另一进程的 claim 已落盘」（条目 `dispatching`）⇒ `suspend` 仍写 `suspended` ⇒ **覆盖更新的 claim** ⇒ 同工作树可再准入 ⇒ 两个写入者。
 
 跨实例侧：`ctx.session.wait` **必然空转**（上游 `executions` 是进程内 Map）、停机守卫是**进程内**的 ⇒ 另一实例看不到 ⇒ 假停机可达。本仓无跨进程原语可用 ⇒ 不假装根治，改为「前提 + tripwire + 严格判据」。
 
-## 目标
+## What Changes（目标）
 
 1. 释放槽位必须**授权化**（归属版本 + 状态前置），不再可能覆盖别人的认领。
 2. 跨实例残余从「不可见」变成「可见且降级」，且**不**把未决问题写成已决。

@@ -1,6 +1,6 @@
 # tasks — front-stop-ownership
 
-> 来源：`openspec/changes/front-stop-ownership/proposal.md`（AC1–AC18；AC1–AC14 与 ADR Verification S1–S14 同号，AC15–AC18 为 metis 新增的实施期判据）。
+> 来源：`openspec/changes/archive/2026-11-11-front-stop-ownership/proposal.md`（AC1–AC18；AC1–AC14 与 ADR Verification S1–S14 同号，AC15–AC18 为 metis 新增的实施期判据）。
 > 决策：`docs/adr/ADR-front-stop-ownership.md`（Accepted）。
 
 ## 不做什么（防顺手）

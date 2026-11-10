@@ -1,6 +1,6 @@
 # 验收报告：front-stop-ownership
 
-> **验收者**：verifier（只验不改）。**判据来源**：① `openspec/changes/front-stop-ownership/proposal.md` 的 **AC1–AC18**；② `docs/adr/ADR-front-stop-ownership.md` 的 Verification **S1–S14**（AC1–AC14 ↔ S1–S14 同号；AC15–AC18 为 metis gap 分析新增的实施期判据）。
+> **验收者**：verifier（只验不改）。**判据来源**：① `openspec/changes/archive/2026-11-11-front-stop-ownership/proposal.md` 的 **AC1–AC18**；② `docs/adr/ADR-front-stop-ownership.md` 的 Verification **S1–S14**（AC1–AC14 ↔ S1–S14 同号；AC15–AC18 为 metis gap 分析新增的实施期判据）。
 > **分流**：`rdd-verifier` skill 的前置条件（proposal 含 `## 验收标准` ✅）满足，但 **P3 archive gate 未触发**（`rddf rdd-verify --dry-run` → `No eligible changes to verify (empty queue)`；无 `iteration.json` 归档态）⇒ 走**本地 1–5 步**验收。
 > **变更规模**：`lib/delegate-async.ts`、`lib/delegate-core.ts`、`tests/delegate-async.test.ts`（+18 用例）、`prompts/front.md`、`docs/front-delegate-usage.md`、`scripts/check-upstream-anchors.sh`（+2 锚点）、新 ADR + 改进稿 + 审稿记录。
 
