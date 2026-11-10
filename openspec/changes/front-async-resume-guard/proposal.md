@@ -30,10 +30,10 @@
 
 | AC | 判据 | 证据 |
 |---|---|---|
-| **AC1** | **四读者判据一致**：同一输入集（`busy>idle` / `busy` 陈旧`<idle` 且 `lastMsg>idle` / `busy` 陈旧且无新消息 / 全空闲）⇒ `isRunning`、`slotBusyHolders`、同步 `delegate`、`dispatch` 结论**逐条一致**且与 `stillRunning` 期望表一致 | 表驱动单测 |
+| **AC1** | **三个准入读者判据一致**：同一输入集（`busy>idle` / `busy` 陈旧`<idle` 且 `lastMsg>idle` / `busy` 陈旧且无新消息 / 全空闲）⇒ `planSlot`、`slotBusyHolders`、`dispatch(resume)` 结论与 `stillRunning` 期望表一致；**`isRunning`（展示口径）不在本条内**——它按 AC14 **保持不变**，因此在「stale-busy」输入上与准入口径**有意不同**（由 AC2 的断言固定这一差异） | 表驱动单测 |
 | **AC2** | **负向（防单用 `isRunning`）**：`busy` 陈旧 `< idle` 且 `lastMsg > idle` ⇒ 判**在跑** | 单测 |
 | **AC3** | **负向（防单用 `lastMsg>idle`）**：`busy > idle` 且无新消息 ⇒ 判**在跑** | 单测 |
-| **AC4** | 同步 `delegate` **行为**不变：busy 拒 / 空闲放行 / 落 `outcome:"busy"` 行 / 不 prompt（4 条回归） | 单测（既有 + 新增） |
+| **AC4** | 同步 `delegate` **行为**不变：busy 拒 / 空闲放行 / 落 `outcome:"busy"` 行 / 不 prompt（4 条回归，`tests/delegate-tool.test.ts` 既有用例；其 busy 判据已改用 `stillRunning` ⇒ 「消息晚于 idle」形态仍被拒） | 单测（既有回归全绿） |
 | **AC5** | `dispatch(resume=X)` 且 X 在跑 ⇒ **拒绝**，文案以固定前缀开头；且**零副作用**：`ctx.session.prompt` 与 `ctx.session.create` 调用次数不变、`pair.json` 该条目 `state`/`last_used_at`/`registered_at` 全部不变（尤其**不得**被 `claimSlot` 覆写成 `dispatching`）、`ledger.jsonl` 不新增任何行（含 `dispatched`/`dispatch_failed`）、`countActiveBackends` 前后相等 | fake ctx 计数 + 落盘断言 |
 | **AC6** | `dispatch(resume=X)` 且 X 空闲 ⇒ 放行，行为与改动前逐字段一致 | 单测（既有回归） |
 | **AC7** | X 状态读失败（原因不明）⇒ **拒绝**，文案说明「无法确认」；槽位与条目均不变 | 单测 |

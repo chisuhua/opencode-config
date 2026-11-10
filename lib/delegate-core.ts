@@ -207,6 +207,33 @@ export function isRunning(info: any, messages?: any[]): boolean {
   return false
 }
 
+/**
+ * 「**这个后端还在跑吗**」——派发面的**准入判据**（AC19 / D8.1）。
+ *
+ * 与 `isRunning`（展示层）的关系：**更强**，是**析取**而非取反——
+ *
+ * ```
+ * stillRunning := (busy > 0 ∧ (idle = 0 ∨ busy > idle))   // ① 有在跑的 execution
+ *               ∨ (lastMsg > idle)                          // ② 有未终结活动（含无新消息的刚起）
+ * ```
+ *
+ * 为什么不能只取其中一支（两支持有的假「空闲」形态）：
+ * - 只用 ②「最后消息 > 最后 idle」⇒ 漏「**刚起、还没有消息**的新 execution」；
+ * - 只用 `isRunning` 的第二级（`busy === 0` 前置）⇒ 漏 **stale-busy**（`busy` 陈旧
+ *   `< idle` 且 `busy ≠ 0`，第二级因前置不成立而不生效）。
+ *
+ * ⚠️ **不是新决策**：`ADR-front-multi-backend` D4 只说了「第二级兜底的前提是
+ * `busy` 未定义或为 0；stale-busy 不被它覆盖」——本函数是在其之上补的更强谓词，
+ * 供两个派发面共用（D8.1 / AC19）；D4 的展示口径（`isRunning`）不变。
+ */
+export function stillRunning(info: any, messages?: any[]): boolean {
+  const busy = toMillis(info?.time?.busy)
+  const idle = toMillis(info?.time?.idle)
+  if (busy > 0 && (idle === 0 || busy > idle)) return true
+  if (Array.isArray(messages) && messages.length > 0 && lastMessageAt(messages) > idle) return true
+  return false
+}
+
 /** `session.context()` 里的消息 id 集合（Phase 0：消费判据的精确形式）。 */
 export function contextMessageIds(messages: any): Set<string> {
   const arr = Array.isArray(messages) ? messages : []
@@ -242,7 +269,14 @@ export async function slotBusyHolders(
   for (const c of candidates) {
     try {
       const info = await ctx.session.get({ sessionID: c.session_id })
-      if (isRunning(info)) busy.push(c)
+      // 补 messages：只用 `busy` 会漏「stale-busy」与「刚起无消息」两种仍在跑的形态
+      let messages: any[] | undefined
+      try {
+        messages = await ctx.session.context({ sessionID: c.session_id })
+      } catch {
+        messages = undefined
+      }
+      if (stillRunning(info, messages)) busy.push(c)
     } catch {
       // 后端已消失 ⇒ 不再占槽
     }
@@ -1041,9 +1075,11 @@ export function delegateToolDefinition(ctx: any): any {
           const baselineIdle = toMillis((before as any)?.time?.idle)
           const baselineLastMessageAt = lastMessageAt(beforeMessages)
 
-          // in-flight 保护：最后一条消息晚于最后空闲时间 → 上一次运行仍在进行，不排队。
-          // （不能用 `time.updated > time.idle`：首次运行中的 session 从未 idle 过，idle 为 0，会漏判。）
-          const busy = baselineLastMessageAt > baselineIdle
+          // in-flight 保护：用**两个派发面共用**的谓词 `stillRunning`（AC19 / D8.1）。
+          // 只判「最后消息 > idle」会漏「刚起、还没有消息的新 execution」；
+          // 只判 `isRunning` 会漏 stale-busy（`busy` 陈旧 < idle）。
+          // （`time.updated > time.idle` 也不行：首次运行中的 session 从未 idle 过 ⇒ idle 为 0 会漏判。）
+          const busy = stillRunning(before, beforeMessages)
           const ledgerBase = {
             recorded_at: new Date().toISOString(),
             kind,
@@ -1135,9 +1171,10 @@ export function delegateToolDefinition(ctx: any): any {
           //   可能是上一轮的陈旧值（resume 场景），据此判"没有产出"会误报。
           const roundMessages = sliceRoundMessages(messages, baselineMessageID)
           const delivery = summarizeDelivery(roundMessages, changed)
-          const stillRunning = waitTimedOut || outcome == null
+          // ⚠️ 局部变量名不得与模块级谓词 `stillRunning` 相同（会遮蔽它）
+          const runStillRunning = waitTimedOut || outcome == null
           const noWorkEvidence =
-            kind === "engineering" && outcome === "succeeded" && !stillRunning && delivery.no_work_evidence
+            kind === "engineering" && outcome === "succeeded" && !runStillRunning && delivery.no_work_evidence
           // 机读化：宿主报成功但无交付证据 → `unverified`（宿主原值保留在 host_outcome）。
           if (noWorkEvidence) outcome = "unverified"
 
@@ -1194,7 +1231,7 @@ export function delegateToolDefinition(ctx: any): any {
             final_is_role_opening: delivery.final_is_role_opening,
             model_switched: delivery.model_switched,
             no_work_evidence: noWorkEvidence,
-            still_running: stillRunning,
+            still_running: runStillRunning,
             wait_timed_out: waitTimedOut,
             status_age_ms: Math.max(0, Date.now() - toMillis((after as any)?.time?.updated)),
             wait_error: waitError,

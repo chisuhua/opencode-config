@@ -35,7 +35,8 @@ import {
   suspendToolDefinition,
   waitBriefConsumed,
 } from "../lib/delegate-async.ts"
-import { backfillPairEntry, canonicalRoot, readPairs, slotOccupants } from "../lib/delegate-core.ts"
+import { backfillPairEntry, canonicalRoot, readPairs, slotOccupants, stillRunning, slotBusyHolders } from "../lib/delegate-core.ts"
+import { countActiveBackends, planSlot } from "../lib/delegate-async.ts"
 
 const TMP = mkdtempSync(path.join(tmpdir(), "delegate-async-test-"))
 
@@ -115,17 +116,21 @@ function createFakeCtx(opts: FakeOpts = {}) {
           throw e
         }
         const busyFlag = opts.running?.[input.sessionID] ?? s.busy
+        // `s.time` 显式覆盖：用于表达 `busy < idle`（stale-busy）等 `busy` 标志表达不出的形态
+        const time = s.time
+          ? { ...s.time, updated: s.updated }
+          : {
+              idle: busyFlag ? 0 : s.idle || Date.now(),
+              updated: s.updated,
+              ...(busyFlag ? { busy: Date.now() } : {}),
+            }
         return {
           id: s.id,
           agent: s.agent,
           location: s.location,
           metadata: s.metadata,
           outcome: s.outcome,
-          time: {
-            idle: busyFlag ? 0 : s.idle || Date.now(),
-            updated: s.updated,
-            ...(busyFlag ? { busy: Date.now() } : {}),
-          },
+          time,
         }
       },
       context: async (input: any) => {
@@ -1170,5 +1175,149 @@ describe("全局上限计数读权威态（AC31）", () => {
     const { countActiveBackends } = await import("../lib/delegate-async.ts")
     const n = await countActiveBackends(ctx)
     expect(n).toBe(0) // 权威态是 idle ⇒ 不占额度
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 准入判据 `stillRunning`（change: front-async-resume-guard，AC1–AC14）
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("准入判据 stillRunning（AC19 / D8.1）", () => {
+  test("AC2/AC3 谓词完备性：stale-busy 与「刚起无消息」都判在跑（不得简化成单支）", () => {
+    // ① stale-busy：busy 陈旧 < idle，且有一条更晚的消息 ⇒ 在跑（`isRunning` 会漏）
+    const staleBusy = { time: { busy: 100, idle: 200 } }
+    const msgs = [{ id: "m1", time: { created: 300 } }]
+    expect(isRunning(staleBusy, msgs)).toBe(false) // 展示口径（D4，不变）
+    expect(stillRunning(staleBusy, msgs)).toBe(true) // 准入口径
+
+    // ② busy > idle 且没有新消息 ⇒ 在跑（单用「最后消息 > idle」会漏）
+    const busyNoMsg = { time: { busy: 300, idle: 200 } }
+    expect(stillRunning(busyNoMsg, [])).toBe(true)
+
+    // ③ 全空闲 ⇒ 不在跑；④ 无 busy 但有更晚消息 ⇒ 在跑（首次运行窗口期）
+    expect(stillRunning({ time: { idle: 400 } }, msgs)).toBe(false)
+    expect(stillRunning({ time: {} }, msgs)).toBe(true)
+  })
+
+  test("AC1 三个准入读者对 stale-busy 结论一致（planSlot / slotBusyHolders / dispatch）", async () => {
+    const dir = repo("guard-stale")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    // stale-busy：busy < idle，且最后消息晚于 idle
+    s.time = { busy: 100, idle: 200 }
+    s.messages = [{ id: "m1", time: { created: 300 } }]
+
+    const { stateRoot, workRoot } = canonicalRoot(dir)
+    const plan = await planSlot(ctx, stateRoot, workRoot)
+    expect(plan.busyOf[a.session_id]).toBe(true)
+
+    const holders = await slotBusyHolders(ctx, stateRoot, workRoot)
+    expect(holders.map((h) => h.session_id)).toContain(a.session_id)
+
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id }),
+    ).rejects.toThrow(/无法向运行中的后端/)
+  })
+
+  test("AC5 拒绝时零副作用：prompt/create 次数、pair 字段、ledger 行、全局额度", async () => {
+    const dir = repo("guard-noop")
+    const { ctx, sessions, calls } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { busy: 300, idle: 200 } // 明确的「在跑」
+    s.messages = []
+
+    const pairsBefore = JSON.parse(JSON.stringify(readPairs(dir)[a.session_id]))
+    const ledgerPath = path.join(dir, ".rddf/state/ledger.jsonl")
+    const ledgerBefore = readFileSync(ledgerPath, "utf8").split("\n").filter(Boolean).length
+    const promptBefore = calls.prompt
+    const createBefore = calls.create
+    const quotaBefore = await countActiveBackends(ctx)
+
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id }),
+    ).rejects.toThrow(/无法向运行中的后端/)
+
+    expect(calls.prompt).toBe(promptBefore) // 不投递简报（不 ring doorbell）
+    expect(calls.create).toBe(createBefore) // 不建 session
+    const pairsAfter = readPairs(dir)[a.session_id]
+    expect(pairsAfter.state).toBe(pairsBefore.state) // **不得**被 claimSlot 覆写成 dispatching
+    expect(pairsAfter.last_used_at ?? null).toBe(pairsBefore.last_used_at ?? null)
+    expect(pairsAfter.registered_at).toBe(pairsBefore.registered_at)
+    expect(readFileSync(ledgerPath, "utf8").split("\n").filter(Boolean).length).toBe(ledgerBefore)
+    expect(await countActiveBackends(ctx)).toBe(quotaBefore)
+  })
+
+  test("AC6 空闲后端 ⇒ resume 放行（行为与改动前一致）", async () => {
+    const dir = repo("guard-idle")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 } // 明确空闲（idle 晚于所有消息）
+    s.messages = []
+
+    const resumed = await run(dispatchToolDefinition(ctx), {
+      ...baseInput(dir, "goal-a"),
+      resume_session: a.session_id,
+    })
+    expect(resumed.session_id).toBe(a.session_id) // 复用，不新建
+    expect(resumed.state).not.toBe("suspended")
+  })
+
+  test("AC11 dispatching（简报未确认消费）⇒ 拒绝，文案指向 cancel", async () => {
+    const dir = repo("guard-dispatching")
+    const { ctx } = createFakeCtx({ notConsume: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    expect(readPairs(dir)[a.session_id].state).toBe("dispatching")
+
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id }),
+    ).rejects.toThrow(/简报尚未确认消费/)
+  })
+
+  test("AC7 目标状态读失败（原因不明）⇒ 拒绝，文案说明「无法确认」", async () => {
+    const dir = repo("guard-unknown")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 非 NotFoundError ⇒ 原因不明 ⇒ 不得当作已删（也不得当作空闲）
+    ctx.session.get = async () => {
+      throw new Error("ECONNRESET: db unavailable")
+    }
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id }),
+    ).rejects.toThrow(/无法确认/)
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC12 tombstone ⇒ 拒绝且文案为「已终止」（不被活体判定抢先）", async () => {
+    const dir = repo("guard-tombstone")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 同时让它「看起来在跑」——tombstone 的判定必须在前
+    const s = sessions.get(a.session_id)!
+    s.time = { busy: 300, idle: 200 }
+    const pairs = readPairs(dir)
+    pairs[a.session_id].state = "tombstone"
+    writeFileSync(path.join(dir, ".rddf/state/pair.json"), JSON.stringify({ version: "pair-v2", pairs }))
+
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id }),
+    ).rejects.toThrow(/已终止/)
+  })
+
+  test("AC14 展示口径不变：sessions 对 stale-busy 仍报非 running（`isRunning` 未改）", async () => {
+    const dir = repo("guard-display")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.time = { busy: 100, idle: 200 }
+    s.messages = [{ id: "m1", time: { created: 300 } }]
+
+    const listed = await run(sessionsToolDefinition(ctx), {})
+    const item = (listed.items ?? []).find((i: any) => i.session_id === a.session_id)
+    expect(item).toBeTruthy()
+    // 展示层用 isRunning（busy 分支 + busy===0 兜底）⇒ stale-busy 不被判在跑（D4 口径不变）
+    expect(item.running).toBe(false)
   })
 })

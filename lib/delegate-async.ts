@@ -35,6 +35,7 @@ import {
   readPairs,
   scopeEditRules,
   slotOccupants,
+  stillRunning,
   toMillis,
   validateBrief,
   withLock,
@@ -44,7 +45,7 @@ import {
 import type { GoalKey, SlotState } from "./delegate-core.ts"
 
 // 槽位原语定义在 core（两个派发面共用，AC50①）；此处再导出便于调用方从一处取。
-export { contextMessageIds, describeHolder, isRunning } from "./delegate-core.ts"
+export { contextMessageIds, describeHolder, isRunning, stillRunning } from "./delegate-core.ts"
 
 export const TOOL_DISPATCH = "dispatch"
 export const TOOL_SESSIONS = "sessions"
@@ -418,7 +419,18 @@ export async function planSlot(
       continue
     }
     // 后端**确认**已消失 ⇒ 不再占槽（视为空闲，可回收）
-    busyOf[c.session_id] = missing ? false : isRunning(info)
+    if (missing) {
+      busyOf[c.session_id] = false
+      continue
+    }
+    // 补 messages：`isRunning` 的第二级有 `busy === 0` 前置 ⇒ 会漏 stale-busy
+    let messages: any[] | undefined
+    try {
+      messages = await ctx.session.context({ sessionID: c.session_id })
+    } catch {
+      messages = undefined
+    }
+    busyOf[c.session_id] = stillRunning(info, messages)
   }
   return { candidates, busyOf }
 }
@@ -844,7 +856,7 @@ export function dispatchToolDefinition(ctx: any): any {
         // ── ADR D12 派发面处置：resume 命中**已删**后端 ──
         // 上游 404 = **正面证据**（不是"看不到"）⇒ 必须处置，否则旧条目的
         // `state=dispatching` 会**永久占死该 workRoot**（cancel/suspend 也定位不到它）。
-        const { missing: vanished, unknown: unknownState } = await readSessionInfo(ctx, brief.resume_session)
+        const { info: targetInfo, missing: vanished, unknown: unknownState } = await readSessionInfo(ctx, brief.resume_session)
         if (unknownState) {
           // 读失败但原因不明 ⇒ **不处置**（不墓碑、不新建）：无法区分"已删"与"暂时查不到"
           throw fail(
@@ -855,6 +867,30 @@ export function dispatchToolDefinition(ctx: any): any {
           setSlotState(stateRoot, brief.resume_session, "tombstone")
           appendVanishedRow(stateRoot, brief.resume_session, existing, workRoot)
           resumedVanished = true
+        }
+
+        // ── AC19 / D8.1：**只向空闲会话投递**（与同步 `delegate` 同一谓词）──
+        // 目标仍在跑 ⇒ 拒绝（不把新简报排进正在跑的会话；否则 `suspend(X)` 期间的
+        // 这次投递会 ring 上游 doorbell ⇒ settle 时起后继 execution ⇒ 两个写入者）。
+        // 落点刻意选在**这里**：尚未写墓碑、尚未 create、尚未判全局上限 ⇒ 拒绝零副作用。
+        if (!vanished) {
+          if (existing.state === "dispatching") {
+            throw fail(
+              `后端 ${brief.resume_session} 的简报尚未确认消费（dispatch 中），不可再追加简报；` +
+                `请用 cancel 终止它，或等它进入 active 后再续接`,
+            )
+          }
+          let targetMessages: any[] = []
+          try {
+            targetMessages = await ctx.session.context({ sessionID: brief.resume_session })
+          } catch {
+            targetMessages = []
+          }
+          if (stillRunning(targetInfo, targetMessages)) {
+            throw fail(
+              `无法向运行中的后端 ${brief.resume_session} 追加简报：请先 suspend 它，或等它跑完再续接`,
+            )
+          }
         }
       }
 
