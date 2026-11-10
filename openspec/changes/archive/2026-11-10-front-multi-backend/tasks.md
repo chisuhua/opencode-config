@@ -70,7 +70,7 @@
 | T6.1 | `prompts/front.md`：四工具路由表 + dispatch≠完成 + 切换契约 + 同仓并行需备工作树 + 范围假设 + 旧措辞清除 | AC34/AC55/AC56 | ✅ |
 | T6.2 | `docs/front-delegate-architecture.md`：§2.1 四工具 / §4.3 delivery=steer（「会排队」清除）/ §6.1 口径扩写 | AC35 | ✅ |
 | T6.3 | `docs/dual-session-delegation.md`：`event` 字段 + `vanished` + `state` + 故障表 | AC36 | ✅ |
-| T6.4 | `ADR-front-knowledge-capability` D5 行产生时机表 | AC36 | ⛔ **architect 归属**（ADR 内容，builder 不得单方面改） |
+| T6.4 | `ADR-front-knowledge-capability` D5 行产生时机表 | AC36 | ✅ **已完成**（2026-11-10 复核）。D5「行产生时机」表**已含**：`event` 四行（`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`）+ `outcome:"vanished"`（后端被外部删除，观测面不补记）+ 「**reconcile 不写 ledger**」+ 「`vanished` 是 `outcome` 取值、不是 `event` 取值」——与 `ADR-front-multi-backend` D12 / AC36 口径一致 |
 | T6.5 | **`docs/front-delegate-usage.md`（用户手册）**：§1 五工具 + 单槽性质 + 场景 G–J（并发 / 看进度 / 切换 / 放弃）+ 排障两行 + 范围假设 | — | ✅ 本轮补齐 |
 | T6.6 | **`docs/front-delegate-testing.md`**：测试清单 157→216、补 `delegate-async.test.ts` / `canonical-root.test.ts` / `lib/delegate-async.ts` | — | ✅ 本轮补齐 |
 | T6.7 | **`docs/front-delegate-architecture.md` §4.4 槽位模型（单槽）**：键/五态/常驻-活跃/切换/投递≠消费/翻转执行者/悬挂 + 锁形态；后续小节顺延至 4.8 | AC35④ | ✅ 本轮补齐 |

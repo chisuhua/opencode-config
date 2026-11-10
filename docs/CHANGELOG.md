@@ -16,11 +16,12 @@
 > ③ **切换两步**：`suspend(当前)` → `dispatch/resume(目标)`，由 front 编排；**暂停 ≠ 终止**（`cancel` 才是墓碑、永久不可续）。
 > ④ **「投递 ≠ 消费」**：上游 drain 是 `peek → awaitActivation(可无限阻塞) → prepareContext → promote`，且 `interrupt({resume:false})` **不删 pending 行** ⇒ 旧简报会在恢复后抢先跑（幽灵注入，**已运行时坐实**）。故 dispatch 返回前须**确认消费**（判据 = 该简报的 `message.id` 出现在 `session.context()` 的消息 id 集合里），未确认则停在 `dispatching`（只可 `cancel`）。
 > ⑤ **ledger 增 `event` 独立字段**（不塞进 `outcome`）：`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`；`outcome` 枚举新增 **`vanished`**（后端被外部删除）。
-> ⑥ **已删后端不可见**（能力边界）：插件 ctx 无 `project` 域 ⇒ 无法枚举 repo ⇒ `sessions` 不列已删后端、观测面不补记。**派发面处置矩阵已按 ADR D12 定稿**（拿到 404 正面证据 ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` 行 + 释放槽位），**但实现尚未落地**——当前对已删后端 `suspend`/`cancel` 仍报「无法定位后端」，`dispatch(resume=已删)` 落 `dispatch_failed` 且保留槽位（死槽风险仍在，实现随 AC13 落地）。
+> ⑥ **已删后端不可见**（能力边界）：插件 ctx 无 `project` 域 ⇒ 无法枚举 repo ⇒ `sessions` 不列已删后端、观测面不补记。**派发面处置矩阵已按 ADR D12 定稿**（拿到 404 正面证据 ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` 行 + 释放槽位），**实现已于 2026-11-10 落地**（builder：派发面拿到 404 正面证据 ⇒ 旧条目墓碑 + 落 `outcome:"vanished"` 行 + 释放槽位；`suspend`/`cancel` 不再因「无法定位」抛错）（**死槽风险已解除**）。
 > ⑦ **双根归一**：`stateRoot`（状态落盘）与 `workRoot`（工作树）分离，linked worktree 下 pair 落主仓、变更检测在 worktree（`ADR-canonical-root-normalization`，commit `23584cd`）。
 > ⑧ **上游语义实测**：`get()` 在 run 中**确实**返回 `time.busy`（此前探针 Q2/R4 冲突，R4 正确）；`list` 的 item 带 `metadata`（为空时省略字段）。
 > 验证：`bun test tests/` **216 pass / 0 fail**；Phase 0 消费判据探针 16/16；权限矩阵 `opencode debug agents` 实测。ADR：`docs/adr/ADR-front-multi-backend.md`（D1–D12）；实施与验收记录见 `.rddf/reviews/front-multi-backend-*.md`。
-> ⚠️ **未完成**：E2E bats L2-16..（外部仓库）、AC44 连续 10 次时延（需真实模型）、AC57 的「自然跑完→B→回A」完整序列（仅部分覆盖）、架构文档 §2.1 全景图的 ASCII 对齐（纯格式）。
+> ✅ **后续已补齐（2026-11-10）**：E2E bats **L2-16…L2-22 + L2-99 全量 23/23 全绿**（外部仓库，真实模型 + 真实宿主）；**AC44 连续 10 次时延**（中位 0.2s，10/10）；**AC57 的完整往返序列**（E2E L2-22：dispatch A → suspend A → dispatch B → sessions → suspend B → resume A ⇒ A 以**同一 session_id** 恢复）；**停机判据按上游语义订正**（`interrupt` 的返回值 ≠ 停机判据 ⇒ 判据 = 「判活为假」+（基线在跑时）终态水位线前移，见 ADR D11.3）。
+> ⚠️ **已知缺口 / 后续 backlog（2026-11-10 登记，均需另立 change）**：① **异步 `dispatch` 的 resume 目标无活体守卫**（AC19/D8.1「对正在运行的后端 resume ⇒ 拒绝」目前只落在同步 `delegate` 面）——这是本轮唯一会导致「两个写入者」的可达路径；② `isSessionMissingError` 用 `/404/` **宽判** ⇒ 含 "404" 的传输错误会被判成「已删除」⇒ 误放槽；③ `ctx.session.wait()` 在 run 中途被 interrupt 时的返回语义**未实测**（探针缺口）——「改用 `session.wait` 作停机判据」这个备选的前置；④ ADR 里三处**行号级**上游引用（`session.ts:278-281` / `run-coordinator.ts:164-171` / `adapter.ts:641`）应纳入「上游语义漂移」回归清单（opencode 升级后会静默漂移）。
 > ✅ **本轮已补齐**：AC13 判据改写（planner，按 D12 改成五段）、**D12 派发面处置矩阵的实现**（builder：死槽已解除）、AC36 余下两处同步（`docs/dual-session-delegation.md` 补 `taken_over`、`prompts/front.md` 补 `vanished` 与 `event` 说明）、`proposal.md` AC4 脚注修正。
 
 > **v2.6 增补（2026-11-09，ADR-delegate-delivery-evidence 落地）**：上面 v2.6 段的「**outcome 枚举不变**」一句已过时（历史不改，此处增补）：`outcome` 现扩展为 `succeeded` / **`unverified`** / `failed` / `interrupted` / `unknown` / `busy`。

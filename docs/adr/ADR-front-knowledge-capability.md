@@ -8,12 +8,12 @@
 | Date | 2026-11-08 |
 | Author | architect |
 | Parent | 部分取代 `adr-front-agent-redesign.md`：D4 中「`subagent` 保持 `deny`」一条作废；D3 的「`scope` 必填」仅对 `kind=engineering` 继续有效；D6 的登记协议扩展 `kind` 字段，其余继续有效。D1 产物判据、D2 唯一工程通道、D5 preflight grants、D6 的锁与 upsert 协议、D7 guide 归宿继续有效 |
-| 关联 change | `openspec/changes/front-knowledge-capability/`（已立项；与 `ADR-delegate-delivery-evidence` 共用同一 change——同批交付、同批验收） |
+| 关联 change | `openspec/changes/archive/2026-11-10-front-knowledge-capability/`（已立项；与 `ADR-delegate-delivery-evidence` 共用同一 change——同批交付、同批验收） |
 | AC 映射 | 本文件 Verification 1–18 → proposal 的 **AC1–AC7 / AC12–AC20 / AC31** 与 **Note N2**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表） |
 | 审稿报告 | `.rddf/reviews/adr-front-knowledge-capability-review.md` |
 | 增补记录 | **2026-11-08**：E2E 真实运行时暴露两处实现约束 → 补 **D2.1（规则顺序是硬约束）**、**D3.1（网络守卫必须覆盖首参数形态）**，并订正 Verification 第 15 条（原写"末尾 `*: deny`"，与 D2.1 矛盾）、新增 2 条判据与 2 条风险。运行时证据：`/workspace/main/rdd-workflow-e2e/tests/integration/test_front_delegate_runtime.bats`（L2-13/L2-14/L2-15，实跑 15/15 ok）。增补的复审结论见审稿报告 §8 |
 | 增补记录 2 | **2026-11-09**：`outcome` 枚举由 `ADR-delegate-delivery-evidence` 扩展（新增 `unverified` + `host_outcome`）→ **本篇 D5 的 ledger 字段表与"行产生时机"表需同步补 `unverified` / `host_outcome`**（单点耦合，见该篇 Parent 条款与 D3.1 迁移清单第 6 项） |
-| 增补记录 3 | **2026-11-09**：`ADR-front-multi-backend` 落地 → **D5 的 ledger 字段表与"行产生时机"表同步补 `event` 独立字段**（`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`）与 **`outcome:"vanished"`**（后端被外部删除）；并加注「reconcile 不写 ledger」（槽位回收只改 `pair.json`）。判据的适用范围见该篇 **D12**（观测面不补记、派发面拿到 404 正面证据才落终态行）。**该篇的派发面处置矩阵实现尚未落地**（见 `docs/CHANGELOG.md` v2.7 的未完成清单） |
+| 增补记录 3 | **2026-11-09**：`ADR-front-multi-backend` 落地 → **D5 的 ledger 字段表与"行产生时机"表同步补 `event` 独立字段**（`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`）与 **`outcome:"vanished"`**（后端被外部删除）；并加注「reconcile 不写 ledger」（槽位回收只改 `pair.json`）。判据的适用范围见该篇 **D12**（观测面不补记、派发面拿到 404 正面证据才落终态行）。**该篇的派发面处置矩阵已于 2026-11-10 落地并有单测 + E2E 证据**（见 `docs/CHANGELOG.md` v2.7 的「后续已补齐」段） |
 
 ## 背景与问题
 

@@ -2,7 +2,7 @@
 
 - 日期：2026-11-09
 - 验收角色：verifier（只验不改）
-- 对象：`openspec/changes/front-knowledge-capability/proposal.md` 的 **AC1–AC31**
+- 对象：`openspec/changes/archive/2026-11-10-front-knowledge-capability/proposal.md` 的 **AC1–AC31**
 - 判据来源：proposal `## 验收标准`（优先）+ 两篇 Accepted ADR 的 Verification
 - 结论：**不通过（1 项失败：AC31）** → 路由回 **builder**（`implementation_gap`）
 - 轮次：**1 / 3**
@@ -13,7 +13,7 @@
 
 | 条件 | 结果 |
 |---|---|
-| change + `## 验收标准` | ✅ `openspec/changes/front-knowledge-capability/proposal.md` |
+| change + `## 验收标准` | ✅ `openspec/changes/archive/2026-11-10-front-knowledge-capability/proposal.md` |
 | `rddf rdd-verify --dry-run` | `No eligible changes to verify (empty queue)` → P3 gate 未触发 |
 | `rdd-verifier` skill | 已安装，但分流条件 2 不满足 → **走本地验收 1–5 步** |
 

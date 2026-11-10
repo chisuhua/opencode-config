@@ -8,7 +8,7 @@
 | Date | 2026-11-05 |
 | Author | architect |
 | Parent | 部分取代 `adr-double-session-delegation.md`：决策 1 / 决策 4 作废；决策 3 的「无锁 last-write-wins」被本文 D6 取代；决策 2 继续有效 |
-| 关联 change | `openspec/changes/front-knowledge-capability/`（本篇工作已由该 change 一并收口与验收；本篇 AC1–AC17 见 `.rddf/improvements/front-agent-redesign.md`） |
+| 关联 change | `openspec/changes/archive/2026-11-10-front-knowledge-capability/`（本篇工作已由该 change 一并收口与验收；本篇 AC1–AC17 见 `.rddf/improvements/front-agent-redesign.md`） |
 | AC 映射 | 见 improvement `.rddf/improvements/front-agent-redesign.md` 的 AC1–AC17（2026-11-06 由 builder 按已批准的实施路径回填，architect 可复核） |
 | 审稿报告 | `.rddf/reviews/adr-front-agent-redesign-review.md` |
 | **被取代条款（2026-11-09）** | ① **D4 的「`subagent` 保持 `deny`」作废** → 由 `docs/adr/ADR-front-knowledge-capability.md` 取代（front 放行五个只读 agent；D2.1 追加**规则顺序是硬约束**：`"*": "deny"` 必须是**第一条**，放末尾会被 opencode 的工具可见性判定把整个工具隐藏）。② **D2 的 outcome 枚举被扩展** → 由 `docs/adr/ADR-delegate-delivery-evidence.md` 取代（新增 `unverified`＝宿主成功但无交付证据；另 `busy` 早已在实现中漂移进来，本文枚举未回写）。③ **D3 的 scope 语义已收窄**：`scope` 必填与 scope 派生 `edit` 强制注入**仅对 `kind=engineering` 继续有效**；知识 session 的 `scope` 可选且忽略、只读 agent 恒注入单条 `edit:* deny`、永不注入 scope 派生 allow；`grants` 对知识 session 一律禁收；登记扩展 `kind` 字段且 knowledge 只写 `pair.json` 不写 `role.json` 的 `sessions` 分区（见 `ADR-front-knowledge-capability` D4 **H2**/H2'/H2''/H3）。④ 本文的**其余条款继续有效**（baseline 校验、grants preflight、pair/role 登记与 flock、不回传 transcript、`external_directory` 不约束 shell 的 D4.1）。**当前态请以三篇 `docs/adr/` 下的 ADR + `docs/MULTI-AGENT-DESIGN.md` 为准。** |

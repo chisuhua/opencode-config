@@ -21,7 +21,7 @@
 ADR `docs/adr/ADR-front-multi-backend.md` 已 Accepted（**2026-11-09 改写**：槽位键 `canonical_root`→**`workRoot`**、新增单槽 + 可切换模型；oracle 1 轮 + critic 2 轮，第 1 轮 REJECT（3 BLOCKER）→ 全部闭合 → 第 2 轮 APPROVE）。19 条前置探针见 `.rddf/reviews/front-multi-backend-probes.md`。
 
 **Phase 0（消费确认判据）已完成**：`.rddf/reviews/front-multi-backend-consume-probe.md`（16/16 PASS，**判据可靠 ⇒ 不降级**）。
-**实施状态**：`openspec/changes/front-multi-backend/tasks.md`（逐条 AC 状态）；实现设计见 `design.md`。
+**实施状态**：`openspec/changes/archive/2026-11-10-front-multi-backend/tasks.md`（逐条 AC 状态）；实现设计见 `design.md`。
 
 ## What Changes
 
@@ -37,7 +37,7 @@ ADR `docs/adr/ADR-front-multi-backend.md` 已 Accepted（**2026-11-09 改写**�
 
 ## Acceptance
 
-见 `openspec/changes/front-multi-backend/proposal.md` 的 `## 验收标准`（AC1–AC38）。**编号以 proposal 的 `## 验收标准` 为唯一源**，本段只列选型。
+见 `openspec/changes/archive/2026-11-10-front-multi-backend/proposal.md` 的 `## 验收标准`（AC1–AC38）。**编号以 proposal 的 `## 验收标准` 为唯一源**，本段只列选型。
 
 **最小可验收集合**（缺一即不通过）：AC1（工具可见性）、AC2（非 front 被拒）、AC4（观测面不污染）、AC5（dispatch 立即返回）、AC6（显式 delivery=queue）、AC9（dispatch 落三处）、AC16（goal_key 不一致拒续接）、AC21（running 判据）、AC23（worst-of 聚合）、AC26（同仓互斥拒绝）、AC28（cancel 墓碑）、AC33（既有 delegate 全绿回归）。
 

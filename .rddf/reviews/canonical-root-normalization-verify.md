@@ -4,7 +4,7 @@
 |---|---|
 | 日期 | 2026-11-09 |
 | 验收者 | verifier |
-| change | `openspec/changes/canonical-root-normalization/`（**AC1–AC18**，共 18 条） |
+| change | `openspec/changes/archive/2026-11-10-canonical-root-normalization/`（**AC1–AC18**，共 18 条） |
 | 提交 | `23584cd`（9 文件，+512/−45） |
 | 判据来源 | proposal 的 `## 验收标准`（AC1–AC18）——本 change 无 `tasks.md`/`iteration.json`，非 rdd-builder 流程产物 |
 | 分流判定 | **未命中 `rdd-verifier` skill**：条件 1（有验收标准）✅、条件 3（skill 可加载）✅、**条件 2（P3 archive gate）❌**（无 `iteration.json`、无 `tasks.md`）→ 走本地验收 1–5 步 |

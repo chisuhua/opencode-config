@@ -20,7 +20,7 @@
 
 ## Acceptance
 
-见 `openspec/changes/front-knowledge-capability/proposal.md` 的 `## 验收标准`（AC1–AC31，逐条映射两篇 ADR 的 Verification）。
+见 `openspec/changes/archive/2026-11-10-front-knowledge-capability/proposal.md` 的 `## 验收标准`（AC1–AC31，逐条映射两篇 ADR 的 Verification）。
 
 **最小可验收集合**（缺一即不通过）：AC1（规则顺序）、AC2（general 被拒）、AC4（explore 加固）、AC6（librarian 网络守卫）、AC8（delegate 白名单）、AC12（知识 session 约束）、AC14（knowledge 登记）、AC16+AC17（ledger 时机+字段）、AC21+AC22（unverified 与正常交付）、AC25（仍在跑不判定）。
 

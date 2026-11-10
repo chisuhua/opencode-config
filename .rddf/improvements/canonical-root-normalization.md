@@ -33,7 +33,7 @@ ADR `docs/adr/ADR-canonical-root-normalization.md` 已 Accepted（oracle + criti
 
 ## Acceptance
 
-见 `openspec/changes/canonical-root-normalization/proposal.md` 的 `## 验收标准`（AC1–AC18）。**编号以 proposal 的 `## 验收标准` 为唯一源**，本段只列选型。
+见 `openspec/changes/archive/2026-11-10-canonical-root-normalization/proposal.md` 的 `## 验收标准`（AC1–AC18）。**编号以 proposal 的 `## 验收标准` 为唯一源**，本段只列选型。
 
 **最小可验收集合**（缺一即不通过）：AC1（主仓零行为变化）、AC2（worktree 下 pair.json 落主仓）、AC3（worktree 内 artifacts > 0）、AC4（submodule 归一到 superproject）、AC8（读回退）、AC9（双值接受）、AC7（git 版本回退路径）、AC13（跨仓冒充不成立）。
 

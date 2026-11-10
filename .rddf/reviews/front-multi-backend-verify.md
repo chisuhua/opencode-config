@@ -4,7 +4,7 @@
 |---|---|
 | 日期 | 2026-11-09 |
 | 验收者 | verifier |
-| change | `openspec/changes/front-multi-backend/`（**AC1–AC58**） |
+| change | `openspec/changes/archive/2026-11-10-front-multi-backend/`（**AC1–AC58**） |
 | 提交 | `35e23a6`（14 文件，+2219/−33） |
 | 判据来源 | `proposal.md` 的 `## 验收标准`（AC1–AC58）；ADR Verification 1–49 经其映射表 |
 | 分流判定 | **未命中 `rdd-verifier` skill**：条件 1（有 AC 段）✅、条件 3（skill 可加载）✅、**条件 2（P3 archive gate）❌**（无 `iteration.json`）→ 走本地验收 1–5 步 |

@@ -4,14 +4,14 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | **Accepted**（2026-11-09；实施进行中，剩余项见 `openspec/changes/front-multi-backend/tasks.md`）。审稿记录见 `.rddf/reviews/adr-front-multi-backend-review.md` |
+| Status | **Accepted**（2026-11-09；**实施完成并归档**（2026-11-10）：47 条任务全绿、验收第 6 轮 PASS（`.rddf/reviews/front-multi-backend-verify.md`）、ADR 审稿 critic 第 4 轮 **APPROVE**（`.rddf/reviews/adr-front-multi-backend-review.md`）；**后续 backlog 见 CHANGELOG v2.7 的「已知缺口 / 后续 backlog」段**） |
 | Date | 2026-11-09（初稿与本次改写同日） |
 | Author | architect |
 | 本次改写（摘要） | ① 槽位键改 `workRoot`（原 `canonical_root`）+ 单槽切换模型；② **D12 已删后端的可见性（能力边界）+ 后续触碰处置矩阵**（V09 随之改写；V08 修正「reconcile 会写行」的误述）；③ **D11.3 停机判据订正**——`interrupt` 的返回值（`true`/`false`）都不是停机判据，判据是「判活为假 + 终态落定（水位线前移）」；AC13 判据按 D12 改写为五段；④ **停机判据的两处如实化 + 备选取舍**——「陈旧 busy」形态**不被兜住**（登记为残留风险，不被兜住就不再声称被兜住）、并写明**为什么不用上游 `ctx.session.wait`**（能覆盖后继 execution，但跨 server 实例不可靠、interrupt 中的返回语义未实测 ⇒ 登记为待实测备选）。详见审稿报告。 |
 | 首轮改写（摘要） | ① D6 槽位键 `canonical_root`→**`workRoot`**，并把「互斥」细化为**单槽**（常驻 vs 活跃分离）；② 新增 **D7 槽位生命周期**（翻转执行者 / 消费确认 / 回收与亡主接管）、**D8 构造性保证与范围假设**、**D11 切换两步编排**；③ 原 D7 改为 **D9 终止（墓碑）vs 暂停（可续）** 的边界；④ D1 工具面三→四（加 `suspend`）；⑤ D2.3/D3 索引与检索键加 `work_root`。改写理由、证据与评审记录见审稿报告 |
 | Parent | 部分取代 `docs/adr/ADR-front-agent-redesign.md` 的 D2（`delegate` 的同步单发序列）与 D3（brief 契约的 scope 部分），**并把该篇 D2 的「唯一工程通道」口径扩写为「唯一门控插件出口」**（见 D1 的不变式说明）；**不改**该篇 D1（四分类）、D4（front 工具面白名单）、D5（preflight grants）、D7（guide 归宿）、D8（调试纪律）；**D6（登记与并发协议）的锁协议沿用不改**（槽位翻转仍走其同步 RMW，见 D7.1），但其 **pair-v2 schema 追加 `work_root` / `state` 两字段**（本次改写，见 D2.1/D2.3）；与 `ADR-front-knowledge-capability` 的 D2（只读 subagent 门控）、D4（agent 白名单与 kind）、D5（ledger 记忆层）**决策面正交**，但 ledger schema 面有单点耦合（见 D2.2）。与 `ADR-canonical-root-normalization` **原为决策面正交，本次改写后变为强依赖**：D6 的槽位键直接取其 D1 定义的 `workRoot`（该篇已落地，commit `23584cd`），其 `stateRoot/workRoot` 拆分正是本篇「同工作树单槽」的前置 |
-| 关联 change | `openspec/changes/front-multi-backend/`（已立项 2026-11-09，planner 起草） |
-| AC 映射 | 本文件 Verification 1–**49**（本次改写把判据集从 28 条扩到 49 条：新增 `suspend` 门控、`work_root`/`state` 索引、单槽与实现约束、消费确认与翻转执行者、回收与亡主接管、终止/暂停、切换与回收）。**映射表在 proposal 的「AC ↔ ADR Verification 映射」段**——本次新增/改写判据对应的 AC 编号由 planner 在同步 proposal 时补齐并回填；**回填前以本文件的 Verification 文本为准** |
+| 关联 change | `openspec/changes/archive/2026-11-10-front-multi-backend/`（2026-11-09 立项，planner 起草；**2026-11-10 归档**） |
+| AC 映射 | 本文件 Verification **V01–V49**（判据条目**已编号**，与 proposal 的「AC ↔ ADR Verification 映射」表**逐条同号**；下同（本次改写把判据集从 28 条扩到 49 条：新增 `suspend` 门控、`work_root`/`state` 索引、单槽与实现约束、消费确认与翻转执行者、回收与亡主接管、终止/暂停、切换与回收）。**映射表在 proposal 的「AC ↔ ADR Verification 映射」段**——本次新增/改写判据对应的 AC 编号由 planner 在同步 proposal 时补齐并回填；**回填前以本文件的 Verification 文本为准** |
 | 审稿报告 | `.rddf/reviews/adr-front-multi-backend-review.md`（初稿 + **本次改写**的 oracle/critic 记录追加在同一文件） |
 | 前置事实 | 19 条运行时探针（HTTP 层 8 + 插件内直测 8 + oracle 后补 3），全部带真实返回摘录，落在 `.rddf/reviews/front-multi-backend-probes.md`。**本篇的技术断言都有探针或上游源码背书**；**未探针的假设在正文中显式标注**（如 D12 选项表第④条的「跨 server 实例删除是否送达」）。<br>**本次改写新增上游源码证据**（opencode v2.2.5）：`packages/core/src/session/execution.ts:151-170`（interrupt 的 resume 语义）、`packages/core/src/session/execution.ts:27-31`（**interrupt 只保证「已接受」、清理异步 settle**）、`packages/core/src/session/run-coordinator.ts:142-162`（**interrupt 返回 false 的三种成因**：无执行 / `stopping` 中（仍在跑）/ settle 窗口（fiber 已退、终态未发布））、`packages/core/src/session/projector.ts:527,798-800`（**`time.idle` = 唯一写入点的严格单调终态水位线**）⇒ 停机判据见 D11.3、`packages/core/src/session/inbox.ts:470-487`（inbox 提升顺序）、`packages/plugin/src/promise/adapter.ts:622-645`（插件可见的 session 方法全集）——见 D6/D7/D9/D11.3 |
 
@@ -368,77 +368,77 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 **工具面与门控（D1）**
 
-- [ ] `opencode debug agents` 中 front 可见 `dispatch`/`sessions`/`suspend`/`cancel` 四个工具；`delegate` 仍可见。
-- [ ] 除 front 外任一 agent 调用 `dispatch`/`sessions`/`suspend`/`cancel` → **权限层**拒绝（非模型拒绝），且 `delegate` 仍不可见。
-- [ ] `cancel` 的 action 可被单独 deny 而 `dispatch`/`sessions`/`suspend` 仍 allow（验证 action 细分生效）。
-- [ ] `suspend` 的 action 可被单独 deny 而 `dispatch`/`sessions`/`cancel` 仍 allow（验证四工具的 action 相互独立）。
-- [ ] `dispatch` 的 execute 在**宿主调用挂死**时**在超时上限内返回**（不无限等）；构造 `create`/`prompt`/`update` 永不 settle 的情形验证（**不是**"构造挂死的后端"——dispatch 不 wait 后端，后端挂死不会让 dispatch 挂住）。
+- [ ] **V01** `opencode debug agents` 中 front 可见 `dispatch`/`sessions`/`suspend`/`cancel` 四个工具；`delegate` 仍可见。
+- [ ] **V02** 除 front 外任一 agent 调用 `dispatch`/`sessions`/`suspend`/`cancel` → **权限层**拒绝（非模型拒绝），且 `delegate` 仍不可见。
+- [ ] **V03** `cancel` 的 action 可被单独 deny 而 `dispatch`/`sessions`/`suspend` 仍 allow（验证 action 细分生效）。
+- [ ] **V04** `suspend` 的 action 可被单独 deny 而 `dispatch`/`sessions`/`cancel` 仍 allow（验证四工具的 action 相互独立）。
+- [ ] **V05** `dispatch` 的 execute 在**宿主调用挂死**时**在超时上限内返回**（不无限等）；构造 `create`/`prompt`/`update` 永不 settle 的情形验证（**不是**"构造挂死的后端"——dispatch 不 wait 后端，后端挂死不会让 dispatch 挂住）。
 
 **名册与索引（D2）**
 
-- [ ] `dispatch` 后：后端 session 的 metadata 含 `delegated_by/goal_key/canonical_root/**work_root**/baseline_message_id/dispatched_at/state`；`pair.json` 有对应条目；`ledger.jsonl` 有 `dispatched` 行。
-- [ ] `pair.json` 条目含 **`work_root`** 与 **`state`**（枚举见 D6.3：`dispatching/active/idle/suspended/tombstone`）；**存量条目**（无 `work_root`）按 `work_root = canonical_root` 保守回填（退化为原粒度，不误判为同树），且其 `state` 按**活体判据**首次观测时确定（busy ⇒ `active`，否则 `idle`）——**不得一律默认 `idle`**（那等于放行第二个写入者）。
-- [ ] `sessions` 列出本 front 名下全部后端（≥2 个，分属不同工程目录），每项含状态与证据字段；**调用 `sessions` 前后，被观测后端的 `session.context` 消息条数与最后一条消息 id、以及 `time.updated` 均不变**（证明观测面不投递 prompt、不污染）。⚠️ **不以 ledger 行数不变为判据**——prompt 投递不会立即产生 ledger 行，行数不变证明不了没投递（**注意：reconcile 只写 `pair.json`、不写 ledger**，别拿 pair 的变化当 ledger 证据）。
-- [ ] **已删后端的观测面与派发面分别判**（D12）：
+- [ ] **V06** `dispatch` 后：后端 session 的 metadata 含 `delegated_by/goal_key/canonical_root/**work_root**/baseline_message_id/dispatched_at/state`；`pair.json` 有对应条目；`ledger.jsonl` 有 `dispatched` 行。
+- [ ] **V07** `pair.json` 条目含 **`work_root`** 与 **`state`**（枚举见 D6.3：`dispatching/active/idle/suspended/tombstone`）；**存量条目**（无 `work_root`）按 `work_root = canonical_root` 保守回填（退化为原粒度，不误判为同树），且其 `state` 按**活体判据**首次观测时确定（busy ⇒ `active`，否则 `idle`）——**不得一律默认 `idle`**（那等于放行第二个写入者）。
+- [ ] **V08** `sessions` 列出本 front 名下全部后端（≥2 个，分属不同工程目录），每项含状态与证据字段；**调用 `sessions` 前后，被观测后端的 `session.context` 消息条数与最后一条消息 id、以及 `time.updated` 均不变**（证明观测面不投递 prompt、不污染）。⚠️ **不以 ledger 行数不变为判据**——prompt 投递不会立即产生 ledger 行，行数不变证明不了没投递（**注意：reconcile 只写 `pair.json`、不写 ledger**，别拿 pair 的变化当 ledger 证据）。
+- [ ] **V09** **已删后端的观测面与派发面分别判**（D12）：
   - **观测面**：后端被外部删除后，`sessions` 输出**不含**该项，且**调用 `sessions` 前后该 repo 的 `ledger.jsonl` 行数与末行内容均不变**（观测面不写 ledger）。⚠️ **不得**把「`sessions` 里没有」判成「从未派发」/「没有终态」/「一定被删」。
   - **派发面**：`dispatch(resume_session=X)` 命中已删 X ⇒ **不得**留下 `state=dispatching` 的悬挂条目；旧条目置 `tombstone`、ledger 出现 **`outcome:"vanished"` 终态行**、同一 `goal_key` 的新 session 建成 ⇒ **同一 `workRoot` 可再次派发**。
   - **终止 / 暂停面**（按 D12 矩阵）：已删 X 且条目 `dispatching`/`active` ⇒ `suspend` **释放槽位并置 `suspended`**、`cancel` **置 `tombstone` 并落 `outcome:"vanished"`**；条目 `idle`/`suspended` ⇒ `suspend` 幂等 no-op、`cancel` 置墓碑落行；条目 `tombstone` ⇒ `suspend` 拒绝、`cancel` 幂等 no-op。**四组都不得因「无法定位工作目录」而抛错**。
   - **痕迹**：该 repo 的 `ledger.jsonl` 里原有 `event:"dispatched"` 行仍在（`reconcile` 只改 `pair.json` 的 `state`，不写 ledger）。
-- [ ] front session 换代（新 front session id）后，仍能通过兜底路径找回旧后端。
-- [ ] **兜底路径扫全量**：构造 >50 个 session（其中 ≥2 个是被派发的后端且 `time.updated` 最旧）→ 换代后的 `sessions` 仍能列出这两个后端（验证 cursor 续扫，不因 limit 窗口漏扫）。
-- [ ] metadata update 后**完整字段仍在**（不因整体替换丢字段）——含新增的 `work_root` / `state`。
+- [ ] **V10** front session 换代（新 front session id）后，仍能通过兜底路径找回旧后端。
+- [ ] **V11** **兜底路径扫全量**：构造 >50 个 session（其中 ≥2 个是被派发的后端且 `time.updated` 最旧）→ 换代后的 `sessions` 仍能列出这两个后端（验证 cursor 续扫，不因 limit 窗口漏扫）。
+- [ ] **V12** metadata update 后**完整字段仍在**（不因整体替换丢字段）——含新增的 `work_root` / `state`。
 
 **一 session 一目标（D3）**
 
-- [ ] 同一后端用**相同 goal_key** resume → 允许；用**不同 goal_key** resume → **拒绝**且提示新 session。
-- [ ] 同一目标续接时，`grant` 救援路径（原地补 grant）仍可用（goal_key 相同不误杀）。
-- [ ] 对正在运行的后端 resume → 拒绝并说明原因（不 steer 注入当前轮）。
-- [ ] **同 slug 异目标的行为被文档化**：机制**不**拒绝（front 复用同一 slug 时校验通过），但 ledger 中两行的 goal 描述不同 ⇒ 可事后审计发现。
-- [ ] `goal_key.repo` 仍是 `canonical_root`（同一目标换 worktree 续接**不被误判为不同目标**）；而**槽位与检索分组**按 `work_root`（同仓不同 worktree 的同 slug 后端在名册里**可区分**）。
+- [ ] **V13** 同一后端用**相同 goal_key** resume → 允许；用**不同 goal_key** resume → **拒绝**且提示新 session。
+- [ ] **V14** 同一目标续接时，`grant` 救援路径（原地补 grant）仍可用（goal_key 相同不误杀）。
+- [ ] **V15** 对正在运行的后端 resume → 拒绝并说明原因（不 steer 注入当前轮）。
+- [ ] **V16** **同 slug 异目标的行为被文档化**：机制**不**拒绝（front 复用同一 slug 时校验通过），但 ledger 中两行的 goal 描述不同 ⇒ 可事后审计发现。
+- [ ] **V17** `goal_key.repo` 仍是 `canonical_root`（同一目标换 worktree 续接**不被误判为不同目标**）；而**槽位与检索分组**按 `work_root`（同仓不同 worktree 的同 slug 后端在名册里**可区分**）。
 
 **状态与聚合（D4/D5）**
 
-- [ ] 后端 run 进行中 → `sessions` 报 `running`（依据 `time.busy`，不依据 `outcome`）。
-- [ ] 后端刚派发、`busy` 尚未写入的窗口期 → 报 `running` 而非"已完成"。
-- [ ] 一个后端 `unverified` + 一个 `succeeded` → 整体**不得**报完成；明细列出两者。
-- [ ] 一个 running + 一个 succeeded → 整体"进行中"，且明细列出。
-- [ ] 全部 `unverified` → 报"无可验证交付"（措辞不含"没有产出"）。
-- [ ] 明细**永远**输出（不只有 headline）。
+- [ ] **V18** 后端 run 进行中 → `sessions` 报 `running`（依据 `time.busy`，不依据 `outcome`）。
+- [ ] **V19** 后端刚派发、`busy` 尚未写入的窗口期 → 报 `running` 而非"已完成"。
+- [ ] **V20** 一个后端 `unverified` + 一个 `succeeded` → 整体**不得**报完成；明细列出两者。
+- [ ] **V21** 一个 running + 一个 succeeded → 整体"进行中"，且明细列出。
+- [ ] **V22** 全部 `unverified` → 报"无可验证交付"（措辞不含"没有产出"）。
+- [ ] **V23** 明细**永远**输出（不只有 headline）。
 
 **单槽与实现约束（D6/D7）**
 
-- [ ] **槽位键 = `workRoot`**：同一仓的两个 linked worktree 各派一个后端 → **两者都成功**（不被"同 repo 互斥"挡住）；且各自 `pair`/metadata 的 `work_root` 分别为两个 worktree 路径。
-- [ ] 同一 `workRoot` 已有 `active` 后端时再派发 → **拒绝**并说明（不排队、不静默并发）。
-- [ ] 同一 `workRoot` 可**常驻多个**后端 session（各自 `state=idle`），`sessions` 能把它们**列在一起并按 `work_root` 分组**。
-- [ ] **scope 前缀重叠检测不实现**：静态断言实现中**不存在**该逻辑（死代码不得保留；D8.2）。
-- [ ] 槽位检查与登记在**同一次锁临界区**内（并发触发两次派发，只有一个成功）。
-- [ ] **既有 `delegate` 受同一张槽位表约束**：同工作树已有 `active` 后端时，既有同步 `delegate` 也被拒；且 `delegate` 返回后其条目 `state=idle`、条目落 `work_root`/`state`（**三处变更面见 D7.4**，须显式测试）。
-- [ ] **消费确认（D7.2，实施期最先锚定）**：`dispatch` 返回前必须确认简报**已被消费**；未确认 ⇒ 条目停在 `state=dispatching`。⚠️ **先实测**："简报文本出现在 `session.context`" 是否等价于 promote 已发生（上游 drain 是 `peek → awaitActivation → prepareContext → promote`，`runner/llm.ts:70,75,186-192`）⇒ 若**不可靠**，本条**触发降级**（退回「单槽但不可切换」），并**如实记录**，不得用"看起来对"冒充。
-- [ ] `dispatching`（未确认消费）的后端 → `suspend` **拒绝**、`cancel` 可用（未确认消费的简报仍可能 pending ⇒ 不可保留可续性）。
-- [ ] **翻转执行者（D7.1）**：① 既有同步 `delegate` 返回后，其条目 `state=idle`（不占槽）；② `dispatch` 派发的后端**跑完但无人调用 `sessions`** → 下一次派发到同一 `workRoot` **成功**（reconcile-on-read 生效）；③ **第二次顺序 `delegate` 到同一工作树成功**（不被自己前一轮留下的 `active` 条目挡住——这是对既有主路径的回归判据）。
-- [ ] **槽位回收（D7.3）**：后端崩溃/被删导致 `active` 但实际不 busy → 下一次派发触发 reconcile ⇒ **放行**（不必先手工 `suspend`）。
-- [ ] **亡主接管（D7.3）**：front session 换代后，旧 front 名下的 `active` 槽位**不被静默顶掉**，但可被新 front `suspend` 回收；接管**落 ledger 行**；该工作树**不因换 front 而永久不可派发**。
-- [ ] **投递失败（D7.2）**：`dispatch` 的 execute 超时/异常 → **保留槽位**（不放行）+ 返回「投递结果未知，请 `sessions` 确认」；**不得静默放槽**。
+- [ ] **V24** **槽位键 = `workRoot`**：同一仓的两个 linked worktree 各派一个后端 → **两者都成功**（不被"同 repo 互斥"挡住）；且各自 `pair`/metadata 的 `work_root` 分别为两个 worktree 路径。
+- [ ] **V25** 同一 `workRoot` 已有 `active` 后端时再派发 → **拒绝**并说明（不排队、不静默并发）。
+- [ ] **V26** 同一 `workRoot` 可**常驻多个**后端 session（各自 `state=idle`），`sessions` 能把它们**列在一起并按 `work_root` 分组**。
+- [ ] **V27** **scope 前缀重叠检测不实现**：静态断言实现中**不存在**该逻辑（死代码不得保留；D8.2）。
+- [ ] **V28** 槽位检查与登记在**同一次锁临界区**内（并发触发两次派发，只有一个成功）。
+- [ ] **V29** **既有 `delegate` 受同一张槽位表约束**：同工作树已有 `active` 后端时，既有同步 `delegate` 也被拒；且 `delegate` 返回后其条目 `state=idle`、条目落 `work_root`/`state`（**三处变更面见 D7.4**，须显式测试）。
+- [ ] **V30** **消费确认（D7.2，实施期最先锚定）**：`dispatch` 返回前必须确认简报**已被消费**；未确认 ⇒ 条目停在 `state=dispatching`。⚠️ **先实测**："简报文本出现在 `session.context`" 是否等价于 promote 已发生（上游 drain 是 `peek → awaitActivation → prepareContext → promote`，`runner/llm.ts:70,75,186-192`）⇒ 若**不可靠**，本条**触发降级**（退回「单槽但不可切换」），并**如实记录**，不得用"看起来对"冒充。
+- [ ] **V31** `dispatching`（未确认消费）的后端 → `suspend` **拒绝**、`cancel` 可用（未确认消费的简报仍可能 pending ⇒ 不可保留可续性）。
+- [ ] **V32** **翻转执行者（D7.1）**：① 既有同步 `delegate` 返回后，其条目 `state=idle`（不占槽）；② `dispatch` 派发的后端**跑完但无人调用 `sessions`** → 下一次派发到同一 `workRoot` **成功**（reconcile-on-read 生效）；③ **第二次顺序 `delegate` 到同一工作树成功**（不被自己前一轮留下的 `active` 条目挡住——这是对既有主路径的回归判据）。
+- [ ] **V33** **槽位回收（D7.3）**：后端崩溃/被删导致 `active` 但实际不 busy → 下一次派发触发 reconcile ⇒ **放行**（不必先手工 `suspend`）。
+- [ ] **V34** **亡主接管（D7.3）**：front session 换代后，旧 front 名下的 `active` 槽位**不被静默顶掉**，但可被新 front `suspend` 回收；接管**落 ledger 行**；该工作树**不因换 front 而永久不可派发**。
+- [ ] **V35** **投递失败（D7.2）**：`dispatch` 的 execute 超时/异常 → **保留槽位**（不放行）+ 返回「投递结果未知，请 `sessions` 确认」；**不得静默放槽**。
 
 **终止与暂停（D9）**
 
-- [ ] `cancel` 后该后端被标为墓碑（`state=tombstone`），`sessions` 不再列为在跑；再次 `dispatch` 到同一后端 → **拒绝**（要求新建）。
-- [ ] `cancel` 返回 `{interrupted:true|false}`（**取值语义见 D11.3**：true = 已接受中断；false = **不区分**「本来没在跑」/「已在停机过程中」/「settle 窗口」——**不得**用它推断停机）。
-- [ ] `suspend` 后该后端标为 `suspended`（**不是**墓碑）→ **仍可 resume**（dispatch/resume 同一后端不因"曾被暂停"被拒）。
-- [ ] `suspend` 一个**当前无活跃执行**的后端 → 幂等 no-op（`{interrupted:false}`；⚠️ 该取值**不蕴含**「已停机」，停机仍以 D11.3 的水位线为准）；`suspend` 一个已墓碑的后端 → **拒绝**。
+- [ ] **V36** `cancel` 后该后端被标为墓碑（`state=tombstone`），`sessions` 不再列为在跑；再次 `dispatch` 到同一后端 → **拒绝**（要求新建）。
+- [ ] **V37** `cancel` 返回 `{interrupted:true|false}`（**取值语义见 D11.3**：true = 已接受中断；false = **不区分**「本来没在跑」/「已在停机过程中」/「settle 窗口」——**不得**用它推断停机）。
+- [ ] **V38** `suspend` 后该后端标为 `suspended`（**不是**墓碑）→ **仍可 resume**（dispatch/resume 同一后端不因"曾被暂停"被拒）。
+- [ ] **V39** `suspend` 一个**当前无活跃执行**的后端 → 幂等 no-op（`{interrupted:false}`；⚠️ 该取值**不蕴含**「已停机」，停机仍以 D11.3 的水位线为准）；`suspend` 一个已墓碑的后端 → **拒绝**。
 
 **切换与回收（D11）**
 
-- [ ] **切换两步可用**：`suspend(A)` 后 A 让出槽位 → 随后 `dispatch/resume(B)`（同一 workRoot）**成功**；A 仍在名册中可枚举。
-- [ ] **停机确认**（判据 = 「判活为假」+ 终态正面证据，见 D11.3；**不是** `interrupt` 的返回值、**也不是**「看起来不忙」）。**可执行序列**：**步骤 1** 先 `session.get` 记 `v0 = time.idle` 与判活结论 `running0`；**步骤 2** 调 `suspend`；**步骤 3** 再 `session.get` 读 `v1`。断言：**a)** 对**在跑**的后端（`running0 = true`）⇒ `v1 > v0`（水位线前移）且 `suspend` 返回 `suspended:true`；**b)** 对**空闲**的后端（`running0 = false`）⇒ `suspend` **立即**返回 `suspended:true`（**不**等水位线前移、**不**超时）；⚠️ 本条**不**覆盖 D11.3 的「陈旧 busy」形态（残留风险，见「后果 / 代价」的风险条目）；**c)** 构造不停机——假 ctx 令判活恒为真（或令 `time.idle` 停在 `v0`）⇒ 断言 `suspended:false`、`pair.json` 条目仍 `active`、**不释放槽位**、报错文案含「未释放槽位」；**d)** 读失败 / 原因不明 ⇒ 同样**不释放**（保守当未停机）。四种情形都不得出现「两个 active 同一 workRoot」。**实现约束**：释放槽位的写必须发生在 `waitStopped` 返回之后（代码结构保证，评审看这一点而非靠落盘时间戳推断先后）。
-- [ ] **槽位悬挂可见**：后端崩溃/被删导致 `active` 但不 busy 且超 `stalled` 阈值 → `sessions` 报「槽位疑似悬挂」（**展示层信号**；实际回收由 reconcile-on-read 承担，D7.3）；`suspend` 该后端**幂等释放**槽位，随后同工作树可再次派发。
-- [ ] `suspend` **不删除** session（默认不 remove）⇒ 上下文保留，可 resume。
-- [ ] **steer 残留**：恢复后首批消息若含暂停之前的内容 → 报「上下文可能含陈旧指令，建议新建」（`unverified` 语义）。⚠️ 若实施期实测确认**插件无法从 `session.context` 区分 steer 消息** ⇒ 该判据**降级为"如实报不可检出"**，**不得**用"看起来没问题"冒充通过。
+- [ ] **V40** **切换两步可用**：`suspend(A)` 后 A 让出槽位 → 随后 `dispatch/resume(B)`（同一 workRoot）**成功**；A 仍在名册中可枚举。
+- [ ] **V41** **停机确认**（判据 = 「判活为假」+ 终态正面证据，见 D11.3；**不是** `interrupt` 的返回值、**也不是**「看起来不忙」）。**可执行序列**：**步骤 1** 先 `session.get` 记 `v0 = time.idle` 与判活结论 `running0`；**步骤 2** 调 `suspend`；**步骤 3** 再 `session.get` 读 `v1`。断言：**a)** 对**在跑**的后端（`running0 = true`）⇒ `v1 > v0`（水位线前移）且 `suspend` 返回 `suspended:true`；**b)** 对**空闲**的后端（`running0 = false`）⇒ `suspend` **立即**返回 `suspended:true`（**不**等水位线前移、**不**超时）；⚠️ 本条**不**覆盖 D11.3 的「陈旧 busy」形态（残留风险，见「后果 / 代价」的风险条目）；**c)** 构造不停机——假 ctx 令判活恒为真（或令 `time.idle` 停在 `v0`）⇒ 断言 `suspended:false`、`pair.json` 条目仍 `active`、**不释放槽位**、报错文案含「未释放槽位」；**d)** 读失败 / 原因不明 ⇒ 同样**不释放**（保守当未停机）。四种情形都不得出现「两个 active 同一 workRoot」。**实现约束**：释放槽位的写必须发生在 `waitStopped` 返回之后（代码结构保证，评审看这一点而非靠落盘时间戳推断先后）。
+- [ ] **V42** **槽位悬挂可见**：后端崩溃/被删导致 `active` 但不 busy 且超 `stalled` 阈值 → `sessions` 报「槽位疑似悬挂」（**展示层信号**；实际回收由 reconcile-on-read 承担，D7.3）；`suspend` 该后端**幂等释放**槽位，随后同工作树可再次派发。
+- [ ] **V43** `suspend` **不删除** session（默认不 remove）⇒ 上下文保留，可 resume。
+- [ ] **V44** **steer 残留**：恢复后首批消息若含暂停之前的内容 → 报「上下文可能含陈旧指令，建议新建」（`unverified` 语义）。⚠️ 若实施期实测确认**插件无法从 `session.context` 区分 steer 消息** ⇒ 该判据**降级为"如实报不可检出"**，**不得**用"看起来没问题"冒充通过。
 
 **回归（D1 保留既有 delegate）**
 
-- [ ] 既有 `delegate` 的全部既有判据（`outcome` 枚举含 `unverified`、`busy` 拒绝、scope 越界检测、pair 登记、ledger 行时机）**全部仍通过**（`bun test tests/` 全绿 + E2E 回归）。
-- [ ] `prompts/front.md` 明确「dispatch 返回 ≠ 后端完成」，且区分「需要等结果 → delegate / 并发多任务 → dispatch」。
-- [ ] **范围假设已写明**：构造性保证的成立前提「后端 session 只经本插件四工具被操作」在 `prompts/front.md` 或使用手册中**显式声明**（D8.3）——用户直接操作后端 session 是**声明过的超出范围**，不是隐式漏洞。
-- [ ] `prompts/front.md` 写明**切换契约**：「切换活跃后端 = 先 `suspend` 当前、再 `dispatch/resume` 目标」；并写明「同仓并行需先准备独立工作树」（D6.4）。
-- [ ] opencode 升级回归清单新增两条：`delivery` 默认值、`time.busy` 存在性。
+- [ ] **V45** 既有 `delegate` 的全部既有判据（`outcome` 枚举含 `unverified`、`busy` 拒绝、scope 越界检测、pair 登记、ledger 行时机）**全部仍通过**（`bun test tests/` 全绿 + E2E 回归）。
+- [ ] **V46** `prompts/front.md` 明确「dispatch 返回 ≠ 后端完成」，且区分「需要等结果 → delegate / 并发多任务 → dispatch」。
+- [ ] **V47** **范围假设已写明**：构造性保证的成立前提「后端 session 只经本插件四工具被操作」在 `prompts/front.md` 或使用手册中**显式声明**（D8.3）——用户直接操作后端 session 是**声明过的超出范围**，不是隐式漏洞。
+- [ ] **V48** `prompts/front.md` 写明**切换契约**：「切换活跃后端 = 先 `suspend` 当前、再 `dispatch/resume` 目标」；并写明「同仓并行需先准备独立工作树」（D6.4）。
+- [ ] **V49** opencode 升级回归清单新增两条：`delivery` 默认值、`time.busy` 存在性。

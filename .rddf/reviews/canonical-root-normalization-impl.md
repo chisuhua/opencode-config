@@ -4,7 +4,7 @@
 |---|---|
 | 日期 | 2026-11-09 |
 | 实施者 | builder |
-| change | `openspec/changes/canonical-root-normalization/`（AC1–AC18） |
+| change | `openspec/changes/archive/2026-11-10-canonical-root-normalization/`（AC1–AC18） |
 | ADR | `docs/adr/ADR-canonical-root-normalization.md`（Accepted） |
 | 测试 | `bun test tests/` → **172 pass / 0 fail**（改动前 157 → 新增 15 条） |
 | 状态 | **实施完成，待 verifier 验收** |

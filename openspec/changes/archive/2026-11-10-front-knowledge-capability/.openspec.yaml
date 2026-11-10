@@ -1,0 +1,9 @@
+# 本 change 不产生 openspec 的 spec delta。
+#
+# 理由：本仓**不使用** openspec 的 spec registry（仓库内没有 openspec/specs/ 目录），
+# 三个 change 的行为契约分别以 ADR（docs/adr/ADR-*.md）与本目录的 proposal.md 为准。
+# 若将来要引入 spec registry，应改写为真正的 ADDED/MODIFIED requirement + #### Scenario，
+# 并删除本文件里的 skip_specs 标记（openspec 会要求二者一致）。
+schema: spec-driven
+created: 2026-11-08
+skip_specs: true

@@ -8,7 +8,7 @@
 | Date | 2026-11-09 |
 | Author | architect |
 | Parent | **部分取代** `.rddf/state/adr-front-agent-redesign.md` D2 的 outcome 枚举（`succeeded\|failed\|interrupted\|unknown` 一处作废）：**目标枚举**为 `succeeded\|unverified\|failed\|interrupted\|unknown\|busy`（`busy` 是此前实现先行漂移进来的，旧 D2 的枚举早已 stale，本次一并校正）；该篇 D2 的 baseline 校验、不回传 transcript 等其余条款继续有效。与 `ADR-front-knowledge-capability`：**决策面正交**，但 ledger schema 面有单点耦合（该篇 D5 的 outcome 枚举需同步补 `unverified`/`host_outcome`） |
-| 关联 change | `openspec/changes/front-knowledge-capability/`（与 `ADR-front-knowledge-capability` 共用同一 change——同批交付、同批验收） |
+| 关联 change | `openspec/changes/archive/2026-11-10-front-knowledge-capability/`（与 `ADR-front-knowledge-capability` 共用同一 change——同批交付、同批验收） |
 | AC 映射 | 本文件 Verification 1–8 → proposal 的 **AC21–AC30** 与 **Note N1**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表） |
 | 审稿报告 | 待收口时写入 `.rddf/reviews/adr-delegate-delivery-evidence-review.md` |
 

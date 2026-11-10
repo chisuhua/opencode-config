@@ -9,7 +9,7 @@
 |---|---|
 | 日期 | 2026-11-09 |
 | 实施者 | builder |
-| change | `openspec/changes/front-multi-backend/`（AC1–AC58） |
+| change | `openspec/changes/archive/2026-11-10-front-multi-backend/`（AC1–AC58） |
 | ADR | `docs/adr/ADR-front-multi-backend.md`（Accepted，2026-11-09 改写） |
 | Phase 0 | ✅ **已完成**：`.rddf/reviews/front-multi-backend-consume-probe.md`（16/16 PASS） |
 | 测试 | `bun test tests/` → **205 pass / 0 fail**（改动前 172 → 新增 33） |
