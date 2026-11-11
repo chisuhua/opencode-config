@@ -88,6 +88,7 @@ critic 只审架构方向与关键决策。满足以下**任一**条件才调：
 - **禁止在委派 prompt 里写**「攻击这个新判据」「还有哪些形态会漏」「做变异测试找出逃逸」这类开放式找漏洞指令——这会让每轮必然产出新 finding，形成无限循环。只允许写「验证上一轮 BLOCKER 是否闭合」。
 - critic 返回 `scope_exceeded: true` 的条目**不得进入返工队列**，记 backlog。
 - 评审前先看预算：已用轮次 ≥ 2 且用户未批准时，不再委派 critic。
+- **被输入契约拒绝的调用不计入评审轮**：`subagent` 调用若因缺少 7 字段契约被插件拒绝（`plugins/subagent-contract.ts` 的 L1 门），该次调用**未产生子会话、未产生评审结论**，重写 prompt 后重发**不算新一轮**。
 
 critic 用 4 段式返回，并带 `mergeable` / `scope_exceeded`：
 - 有 BLOCKERS（mergeable: no）→ 修，按预算决定是否复审

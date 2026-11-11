@@ -131,6 +131,19 @@ check "A12 nextPromotable 优先 steer" "packages/core/src/session/inbox.ts" \
   'const steer = \(yield\* pendingSteers\(db, sessionID\)\)\[0\]' \
   "steer 优先于 queued input ⇒ cancel 的 resume:false 只挡本次提升，不删行"
 
+# ── A13：**只有 tool.execute.before 允许失败** ⇒ 插件的 session 域钩子不得抛错 ──
+# 依据：`lib/subagent-contract-core.ts` 的 L1/L2 分工 —— 硬门只放在
+# `tool.hook("execute.before")`（宿主把失败包成受控 Tool.Error，调用在执行前被拒）；
+# `session.hook("prompt")` 只做检测。若上游放开 session 域的失败通道，
+# L2「只检测不拦」的前提会被静默改变（那时才能考虑把硬门下移）。
+check "A13 只有 tool 域允许失败" "packages/core/src/plugin/hooks.ts" \
+  'readonly tool: ToolFailures' \
+  "subagent 契约硬门依赖「tool.execute.before 是唯一可失败的钩子」"
+
+check "A13b session 域钩子不可失败" "packages/core/src/plugin/hooks.ts" \
+  'readonly session: NoFailures' \
+  "L2（session.prompt 钩子）只能检测不能拦 ⇒ 不得在此抛错"
+
 echo "----"
 if [ "$FAIL" -gt 0 ]; then
   echo "RESULT: DRIFT（$FAIL/$N 个锚点不成立）⇒ 重新核对 ADR 的技术前提，勿只改行号"

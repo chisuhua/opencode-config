@@ -52,6 +52,8 @@ prompt: <Step 2 补全后的 7 字段 prompt>
 
 **契约**：critic prompt 必须包含 7 字段（changes_summary / intent / focus / review_profile / diff_or_paths / context / expected_format），缺一会漏审。详见 `prompts/critic.md` 的"你的协作接口"章节。
 
+该契约已由 `plugins/subagent-contract.ts` 在执行前检查：缺失小节会被报回缺失项与修正指引（默认 `warn` 只记日志，`subagent-contract.json` 里把该 agent 切 `enforce` 则直接拒绝调用）。复审/续接轮有豁免，见 `docs/MULTI-AGENT-DESIGN.md` §2.9。
+
 **自检清单**（调 critic 前 30 秒过一遍）：
 - [ ] 这次真的需要架构审稿吗？（纯执行改动 → verifier / CI）
 - [ ] 本 change 已用几轮？≥2 轮且用户未批准 → 停手

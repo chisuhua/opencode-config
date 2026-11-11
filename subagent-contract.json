@@ -1,0 +1,7 @@
+{
+  "mode": "warn",
+  "agents": {
+    "critic": { "mode": "warn" }
+  },
+  "log": "/home/ubuntu/.local/share/opencode/subagent-contract.log"
+}

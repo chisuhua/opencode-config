@@ -10,7 +10,7 @@
  * 复现：`bun test tests/config-guards.test.ts`
  */
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 
 import {
@@ -21,6 +21,7 @@ import {
   type GuardedAgent,
 } from "../scripts/agent-guard-rules.ts"
 import { applyRules } from "../scripts/agent-guard-gen.ts"
+import { CONTRACTS } from "../lib/subagent-contract-core.ts"
 
 const CONFIG_PATH = path.join(import.meta.dir, "..", "opencode.jsonc")
 const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8"))
@@ -111,6 +112,59 @@ describe("front 的 subagent 门控顺序（ADR D2.1：顺序即语义）", () =
     expect(allowed).toEqual(["critic", "explore", "librarian", "metis", "oracle"])
     for (const danger of ["general", "plan", "build"]) {
       expect(allowed).not.toContain(danger)
+    }
+  })
+})
+
+/**
+ * L4 防漂移：subagent 输入契约的**规则真源**必须与
+ * ① prompts/critic.md 里声明的 7 字段契约、② 每个 agent 的 description / prompt 文件一致。
+ *
+ * 为什么要有：契约有两份表述 —— 人类可读的（prompts/*.md）与机器可读的
+ * （lib/subagent-contract-core.ts 的 CONTRACTS 表）。两份漂移 = 审计器按一套判、
+ * 父模型按另一套被要求 → 误判。本测试就是那道闸门。
+ */
+describe("subagent 输入契约：规则真源 ↔ prompt / description 一致", () => {
+  const ROOT = path.join(import.meta.dir, "..")
+  const criticRule = CONTRACTS.find((r) => r.agent === "critic")!
+
+  test("critic.md 里声明的 7 字段 == core 表的 requiredSections（双向一致）", () => {
+    const criticMd = readFileSync(path.join(ROOT, "prompts", "critic.md"), "utf8")
+    const line = criticMd
+      .split("\n")
+      .find((l) => l.includes("changes_summary") && l.includes("expected_format"))
+    expect(line, "critic.md 里找不到 7 字段契约声明行").toBeTruthy()
+    const declared = [...(line as string).matchAll(/`([a-z_]+)`/g)].map((m) => m[1] as string)
+    expect(new Set(declared)).toEqual(new Set(criticRule.requiredSections))
+  })
+
+  test("build.md 的 7 字段上下文契约里也出现全部 requiredSections", () => {
+    const buildMd = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+    for (const section of criticRule.requiredSections) {
+      expect(buildMd, `build.md 里找不到字段 ${section}`).toContain(section)
+    }
+  })
+
+  test("每个 agent 的 description 非空（父模型唯一能看到的语义依据）", () => {
+    for (const [id, agent] of Object.entries(config.agent)) {
+      const description = (agent as { description?: string }).description
+      expect(description, `${id} 缺 description`).toBeTruthy()
+      expect((description as string).trim().length, `${id} 的 description 是空串`).toBeGreaterThan(0)
+    }
+  })
+
+  test("每个 agent 的 prompt 指向的 prompts/<id>.md 存在，且首行含 agent id", () => {
+    for (const [id, agent] of Object.entries(config.agent)) {
+      // title 是 opencode 内部的会话标题 agent，无系统提示（无 prompt 字段）
+      if (id === "title") continue
+      const prompt = (agent as { prompt?: string }).prompt
+      expect(prompt, `${id} 缺 prompt`).toBeTruthy()
+      const file = /\{file:\.\/(.+)\}/.exec(prompt as string)
+      expect(file, `${id} 的 prompt 不是 {file:...} 形式：${prompt}`).toBeTruthy()
+      const abs = path.join(ROOT, file![1] as string)
+      expect(existsSync(abs), `${id} 的 prompt 文件不存在：${abs}`).toBe(true)
+      const first = readFileSync(abs, "utf8").split("\n")[0] ?? ""
+      expect(first, `${file![1]} 首行未含 agent id「${id}」`).toContain(id)
     }
   })
 })

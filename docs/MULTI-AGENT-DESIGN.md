@@ -1,11 +1,13 @@
 # Multi-Agent 系统设计参考
 
-> **状态**: v2.2.3 (2026-11-05)
+> **状态**: v2.3.0 (2026-11-11)
 > **范围**: `~/.config/opencode/` 用户配置级 multi-agent orchestration
 > **下游**: `opencode.jsonc`（符号链接 → `opencode.jsonc.opencode-go`）+ `prompts/*.md` + `commands/*.md` + `scripts/*.sh`
 
 本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
 
+> **本版（v2.3.0）变更**：新增 §2.9「subagent 输入契约」—— 把 `prompts/build.md` 里「7 字段上下文契约」从**散文**变成**可判定的门**：规则真源 `lib/subagent-contract-core.ts`、宿主接线 `plugins/subagent-contract.ts`（L3 `session.hook("context")` 生成前告知 / **L1 `tool.hook("execute.before")` 硬门** / L2 `session.hook("prompt")` 检测）、审计 CLI `scripts/audit-subagent-prompts.ts`。默认 **warn**（灰度），逐 agent 可切 `enforce`；豁免 = 关键词 + 结构前置（缺失 ≥4/7）+ 状态继承（继承“复审模式”，续接轮不清零）。
+>
 > **本版（v2.2.3）变更**：运行环境修复（非规则变更）—— `kimi-code` provider 迁到 V2 包名 `@opencode/ai/providers/openai-compatible`，并为 `kimi-for-coding` / `k3-256k` 补 `variants`（`reasoning_effort` 映射），修复 oracle 的 `Variant unavailable`。
 >
 > **本版（v2.2.2）变更**：新增 §2.8「角色切换与授权窗口」—— 补上**角色轴（persona）**在本文档的结构性缺口（此前只存在于 `prompts/build.md`）：角色一览 / `role.json` 状态文件 / 切换策略 / 授权窗口三条件与触发条件 / 实施阶段新发现回环；同时显式区分**三个轴**（agent 轴 / 角色轴 / tool 权限轴），避免跨轴误读。
@@ -448,6 +450,65 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 `resume_session` 的访问控制 = **pair 登记表 + `canonical_root` 一致**。不硬校验 `front_session_id`
 （每次新对话都是新 front session，硬校验会让"隔天回来继续"失效），改为返回软信号 `resumed_by_other_front`。
+
+### 2.9 subagent 输入契约（v2.3.0 新增）
+
+**要解决的问题**：`subagent` 工具的 `prompt` 声明为 `string` —— 无 schema、无模板、无校验。
+父模型写什么，子 agent 就收到什么。「7 字段上下文契约」原本只写在 `prompts/build.md` 的散文里，
+对模型只是建议；缺字段时 critic 自己的规范是「只看显式契约冲突，不评估设计取舍」⇒ **评审质量静默下降**。
+
+实测（`scripts/audit-subagent-prompts.ts` 扫真实库 330 次 critic 调用）：同一个 critic 子会话的输入
+出现三种形态（编号版 `## 1. changes_summary` / 加粗版 `**changes_summary**` / 复审版只有闭合证据），
+合规率约 71%。
+
+#### 三个执行点（宿主契约决定分层）
+
+| 级 | 钩子 | 时点 | 能否失败 | 作用 |
+|---|---|---|---|---|
+| **L3** | `session.hook("context")` | 请求前 | ❌ | 把契约注入 `subagent` 工具描述（父模型采样前可见；与 opencode 注入 `Available subagents:` 同一手法，幂等） |
+| **L1** | `tool.hook("execute.before")` | 执行前 | ✅ | **唯一的硬门**：不合规 ⇒ 抛错 ⇒ 宿主包成受控 `Tool.Error` ⇒ 父模型看到缺失项与修正指引，同回合重发 |
+| **L2** | `session.hook("prompt")` | 落库前 | ❌ | 兜底**检测**（覆盖 `command(subagent:true)` 等不经 tool 的路径）；session 域钩子不可失败 ⇒ 只能检出、不能拦 |
+
+> **分层依据**：宿主 `packages/core/src/plugin/hooks.ts` 的 `Failures` 类型把 session / aisdk / permission / shell 域标为 `NoFailures`，只有 `tool` 域是 `ToolFailures`。这是本设计的承重墙，已登记为上游锚点 **A13 / A13b**（`scripts/check-upstream-anchors.sh`）。
+
+#### 豁免语义（三重收窄）
+
+```
+① 关键词命中     复审 / 第 N 轮 / 闭合证据 / closure
+② 结构前置       仅当缺失小节 ≥ ceil(必需/2)（critic = 4/7）才可能豁免
+③ 状态继承       继承"上一轮被判为复审轮"这个模式（不是"上一轮合规"）
+④ 续接轮不清零   isResume 既不是新评审，也不该重置复审模式
+```
+
+②③ 的来源：初版"关键词命中即豁免"会把真实 diff 里偶现的「第 2 轮」当成复审，一次误豁免 + 状态继承
+会让整个父会话后续 30 分钟都进复审模式（critic 第 1 轮 SHOULD_FIX）。
+
+#### 灰度与观测
+
+- 默认 **warn**：只记录 + 审计，不拦任何调用。配置 `subagent-contract.json`：
+  `{ "mode": "warn|enforce|off", "agents": { "critic": { "mode": "enforce" } } }`（**每次调用重读** ⇒ 即时生效）。
+- 观测：`~/.local/share/opencode/subagent-contract.log`（JSON 行，`gate`/`mode`/`violations`/`exempted`）。
+- 审计：`bun scripts/audit-subagent-prompts.ts [--agent critic] [--strict] [--json]` —— 与运行时同一份规则逻辑，
+  `--strict` 有违规 exit 1（可作 CI 断言）。
+
+#### 文件与测试索引
+
+| 文件 | 作用 |
+|---|---|
+| `lib/subagent-contract-core.ts` | 规则真源（`CONTRACTS`）+ 小节识别（5 种写法）+ 豁免 + 三钩子处理函数（零宿主依赖） |
+| `plugins/subagent-contract.ts` | 宿主接线壳（只注册钩子） |
+| `scripts/audit-subagent-prompts.ts` | 审计 CLI |
+| `tests/subagent-contract-core.test.ts` | 规则引擎 39 例 |
+| `tests/subagent-contract-audit.test.ts` | 审计器 + CLI 退出码 7 例 |
+| `tests/config-guards.test.ts`（L4 段） | 规则真源 ↔ `prompts/critic.md` ↔ `prompts/build.md` 防漂移 |
+
+#### 已知边界（不掩盖）
+
+1. **语义不可判定** —— 只判结构；"intent 写得对不对"没有自动手段。
+2. **L2 不可拦** —— `command(subagent:true)` 的输入只能被检出与审计。
+3. **关键词是启发式** —— ② 的阈值把误命中限制在"缺 ≥4 个字段且命中关键词"的窄交集。
+4. **状态是进程内的** —— 服务重启后复审链继承失效（退回关键词豁免）。
+5. **只约束 critic** —— 其余 agent 没有 7 字段契约，收益形态不同，暂不设契约。
 
 ## 3. 委派拓扑
 

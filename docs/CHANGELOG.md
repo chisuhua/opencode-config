@@ -10,6 +10,16 @@
 
 ---
 
+> **v2.11 变更摘要（2026-11-11，新增 subagent 输入契约门）**：把 `prompts/build.md` 里「7 字段上下文契约」从**散文**变成**可判定的门**。
+> ① **问题**：`subagent` 工具的 `prompt` 声明为 `string` —— 无 schema、无模板、无校验 ⇒ 父模型写什么子 agent 就收到什么；实测同一个 critic 子会话的输入有编号版 / 加粗版 / 复审版三种形态，7 字段契约只靠模型自觉。
+> ② **新增**：`lib/subagent-contract-core.ts`（纯逻辑内核：规则表 `CONTRACTS` + 小节识别 5 种实测写法 + 豁免语义 + 三钩子处理函数）、`plugins/subagent-contract.ts`（宿主接线）、`scripts/audit-subagent-prompts.ts`（审计 CLI）。
+> ③ **三个执行点**：L3 `session.hook("context")` 把契约注入 subagent 工具描述（父模型采样前可见，幂等）；**L1 `tool.hook("execute.before")` 硬门**（宿主唯一允许失败的钩子 ⇒ 抛错被包成受控 `Tool.Error`，父模型看到缺失项与修正指引后同回合重发）；L2 `session.hook("prompt")` 兜底**检测**（session 域钩子不可失败 ⇒ 不可拦，只能审计）。
+> ④ **豁免三重收窄**：关键词（复审/第 N 轮/闭合证据）**+ 结构前置**（缺失小节 ≥ 4/7 才可能豁免）+ **状态继承**（继承"上一轮是复审模式"，不是"上一轮合规"；续接轮不清零）。前两条来自 critic 第 1 轮 SHOULD_FIX。
+> ⑤ **灰度**：默认 **warn**（只记录 + 审计），逐 agent 可切 `enforce`（配置每次重读 ⇒ 即时生效）。基线：真实库 330 次 critic 调用 / 97 违规（合规率约 71%）。
+> ⑥ **live 证据**：warn 模式 L1+L2 各落一条日志；enforce 模式 `subagent` 调用被拒并返回可执行修正文案。
+> ⑦ **配套**：`prompts/build.md` 补「被契约拒绝的调用不计入评审轮」；`scripts/check-upstream-anchors.sh` 加 A13/A13b（"只有 tool 域允许失败"）⇒ 23/23 命中；`tests/` 新增 46 例（core 39 + audit 7 + config-guards L4 4）⇒ 全量 **352 pass / 0 fail**。
+> ⑧ **范围外残留**：explore/librarian 因 provider 免费档（HTTP 426）当前不可用；`docs/MULTI-AGENT-DESIGN.md` 的模型归属表漂移 —— 两条另立 change。
+
 > **v2.10 变更摘要（2026-11-11，本地构建改为双分支 + 锁定官方版本）**：本地构建的源码来源从「`dev` 分支」改为「`local/build` 构建分支」。
 > ① **分支模型**：`dev` = **纯上游镜像**（跟踪 `upstream/dev`，只做 fast-forward）；`local/build` = `dev` + 尚未被上游合并的本地改动（`git merge feat/xxx`）。脚本每次构建前先更新 `dev`，再 merge 进 `local/build` ⇒ 既能跟踪上游，又能带着本地未合入的修复跑；`dev` 不被本地提交污染，永远能 `pull --ff-only`。
 > ② **锁定版本模式**：`--lock 2.2.5` 把构建固定到官方 v2.2.5 对应的 **dev 提交**（官方 tag 是 `release: vX`，其父提交才是 dev 提交），并在本地创建 `local/v2.2.5` tag；`--list` 列出官方版本 / 对应 dev 提交 / 本地 tag / 当前锁；`--unlock` 回到 `local/build`。锁文件 `~/.local/state/opencode-update/lock.json`。**锁定期间只构建纯官方版本**（不含本地改动），`--check` 会明确提示。
