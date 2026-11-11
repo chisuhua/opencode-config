@@ -122,7 +122,7 @@ suspend → suspended=true judge=wait
   | `interrupt` 是否跨实例生效 | ✅ **已核对**（2026-11-11）：**不能**（只查本进程 `executions` Map） | ⚠️ 本篇**不依赖**（停机判据不采信其返回值）；核对结论与本篇的严格模式方向**一致** |
   | `time.idle` 前移（严格单调 `max(time, prev+1)`） | **DB 级**（跨实例可见） | ✅ **唯一正面终态证据** |
   | `time.busy`（`Execution.Started` 投影） | DB 级但**滞后** | ⚠️ 只能否定，不能肯定 |
-  | `time_suspended`（write-ahead 停机声明） | DB 级 | ❌ **不在 `Session.Info` 里** ⇒ 插件不可见（见 feature request） |
+  | `time_suspended`（write-ahead 停机声明） | DB 级 | ⏳ **不在 `Session.Info` 里** ⇒ 插件不可见（**已提上游 PR #63244**，等 review）（见 feature request） |
 
 ### D3 关闭范围（写死，避免读者高估）
 
@@ -229,7 +229,7 @@ suspend → suspended=true judge=wait
 
 ## 上游 feature request（登记，不在本仓实现）
 
-1. **暴露 write-ahead claim（`time_suspended`）**：把它（上游 `packages/core/src/session/store.ts:218-232`）作为字段暴露进 `Session.Info`（当前 `info.ts:52-58` 的 `time` **不暴露**它）。
+1. **暴露 write-ahead claim（`time_suspended`）** ✅ **已提上游 PR**（2026-11-11：[anomalyco/opencode#63244](https://github.com/anomalyco/opencode/pull/63244)，base `dev`，CI 3/3 绿；改动 = `packages/schema/src/session.ts` 加一个可选字段 + `packages/core/src/session/info.ts` 的映射 + 重新生成 `packages/protocol/openapi.json` + 一个新测试）——：把它（上游 `packages/core/src/session/store.ts:218-232`）作为字段暴露进 `Session.Info`（当前 `info.ts:52-58` 的 `time` **不暴露**它）。
    ⚠️ **语义精确化（2026-11-11 核对上游 v2.2.5 源码）**：它**不是**「已停机声明」，而是「**write-ahead claim：有一个 turn 在飞**」（`execution.ts:74-82`：claim 在 **started 事件同一事务**里写、terminal 时清；**shutdown 中断会保留 claim**）。
    ⇒ 它的价值是**反向**的：**`time_suspended IS NULL` ⇒ 「此刻没有 turn 在飞」** ⇒ 这比 `time.idle`（只表达「上次 turn 何时结束」）**更直接**的跨实例停机判据 ⇒ D2 的严格模式可从「要求水位线前移」升级为「claim 已清 + 水位线前移」。
    ⚠️ **代价**：进程崩溃/SIGKILL 留下残留 claim ⇒ `IS NULL` 会**假阳性**（其实没在跑）⇒ 判据**保守地拒绝放行**（宁可占着槽）⇒ 可接受，须如实登记。

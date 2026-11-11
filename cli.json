@@ -3,7 +3,7 @@
     "wrap": "word"
   },
   "session": {
-    "sidebar": "hide",
+    "sidebar": "auto",
     "scrollbar": false,
     "thinking": "hide",
     "permissions": "autoaccept",

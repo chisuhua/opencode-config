@@ -252,6 +252,8 @@ B6 反对的是「**新增一个状态枚举值**（如 `suspending`）⇒ 进�
 
 ## 上游 feature request（追加）
 
+> **状态（2026-11-11）**：本清单 6 条中 —— **3 条已核对闭合为事实**（#4/#5 `interrupt` 跨实例、#6 `remove` 语义，见下）⇒ **不再需要上游改动**；**#1 已提上游 PR**（[anomalyco/opencode#63244](https://github.com/anomalyco/opencode/pull/63244)，base `dev`，CI 3/3 绿）⇒ **等上游 review**；**#2 / #3 仍是真诉求**（动核心投递路径 / DB 级执行状态机）⇒ 暂不推。
+
 5. ~~**`interrupt` 的跨实例语义**~~：**✅ 已核对并闭合**（2026-11-11）—— `interrupt` **只查本进程**的 `executions` Map ⇒ **不能**打断另一实例的 execution ⇒ 多实例下 `cancel` 的真实语义**已定为**「等它自然跑完」。⇒ **不再需要上游改动**；剩下的诉求只是「**把这个语义写进上游文档**」（否则调用方会误以为 `interrupt` 是全局的）。
 6. ~~**`session.remove` 是否中断运行中的 execution**~~：**✅ 已核对并闭合**（2026-11-11）—— `Session.remove` **会**先 `interrupt` + `awaitIdle`（`packages/core/src/session.ts:391`）；但插件**观测不到**结果 ⇒ 仍不可当停机证据。⇒ **不再需要上游改动**；若上游愿意，可让 `remove` **返回停机结论**（如 `{stopped: boolean}`）⇒ 那样它就能成为跨实例可用的证据（见 #1 的同一族诉求）。
 1'. **（对 #1 的精确化，2026-11-11 核对源码）**：上游 `time_suspended` 的真实语义是「**write-ahead claim：有一个 turn 在飞**」（`execution.ts:74-82`：claim 在 **started 事件同一事务**里写、terminal 时清；**shutdown 中断会保留 claim**）⇒ 它**不是**「已停机声明」，而是「**当前有 turn 在飞**」的正面证据。⇒ 暴露它的价值是**反向**的：`time_suspended IS NULL` ⇒ 「**此刻没有 turn 在飞**」⇒ 比 `time.idle`（只表达「上次 turn 何时结束」）**更直接**的跨实例停机判据。
