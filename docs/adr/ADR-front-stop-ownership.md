@@ -119,7 +119,7 @@ suspend → suspended=true judge=wait
   | 证据 | 可见性 | 跨实例可用 |
   |---|---|---|
   | `ctx.session.wait` 返回 | **仅本进程/实例**（`executions` 是进程内 Map） | ❌ 空转 |
-  | `interrupt` 是否跨实例生效 | **未核对** | ⚠️ 本篇**不依赖**（停机判据不采信其返回值） |
+  | `interrupt` 是否跨实例生效 | ✅ **已核对**（2026-11-11）：**不能**（只查本进程 `executions` Map） | ⚠️ 本篇**不依赖**（停机判据不采信其返回值）；核对结论与本篇的严格模式方向**一致** |
   | `time.idle` 前移（严格单调 `max(time, prev+1)`） | **DB 级**（跨实例可见） | ✅ **唯一正面终态证据** |
   | `time.busy`（`Execution.Started` 投影） | DB 级但**滞后** | ⚠️ 只能否定，不能肯定 |
   | `time_suspended`（write-ahead 停机声明） | DB 级 | ❌ **不在 `Session.Info` 里** ⇒ 插件不可见（见 feature request） |
@@ -170,7 +170,7 @@ suspend → suspended=true judge=wait
 - **`pair.json` 条目多一个字段** ⇒ 所有读条目的地方要容忍缺省（旧文件没有该字段 ⇒ 读作 `0`）。
 - **归属版本的写者纪律是硬约束**：任何**整条替换条目**的写入（当前 `registerSession` 就是）都会让计数器回退 ⇒ 后果是「旧快照重新匹配」⇒ lost update 复活。⇒ 必须有**回归断言**（Verification S11）而不是只靠评审。
 - **tripwire 是启发式的**：覆盖「同 state dir 有 ≥2 个存活 `(host, pid)`」——**同一进程**的多个 plugin 副本**不会**被检出（按 `(host, pid)` 去重）；只有**跨进程**副本才会。真问题是**跨 host 残戳 ⇒ 永久假阳性**（⇒ 严格模式长期钉住 ⇒ 空闲后端的 `suspend` 持续失败 ⇒ 人工删戳是唯一出口）；同 host 的崩溃残留**零窗口**（死 pid 即判死）。
-- **`interrupt` 的跨实例语义未核对** ⇒ 严格模式下的「等水位线前移」实际是「等对方**自然跑完**」⇒ 多实例下 `suspend` 的语义更接近「等它结束」而非「打断它」⇒ 该差异必须如实告知 front（文案）。
+- **`interrupt` 的跨实例语义** ✅ **已核对（2026-11-11）**：`interrupt` **只查本进程**的 `executions` Map ⇒ **不能**打断另一实例的 execution ⇒ 严格模式下的「等水位线前移」实际是「等对方**自然跑完**」⇒ 多实例下 `suspend` 的语义更接近「等它结束」而非「打断它」⇒ 该差异必须如实告知 front（文案）。
 
 **风险**
 
@@ -229,7 +229,10 @@ suspend → suspended=true judge=wait
 
 ## 上游 feature request（登记，不在本仓实现）
 
-1. **暴露 write-ahead 停机声明**：把 `time_suspended`（上游 `packages/core/src/session/store.ts:208-219`）作为字段暴露进 `Session.Info` ⇒ 跨实例的「已停机声明」就有了 DB 级正面证据，D2 的严格模式可升级为「有声明即放行」。
+1. **暴露 write-ahead claim（`time_suspended`）**：把它（上游 `packages/core/src/session/store.ts:218-232`）作为字段暴露进 `Session.Info`（当前 `info.ts:52-58` 的 `time` **不暴露**它）。
+   ⚠️ **语义精确化（2026-11-11 核对上游 v2.2.5 源码）**：它**不是**「已停机声明」，而是「**write-ahead claim：有一个 turn 在飞**」（`execution.ts:74-82`：claim 在 **started 事件同一事务**里写、terminal 时清；**shutdown 中断会保留 claim**）。
+   ⇒ 它的价值是**反向**的：**`time_suspended IS NULL` ⇒ 「此刻没有 turn 在飞」** ⇒ 这比 `time.idle`（只表达「上次 turn 何时结束」）**更直接**的跨实例停机判据 ⇒ D2 的严格模式可从「要求水位线前移」升级为「claim 已清 + 水位线前移」。
+   ⚠️ **代价**：进程崩溃/SIGKILL 留下残留 claim ⇒ `IS NULL` 会**假阳性**（其实没在跑）⇒ 判据**保守地拒绝放行**（宁可占着槽）⇒ 可接受，须如实登记。
 2. **「准入 + 投递」的原子原语**：上游 `prompt` 路径的 inbox 行写入与 `execution.wake` 不在同一事务（`packages/core/src/session/session.ts:176-184`），且**不向插件暴露任何锁/租约** ⇒ 若上游提供「仅当该 session 未被停机声明时投递」的条件投递，父篇 D5⑥ 的窗口即可根治。
 3. **跨进程执行可见性**：`awaitIdle` 只查进程内 `executions`（`run-coordinator.ts:66`）⇒ 若上游提供 DB 级的「该 session 有在跑的 execution」查询，`wait` 跨实例才可能可用。
 4. **`interrupt` 的跨实例语义**：明确「`interrupt` 是否能打断另一实例的 execution」⇒ 决定多实例下 `suspend` 的真实语义（打断 vs 等它自然结束）。

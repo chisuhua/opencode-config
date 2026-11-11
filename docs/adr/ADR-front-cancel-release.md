@@ -124,7 +124,7 @@ X 仍在跑 = true                ← X 还在写
 ### D6 跨实例：复用 tripwire + 严格模式（不假装可解）
 
 - 命中 tripwire ⇒ 多实例 ⇒ `cancel` 切**严格模式**（`running0=false` 也要求水位线前移）⇒ `stop_judge:"degraded"` + `foreign_instance: true`。
-- ⚠️ 严格模式下 `cancel` 的真实语义是「**等它自然跑完**」——上游 `interrupt` 能否打断**另一实例**的 execution **未核对**（上游 feature request #5）⇒ 必须对 front 如实说明，**不得**宣称「已打断」。
+- ⚠️ 严格模式下 `cancel` 的真实语义是「**等它自然跑完**」—— ✅ **已核对（2026-11-11，读上游 v2.2.5 源码）**：上游 `interrupt` **只能打断本进程**的 execution（`run-coordinator.ts:66` 的 `executions` 是**进程内 Map**；另一实例的 execution 不在其中 ⇒ `execution === undefined` ⇒ 直接返回 `false`）⇒ **跨实例下 `interrupt` 无效**。⇒ 必须对 front 如实说明，**不得**宣称「已打断」。
 - 严格模式下 `cancel` 一个空闲后端也会被拒（同 `suspend` 的代价）⇒ 出路是 `force`。
 - ⚠️ 与 stop-ownership D2 的**下游义务**协调：stop-ownership D2 要求「**不得**建议用 `cancel` 释放空闲后端」⇒ 本篇的出路是 **`force`**（终止该后端），**不是**「用 `cancel` 释放空闲后端」⇒ 两者不冲突，但文案必须区分。
 
@@ -175,8 +175,8 @@ B6 反对的是「**新增一个状态枚举值**（如 `suspending`）⇒ 进�
 
 **风险**
 
-- **跨实例（⑥）**：严格模式下 `cancel` 空闲后端也会被拒；且 `interrupt` 能否打断另一实例的 execution **未核对** ⇒ 严格模式下的 `cancel` 实际是「等它自然跑完」。
-- **上游 `session.remove` 是否中断运行中的 execution 未核对** ⇒ **不得**让 `remove` 承担停机语义（`cancel({remove:true})` 只删 session，不作为停机证据）。
+- **跨实例（⑥）**：严格模式下 `cancel` 空闲后端也会被拒；且 ✅ **已核对**：`interrupt` **不能**打断另一实例的 execution（进程内 `executions` Map）⇒ 严格模式下的 `cancel` 实际是「等它自然跑完」。
+- **上游 `session.remove`**：✅ **已核对（2026-11-11）**：`packages/core/src/session.ts:391` 的 `Session.remove` **会先 `execution.interrupt` + `execution.awaitIdle`**（单实例下比裸 `interrupt` 更强）。⚠️ **但插件观测不到结果**（`remove` 无返回值，且 `awaitIdle` 是进程内判定 ⇒ 跨实例下立即返回）⇒ **仍然不得**让 `remove` 承担停机语义（`cancel({remove:true})` 只删 session，不作为停机证据）。
 
 ## 必须同步修订的既有条款（本篇的「取代关系」落地清单）
 
@@ -246,14 +246,16 @@ B6 反对的是「**新增一个状态枚举值**（如 `suspending`）⇒ 进�
 - **K4（维持现状）**：探针那两行原样保留 ⇒ 两个写入者；且 D7.3 仍把它当推荐恢复路径 ⇒ 观测只登记风险，不阻止 D7.3 **主动生成**它。
 - **K5（新状态）**：破坏五值枚举；持久化中间态 ⇒ 进程死 ⇒ 工作树永久失去切换能力（B6 反对）；破坏「墓碑 ⇒ 已释放」。
 - **K6（拆工具）**：第 5 个工具 ⇒ 四工具表/V01–V04/prompt/文档全改；半程两段式 ⇒ 仍需 hold ⇒ 回到 K5 的坑。唯一独占优势 = 独立 permission action（治理面「允许终止、禁止强制放槽」）⇒ 若该需求是硬的，应采 K6 并写全崩溃恢复规则。
-- **「cancel 直接删 session 当停机手段」**：上游 `session.remove` 是否中断运行中的 execution **未核对** ⇒ 若不中断，删了 session 后 fiber 仍在写工作树 ⇒ 双写者且审计线索也没了 ⇒ 登记为上游 feature request。
+- **「cancel 直接删 session 当停机手段」**：✅ **已核对**：`Session.remove` **确实**先 interrupt + awaitIdle（`session.ts:391`），但①插件**观测不到**它是否真的停了（无返回值）；②跨实例下 `awaitIdle` 空转 ⇒ 删了 session 后 fiber 仍可能在写工作树 ⇒ 双写者且审计线索也没了 ⇒ 登记为上游 feature request。
 - **「让 reconcile 用廉价 `busy` 判据自动放掉被拒的 `cancel`」**：我们**刚刚**拒绝释放的后端会被 reconcile 又放掉 ⇒ 双写者从后门回来 ⇒ 必须有 D3② 的钉住规则。
 - **「cancel 永不释放槽位，让 front 自行决定何时放」**：工作树可用性完全依赖 front 再调一次 ⇒ 死槽；无独立 release 工具时 front 只能反复 cancel ⇒ 模型循环。
 
 ## 上游 feature request（追加）
 
-5. **`interrupt` 的跨实例语义**：明确「`interrupt` 是否能打断另一实例的 execution」⇒ 决定多实例下 `cancel` 的真实语义（打断 vs 等它自然结束）。
-6. **`session.remove` 是否中断运行中的 execution**：未核对 ⇒ **不得**让 `remove` 承担停机语义。
+5. ~~**`interrupt` 的跨实例语义**~~：**✅ 已核对并闭合**（2026-11-11）—— `interrupt` **只查本进程**的 `executions` Map ⇒ **不能**打断另一实例的 execution ⇒ 多实例下 `cancel` 的真实语义**已定为**「等它自然跑完」。⇒ **不再需要上游改动**；剩下的诉求只是「**把这个语义写进上游文档**」（否则调用方会误以为 `interrupt` 是全局的）。
+6. ~~**`session.remove` 是否中断运行中的 execution**~~：**✅ 已核对并闭合**（2026-11-11）—— `Session.remove` **会**先 `interrupt` + `awaitIdle`（`packages/core/src/session.ts:391`）；但插件**观测不到**结果 ⇒ 仍不可当停机证据。⇒ **不再需要上游改动**；若上游愿意，可让 `remove` **返回停机结论**（如 `{stopped: boolean}`）⇒ 那样它就能成为跨实例可用的证据（见 #1 的同一族诉求）。
+1'. **（对 #1 的精确化，2026-11-11 核对源码）**：上游 `time_suspended` 的真实语义是「**write-ahead claim：有一个 turn 在飞**」（`execution.ts:74-82`：claim 在 **started 事件同一事务**里写、terminal 时清；**shutdown 中断会保留 claim**）⇒ 它**不是**「已停机声明」，而是「**当前有 turn 在飞**」的正面证据。⇒ 暴露它的价值是**反向**的：`time_suspended IS NULL` ⇒ 「**此刻没有 turn 在飞**」⇒ 比 `time.idle`（只表达「上次 turn 何时结束」）**更直接**的跨实例停机判据。
+   ⚠️ **代价**：进程崩溃/SIGKILL 会留下残留 claim ⇒ `IS NULL` 的判定会**假阳性**（其实没在跑）⇒ 我们的判据会**保守地拒绝放行**（宁可占着槽）⇒ 可接受，但须如实登记。
 
 ## 实现约束（不属于决策，但会误导实现，先写死）
 
