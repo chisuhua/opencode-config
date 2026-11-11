@@ -60,7 +60,7 @@ front 今天的委托能力是**同步单发**：`delegate` 一次调用 = 建/�
 | `dispatch` | 建/复用工程 session + 投递简报 → **不等任务完成**即返回 | `delegate_dispatch` | 必须显式 `delivery:"queue"`；execute 有**硬超时**；**返回前须等消费确认**（D7.2，超时 ⇒ 报"投递结果未知"）；目标槽位被占时**拒绝**（D6） |
 | `sessions` | **只读**：列出本 front 名下后端 + 各自状态与证据；按 id 查单个 | `delegate_sessions` | **绝不投递 prompt**（唯一不污染后端的观测面） |
 | `suspend` | **暂停**一个后端：interrupt + 释放槽位 + 标记可续 | `delegate_suspend` | **不是终止**——不墓碑，目标仍可 resume（D7/D9） |
-| `cancel` | **终止**一个后端：`interrupt({resume:false})` + 墓碑；可选 remove（默认不删） | `delegate_cancel` | 墓碑语义（D9） |
+| `cancel` | **终止**一个后端：`interrupt({resume:false})` + **停机确认**（证据门控）+ 墓碑；可选 remove（默认不删）；可选 `force:true`（**只**跳过证据门控，**不**跳过授权门控） | `delegate_cancel` | 墓碑语义（D9）；⚠️ **证据不足 ⇒ 整单拒绝**（不墓碑、不放槽）——`ADR-front-cancel-release` |
 
 **为什么拆工具而不是给 `delegate` 加 `async` 参数**：参数是**静默开关**——忘写 `async:true` 就静默退化为 30 分钟阻塞，多后端场景下其余后端全部饿死且**无报错信号**；拆工具后误用形态变成「dispatch 完立刻汇报结果」，是**可见的体验问题**而非正确性问题。
 
@@ -181,7 +181,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 | 场景 | 执行者 | 判据 |
 |---|---|---|
 | 既有同步 `delegate` | delegate 自身 | `wait` 返回即本轮结束 ⇒ 落盘时同写 `state:"idle"`（无歧义） |
-| `dispatch` 派发的后端 | **下一次派发/恢复时 reconcile**（reconcile-on-read） | **仅适用于 `state=active`** 的条目：活体判据（D4）显示已空闲 ⇒ 翻转为 `idle` 并放行。**`dispatching` 条目一律不翻转**（其简报可能仍 pending，放行即幽灵注入） |
+| `dispatch` 派发的后端 | **下一次派发/恢复时 reconcile**（reconcile-on-read） | **仅适用于 `state=active`** 的条目：活体判据（D4）显示已空闲 ⇒ 翻转为 `idle` 并放行。**`dispatching` 条目一律不翻转**（其简报可能仍 pending，放行即幽灵注入）。⚠️ **被 `cancel_pending` 钉住的条目一律不翻转**（`ADR-front-cancel-release` D3②）：刚被拒绝释放的后端**可能还在写** ⇒ 它的出口只有 `cancel` 成功 / `cancel({force:true})` / 后端被删 |
 | `suspend` | suspend 自身 | 确认停机后翻转为 `suspended` |
 
 ⇒ **槽位不会被"跑完但无人观测"永久占死**：每次派发先 reconcile 一次。 **锁的形态（不可省略）**：`withLock` 是**同步** `() => void`（`lib/delegate-core.ts:370`，10s 硬 deadline）⇒ **锁内不能 await**。故所有翻转一律走「**锁外查询 → 锁内重验登记态 → 锁内翻转**」：活体查询（`session.get`）与 `interrupt` 等**异步动作在锁外**完成，进入锁后**重验条目仍是预期的那一个**再改状态。锁内只做**同步读改写**（沿用 `ADR-front-agent-redesign` D6 的锁协议，不修订它）。
@@ -194,14 +194,15 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 ⇒ **修正**：`dispatch` 返回前必须**确认简报已被消费**（判据见 Phase 0 报告与 Verification），确认后才置 `active`；未确认 ⇒ 停在 `dispatching`，该后端**只可 cancel**（墓碑），**不可 suspend 保留**。⚠️ **消费确认 ≠ 任务完成**：前者只等"简报已被 promote"（D1 表的"不等任务完成"指后者），两者是不同的等待对象。 ⚠️ **降级路径（必须写死）**：若实施期实测证明**无法可靠观测"已消费"** ⇒ `suspend` 的安全锚消失 ⇒ **本篇退回「单槽但不可切换」方案**（见选项对比表）。
 
-**投递失败 / 结果未知的槽位处置**：`dispatch` 的 execute 超时/异常 ⇒ 服务端可能已受理 ⇒ **保留槽位**（保守侧：防止未确认死亡的后端与新派发并发写），返回「投递结果未知，请 `sessions` 确认」。**不得静默放槽**。⚠️ **该路径不经 reconcile**：`dispatching` 条目的简报**可能仍 pending**（正是上面的窗口），reconcile 放行它 = 旧简报抢先跑 ⇒ 投递失败的唯一恢复路径是 **`cancel`（墓碑）后重派**；`dispatching` 条目在 `cancel` 之前**永久占槽**（有意的保守，见 D6.2）。
+**投递失败 / 结果未知的槽位处置**：`dispatch` 的 execute 超时/异常 ⇒ 服务端可能已受理 ⇒ **保留槽位**（保守侧：防止未确认死亡的后端与新派发并发写），返回「投递结果未知，请 `sessions` 确认」。**不得静默放槽**。⚠️ **该路径不经 reconcile**：`dispatching` 条目的简报**可能仍 pending**（正是上面的窗口），reconcile 放行它 = 旧简报抢先跑 ⇒ 投递失败的唯一恢复路径是 **`cancel`（墓碑）后重派**；`dispatching` 条目在 `cancel` 之前**永久占槽**（有意的保守，见 D6.2）。⚠️ **`cancel` 现带停机证据门控**（`ADR-front-cancel-release`）：证据不足 ⇒ **整单拒绝**（不墓碑、不放槽）⇒ 此时唯一的出口是 `cancel({force:true})`（**须先向用户说明「该后端可能仍在写这个工作树」**）。
 
 **D7.3 槽位回收与「亡主」接管**
 
 后端崩溃、被外部删除、或 `interrupt` 未真正停机 ⇒ 登记态 `active` 但实际不 busy ⇒ 槽被占死。
 
 - **回收**：每次派发的 reconcile（D7.1）把「已空闲的 `active`」翻回 `idle` ⇒ **不需要单独的回收动作**；`dispatching` 条目**不在回收范围**（见上）；`stalled` 是**展示层信号**（报「槽位疑似悬挂」），不承担回收职责。
-- **强制接管**：若 `interrupt` 无法停机（D11 的停机确认失败），槽保持 `active` 且**不得静默放掉**；只能由 front **`cancel` 旧条目（墓碑）→ `dispatch` 新后端接管**两步完成，旧条目置 `tombstone`——**必须被报告，不能静默等待**。
+- **强制接管**：若 `interrupt` 无法停机（D11 的停机确认失败），槽保持 `active` 且**不得静默放掉**；由 front **编排**接管，**序列见 `ADR-front-cancel-release` D5（取代本条原两步）**：`suspend(X)` → 失败则 `cancel(X)`（**证据门控**：证据不足 ⇒ 整单拒绝，不墓碑、不放槽）→ 仍不足则 `cancel(X, {force:true})`（**须先向用户说明「该后端可能仍在写这个工作树」**）→ 最后 `dispatch` 新后端接管。旧条目置 `tombstone`——**必须被报告，不能静默等待**。
+  ⚠️ **原两步序列（`cancel` 旧条目 → `dispatch` 新后端）已不再安全**：`cancel` 曾**只看 `interrupt` 的返回值**就放槽，而该返回值**不是**停机判据（D11.3）⇒ 旧实现会**主动生成**「同一工作树两个写入者」（探针实证，见 `ADR-front-cancel-release` 的背景章）⇒ 本条已被该篇取代。
 - **亡主接管（front 换代）**：`suspend` 的 ACL 以**登记 front 存活**为软信号（沿用既有 `resumedByOtherFront` 先例）。条目的 `front_session_id` 对应 session 已不存在 ⇒ 视为无主 ⇒ 允许本 front `suspend` 回收；**不允许**静默 dispatch 顶掉。接管须落 ledger 行。
 
 **D7.4 互斥检查必须原子 + 两个派发面共用一张槽位表**
@@ -231,9 +232,12 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 | 动作 | 语义 | 上游调用 | 可否 resume | 何时用 |
 |---|---|---|---|---|
 | `suspend` | **暂停**：让出槽位，保留上下文 | `interrupt({resume:false})` | ✅ 可（前提：简报已确认消费） | 切换到别的后端，稍后回来继续 |
-| `cancel` | **终止**：让出槽位，放弃该目标 | `interrupt({resume:false})` | ❌ 墓碑 | 目标作废（不再需要它） |
+| `cancel` | **终止**：让出槽位，放弃该目标（**以停机证据为前提**） | `interrupt({resume:false})` | ❌ 墓碑 | 目标作废（不再需要它） |
 
 两者上游调用相同，差别**只在插件侧的登记态**（`suspended` vs `tombstone`）——插件不依赖上游清理行为，自己决定后端还能不能续。
+
+⚠️ **`cancel` 的墓碑与放槽以「停机已确认」为前提**（`ADR-front-cancel-release` D1/D2）：证据不足 ⇒ **整单拒绝**（不墓碑、不放槽；条目保持原状、仍可 resume）+ 返回 `reason` + 落 `event:"cancel_refused"` ledger 行。唯一的例外是 **per-call `force:true`**（跳过**证据**门控，**不跳过授权门控**）⇒ 落 `event:"cancel_forced"`；⚠️ **`force` 路径下「墓碑 ⇒ 已终止」不成立**（只保证「槽位已释放」）。
+⇒ 「**墓碑 ⇒ 槽位已释放**」是**无例外**的不变量；「墓碑 ⇒ 已终止」**仅在非 force 路径**成立。
 
 **为什么 `cancel` 要墓碑、`suspend` 不要**：墓碑防的是"parked 旧简报在未来某次 resume 时幽灵注入"。D7.2 的消费确认让 dispatch 路径不产生 parked 项 ⇒ `suspend` 恢复时不会有旧简报抢先跑，故无需墓碑；而 `cancel` 的语义是"目标作废"，**主动杀死**比留着一个可能带陈旧上下文的 session 更安全 ⇒ 保留墓碑。 **残留风险（如实记录）：steer 残留**。上游 `interrupt({resume:false})` **不删除** pending steer 行（`packages/core/src/session/execution.ts:151-170`：仅 `resume:true` 才走 `nextPromotable` 提升路径），而 `nextPromotable` **优先提升 steer**。⇒ 被 `suspend` 的 session 若在运行期间被注入过 steer，恢复后的第一轮**优先被提升并注入当前轮**。
 
@@ -259,6 +263,8 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 **D11.3 只有确认停机才释放槽位**
 
 `suspend` 必须在**确认目标 session 已停机**后才释放槽位并标记 `suspended`。**「已停机」的判据 = 终态落定，不是 `interrupt` 的返回值，也不是「看起来不忙」。**
+
+⚠️ **适用范围（`ADR-front-cancel-release` 扩写）**：本条的判据适用于**任何释放槽位的路径**，不只 `suspend` —— `cancel` 的释放同样以停机确认为前提（证据不足 ⇒ 整单拒绝，不墓碑、不放槽）。
 
 **为什么 `interrupt` 的返回值不能用**（上游 `run-coordinator.ts:142-162`）：`true` 只表示**已接受**中断——清理**异步 settle**（`execution.ts:27-31`：「Resolves once the interruption is accepted; **cleanup settles asynchronously**」）⇒ 它**可能还在跑**；`false` 有**三种**成因：① 本来就没有活跃执行；② **已在停机过程中**（前一次 interrupt 已接受、清理在途 ⇒ **仍在跑**）；③ **settle 窗口**（fiber 已退出、终态尚未落定 ⇒ **未停机**）。**两者都不能当停机判据。**
 
@@ -296,7 +302,8 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 | `idle` / `suspended` | 同上（置墓碑后新建） | 幂等 no-op（本就不占槽） | 置 `tombstone` + 落 `outcome:"vanished"` 终态行 |
 | `tombstone` | 拒绝（终态不可续接） | 拒绝（终态） | 幂等 no-op |
 
-⚠️ **本矩阵取代 D9 / V36–V39 中「`interrupted:false` ⇒ 纯 no-op、不墓碑」的一半适用范围**：那条规则针对 **session 仍存在但不在跑**（可续接）；**已不存在时没有「可续接的上下文」**，故按终态处置——界线是**「不在跑」vs「已不存在」**，不是"是否回 `interrupted:true`"。⚠️ 新建 session 失败（`create` 抛错）⇒ 视同 dispatch 新建失败：**不占槽**（旧条目已 `tombstone`），`outcome:"vanished"` 行已落。
+⚠️ **本矩阵取代 D9 / V36–V39 中「`interrupted:false` ⇒ 纯 no-op、不墓碑」的一半适用范围**：那条规则针对 **session 仍存在但不在跑**（可续接）；**已不存在时没有「可续接的上下文」**，故按终态处置——界线是**「不在跑」vs「已不存在」**，不是"是否回 `interrupted:true`"。
+⚠️ **矩阵的 `cancel` 列已由 `ADR-front-cancel-release` 修订**：矩阵里「已删 + 非墓碑 ⇒ 置 `tombstone` + 落 `vanished` 行」**不变**（已删是**正面证据**，不需停机确认）；但**「session 仍存在」那一侧**的旧规则（「`interrupted:false` ⇒ 纯 no-op、不墓碑」）已被取代：`cancel` 的墓碑条件改为「**停机已确认**」⇒ `active` 但未在跑的条目按停机证据判定（证据成立即可墓碑 + 放槽）；`idle`/`suspended`（**不占槽**）条目仍是幂等 no-op。⚠️ 新建 session 失败（`create` 抛错）⇒ 视同 dispatch 新建失败：**不占槽**（旧条目已 `tombstone`），`outcome:"vanished"` 行已落。
 
 ⇒ 与「观测面不补记」不矛盾：观测面是**被动不可见**，派发面是**主动拿到否定证据**。 **痕迹与读侧语义**：该 repo 的 `ledger.jsonl` 里 `event:"dispatched"` 行仍在；`pair.json` 条目仍在，但 **reconcile 会把「已消失的 `active`」静默翻成 `idle`** ⇒ 翻转后 pair 不再携带「消失」证据，**区分点只剩 ledger 那条 `dispatched`**。**读侧语义**：`sessions` 未在册 = **未观测到存活后端**，≠「从未派发」、≠「没有终态」、≠「一定被删」（**索引写丢是第三种可能**——metadata 写失败被静默吞，见 D2.1「可丢弃索引」）。
 
@@ -380,7 +387,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 - [ ] **V06** `dispatch` 后：后端 session 的 metadata 含 `delegated_by/goal_key/canonical_root/**work_root**/baseline_message_id/dispatched_at/state`；`pair.json` 有对应条目；`ledger.jsonl` 有 `dispatched` 行。
 - [ ] **V07** `pair.json` 条目含 **`work_root`** 与 **`state`**（枚举见 D6.3：`dispatching/active/idle/suspended/tombstone`）；**存量条目**（无 `work_root`）按 `work_root = canonical_root` 保守回填（退化为原粒度，不误判为同树），且其 `state` 按**活体判据**首次观测时确定（busy ⇒ `active`，否则 `idle`）——**不得一律默认 `idle`**（那等于放行第二个写入者）。
-- [ ] **V08** `sessions` 列出本 front 名下全部后端（≥2 个，分属不同工程目录），每项含状态与证据字段；**调用 `sessions` 前后，被观测后端的 `session.context` 消息条数与最后一条消息 id、以及 `time.updated` 均不变**（证明观测面不投递 prompt、不污染）。⚠️ **不以 ledger 行数不变为判据**——prompt 投递不会立即产生 ledger 行，行数不变证明不了没投递（**注意：reconcile 只写 `pair.json`、不写 ledger**，别拿 pair 的变化当 ledger 证据）。
+- [ ] **V08** `sessions` 列出本 front 名下全部后端（≥2 个，分属不同工程目录），每项含状态与证据字段（⚠️ **含「已钉住」标记** `cancel_pending`——`ADR-front-cancel-release` D3③：被钉住的条目不得被 reconcile 自动放行 ⇒ front 必须看得见它需要显式处理）；**调用 `sessions` 前后，被观测后端的 `session.context` 消息条数与最后一条消息 id、以及 `time.updated` 均不变**（证明观测面不投递 prompt、不污染）。⚠️ **不以 ledger 行数不变为判据**——prompt 投递不会立即产生 ledger 行，行数不变证明不了没投递（**注意：reconcile 只写 `pair.json`、不写 ledger**，别拿 pair 的变化当 ledger 证据）。
 - [ ] **V09** **已删后端的观测面与派发面分别判**（D12）：
   - **观测面**：后端被外部删除后，`sessions` 输出**不含**该项，且**调用 `sessions` 前后该 repo 的 `ledger.jsonl` 行数与末行内容均不变**（观测面不写 ledger）。⚠️ **不得**把「`sessions` 里没有」判成「从未派发」/「没有终态」/「一定被删」。
   - **派发面**：`dispatch(resume_session=X)` 命中已删 X ⇒ **不得**留下 `state=dispatching` 的悬挂条目；旧条目置 `tombstone`、ledger 出现 **`outcome:"vanished"` 终态行**、同一 `goal_key` 的新 session 建成 ⇒ **同一 `workRoot` 可再次派发**。
@@ -417,15 +424,15 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 - [ ] **V29** **既有 `delegate` 受同一张槽位表约束**：同工作树已有 `active` 后端时，既有同步 `delegate` 也被拒；且 `delegate` 返回后其条目 `state=idle`、条目落 `work_root`/`state`（**三处变更面见 D7.4**，须显式测试）。
 - [ ] **V30** **消费确认（D7.2，实施期最先锚定）**：`dispatch` 返回前必须确认简报**已被消费**；未确认 ⇒ 条目停在 `state=dispatching`。⚠️ **先实测**："简报文本出现在 `session.context`" 是否等价于 promote 已发生（上游 drain 是 `peek → awaitActivation → prepareContext → promote`，`runner/llm.ts:70,75,186-192`）⇒ 若**不可靠**，本条**触发降级**（退回「单槽但不可切换」），并**如实记录**，不得用"看起来对"冒充。
 - [ ] **V31** `dispatching`（未确认消费）的后端 → `suspend` **拒绝**、`cancel` 可用（未确认消费的简报仍可能 pending ⇒ 不可保留可续性）。
-- [ ] **V32** **翻转执行者（D7.1）**：① 既有同步 `delegate` 返回后，其条目 `state=idle`（不占槽）；② `dispatch` 派发的后端**跑完但无人调用 `sessions`** → 下一次派发到同一 `workRoot` **成功**（reconcile-on-read 生效）；③ **第二次顺序 `delegate` 到同一工作树成功**（不被自己前一轮留下的 `active` 条目挡住——这是对既有主路径的回归判据）。
-- [ ] **V33** **槽位回收（D7.3）**：后端崩溃/被删导致 `active` 但实际不 busy → 下一次派发触发 reconcile ⇒ **放行**（不必先手工 `suspend`）。
+- [ ] **V32** **翻转执行者（D7.1）**：① 既有同步 `delegate` 返回后，其条目 `state=idle`（不占槽）；② `dispatch` 派发的后端**跑完但无人调用 `sessions`** → 下一次派发到同一 `workRoot` **成功**（reconcile-on-read 生效）；③ **第二次顺序 `delegate` 到同一工作树成功**（不被自己前一轮留下的 `active` 条目挡住——这是对既有主路径的回归判据）。⚠️ **例外（`ADR-front-cancel-release` D3②）**：**被 `cancel_pending` 钉住的条目不得被 reconcile 翻成 `idle`**。
+- [ ] **V33** **槽位回收（D7.3）**：后端崩溃/被删导致 `active` 但实际不 busy → 下一次派发触发 reconcile ⇒ **放行**（不必先手工 `suspend`）。⚠️ **例外（`ADR-front-cancel-release` D3②）**：**被 `cancel_pending` 钉住的条目不适用本条**（刚被拒绝释放的后端可能还在写）。
 - [ ] **V34** **亡主接管（D7.3）**：front session 换代后，旧 front 名下的 `active` 槽位**不被静默顶掉**，但可被新 front `suspend` 回收；接管**落 ledger 行**；该工作树**不因换 front 而永久不可派发**。
 - [ ] **V35** **投递失败（D7.2）**：`dispatch` 的 execute 超时/异常 → **保留槽位**（不放行）+ 返回「投递结果未知，请 `sessions` 确认」；**不得静默放槽**。
 
 **终止与暂停（D9）**
 
-- [ ] **V36** `cancel` 后该后端被标为墓碑（`state=tombstone`），`sessions` 不再列为在跑；再次 `dispatch` 到同一后端 → **拒绝**（要求新建）。
-- [ ] **V37** `cancel` 返回 `{interrupted:true|false}`（**取值语义见 D11.3**：true = 已接受中断；false = **不区分**「本来没在跑」/「已在停机过程中」/「settle 窗口」——**不得**用它推断停机）。
+- [ ] **V36** `cancel` 在**停机已确认**后把该后端标为墓碑（`state=tombstone`），`sessions` 不再列为在跑；再次 `dispatch` 到同一后端 → **拒绝**（要求新建）。⚠️ **证据不足 ⇒ 不墓碑**（`ADR-front-cancel-release` D2：整单拒绝 + 落 `cancel_refused` 行）。
+- [ ] **V37** `cancel` 返回 `{interrupted:true|false}`（**取值语义见 D11.3**：true = 已接受中断；false = **不区分**「本来没在跑」/「已在停机过程中」/「settle 窗口」——**不得**用它推断停机；⚠️ `ADR-front-cancel-release` 起 `interrupted` **只是诊断字段**，不再决定墓碑与放槽）。⚠️ **返回体新增字段**（破坏性变更，下游按旧字段解析会失配）：`reason`（证据类/授权类）/ `stop_judge` / `forced` / `forced_available` / `pinned`。
 - [ ] **V38** `suspend` 后该后端标为 `suspended`（**不是**墓碑）→ **仍可 resume**（dispatch/resume 同一后端不因"曾被暂停"被拒）。
 - [ ] **V39** `suspend` 一个**当前无活跃执行**的后端 → 幂等 no-op（`{interrupted:false}`；⚠️ 该取值**不蕴含**「已停机」，停机仍以 D11.3 的水位线为准）；`suspend` 一个已墓碑的后端 → **拒绝**。
 
@@ -433,7 +440,7 @@ running  ⟺  time.busy 存在  ∧  (time.idle 未定义 ∨ time.busy > time.i
 
 - [ ] **V40** **切换两步可用**：`suspend(A)` 后 A 让出槽位 → 随后 `dispatch/resume(B)`（同一 workRoot）**成功**；A 仍在名册中可枚举。
 - [ ] **V41** **停机确认**（判据 = 「判活为假」+ 终态正面证据，见 D11.3；**不是** `interrupt` 的返回值、**也不是**「看起来不忙」）。**可执行序列**：**步骤 1** 先 `session.get` 记 `v0 = time.idle` 与判活结论 `running0`；**步骤 2** 调 `suspend`；**步骤 3** 再 `session.get` 读 `v1`。断言：**a)** 对**在跑**的后端（`running0 = true`）⇒ `v1 > v0`（水位线前移）且 `suspend` 返回 `suspended:true`；**b)** 对**空闲**的后端（`running0 = false`）⇒ `suspend` **立即**返回 `suspended:true`（**不**等水位线前移、**不**超时）；⚠️ 本条**不**覆盖 D11.3 的「陈旧 busy」形态（残留风险，见「后果 / 代价」的风险条目）；**c)** 构造不停机——假 ctx 令判活恒为真（或令 `time.idle` 停在 `v0`）⇒ 断言 `suspended:false`、`pair.json` 条目仍 `active`、**不释放槽位**、报错文案含「未释放槽位」；**d)** 读失败 / 原因不明 ⇒ 同样**不释放**（保守当未停机）。四种情形都不得出现「两个 active 同一 workRoot」。**实现约束**：释放槽位的写必须发生在 `waitStopped` 返回之后（代码结构保证，评审看这一点而非靠落盘时间戳推断先后）。
-- [ ] **V42** **槽位悬挂可见**：后端崩溃/被删导致 `active` 但不 busy 且超 `stalled` 阈值 → `sessions` 报「槽位疑似悬挂」（**展示层信号**；实际回收由 reconcile-on-read 承担，D7.3）；`suspend` 该后端**幂等释放**槽位，随后同工作树可再次派发。
+- [ ] **V42** **槽位悬挂可见**：后端崩溃/被删导致 `active` 但不 busy 且超 `stalled` 阈值 → `sessions` 报「槽位疑似悬挂」（**展示层信号**；实际回收由 reconcile-on-read 承担，D7.3；⚠️ **被 `cancel_pending` 钉住的条目不适用自动回收**——`ADR-front-cancel-release` D3②）；`suspend` 该后端**幂等释放**槽位，随后同工作树可再次派发。
 - [ ] **V43** `suspend` **不删除** session（默认不 remove）⇒ 上下文保留，可 resume。
 - [ ] **V44** **steer 残留**：恢复后首批消息若含暂停之前的内容 → 报「上下文可能含陈旧指令，建议新建」（`unverified` 语义）。⚠️ 若实施期实测确认**插件无法从 `session.context` 区分 steer 消息** ⇒ 该判据**降级为"如实报不可检出"**，**不得**用"看起来没问题"冒充通过。
 

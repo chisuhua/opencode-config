@@ -112,6 +112,21 @@ check "A8 server interrupt 形状" "packages/server/src/handlers/session.ts" \
   'return \{ interrupted: yield\* session\.interrupt' \
   "lib 读取 r?.interrupted 的契约来源"
 
+# ── A11：`interrupt({resume:false})` **不提升 inbox 行** ⇒ pending 行留存 ──
+# 依据：`ADR-front-cancel-release` D1 的「后继 execution 复活是常设事实」——
+# `resume:false` 时中断路径**直接返回**：既不 promote inbox 行、也不 wake
+# ⇒ 之前入队的 steer/queue 行**留在 inbox** ⇒ settle 时可能被提升 ⇒ 后端复活。
+check "A11 resume:false 不提升 inbox" "packages/core/src/session/execution.ts" \
+  'if \(!options\?\.resume\) return interrupted' \
+  "cancel 的 interrupt 用 resume:false ⇒ pending inbox 行留存 ⇒ 复活是常设事实"
+
+# ── A12：`nextPromotable` **优先提升 steer**（再考虑 queued input） ──
+# 依据：steer 行排在 queue 行之前 ⇒ 「中断后先跑 steer」是上游既定语义
+# ⇒ 本仓 cancel 的「丢弃待提升的 steer」只影响**本次**提升，不影响行留存。
+check "A12 nextPromotable 优先 steer" "packages/core/src/session/inbox.ts" \
+  'const steer = \(yield\* pendingSteers\(db, sessionID\)\)\[0\]' \
+  "steer 优先于 queued input ⇒ cancel 的 resume:false 只挡本次提升，不删行"
+
 echo "----"
 if [ "$FAIL" -gt 0 ]; then
   echo "RESULT: DRIFT（$FAIL/$N 个锚点不成立）⇒ 重新核对 ADR 的技术前提，勿只改行号"

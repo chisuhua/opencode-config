@@ -106,6 +106,8 @@ suspend → suspended=true judge=wait
   - **人工清理入口**：删掉 `.rddf/state/.instance-*` 即可（跨 host 的远端残戳是唯一需要人工清理的情形）。
   - **触发**（检测到 ≥2 存活戳）⇒ 判定多实例部署 ⇒ ① 落 `event:"foreign_instance"` 的 ledger 行（**每次 `suspend` 触发都落一行**，便于计数与定位）；② `suspend` 切**严格模式**；③ `suspend` 返回值带 `foreign_instance: true`。
 - **严格模式**：多实例下 `wait` 不提供任何 execution 级证据 ⇒ `running0 = false` 时**也要求水位线前移**（等价于父篇选项表 **B4**，见选项表 C8 的重新采纳登记）。
+  ⚠️ **作用域扩到 `cancel`**（`ADR-front-cancel-release` D1⑦/D6）：多实例下 `cancel` **同样**要求水位线前移 ⇒ 严格模式不再是 `suspend` 专属。
+  ⚠️ **偏离登记（`ADR-front-cancel-release` D4）**：严格模式新增 **per-call `force:true`** 通道（`cancel` 侧）⇒ **本篇 S9 的「不可赎回」限定为 env 通道**（`RDDF_SUSPEND_ALLOW_DEGRADED=1` 在严格模式下**仍不生效**）；per-call 通道**逐次可见 + 落盘可审计**，且**必须**带 `foreign_instance:true` + `strict_mode:true`。
   - **`stop_judge` 词汇（不扩展父篇枚举）**：严格模式的取值**按分支**定：
     - `running0 = false`（无 execution 级证据可用 ⇒ 严格模式要求水位线前移）⇒ `stop_judge: "degraded"`（与父篇 D4 的退化族同义）+ 额外字段 `foreign_instance: true`；
     - `running0 = true`（基线在跑 ⇒ `wait` 的证据**有效**）⇒ **保留** `stop_judge: "wait"`（**不得**误报 degraded）。
@@ -132,10 +134,10 @@ suspend → suspended=true judge=wait
 | ④ | 跨进程：`wait` 空转 ⇒ 判据退化 | **如实保留**（前提已写死） |
 | ⑤ | 上游复活：`interrupt({resume:false})` 不删 pending 行 ⇒ settle 起后继 execution | **未关闭**（父篇 D9 的上游语义）；缓解仍是释放后复检（`stop_raced` 留痕） |
 | ⑥ | 父篇 D5⑥ 的「准入已过、`prompt` 未投」窗口 | **未关闭**（根治需上游原子原语，见 feature request） |
-| ⑦ | `cancel` 的释放不校验停机证据 | **未关闭**（**另立** backlog，见选项表 C7） |
+| ⑦ | `cancel` 的释放不校验停机证据 | **已关闭**（`ADR-front-cancel-release`：**Accepted**，本篇**结案**该项；实现见 `openspec/changes/front-cancel-release/`） |
 | ⑧ | 已删后端 × 各 `state` 的 D12 处置 | **动作不变**（父篇矩阵逐动作不动）；该路径**不叠加代号校验**（死槽避免优先，见 D1 适用范围） |
 | ⑨ | 同步 `delegate` 的 `registerSession` 整条重建条目 ⇒ 归属版本被清零 | **关闭**（D1 的写者纪律：保留并按需 bump） |
-| ⑩ | **多实例下空闲后端无直接释放动作**（严格模式要求水位线前移；`cancel` 对空闲后端是 no-op） | **未关闭**（**新增代价**，非既有形态）：实际出口是下一次 `dispatch` 的 reconcile 顺带释放；若该后端在另一实例确实在跑 ⇒ 工作树被**正确**占住 |
+| ⑩ | **多实例下空闲后端无直接释放动作**（严格模式要求水位线前移） | **部分关闭**（`ADR-front-cancel-release` D6：多实例下可用 `cancel(X, {force:true})` ⇒ **直接释放动作存在**；⚠️ **被 `cancel_pending` 钉住时，reconcile 顺带释放这条出口不可用**）——**其余部分未关闭**（**新增代价**，非既有形态）：实际出口是下一次 `dispatch` 的 reconcile 顺带释放；若该后端在另一实例确实在跑 ⇒ 工作树被**正确**占住 |
 
 ## 选项对比表
 
@@ -210,7 +212,8 @@ suspend → suspended=true judge=wait
 - **归属版本是条目级、不是工作树级**：工作树级版本无法区分「同一后端被重新认领」与「另一个后端占槽」。
 - **释放 + 字段回填同一临界区**：授权释放与 `suspended_at_message_id`/`steer_residue` 的回填在**同一次锁内**完成。
 - **写者纪律**：所有写 `pair.json` 条目的路径都**必须**保留 `claim_gen`；**禁止**整条替换条目对象（`registerSession` 需改）。
-- **`cancel` 的边界**：本篇只给 `cancel` 加**授权校验**（不符 ⇒ 拒绝），**不改**它的停机证据要求（那是 C7 的另立 change）。
+  ⚠️ **扩展到 `cancel_pending`**（`ADR-front-cancel-release` D3④）：`cancel_pending`（被拒绝的 `cancel` 的钉住标记）与 `claim_gen` **同等保留义务** ⇒ `registerSession` 的整条重建**不得**丢掉它（丢掉 ⇒ reconcile 的「不得自动放行」保护静默失效 ⇒ 双写者从后门回来）。
+- **`cancel` 的边界**：本篇只给 `cancel` 加**授权校验**（不符 ⇒ 拒绝）；**其停机证据要求已由 `ADR-front-cancel-release` 规定**（C7 已在该篇结案）⇒ 实现依据以该篇为准。
 
 ## 已排除的替代方案
 
@@ -218,7 +221,7 @@ suspend → suspended=true judge=wait
 - **TTL 租约（C3）**：见选项表 —— 把死槽换成静默双写者。
 - **只做状态重验（C4）**：状态可回到原值 ⇒ 漏形态。
 - **直读上游 SQLite（C6）**：父篇已排除；转为**上游 feature request**。
-- **`cancel` 契约变更（C7）**：另立 backlog（`backlog: cancel-stop-evidence`），本篇不夹带。
+- **`cancel` 契约变更（C7）**：**已由 `ADR-front-cancel-release` 落地**（本篇**结案**该项；backlog `cancel-stop-evidence` **关闭**）。
 - **靠「`wait` 返回太快 ⇒ 不信任」的启发式**：魔法数字，且真空闲后端会被误判；本篇改用「**两个观测矛盾**」（无阈值）。
 - **用 `pair.json` 整表版本号 / 文件 mtime 当代号**：整表版本会把**不同条目**的写互相牵连（多后端同仓 ⇒ 无关写误伤正常释放）；`writeJsonAtomic` 的 rename 会刷新 mtime ⇒ 不可靠。
 - **用锁目录 mtime 当代号**：锁有 30s stale-break，锁目录会被删除重建 ⇒ 无单调序号可取。

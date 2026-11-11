@@ -21,6 +21,7 @@ import path from "node:path"
 
 import {
   appendLedger,
+  appendLedgerLine,
   backfillPairEntry,
   buildBrief,
   canonicalRoot,
@@ -605,6 +606,11 @@ export function claimSlot(input: {
     // ① reconcile：已空闲的占槽条目翻转为 idle（释放槽位）
     for (const c of slotOccupants(pairs, workRoot)) {
       if (c.session_id === sessionID) continue
+      // ⚠️ `ADR-front-cancel-release` D3②：**被 `cancel_pending` 钉住的条目不得被自动放行**。
+      // 钉住的含义 = 「刚才有一次 `cancel` 因证据不足被拒绝」⇒ 该后端**可能还在写**这个工作树
+      // ⇒ reconcile 把它翻成 `idle` 会把槽位放掉 ⇒ 双写者从后门回来。
+      // 出口只有三条：`cancel` 成功 / `cancel({force:true})` / 后端被删（ADR D3④ 崩溃恢复规则）。
+      if (pairs[c.session_id]?.cancel_pending) continue
       if (busyOf[c.session_id] === false && c.state === "active") {
         // reconcile 释放 = **归属变更** ⇒ 归属版本 +1（否则旧快照仍会匹配）。
         pairs[c.session_id] = { ...pairs[c.session_id], state: "idle", claim_gen: nextClaimGen(pairs[c.session_id]) }
@@ -651,7 +657,11 @@ export function setSlotState(stateRoot: string, sessionID: string, state: SlotSt
   if (!pairs[sessionID]) return
   const prev = pairs[sessionID]
   // 状态翻转 = **归属变更** ⇒ 归属版本 +1（`ADR-front-stop-ownership` D1）。
-  pairs[sessionID] = { ...prev, state, claim_gen: nextClaimGen(prev) }
+  const next: any = { ...prev, state, claim_gen: nextClaimGen(prev) }
+  // 墓碑 = 终态 ⇒ **不得**带 `cancel_pending`（`ADR-front-cancel-release` D3④）：
+  // 钉住只对「仍占槽、可能还在写」的条目有意义；墓碑条目不再占槽 ⇒ 钉住是残留状态。
+  if (state === "tombstone") delete next.cancel_pending
+  pairs[sessionID] = next
   writePairs(stateRoot, pairs)
 }
 
@@ -694,6 +704,13 @@ export function releaseSlotAuthorized(input: {
   newState: SlotState
   /** 同临界区一起回填的字段（如 `suspended_at_message_id`）。 */
   extraFields?: Record<string, unknown>
+  /**
+   * 同临界区落盘的 ledger 行（`ADR-front-cancel-release` 实现约束 4：
+   * ledger append 与 pair 写在**同一次 `withLock`** ⇒ 杜绝「只写一半」的路径）。
+   */
+  ledgerRows?: any[]
+  /** ledger 落盘根（默认 = `pairRoot`；存量 worktree 场景 ledger 仍在 canonical root）。 */
+  ledgerRoot?: string
 }): ReleaseOutcome {
   const { pairRoot, sessionID, expectedGen, expectedStates, newState, extraFields } = input
   let out: ReleaseOutcome = { ok: false }
@@ -722,7 +739,66 @@ export function releaseSlotAuthorized(input: {
     const gen = nextClaimGen(entry)
     pairs[sessionID] = { ...entry, ...(extraFields ?? {}), state: newState, claim_gen: gen }
     writePairs(pairRoot, pairs)
+    // ledger 行同临界区落盘（`extraFields` 里的 `undefined` 值会被 JSON.stringify 丢弃
+    // ⇒ `cancel_pending: undefined` 即「字段消失」）。
+    if (input.ledgerRows?.length) {
+      const lr = input.ledgerRoot ?? pairRoot
+      for (const row of input.ledgerRows) appendLedgerLine(lr, row)
+    }
     out = { ok: true, gen }
+  })
+  return out
+}
+
+/**
+ * 钉住「一次被拒绝的 `cancel`」（`ADR-front-cancel-release` D3）。
+ *
+ * **为什么需要**：被拒绝的 `cancel` 说明「该后端可能还在写这个工作树」⇒ `claimSlot` 的
+ * reconcile（把「已空闲的 `active`」翻成 `idle`）**不得**把它放掉 ⇒ 双写者会从后门回来。
+ *
+ * **判定顺序**（同 `releaseSlotAuthorized`，授权类优先）：
+ * 1. 条目不存在 ⇒ `slot_entry_gone`；
+ * 2. 状态已是 `idle`/`suspended` ⇒ `slot_already_released`（已不占槽 ⇒ 无需钉）；
+ * 3. `claim_gen ≠ 快照值` ⇒ `slot_reclaimed`（**归属已变 ⇒ 不得钉**：钉住会挡住新占者的
+ *    reconcile ⇒ 把新占者变成死槽 —— 那正是本篇要消灭的「砖死」的新形态，D3③）。
+ *
+ * ⚠️ **不 bump 归属版本**：钉住是**良性写**（不改槽位归属）⇒ 与 `setPairFields` 同口径。
+ */
+export function markCancelPending(input: {
+  pairRoot: string
+  sessionID: string
+  expectedGen: number
+  pending: { baseline_idle: number; baseline_running: boolean; at: string }
+  /** 同临界区落盘的 ledger 行（单写者纪律）。 */
+  ledgerRows?: any[] | ((res: { ok: boolean; reason?: ReleaseReason }) => any[])
+  ledgerRoot?: string
+}): { ok: boolean; reason?: ReleaseReason } {
+  const { pairRoot, sessionID, expectedGen, pending } = input
+  let out: { ok: boolean; reason?: ReleaseReason } = { ok: false }
+  mkdirSync(stateDirOf(pairRoot), { recursive: true })
+  withLock(lockDirOf(pairRoot), () => {
+    const pairs = readPairs(pairRoot)
+    const entry = pairs[sessionID]
+    let res: { ok: boolean; reason?: ReleaseReason }
+    if (!entry) {
+      res = { ok: false, reason: "slot_entry_gone" }
+    } else if (entry.state === "idle" || entry.state === "suspended") {
+      res = { ok: false, reason: "slot_already_released" }
+    } else if (readClaimGen(entry) !== expectedGen) {
+      res = { ok: false, reason: "slot_reclaimed" }
+    } else {
+      pairs[sessionID] = { ...entry, cancel_pending: pending }
+      writePairs(pairRoot, pairs)
+      res = { ok: true }
+    }
+    out = res
+    // ledger 行**无论钉住成败**都落盘（拒绝这件事本身必须留痕）；行内容可依赖钉住结果
+    // （`ledgerRows` 传函数 ⇒ 在临界区内按最终结果生成）。
+    const rows = typeof input.ledgerRows === "function" ? input.ledgerRows(res) : input.ledgerRows ?? []
+    if (rows.length) {
+      const lr = input.ledgerRoot ?? pairRoot
+      for (const row of rows) appendLedgerLine(lr, row)
+    }
   })
   return out
 }
@@ -1411,6 +1487,9 @@ export function sessionsToolDefinition(ctx: any): any {
           },
           // AC54：steer 残留可观测性（suspend 时记录基线，resume 时比对；无法判定时如实报 undetectable）
           steer_residue: entry?.steer_residue ?? "none",
+          // `ADR-front-cancel-release` D3③：「钉住」必须**可见** —— 否则「砖死不是静默的」
+          // 这条承诺没有落点（被钉住的条目不得被 reconcile 自动放行 ⇒ front 必须知道它需要显式处理）。
+          cancel_pending: entry?.cancel_pending ?? null,
         })
       }
       const agg = aggregateStates(
@@ -1808,13 +1887,21 @@ export function cancelToolDefinition(ctx: any): any {
   return {
     name: TOOL_CANCEL,
     description:
-      "**终止**一个后端工程 session：中断它、让出工作树槽位，并标为墓碑（**永久不可 resume**，再派必须新建）。" +
+      "**终止**一个后端工程 session：中断它、**确认它真的停了**、让出工作树槽位，并标为墓碑（**永久不可 resume**，再派必须新建）。" +
+      "⚠️ 只有在**确认后端已停机**之后才会释放槽位（与 suspend 同一条判据）：若停机证据不足（该后端**可能还在写**这个工作树），" +
+      "本次终止会被**拒绝**（不释放槽位、不墓碑），此时可显式加 force:true 强制放行（**该后端可能仍在写这个工作树**）。" +
       "只想切走、稍后继续 ⇒ 用 suspend。",
     input: {
       type: "object",
       properties: {
         session_id: { type: "string", description: "要终止的后端 session id" },
         remove: { type: "boolean", description: "是否同时删除该 session，默认 false（保留以便审计）" },
+        force: {
+          type: "boolean",
+          description:
+            "**危险**：跳过「已停机」的证据门控，直接墓碑 + 释放槽位（**授权门控仍然生效**）。" +
+            "仅在停机证据不足、且你已向用户说明「该后端可能仍在写这个工作树」时使用。默认 false。",
+        },
         project_dir: {
           type: "string",
           description: "该后端所在工程仓的绝对路径（**仅当后端已被外部删除、需要定位其台账时需要**）",
@@ -1828,6 +1915,7 @@ export function cancelToolDefinition(ctx: any): any {
       const sessionID = String(input?.session_id ?? "")
       if (!sessionID) throw fail("session_id 必填")
       const remove = input?.remove === true
+      const force = input?.force === true
       const hintDir = typeof input?.project_dir === "string" && input.project_dir.length > 0 ? input.project_dir : undefined
       const located = await locateBackend(ctx, sessionID, hintDir)
       const { stateRoot, entry } = located
@@ -1850,6 +1938,7 @@ export function cancelToolDefinition(ctx: any): any {
       }
       if (located.missing) {
         if (!located.located || !stateRoot) {
+          // 定位不到它的工程仓 ⇒ 无法写 pair/ledger ⇒ **返回明确结果，不抛错**
           return {
             content: JSON.stringify(
               {
@@ -1868,7 +1957,14 @@ export function cancelToolDefinition(ctx: any): any {
         if (state === "tombstone") {
           return {
             content: JSON.stringify(
-              { session_id: sessionID, interrupted: false, state: "tombstone", message: "该后端已是墓碑，无需重复终止" },
+              {
+                session_id: sessionID,
+                interrupted: false,
+                state: "tombstone",
+                reason: "slot_already_released",
+                forced: false,
+                message: "该后端已是墓碑，无需重复终止",
+              },
               null,
               2,
             ),
@@ -1893,11 +1989,18 @@ export function cancelToolDefinition(ctx: any): any {
         }
       }
 
-      // 已墓碑 ⇒ 幂等 no-op
+      // 已墓碑 ⇒ 幂等 no-op（返回形状与其余分支一致：带 `reason` / `forced`）
       if (state === "tombstone") {
         return {
           content: JSON.stringify(
-            { session_id: sessionID, interrupted: false, state: "tombstone", message: "该后端已是墓碑，无需重复终止" },
+            {
+              session_id: sessionID,
+              interrupted: false,
+              state: "tombstone",
+              reason: "slot_already_released",
+              forced: false,
+              message: "该后端已是墓碑，无需重复终止",
+            },
             null,
             2,
           ),
@@ -1914,23 +2017,55 @@ export function cancelToolDefinition(ctx: any): any {
         }
       }
 
-      let interrupted = false
-      try {
-        const r = await ctx.session.interrupt({ sessionID, resume: false })
-        interrupted = r?.interrupted === true
-      } catch {
-        interrupted = false
-      }
-
-      // interrupted:false（不在跑）⇒ **纯 no-op，不墓碑**（AC28）
-      if (!interrupted) {
+      // ── ⓪ 授权前置（`ADR-front-cancel-release` D1 ⓪）：**授权类优先于证据类** ──
+      // 与 `releaseSlotAuthorized` 的判定顺序同构（条目不存在 → 已释放 → 代号 → 状态），
+      // 但**提前**到证据采集之前 ⇒ 不占槽条目不会白跑一趟 `wait`（AC12 / AC13）。
+      const pairRoot = located.pairRoot ?? stateRoot
+      if (!entry) {
         return {
           content: JSON.stringify(
             {
               session_id: sessionID,
               interrupted: false,
               state,
-              message: "该后端不在运行：未终止、未墓碑（上下文仍可续接）",
+              reason: "slot_entry_gone",
+              forced_available: false,
+              message: "该后端在台账里没有登记条目 ⇒ 未终止、未释放槽位；请用 sessions 确认后再试",
+            },
+            null,
+            2,
+          ),
+        }
+      }
+      if (state === "idle" || state === "suspended") {
+        // 不占槽条目 ⇒ 幂等 no-op（`ADR-front-stop-ownership` D1/S5：状态已是 idle/suspended
+        // ⇒ `slot_already_released`，**不 bump、不墓碑**）。
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              interrupted: false,
+              state,
+              idempotent: true,
+              reason: "slot_already_released",
+              forced_available: false,
+              message: "该后端当前不占用工作树槽位（已释放 / 已暂停）⇒ 未终止、未墓碑（幂等 no-op）",
+            },
+            null,
+            2,
+          ),
+        }
+      }
+      if (state !== "active" && state !== "dispatching") {
+        return {
+          content: JSON.stringify(
+            {
+              session_id: sessionID,
+              interrupted: false,
+              state,
+              reason: "slot_state_changed",
+              forced_available: false,
+              message: `该后端的登记态为 ${state}，不可终止；请用 sessions 确认后再试`,
             },
             null,
             2,
@@ -1938,66 +2073,305 @@ export function cancelToolDefinition(ctx: any): any {
         }
       }
 
-      // ── 终止 ⇒ 墓碑 + 释放槽位（**授权释放**：`ADR-front-stop-ownership` D1）──
-      // 归属已变 ⇒ **不墓碑、不释放**（槽位归当前占者）。
-      const release = releaseSlotAuthorized({
-        pairRoot: located.pairRoot ?? stateRoot,
-        sessionID,
-        expectedGen: readClaimGen(entry),
-        expectedStates: ["active", "dispatching"],
-        newState: "tombstone",
-      })
-      if (!release.ok) {
+      // ── 快照：归属版本 + 停机基线（**必须在 interrupt 之前**取）──
+      const snapGen = readClaimGen(entry)
+      const stopBaseline = await snapshotStopBaseline(ctx, sessionID)
+      if (!stopBaseline) {
+        // 读失败（原因不明）⇒ 判不出来 ⇒ **证据类拒绝**（保守侧：宁可判不出停机，
+        // 也不能把仍在写的后端放出去 ⇒ 两个后端并发写同一工作树）。
+        const refused = refuseCancel({
+          ctx,
+          sessionID,
+          state,
+          entry,
+          stateRoot,
+          pairRoot,
+          locatedWorkRoot: located.workRoot,
+          snapGen,
+          baseline: { idle: 0, running: false },
+          evidenceReason: "unreadable",
+          judge: "degraded",
+          foreign: false,
+          interrupted: false,
+        })
+        return { content: JSON.stringify(refused, null, 2) }
+      }
+
+      // ── 跨实例 tripwire（ADR D6）：命中 ⇒ 严格模式（`running0=false` 也要求水位线前移）──
+      ensureInstanceStamp(stateRoot)
+      const foreign = detectForeignInstances(stateRoot)
+      if (foreign) {
+        appendLedger(stateRoot, {
+          event: "foreign_instance",
+          recorded_at: new Date().toISOString(),
+          kind: entry?.kind ?? "engineering",
+          front_session_id: _toolContext?.sessionID ?? null,
+          backend_session_id: sessionID,
+          canonical_root: stateRoot,
+          work_root: located.workRoot ?? stateRoot,
+          outcome: null,
+        })
+      }
+
+      // ── 准入守卫（`ADR-front-stop-confirmation` D2）：**interrupt 之前**置上；`finally` 必清 ──
+      const guardWorkRoot = located.workRoot ?? stateRoot
+      const guardToken = enterStopGuard(stateRoot, guardWorkRoot, sessionID, _toolContext?.sessionID)
+      try {
+        // ── interrupt（不 resume：丢弃待提升的 steer）──
+        // ⚠️ 返回值**只作诊断字段**（`interrupted`）：它**不再**决定墓碑与放槽
+        // （`ADR-front-stop-confirmation` D1：上游只保证「已接受」，清理异步 settle）。
+        let interrupted = false
+        try {
+          const r = await ctx.session.interrupt({ sessionID, resume: false })
+          interrupted = r?.interrupted === true
+        } catch {
+          interrupted = false
+        }
+
+        // ── 停机确认（与 `suspend` **同一条**判据：`wait` + 判活为假 + 水位线）──
+        const outcome = await waitStopped(ctx, sessionID, stopBaseline, stopTimeoutMs(), { strict: foreign })
+        const judge = outcome.judge
+
+        // 后端在停机窗口内被外部删除 ⇒ 走 D12（墓碑 + `outcome:"vanished"` 终态行）
+        if (outcome.reason === "missing") {
+          updateSlotState(stateRoot, sessionID, "tombstone")
+          appendVanishedRow(stateRoot, sessionID, entry, located.workRoot)
+          await syncMetadataState(ctx, sessionID, "tombstone")
+          return {
+            content: JSON.stringify(
+              {
+                session_id: sessionID,
+                interrupted,
+                state: "tombstone",
+                vanished: true,
+                reason: null,
+                forced: force,
+                stop_judge: judge,
+                ...(foreign ? { foreign_instance: true, strict_mode: true } : {}),
+                message: "该后端在停机确认窗口内被外部删除：已按 ADR D12 置为墓碑并落 outcome:\"vanished\" 终态行",
+              },
+              null,
+              2,
+            ),
+          }
+        }
+
+        // ── 证据门控（ADR D1/D2）：证据不足 ⇒ **整单拒绝**（不墓碑、不放槽）──
+        // `force` **只**跳过这一道门控（**不跳过授权门控**，ADR D4）。
+        if (!outcome.stopped && !force) {
+          const refused = refuseCancel({
+            ctx,
+            sessionID,
+            state,
+            entry,
+            stateRoot,
+            pairRoot,
+            locatedWorkRoot: located.workRoot,
+            snapGen,
+            baseline: stopBaseline,
+            evidenceReason: outcome.reason ?? "still_running",
+            judge,
+            foreign,
+            interrupted,
+          })
+          return { content: JSON.stringify(refused, null, 2) }
+        }
+
+        // ── 终止 ⇒ 墓碑 + 释放槽位（**授权释放**：`ADR-front-stop-ownership` D1）──
+        // 归属已变 ⇒ **不墓碑、不释放**（槽位归当前占者）。
+        const forced = force && !outcome.stopped
+        const ledgerRow = forced
+          ? {
+              event: "cancel_forced",
+              recorded_at: new Date().toISOString(),
+              kind: entry?.kind ?? "engineering",
+              front_session_id: entry?.front_session_id ?? null,
+              backend_session_id: sessionID,
+              agent: entry?.agent ?? null,
+              goal: entry?.goal ?? null,
+              scope: entry?.scope ?? [],
+              goal_key: entry?.goal_key ?? null,
+              work_root: entry?.work_root ?? located.workRoot ?? null,
+              canonical_root: stateRoot,
+              outcome: null,
+              // 本篇新增字段（`ADR-front-cancel-release` D4）
+              reason: outcome.reason ?? "still_running",
+              forced: true,
+              strict_mode: foreign,
+              baseline_idle: stopBaseline.idle,
+              baseline_running: stopBaseline.running,
+              stop_judge: judge,
+            }
+          : {
+              event: "cancelled",
+              recorded_at: new Date().toISOString(),
+              backend_session_id: sessionID,
+              front_session_id: entry?.front_session_id ?? null,
+              canonical_root: stateRoot,
+              work_root: entry?.work_root ?? null,
+              outcome: null,
+            }
+        const release = releaseSlotAuthorized({
+          pairRoot,
+          sessionID,
+          expectedGen: snapGen,
+          expectedStates: ["active", "dispatching"],
+          newState: "tombstone",
+          // 墓碑条目**不得**带 `cancel_pending`（ADR D3④）：`undefined` 会被 JSON.stringify 丢弃。
+          extraFields: { cancel_pending: undefined },
+          // ledger 与 pair **同临界区**落盘（实现约束 4）
+          ledgerRows: [ledgerRow],
+          ledgerRoot: stateRoot,
+        })
+        if (!release.ok) {
+          // 授权类拒绝 ⇒ **不墓碑、不放槽**；**不得**钉 `cancel_pending`（ADR D3③：
+          // 归属已变 ⇒ 钉住会挡住新占者的 reconcile ⇒ 把新占者变成死槽）。
+          return {
+            content: JSON.stringify(
+              {
+                session_id: sessionID,
+                interrupted,
+                state,
+                reason: release.reason ?? "slot_state_changed",
+                forced_available: false,
+                ...(foreign ? { foreign_instance: true, strict_mode: true } : {}),
+                message:
+                  release.reason === "slot_already_released"
+                    ? "该后端已不在占槽（此前已释放）⇒ 未做处置"
+                    : release.reason === "slot_reclaimed"
+                      ? "该后端的槽位归属已变更（已被另一路派发认领）⇒ 未终止、未释放槽位；请用 sessions 确认后再试"
+                      : "该后端的登记态已变更 ⇒ 未终止、未释放槽位；请用 sessions 确认后再试",
+              },
+              null,
+              2,
+            ),
+          }
+        }
+        await syncMetadataState(ctx, sessionID, "tombstone")
+        if (remove) {
+          try {
+            await ctx.session.remove({ sessionID })
+          } catch {
+            /* 删除失败不掩盖终止事实 */
+          }
+        }
         return {
           content: JSON.stringify(
             {
               session_id: sessionID,
-              interrupted: true,
-              state,
-              reason: release.reason ?? "slot_state_changed",
-              message:
-                release.reason === "slot_already_released"
-                  ? "该后端已不在占槽（此前已释放）⇒ 未做处置"
-                  : release.reason === "slot_reclaimed"
-                    ? "该后端的槽位归属已变更（已被另一路派发认领）⇒ 未终止、未释放槽位；请用 sessions 确认后再试"
-                    : "该后端的登记态已变更 ⇒ 未终止、未释放槽位；请用 sessions 确认后再试",
+              interrupted,
+              state: "tombstone",
+              removed: remove,
+              reason: null,
+              forced,
+              stop_judge: judge,
+              ...(foreign ? { foreign_instance: true, strict_mode: true } : {}),
+              message: forced
+                ? "已**强制**终止（墓碑）：跳过了停机证据门控 —— **该后端可能仍在写这个工作树**；不可再 resume，再派须新建"
+                : "已终止（墓碑）：不可再 resume，再派须新建",
             },
             null,
             2,
           ),
         }
-      }
-      await syncMetadataState(ctx, sessionID, "tombstone")
-      appendLedger(stateRoot, {
-        event: "cancelled",
-        recorded_at: new Date().toISOString(),
-        backend_session_id: sessionID,
-        front_session_id: entry?.front_session_id ?? null,
-        canonical_root: stateRoot,
-        work_root: entry?.work_root ?? null,
-        outcome: null,
-      })
-      if (remove) {
-        try {
-          await ctx.session.remove({ sessionID })
-        } catch {
-          /* 删除失败不掩盖终止事实 */
-        }
-      }
-      return {
-        content: JSON.stringify(
-          {
-            session_id: sessionID,
-            interrupted: true,
-            state: "tombstone",
-            removed: remove,
-            reason: null,
-            message: "已终止（墓碑）：不可再 resume，再派须新建",
-          },
-          null,
-          2,
-        ),
+      } finally {
+        // 守卫必清：成功/失败/异常都要清（否则同进程内该 workRoot 永久拒派）
+        leaveStopGuard(stateRoot, guardWorkRoot, guardToken)
       }
     },
+  }
+}
+
+/**
+ * 证据不足 ⇒ **整单拒绝**（`ADR-front-cancel-release` D2/D3）。
+ *
+ * 三件事同时发生：
+ * 1. **不墓碑、不放槽**（条目保持原状 ⇒ 仍占槽、仍可 resume）；
+ * 2. 落 `event:"cancel_refused"` ledger 行（否则 ledger 无法区分「从未尝试」与
+ *    「尝试过但被拒」⇒ 审计断链）；
+ * 3. **钉住**条目（写 `cancel_pending`）⇒ 挡住 `claimSlot` 的 reconcile 自动放行
+ *    （否则「刚拒绝释放的后端」会被 reconcile 放掉 ⇒ 双写者从后门回来）。
+ *
+ * ⚠️ 钉住**只在证据类拒绝且归属未变时**写（D3③）：归属已变（`slot_reclaimed`）⇒
+ * 不得钉（那会挡住新占者 ⇒ 新占者变死槽）。此时按「授权类优先」上报授权类 reason。
+ */
+function refuseCancel(input: {
+  ctx: any
+  sessionID: string
+  state: string
+  entry: any
+  stateRoot: string
+  pairRoot: string
+  locatedWorkRoot: string | undefined
+  snapGen: number
+  baseline: { idle: number; running: boolean }
+  /** 证据类 reason（拒绝的直接原因）。 */
+  evidenceReason: string
+  judge: string
+  foreign: boolean
+  interrupted: boolean
+}): Record<string, unknown> {
+  const { sessionID, state, entry, stateRoot, pairRoot, snapGen, baseline, evidenceReason, judge, foreign } = input
+  const baseRow = (pin: { ok: boolean; reason?: ReleaseReason }) => ({
+    event: "cancel_refused",
+    recorded_at: new Date().toISOString(),
+    kind: entry?.kind ?? "engineering",
+    front_session_id: entry?.front_session_id ?? null,
+    backend_session_id: sessionID,
+    agent: entry?.agent ?? null,
+    goal: entry?.goal ?? null,
+    scope: entry?.scope ?? [],
+    goal_key: entry?.goal_key ?? null,
+    work_root: entry?.work_root ?? input.locatedWorkRoot ?? null,
+    canonical_root: stateRoot,
+    outcome: null,
+    // 本篇新增字段（`ADR-front-cancel-release` D2/D3）
+    reason: evidenceReason,
+    forced_available: true,
+    strict_mode: foreign,
+    baseline_idle: baseline.idle,
+    baseline_running: baseline.running,
+    stop_judge: judge,
+    pinned: pin.ok,
+    ...(pin.ok ? {} : { pin_reason: pin.reason ?? null }),
+  })
+  const mark = markCancelPending({
+    pairRoot,
+    sessionID,
+    expectedGen: snapGen,
+    pending: { baseline_idle: baseline.idle, baseline_running: baseline.running, at: new Date().toISOString() },
+    ledgerRows: (pin) => [baseRow(pin)],
+    ledgerRoot: stateRoot,
+  })
+  // ⚠️ `reason` = **证据原因**（拒绝的直接原因）；钉不住（归属已变）是**另一件事实**
+  // ⇒ 单列 `pinned` / `pin_reason`（不得用授权类 reason 覆盖证据原因：本次拒绝是由证据
+  // 不足造成的，与归属变更无关）。
+  const hint =
+    evidenceReason === "wait_no_op"
+      ? "停机确认后该后端**仍在运行**（`wait` 已返回但判活仍为真：可能被再次唤起）⇒ 未终止、未释放槽位"
+      : evidenceReason === "still_running"
+        ? "后端在停机确认窗口内仍在运行（可能又被唤起）⇒ 未终止、未释放槽位"
+        : evidenceReason === "wait_timeout"
+          ? "停机确认窗口内未拿到终态证据（wait 超时）⇒ 未终止、未释放槽位"
+          : evidenceReason === "degraded_no_evidence"
+            ? "`session.wait` 不可用，且该后端当前无活跃执行（无正面证据）⇒ 未终止、未释放槽位"
+            : evidenceReason === "unreadable"
+              ? "无法读取后端状态（原因不明）⇒ 未终止、未释放槽位（停机判不出来 ⇒ 保守当作仍在运行）"
+              : "停机证据不足 ⇒ 未终止、未释放槽位"
+  return {
+    session_id: sessionID,
+    interrupted: input.interrupted,
+    state,
+    reason: evidenceReason,
+    stop_judge: judge,
+    forced_available: true,
+    pinned: mark.ok,
+    ...(mark.ok ? {} : { pin_reason: mark.reason ?? null }),
+    ...(foreign ? { foreign_instance: true, strict_mode: true } : {}),
+    message:
+      `${hint}。该后端**可能仍在写**这个工作树 ⇒ 槽位保持被占用。` +
+      (mark.ok
+        ? "可选：① 稍后重试 cancel；② 确认风险后用 force:true 强制放行（该后端可能仍在写这个工作树）。"
+        : "⚠️ 该条目**未**被钉住（归属在停机窗口内已变更）⇒ 下一次派发的回收可能顺带释放它，请先用 sessions 确认占槽者。"),
   }
 }

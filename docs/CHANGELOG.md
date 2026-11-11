@@ -10,6 +10,18 @@
 
 ---
 
+> **v2.8 变更摘要（2026-11-11，ADR-front-cancel-release 落地）**：**`cancel` 的释放判据 = 与 `suspend` 同源 + 显式 `force` 出口**。
+> ① **背景（探针实证）**：`ADR-front-stop-confirmation` D1 早已裁定「`interrupt` 的返回值**不是**停机判据」，但 `cancel` 至今**只看该返回值**就放槽 + 置墓碑 ⇒ 探针复现：**后端仍在跑时 `cancel` 释放了槽位 ⇒ 同一工作树两个写入者**。⇒ 该路径正是 `ADR-front-multi-backend` **D7.3「强制接管」（推荐恢复路径）**的实现 ⇒ **推荐路径本身是双写者生成器**；反向也坏（`interrupted:false` ⇒ 纯 no-op ⇒ D7.2「cancel 后重派」在后端从未起跑时是**死锁**）。
+> ② **判据**：`cancel` 复用 `suspend` 的停机判据（`wait` + 判活 + 水位线）；`interrupt` 的返回值**降级为诊断字段**。
+> ③ **证据不足 ⇒ 整单拒绝**（不墓碑、不放槽，条目保持原状、仍可 resume）+ 返回 `reason`（证据类 5 + 授权类 4）/ `stop_judge` / `forced_available` + 落 `event:"cancel_refused"` ledger 行。
+> ④ **`cancel_pending` 钉住**（`pair.json` 条目字段）：被拒 ⇒ 该后端可能还在写 ⇒ **reconcile 不得把它翻 `idle`**（否则双写者从后门回来）。代价 = 新增一条持久条件 ⇒ **崩溃恢复规则**（重启**不解钉**；出口三条：`cancel` 成功 / `force` / 后端被删）⇒ 已登记为「新增死槽面（已接受）」，并由 `sessions` 的 `cancel_pending` 字段保证**可见**。
+> ⑤ **`force:true` 是 per-call 参数、不是 env**：**只跳过停机证据门控，不跳过授权门控** ⇒ 墓碑 + 放槽 + 落 `event:"cancel_forced"`（含 `reason` / `forced` / `strict_mode` / `baseline_idle`）+ 返回风险文案。理由：env 是**部署级默认** ⇒ 全体 front 无差别放行、用户未逐次知情；per-call 则**逐次可见 + 落盘可审计**。⚠️ 严格模式（多实例）下 `force` **仍可用**（偏离仅限 per-call 通道，env 通道仍不可用）。
+> ⑥ **front 恢复序列从两步变四步**：`sessions` → `suspend` → 失败则 `cancel` → 失败则 `cancel(force)`（**须先向用户说明「该后端可能仍在写这个工作树」**）→ `dispatch`。`prompts/front.md` 与 `docs/front-delegate-usage.md` 同步，并删改两处「槽位会由下一次派发的回收顺带释放」的旧句（被钉住时该句不成立）。
+> ⑦ **跨实例**：严格模式的作用域从 `suspend` **扩到 `cancel`**（`running0=false` 也要求水位线前移）+ `foreign_instance:true` + `strict_mode:true`；⚠️ 上游 `interrupt` 能否打断**另一实例**的 execution **未核对** ⇒ 严格模式下的 `cancel` 实为「等它自然跑完」。
+> ⑧ **既有 ADR 同步修订 16 处**（multi-backend D1/D7.1/D7.2/D7.3/D9/D11.3/D12 注记/V08/V32/V33/V36/V37/V42、stop-confirmation D1/D2:68/D4、stop-ownership D2/S9/D3⑩/实现约束、knowledge-capability D5）+ ledger `event` 枚举新增 `cancel_refused` / `cancel_forced`。
+> 验证：`bun test tests/` **304 pass / 0 fail**（新增 20 条 AC1–AC19 用例）；**变异验证 5/5 捕获**（`scripts/mutate-cancel-release.sh`）；上游锚点 **21/21**（对 v2.2.5，新增 A11/A12）；探针固化进仓库（`tests/probes/probe-cancel-release.ts`）；E2E **L2-19/L2-20/L2-22/L2-23 + 新增 L2-24 全绿**（真实模型 + 真实宿主）。ADR：`docs/adr/ADR-front-cancel-release.md`（D1–D7）；验收记录 `.rddf/reviews/front-cancel-release-verify.md`，E2E 证据 `.rddf/reviews/front-cancel-release-e2e-evidence.md`。
+> ⚠️ **已知缺口 / 后续 backlog（2026-11-11 登记）**：① **跨实例根治不可在本仓实现**（上游无锁/租约/跨进程执行可见性原语）⇒ 登记为 **6 条上游 feature request**（`time_suspended` 暴露、原子准入+投递、跨进程执行可见性、`interrupt` 跨实例语义、`session.remove` 是否中断 execution 等）；② **`cancel` 对不占槽条目（`idle`/`suspended`）仍是幂等 no-op**（不墓碑）⇒ backlog `cancel-idle-tombstone`（改动面涉及 4 处条款，另立 change）；③ **`cancel_pending` 重启不解钉** ⇒ 需要显式处理（front 靠 `sessions` 看得见）；④ **E2E 无法在真实运行时确定性触发「拒绝」分支**（上游 settle 快）⇒ 该分支靠单测 + 探针 + 变异守住。
+
 > **v2.7 变更摘要（2026-11-09，ADR-front-multi-backend 落地）**：**front 从「同步单发」升级为「异步派发 + 只读观测 + 名册索引 + 单槽切换」**。
 > ① **工具面三→四**：新增 `dispatch`（异步派发，立即返回）/ `sessions`（只读观测，**绝不投递 prompt**）/ `suspend`（暂停、**保留上下文可续**）/ `cancel`（终止、墓碑）；四个新工具各有**独立权限 action**（`delegate_dispatch`/`delegate_sessions`/`delegate_suspend`/`delegate_cancel`），全局 deny + 仅 front allow。既有 `delegate` 保留，**语义与判据不变**（唯一**行为**影响：与新工具共用一张槽位表的检查；另有两处登记字段写盘 `state`/`work_root`）。
 > ② **单槽模型**：同一 git 工作树内**同一时刻只允许一个后端在跑**（槽位键 = `workRoot`；`dispatching`/`active` 占槽，`idle`/`suspended`/`tombstone` 不占）。同一仓的不同 linked worktree 各自一槽 ⇒ 想并行需先准备独立工作树。

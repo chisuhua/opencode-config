@@ -159,8 +159,9 @@
 
 - 路径：`.rddf/state/ledger.jsonl`，append-only。
 - 字段：`recorded_at` / `kind` / `front_session_id` / `backend_session_id` / `goal` / `scope` / `outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `last_assistant_text`（截断，禁止落凭证）。
-- **`event` 字段（2026-11-09 增补，ADR-front-multi-backend AC36）**：**独立字段，不塞进 `outcome`** —— `event` 取值 `dispatched` / `dispatch_failed` / `cancelled` / `taken_over`；这些行**没有** `outcome` 语义，消费者按 `event` 分派。`outcome` 枚举**新增 `vanished`**（后端被外部删除，见下表）。
+- **`event` 字段（2026-11-09 增补，ADR-front-multi-backend AC36）**：**独立字段，不塞进 `outcome`** —— `event` 取值 `dispatched` / `dispatch_failed` / `cancelled` / `taken_over`；⚠️ **2026-11-11 增补（`ADR-front-cancel-release`）**：`cancel_refused`（停机证据不足 ⇒ 整单拒绝）/ `cancel_forced`（per-call `force` 强制放行）——⚠️ **`force` 路径**不得产生普通 `cancelled` 行（**必须可区分**：消费者要能分辨「正常终止」与「强制放行」）。这些行**没有** `outcome` 语义，消费者按 `event` 分派。`outcome` 枚举**新增 `vanished`**（后端被外部删除，见下表）。
 - **event 行动带的字段**（实现落盘口径，`lib/delegate-async.ts`）：`event` / `recorded_at` / `kind` / `front_session_id` / `backend_session_id` / `agent` / `goal` / `scope` / **`goal_key`** / **`work_root`** / **`canonical_root`** / `outcome`（恒 `null`）。终态行（`outcome:"vanished"`）则**没有 `event` 字段**，其余字段同构。
+  - ⚠️ **两个新增 event 的专有字段**（`ADR-front-cancel-release` D2/D3/D4，**在其标准字段之外**追加）：`cancel_refused` ⇒ `reason`（证据类 reason）/ `forced_available` / `strict_mode` / `baseline_idle` / `baseline_running` / `stop_judge` / `pinned`（+ 钉不住时的 `pin_reason`）；`cancel_forced` ⇒ `reason`（哪条证据没过）/ `forced` / `strict_mode` / `baseline_idle` / `baseline_running` / `stop_judge`。⚠️ 这两个事件的 `outcome` **恒为 `null`**（它们是**动作行**，不是终态）。
 - 写入者：**仅 `delegate` 插件**，append 动作放进现有 `registerSession` 的同一 `withLock` 临界区 → 零新增写入方、无第二把锁、无锁序反转。
 - **行产生时机（写死，避免"每次 delegate 一行"与实现歧义）**：
 
@@ -174,12 +175,14 @@
   | 异步派发成功投递（`dispatch`） | **落一行**，`event: "dispatched"`（无 `outcome` 语义） |
   | 异步派发投递失败 / 结果未知 | **落一行**，`event: "dispatch_failed"` |
   | 后端被 `cancel` 终止 | **落一行**，`event: "cancelled"` |
+| `cancel` 因**停机证据不足**被拒（`ADR-front-cancel-release`） | **落一行**，`event: "cancel_refused"`（带 `reason`）——**不得**产生 `cancelled` 行 |
+| `cancel` 被 **per-call `force`** 强制放行 | **落一行**，`event: "cancel_forced"`——**不得**产生普通 `cancelled` 行 |
   | 回收他 front 遗留的槽位（亡主接管） | **落一行**，`event: "taken_over"` |
   | 后端被**外部删除**（派发面拿到 404 正面证据） | **落一行**，`outcome: "vanished"`（**观测面不补记**——见 `ADR-front-multi-backend` D12） |
 
   实现为**单次 append**，不得搭 `registerSession` 两次调用（prompt 前 / wait 后）的车而产生两行。
   ⚠️ **reconcile 不写 ledger**：槽位回收（把「已消失的 `active`」翻成 `idle`）只改 `pair.json`，**不落行** ⇒ 判「ledger 行数不变」时别把 pair 的变化当 ledger 证据。
-  ⚠️ **`vanished` 是 `outcome` 取值、不是 `event` 取值**：`event` 四行（`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`）的 `outcome` 恒为 `null`（它们是**动作**，不是终态）；`vanished` 行**没有 `event` 字段**（它是**终态结果**）。⇒ 消费者按「有 `event` ⇒ 动作行；无 `event` ⇒ 终态行」分派。
+  ⚠️ **`vanished` 是 `outcome` 取值、不是 `event` 取值**：`event` 六行（`dispatched`/`dispatch_failed`/`cancelled`/`cancel_refused`/`cancel_forced`/`taken_over`）的 `outcome` 恒为 `null`（它们是**动作**，不是终态）；`vanished` 行**没有 `event` 字段**（它是**终态结果**）。⇒ 消费者按「有 `event` ⇒ 动作行；无 `event` ⇒ 终态行」分派。
 - **职责切分（写死）**：`pair.json` = 访问控制登记表（`resume_session` 合法性唯一判据）；`ledger.jsonl` = 历史事实（回答"做过什么"）。**ledger 不参与 resume 校验**，避免两个真相源漂移。
 
 ### D6 wiki 后置（本次明确不做）

@@ -164,20 +164,57 @@ grant `edit` 会让 `scope` 的强制点失效）。
 | `reason` | 含义 | 该做什么 |
 |---|---|---|
 | `slot_already_released`（常带 `idempotent:true`） | 该后端**已不在占槽**（此前已释放过） | **不用再 `suspend`、也不必 `cancel`** |
-| `wait_no_op` | 停机确认已返回、但仍判定**可能仍在跑**（可能被再次唤起） | **不要反复重试 `suspend`**；先停下其它派发，确认它确实在跑再用 `cancel` |
-| `degraded_no_evidence` | 该运行时的 `session.wait` 不可用 ⇒ 无正面证据 | 用 `cancel`（有意的保守侧，不是故障） |
+| `wait_no_op` | 停机确认已返回、但仍判定**可能仍在跑**（可能被再次唤起） | **不要反复重试 `suspend`**；先停下其它派发，确认它确实在跑再走「切换四步」的第 3 步（`cancel`） |
+| `degraded_no_evidence` | 该运行时的 `session.wait` 不可用 ⇒ 无正面证据 | 走「切换四步」的第 3 步（`cancel`）（有意的保守侧，不是故障） |
 
 另有 `slot_reclaimed` / `slot_state_changed`：槽位归属在停机窗口内已被别的派发改动 ⇒
 本次**未释放**槽位 ⇒ 用 `sessions` 确认当前占槽者再决定。
 
+### 切换工作树：四步（`cancel` 有停机证据门控）
+
+`cancel` **不是**「按一下就放槽」：它会先**确认该后端真的停了**（与 `suspend` 同一条判据），
+证据不足 ⇒ **整单拒绝**（不终止、不释放槽位）⇒ 该后端**可能仍在写**这个工作树。
+
+```
+0. sessions            ⇒ 找占着这个工作树的后端 X（占槽者以台账为准，不看 metadata）
+1. suspend(X)          ⇒ 优雅路径；成功 ⇒ 槽已释放 ⇒ 跳 4
+2. suspend(X) 失败     ⇒ 进 3
+3. cancel(X)           ⇒ 证据门控
+     成功 ⇒ 跳 4
+     被拒 ⇒ 工作树被「正确地」占着（X 可能还在写）⇒ 二选一：
+       3a 等 + 重试：过几秒重试 cancel(X)
+       3b cancel(X, {force:true}) ⇒ 强制放行
+           ⇒ 必须先向用户说明「该后端可能仍在写这个工作树」
+4. dispatch(Y)         ⇒ 同一工作树
+```
+
+`cancel` 被拒时 `reason` 的含义：
+
+| `reason` | 含义 | 该做什么 |
+|---|---|---|
+| `wait_no_op` / `still_running` | 停机确认后仍判定**可能仍在跑** | 等 + 重试，或 `force:true`（先向用户说明风险） |
+| `wait_timeout` | 停机确认窗口内没拿到终态证据 | 等 + 重试，或 `force:true`（先向用户说明风险） |
+| `degraded_no_evidence` / `unreadable` | 无正面证据 / 读失败 | 等 + 重试，或 `force:true`（先向用户说明风险） |
+| `slot_already_released`（常带 `idempotent:true`） | 该后端**当前不占槽** | 幂等 no-op，**不必**再 `cancel` |
+| `slot_reclaimed` / `slot_state_changed` / `slot_entry_gone` | 台账状态与你的判断不一致 | 用 `sessions` 确认当前占槽者，**不要**硬来 |
+
+- 返回里带 `pinned:true` ⇒ 该条目已被**钉住**（`pair.json` 的 `cancel_pending`）⇒
+  下一次派发的自动回收**不会**放掉它 ⇒ 必须显式处理（重试 `cancel` 或 `force:true`）。
+  `pinned:false` 且带 `pin_reason` ⇒ 钉不住（归属在窗口内已变）⇒ 先用 `sessions` 确认占槽者。
+- `force:true` **只跳过停机证据门控**，**不跳过授权门控**（槽位已被别人认领时仍然拒绝）。
+- 台账留痕：`ledger.jsonl` 落 `event:"cancel_refused"` 行（被拒，带 `reason`）或
+  `event:"cancel_forced"` 行（强制放行）；成功终止落 `event:"cancelled"` 行。
+- 对**当前不占槽**的后端（台账 `state` 为 `idle`/`suspended`），`cancel` 是**幂等 no-op**
+  （不终止、不墓碑）—— 槽位本就不占，无需释放。
+
 ### 多实例部署（`foreign_instance:true`）
 
-若 `suspend` 的返回里带 `foreign_instance:true`，说明本 state dir 里**有 ≥2 个存活实例**
+若 `suspend` / `cancel` 的返回里带 `foreign_instance:true`，说明本 state dir 里**有 ≥2 个存活实例**
 （另一个 opencode 进程也在用这个仓）。此时本实例**看不到**别的实例上的 execution ⇒
 无法确认该后端已停 ⇒ 保守地**不释放槽位**。
 
-- 想终止它：用 `cancel`。
-- 它**本来就空闲**时：`cancel` 是空操作（不会终止）；槽位会由**下一次派发**的回收顺带释放。
+- 想终止它：走「切换四步」的第 3 步（`cancel`）；证据不足时唯一的出口是 `cancel(X, {force:true})`
+  （**先向用户说明「该后端可能仍在写这个工作树」**）。
 - 这是有意的保守侧（宁可占着槽，也不误放）。
 
 ## 7. front 的权限边界（权限层强制，非 prompt 承诺）
@@ -283,7 +320,13 @@ front 会用 **`suspend`** 暂停 A（**保留上下文**，不是杀掉），�
 > "算了，A 那个不做了。"
 
 front 用 **`cancel`**。这是**终止**：后端被标为墓碑，**永久不能再续接**，再派必须新建。
-若后端其实已经跑完了，`cancel` 是空操作（不会误伤）。想保留上下文就改用 `suspend`。
+想保留上下文就改用 `suspend`。
+
+⚠️ `cancel` 会**先确认该后端真的停了**（与 `suspend` 同一条判据）：
+- 确认停机 ⇒ 墓碑 + 释放槽位（可立刻在同一工作树重派）；
+- **证据不足 ⇒ 整单拒绝**（不终止、不释放槽位）⇒ 返回里带 `reason` ⇒ 该后端**可能仍在写**这个工作树
+  ⇒ 要么等几秒重试，要么 `cancel(X, {force:true})` 强制放行（**先向用户说明「该后端可能仍在写这个工作树」**）；
+- 对**当前不占槽**的后端（台账 `state` 为 `idle`/`suspended`）⇒ 幂等 no-op（不终止、不墓碑）。
 
 ## 10. 排障
 

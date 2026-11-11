@@ -45,18 +45,34 @@
 | `dispatch` | **并发多任务**：派出去先不等 | 异步：投递后**立即返回**（只等「消费确认」，不等任务完成） |
 | `sessions` | 用户问「后端怎么样了」 | **只读**：列名册 + 状态；**不投递任何 prompt**（不污染后端） |
 | `suspend` | 想「先切走、稍后回来继续」 | **暂停**：中断 + 让出槽位，但**保留上下文，之后可 resume** |
-| `cancel` | 目标作废、不再需要 | **终止**：墓碑，**永久不可 resume**，再派必须新建 |
+| `cancel` | 目标作废、不再需要 | **终止**：**先确认它真的停了**才墓碑 + 让出槽位；**永久不可 resume**，再派必须新建 |
 
 **三条必须记住的语义**：
 
 1. **`dispatch` 返回 ≠ 任务完成**——它只证明「简报已投递并被确认消费」，**不证明任务跑完**。要结论必须用 `sessions` 查，或用 `delegate` 同步等。（「消费确认」也不等于「任务完成」：前者只等简报被取走。）
 2. **同一工作树同时只允许一个后端在跑**（单槽）。再派会被拒，错误信息会给出占槽后端 id —— **先 `suspend` 它再派**。
-3. **切换 = 两步，由你编排**：`suspend(当前活跃)` → `dispatch/resume(目标后端)`。**不要**指望一个工具做完两步。
+3. **切换 = 四步，由你编排**。`cancel` 有**停机证据门控**（不是「按一下就放槽」）：
+   0. `sessions` ⇒ 找到占着这个工作树的后端 X（**占槽者以台账为准**，不看 metadata）；
+   1. `suspend(X)` —— 优雅路径（保留上下文，之后可 resume）；成功 ⇒ 槽位已释放 ⇒ 跳第 4 步；
+   2. `suspend(X)` 失败 ⇒ 进第 3 步；
+   3. `cancel(X)` —— **会先确认 X 真的停了**：
+      - 成功 ⇒ 跳第 4 步；
+      - **被拒**（返回里带 `reason`）⇒ 工作树是被「**正确地**」占着的（X 可能还在写）⇒ 你二选一：
+        - **等 + 重试**：过几秒重试 `cancel(X)`（判据一致，不会越权放槽）；
+        - **强制放行**：`cancel(X, {force:true})` —— ⚠️ **必须先向用户说明「该后端可能仍在写这个工作树」**再调用（这是把风险**显式转交**给用户，不是「更快的取消」）。
+   4. `dispatch(Y)`（同一工作树）。
+   **不要**指望一个工具做完这几步。
    - `suspend` 返回 `suspended:false` 时，**先看 `reason` 再决定动作**（不要一律重试）：
      - `reason:"slot_already_released"`（或带 `idempotent:true`）：该后端**已不在占槽** ⇒ **不用再 `suspend`、也不必 `cancel`**。
-     - `reason:"wait_no_op"`：**可能仍在跑**（停机确认已返回但仍判定在跑 ⇒ 可能又被唤起）：**不要反复重试 `suspend`**（会再 `interrupt` 一次、再赌一次）；先停下其它派发，确认它确实在跑再用 `cancel`。
-     - `reason:"degraded_no_evidence"`：该运行时的 `session.wait` 不可用，空闲后端无法被确认停机 ⇒ 用 `cancel`（这是有意的保守侧，不是故障）。
-     - 返回里带 `foreign_instance:true`：**检测到多实例部署**（本实例看不到别的实例上的执行）⇒ 无法确认停机 ⇒ 用 `cancel` 终止它。注意：对**本来就空闲**的后端，`cancel` 是空操作（不会终止）；那种情况下槽位会由**下一次派发**的回收顺带释放。
+     - `reason:"wait_no_op"`：**可能仍在跑**（停机确认已返回但仍判定在跑 ⇒ 可能又被唤起）：**不要反复重试 `suspend`**（会再 `interrupt` 一次、再赌一次）；先停下其它派发，确认它确实在跑再走第 3 步。
+     - `reason:"degraded_no_evidence"`：该运行时的 `session.wait` 不可用，空闲后端无法被确认停机 ⇒ 走第 3 步（这是有意的保守侧，不是故障）。
+     - 返回里带 `foreign_instance:true`：**检测到多实例部署**（本实例看不到别的实例上的执行）⇒ 无法确认停机 ⇒ 走第 3 步。
+   - `cancel` 被拒时 `reason` 的含义：
+     - `wait_no_op` / `still_running` / `wait_timeout` / `degraded_no_evidence` / `unreadable`：**停机证据不足** ⇒ **没有**终止、**没有**释放槽位（该后端可能还在写这个工作树）⇒ 走第 3 步的重试或 `force`。
+     - `slot_already_released`（或带 `idempotent:true`）：该后端**当前不占槽** ⇒ 幂等 no-op，**不必**再 `cancel`。
+     - `slot_reclaimed` / `slot_state_changed` / `slot_entry_gone`：台账状态与你的判断不一致 ⇒ 先用 `sessions` 确认当前占槽者，**不要**硬来。
+     - 返回里带 `pinned:true`：该条目已被**钉住**（台账字段 `cancel_pending`）⇒ 下一次派发的自动回收**不会**放掉它 ⇒ 必须显式处理（重试或 `force`）；`pinned:false` 且带 `pin_reason` ⇒ 钉不住（归属已变）⇒ 先用 `sessions` 确认占槽者。
+   - 对**当前不占槽**的后端（台账 `state` 为 `idle`/`suspended`），`cancel` 是**幂等 no-op**（不终止、不墓碑）—— 槽位本就不占，无需释放。
 
 **同仓要并行 ⇒ 先准备独立工作树**：不同工程仓天然可并行；**同一个仓**要并行，必须先是不同的 git worktree（`git worktree add`），再分别 `dispatch` 到各自目录。否则同一工作树只能串行。
 
@@ -118,7 +134,7 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 | `<工程>/openspec/changes/*/tasks.md` | 各 change 的勾选进度 |
 | `<工程>/.rddf/reviews/*.md` | 最近一次审稿/验收报告的日期与结论 |
 | `<工程>/.rddf/state/pair.json` | 已登记的工程 session（可续接的目标） |
-| `<工程>/.rddf/state/ledger.jsonl` | **委托历史账本**（每行一次委托，含 `recorded_at` / `outcome` / `host_outcome` / 证据字段）——回答"以前做过什么"时读它。⚠️ **两行制**：`event` 是**动作行**（`dispatched`/`dispatch_failed`/`cancelled`/`taken_over`，其 `outcome` 恒为 `null`）；`outcome` 是**终态行**（含 `vanished` = 后端被外部删除）。**有 `event` ⇒ 动作行；无 `event` ⇒ 终态行** |
+| `<工程>/.rddf/state/ledger.jsonl` | **委托历史账本**（每行一次委托，含 `recorded_at` / `outcome` / `host_outcome` / 证据字段）——回答"以前做过什么"时读它。⚠️ **两行制**：`event` 是**动作行**（`dispatched`/`dispatch_failed`/`cancelled`/`cancel_refused`/`cancel_forced`/`taken_over`，其 `outcome` 恒为 `null`）；`outcome` 是**终态行**（含 `vanished` = 后端被外部删除）。**有 `event` ⇒ 动作行；无 `event` ⇒ 终态行** |
 
 文件不存在 → 记为"未知"，**不要猜**。
 

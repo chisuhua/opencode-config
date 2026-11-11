@@ -46,8 +46,12 @@ tests/delegate-async.test.ts  异步面单测（槽位 / 消费确认 / 暂停�
 tests/canonical-root.test.ts  stateRoot/workRoot 归一（主仓 / linked worktree / submodule）
 tests/config-guards.test.ts   守卫漂移检测（配置 == scripts/agent-guard-rules.ts 真源）
 tests/model-fallback-core.test.ts 模型降级链内核单元测试
+tests/probes/                可复跑的**回归探针**脚本（如 probe-cancel-release.ts：cancel 不得在后端仍在跑时放槽）
 tests/fixtures/               真实会话回归夹具（如 no-work 形状）
 tests/README.md               本目录的说明（覆盖范围、fixture 约定、与真实运行时的关系）
+
+scripts/check-upstream-anchors.sh   上游语义锚点漂移检查（对 v2.2.5 全绿 21/21）
+scripts/mutate-cancel-release.sh    变异验证：5 组故意破坏 ⇒ 对应用例必须变红
 ```
 
 **架构纪律**：任何**可测的逻辑**都必须落在 `lib/delegate-core.ts`；`plugins/delegate.ts` 里只允许出现

@@ -200,9 +200,10 @@ agent：  agent.front.permission.delegate = "allow" → 唯一例外
 | **占槽态** | `dispatching`（简报已投递但**未确认消费**）/ `active`（已确认消费）。两种都占槽 |
 | **非占槽态** | `idle`（已登记未占槽）/ `suspended`（被暂停、可续）/ `tombstone`（终态） |
 | **常驻 vs 活跃** | 同一工作树可**常驻多个**后端（`idle`/`suspended`），同一时刻只有一个占槽 |
-| **切换** | `suspend(当前)` → `dispatch/resume(目标)`，**两步由 front 编排**（跨 session 的 interrupt+prompt 无法与上游投递原子化） |
+| **切换** | **四步由 front 编排**（`ADR-front-cancel-release` D5）：`sessions` 找占槽者 → `suspend`（优雅，可续）→ 失败则 `cancel`（**证据门控**）→ 仍失败则 `cancel(force:true)`（**须先向用户说明该后端可能仍在写这个工作树**）→ `dispatch/resume`（跨 session 的 interrupt+prompt 无法与上游投递原子化） |
+| **停机证据门控** | `suspend` 与 `cancel` **共用同一条**判据（`wait` + 判活为假 +（基线在跑时）终态水位线前移）；`interrupt` 的返回值**只作诊断字段**，**不决定**是否放槽。证据不足 ⇒ `cancel` **整单拒绝**（不墓碑、不放槽）+ 落 `event:"cancel_refused"`；`cancel_pending` 钉住该条目 ⇒ **reconcile 不得自动放行** |
 | **投递 ≠ 消费** | `prompt()` 返回 = **已入队**；消费 = 该简报的 `message.id` 出现在 `session.context()` 的消息 id 集合里。`dispatching` 只可 `cancel`（旧简报会抢先跑） |
-| **翻转执行者** | 同步 `delegate` 在 `wait` 返回时自翻转 `idle`；`dispatch` 派发的后端靠**每次派发时的 reconcile**（锁外查活体 → 锁内重验 → 锁内翻转） |
+| **翻转执行者** | 同步 `delegate` 在 `wait` 返回时自翻转 `idle`；`dispatch` 派发的后端靠**每次派发时的 reconcile**（锁外查活体 → 锁内重验 → 锁内翻转）。⚠️ **例外**：被 `cancel_pending` 钉住的条目**不得**被 reconcile 自动放行（刚被拒绝释放的后端可能还在写） |
 | **悬挂标记** | 登记占槽 + 实际不 busy + 超 `stalled` 阈值 ⇒ 展示层报「槽位疑似悬挂」；**回收仍由 reconcile 完成** |
 
 **锁的形态（不可违反）**：`withLock` 是**同步** `() => void`、不可重入、10s deadline ⇒

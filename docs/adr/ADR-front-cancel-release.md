@@ -7,7 +7,7 @@
 | Author | architect |
 | Parent | **部分取代** `ADR-front-multi-backend` **D7.2 / D7.3 / D9（cancel 行）/ D11.3 / AC28 / V32–V37**；**部分取代** `ADR-front-stop-confirmation` **D1（判据适用于所有释放路径）/ D2:68 / D4（退化通道只对 suspend）**；**部分取代** `ADR-front-stop-ownership` **D2/S9（严格模式的赎回通道）/ D3⑩（多实例下空闲后端的出口）/ 实现约束·写者纪律（扩到 `cancel_pending`）**；**结案** `ADR-front-stop-ownership` **C7 / D3⑦**。**不动** stop-ownership 的 **D1（授权释放的判定顺序）/ S5** ⇒ `cancel` 对**不占槽**条目（`idle`/`suspended`）保持今天的**幂等 no-op**（见「已知行为」与 backlog） |
 | 关联 change | `openspec/changes/front-cancel-release/`（**待立项**）。improvement：`front-cancel-release.md`（**待建**） |
-| AC 映射 | 待回填（change 未立项 ⇒ 允许暂缺） |
+| AC 映射 | **AC1–AC19 ↔ F1–F19（同号）** —— change：`openspec/changes/front-cancel-release/`（**实施完成，待验收**）；实现：`lib/delegate-async.ts`（`cancel` 判据链 / `markCancelPending` / `sessions` 可见性）+ `lib/delegate-core.ts`（`registerSession` 写者纪律）；用例：`tests/delegate-async.test.ts`（AC1–AC19）+ 探针 `tests/probes/probe-cancel-release.ts`（AC19）+ 变异脚本 `scripts/mutate-cancel-release.sh`（5/5 捕获）+ E2E `L2-24` |
 | 前置事实 | 上游 opencode **v2.2.5**（`scripts/check-upstream-anchors.sh` 对 v2.2.5 **19/19**）；探针 `/tmp/opencode/probe/probe-cancel-release.ts`（`cancel` 误放槽的实证；**归档前须固化进仓库**，见 Verification F19） |
 
 ## 背景与问题
@@ -221,7 +221,8 @@ B6 反对的是「**新增一个状态枚举值**（如 `suspending`）⇒ 进�
 - [ ] **F8 授权类拒绝**：`cancel` 窗口内 `claim_gen` 变化 ⇒ 不墓碑、不放槽，reason `slot_reclaimed`；**不得**写 `cancel_pending`（D3③）。
 - [ ] **F9 `cancel_pending` 挡住 reconcile**：证据类拒绝后条目带 `cancel_pending` ⇒ 随后的 `dispatch` 的 reconcile **不得**把它翻 `idle`（构造 stale-busy：后端其实在跑 ⇒ 必须仍被占）。
 - [ ] **F10 `cancel_pending` 生命周期**：成功释放 / 后端被删 / 墓碑 ⇒ 字段消失；且**经 `registerSession` 路径（同步 `delegate` 收尾）后字段仍在**（写者纪律）。
-- [ ] **F11 钉住不削弱水位线**：第一次 `cancel` 被拒 → 后端跑完（`time.idle` 前移）→ 后端**重新起跑且 `Execution.Started` 未投影**（陈旧 busy 窗）⇒ 第二次 `cancel` **不得**放行（水位线相对**本次尝试**的快照）。
+- [ ] **F11 钉住不削弱水位线**：第一次 `cancel` 被拒（钉住，基线水位线 = V0）⇒ 第二次 `cancel` 的**本次**基线水位线 = V1 > V0，且**终态水位线未前移**（`time.idle` 仍停在 V1）⇒ 第二次 `cancel` **不得**放行 —— 判据必须相对**本次尝试**的快照 V1；**若误用钉住的 V0**，则 `V1 > V0` 会把「过去某次 execution 结束过」误判为「当前这次结束」⇒ 放行 ⇒ 双写者。
+  ⚠️ **口径澄清（实施期登记，2026-11-11）**：本条只针对「`running0 = true`（水位线是判据）」的分支。「`Execution.Started` 未投影 ⇒ `running0 = false`」那一变体**不由水位线拦住**（`running0 = false` 时水位线**不是**判据 —— 与 `suspend` 同口径，见 D1⑦）⇒ 它的保护来自**钉住**（reconcile 不得自动放行，F9）+ **展示层判活的既有残留风险**（`ADR-front-multi-backend` D11.3 的 stale-busy 条目）⇒ 该变体**不在本篇的保证内**，如实登记。
 
 **不占槽条目与账目**
 

@@ -809,6 +809,10 @@ export function registerSession(
       // 归属版本：**保留**（不得因整条重建而归零）；认领时 +1。
       claim_gen: opts?.bumpClaim ? nextClaimGen(existing) : readClaimGen(existing),
     }
+    // `cancel_pending`（`ADR-front-cancel-release` D3④）：**写者纪律**——与 `claim_gen`
+    // 同等保留义务。整条重建会把字段丢掉 ⇒ reconcile 的「不得自动放行」保护**静默失效**
+    // ⇒ 刚被拒绝释放的后端会被下一次 dispatch 的 reconcile 放掉（双写者从后门回来）。
+    if (existing?.cancel_pending !== undefined) pairs[sessionID].cancel_pending = existing.cancel_pending
     // front-multi-backend：槽位与目标字段。**未传入的字段沿用已有值**（不覆盖），
     // 存量条目缺字段时保持缺失，由 `backfillPairEntry` 在观测路径回填（AC40）。
     if (extra?.work_root !== undefined) pairs[sessionID].work_root = extra.work_root

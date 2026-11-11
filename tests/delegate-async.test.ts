@@ -76,6 +76,11 @@ interface FakeOpts {
   pageSize?: number
   /** 让 makeBusy 的 session 永不停止 */
   interruptNoop?: boolean
+  /**
+   * 「陈旧 busy 窗」：中断**已受理**，但 `time.busy` 变陈旧（< `time.idle`）⇒ 判活为假；
+   * **终态水位线不前移**（`time.idle` 不变）⇒ 只有水位线判据能拦住它。
+   */
+  staleBusyOnInterrupt?: boolean
   /** session id 前缀（避免多个 fake ctx 之间 id 重号） */
   idPrefix?: string
 }
@@ -174,6 +179,11 @@ function createFakeCtx(opts: FakeOpts = {}) {
         if (!s) return { interrupted: false }
         const wasRunning = opts.running?.[input.sessionID] ?? s.busy
         if (!wasRunning) return { interrupted: false }
+        if (opts.staleBusyOnInterrupt) {
+          // 中断已受理，但 `time.busy` 变陈旧（< idle）⇒ 判活为假；**idle 不变** ⇒ 水位线未前移。
+          if (s.time) s.time = { ...s.time, busy: Math.max(1, (Number(s.time.idle) || 2) - 1) }
+          return { interrupted: true }
+        }
         if (!opts.interruptNoop) {
           s.busy = false
           s.idle = Date.now()
@@ -548,18 +558,21 @@ describe("cancel（AC28）", () => {
     expect(readPairs(dir)[a.session_id].state).toBe("tombstone")
   })
 
-  test("不在跑 ⇒ 纯 no-op，不墓碑（上下文仍可续）", async () => {
+  test("不在跑（但仍占槽）⇒ 停机成立 ⇒ 墓碑 + 释放槽位（ADR D1：不再是 no-op）", async () => {
     const dir = repo("can-noop")
     const { ctx, sessions } = createFakeCtx()
     const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
-    // 后端跑完
+    // 后端跑完（但条目仍占槽：state=active）
     const s = sessions.get(a.session_id)
     s.busy = false
     s.idle = Date.now() + 1000
 
     const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
-    expect(r.interrupted).toBe(false)
-    expect(readPairs(dir)[a.session_id].state).not.toBe("tombstone")
+    // ⚠️ 旧语义「`interrupted:false` ⇒ 纯 no-op」已被 `ADR-front-cancel-release` D1 取代：
+    // 停机判据 = `wait` + 判活为假（基线不在跑 ⇒ 无需水位线）⇒ 停机成立 ⇒ 墓碑 + 放槽。
+    expect(r.state).toBe("tombstone")
+    expect(r.stop_judge).toBe("wait")
+    expect(readPairs(dir)[a.session_id].state).toBe("tombstone")
   })
 
   test("墓碑后再 dispatch 到同一后端 ⇒ 拒绝（goal_key 相同也不放行）", async () => {
@@ -578,6 +591,349 @@ describe("cancel（AC28）", () => {
       err = String(e?.message ?? e)
     }
     expect(err.length).toBeGreaterThan(0)
+  })
+})
+
+// ───────────────── cancel：停机证据门控（ADR-front-cancel-release AC1–AC19） ─────────────────
+
+describe("cancel：停机证据门控（ADR-front-cancel-release）", () => {
+  const ledgerRows = (dir: string) => {
+    const f = path.join(dir, ".rddf/state/ledger.jsonl")
+    if (!existsSync(f)) return [] as any[]
+    return readFileSync(f, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+  }
+  const pairFile = (dir: string) => path.join(dir, ".rddf/state/pair.json")
+  const readPairRaw = (dir: string) => JSON.parse(readFileSync(pairFile(dir), "utf8"))
+  const writePairRaw = (dir: string, pairs: any) => writeFileSync(pairFile(dir), JSON.stringify(pairs))
+
+  test("AC1 假停机不放槽：interrupt 已受理但后端仍在跑 ⇒ 拒绝 + 仍占槽 + 后续 dispatch 被拒", async () => {
+    const dir = repo("fcr-ac1")
+    const { ctx } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.state).not.toBe("tombstone")
+    expect(["wait_no_op", "still_running"]).toContain(r.reason)
+    expect(r.stop_judge).toBe("wait")
+    expect(r.forced_available).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+    // 槽位仍在 ⇒ 后续 dispatch 被拒（错误含占槽者 id）
+    let err = ""
+    try {
+      await dispatchToolDefinition(ctx).execute(baseInput(dir, "goal-b"), { sessionID: "f" })
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain(a.session_id)
+  })
+
+  test("AC2 终态可见 ⇒ 成功：墓碑 + 放槽 + event:cancelled（且槽位可再被派发占用）", async () => {
+    const dir = repo("fcr-ac2")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.state).toBe("tombstone")
+    expect(r.reason).toBeNull()
+    expect(r.forced).toBe(false)
+    expect(readPairs(dir)[a.session_id].state).toBe("tombstone")
+    expect(ledgerRows(dir).some((x: any) => x.event === "cancelled")).toBe(true)
+    const b = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-b"))
+    expect(b.session_id).toBeTruthy()
+  })
+
+  test("AC3 退化（wait 缺失）+ 基线不在跑 ⇒ 拒绝 degraded_no_evidence + stop_judge=degraded", async () => {
+    const dir = repo("fcr-ac3")
+    const { ctx, sessions } = createFakeCtx({ noWait: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.busy = false
+    s.idle = Date.now() + 1000
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.state).not.toBe("tombstone")
+    expect(r.reason).toBe("degraded_no_evidence")
+    expect(r.stop_judge).toBe("degraded")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC4 退化（wait 缺失）+ 基线在跑 + 水位线前移 ⇒ 允许放行（judge 仍为 degraded）", async () => {
+    const dir = repo("fcr-ac4")
+    const { ctx } = createFakeCtx({ noWait: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.state).toBe("tombstone")
+    // 无 execution 级证据 ⇒ 不得谎称 "wait"
+    expect(r.stop_judge).toBe("degraded")
+  })
+
+  test("AC5a wait 超时 ⇒ 拒绝 wait_timeout（条目回原态）", async () => {
+    const dir = repo("fcr-ac5a")
+    const { ctx } = createFakeCtx({ wait: "hold", interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.reason).toBe("wait_timeout")
+    expect(r.state).not.toBe("tombstone")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC5b 读失败（原因不明）⇒ 拒绝 unreadable（不墓碑不放槽）", async () => {
+    const dir = repo("fcr-ac5b")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 让**基线读取**失败（locate 的那次要成功 ⇒ 否则会走「无法确认该后端是否仍存在」）
+    const origGet = ctx.session.get
+    let gets = 0
+    ctx.session.get = async (input: any) => {
+      gets++
+      if (gets === 2) throw new Error("ECONNRESET: read failed")
+      return origGet(input)
+    }
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.reason).toBe("unreadable")
+    expect(r.state).not.toBe("tombstone")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC6 后端已删（NotFound）⇒ 走 D12：墓碑 + outcome:vanished 终态行（无 event 字段）", async () => {
+    const dir = repo("fcr-ac6")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const origGet = ctx.session.get
+    ctx.session.get = async (input: any) => {
+      if (input.sessionID === a.session_id) {
+        const e: any = new Error("Session.NotFoundError: session not found")
+        e._tag = "Session.NotFoundError"
+        throw e
+      }
+      return origGet(input)
+    }
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.state).toBe("tombstone")
+    expect(r.vanished).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("tombstone")
+    const vanished = ledgerRows(dir).find((x: any) => x.outcome === "vanished")
+    expect(vanished).toBeTruthy()
+    // 终态行**没有** `event` 字段（knowledge-capability D5 的「有 event ⇒ 动作行」分派）
+    expect(vanished.event).toBeUndefined()
+  })
+
+  test("AC7 force：跳过证据门控 ⇒ 墓碑 + 放槽 + cancel_forced 行 + forced:true + 风险文案", async () => {
+    const dir = repo("fcr-ac7")
+    const { ctx } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id, force: true })
+    expect(r.state).toBe("tombstone")
+    expect(r.forced).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("tombstone")
+    const rows = ledgerRows(dir)
+    expect(rows.some((x: any) => x.event === "cancel_forced")).toBe(true)
+    expect(rows.some((x: any) => x.event === "cancelled")).toBe(false)
+    expect(String(r.message)).toContain("可能仍在写")
+  })
+
+  test("AC8 授权类拒绝：窗口内 claim_gen 变化 ⇒ 不墓碑不放槽 + reason=slot_reclaimed + 不写 cancel_pending", async () => {
+    for (const withForce of [false, true]) {
+      const dir = repo(`fcr-ac8-${withForce ? "force" : "plain"}`)
+      const { ctx } = createFakeCtx()
+      const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+      // 注入：interrupt 之后、释放之前，归属版本被改（另一路认领）
+      const origInterrupt = ctx.session.interrupt
+      ctx.session.interrupt = async (input: any) => {
+        const r = await origInterrupt(input)
+        const raw = readPairRaw(dir)
+        raw.pairs[a.session_id].claim_gen = (raw.pairs[a.session_id].claim_gen ?? 0) + 5
+        writePairRaw(dir, raw)
+        return r
+      }
+      const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id, force: withForce })
+      expect(r.reason).toBe("slot_reclaimed")
+      expect(r.state).not.toBe("tombstone")
+      expect(readPairs(dir)[a.session_id].state).toBe("active")
+      // D3③：授权类拒绝**不得**钉住（否则新占者变死槽）
+      expect(readPairs(dir)[a.session_id].cancel_pending).toBeUndefined()
+    }
+  })
+
+  test("AC9 cancel_pending 挡住 reconcile：被拒后即使看起来空闲也不得被自动放行", async () => {
+    const dir = repo("fcr-ac9")
+    const { ctx, sessions } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const r1 = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r1.reason).toBeTruthy()
+    expect(r1.pinned).toBe(true)
+    expect(readPairs(dir)[a.session_id].cancel_pending).toBeTruthy()
+    // 让后端「看起来空闲」⇒ 若无钉住，reconcile 会放行 ⇒ dispatch 会被准入
+    const s = sessions.get(a.session_id)!
+    s.time = { idle: Date.now() + 10_000 }
+    s.messages = []
+    let err = ""
+    try {
+      await dispatchToolDefinition(ctx).execute(baseInput(dir, "goal-b"), { sessionID: "f" })
+    } catch (e: any) {
+      err = String(e?.message ?? e)
+    }
+    expect(err).toContain(a.session_id)
+  })
+
+  test("AC10 cancel_pending 生命周期：registerSession 保留它；sessions 可见；成功释放后消失", async () => {
+    const dir = repo("fcr-ac10")
+    const { ctx } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(readPairs(dir)[a.session_id].cancel_pending).toBeTruthy()
+    // 写者纪律：`registerSession` 的整条重建**不得**丢掉它
+    registerSession(dir, a.session_id, "ses_front_test", "build", "engineering", undefined, {
+      work_root: path.resolve(dir),
+      state: "active",
+    })
+    expect(readPairs(dir)[a.session_id].cancel_pending).toBeTruthy()
+    // `sessions` 必须看得见（否则「砖死不是静默的」没有落点）
+    const listed = await run(sessionsToolDefinition(ctx), {})
+    const item = listed.items.find((i: any) => i.session_id === a.session_id)
+    expect(item).toBeTruthy()
+    expect(item.cancel_pending).toBeTruthy()
+    // 成功释放 ⇒ 字段消失
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id, force: true })
+    expect(r.state).toBe("tombstone")
+    expect(readPairs(dir)[a.session_id].cancel_pending).toBeUndefined()
+  })
+
+  test("AC10b 后端被删（D12）⇒ 钉住字段消失", async () => {
+    const dir = repo("fcr-ac10b")
+    const { ctx } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(readPairs(dir)[a.session_id].cancel_pending).toBeTruthy()
+    const origGet = ctx.session.get
+    ctx.session.get = async (input: any) => {
+      if (input.sessionID === a.session_id) {
+        const e: any = new Error("Session.NotFoundError: session not found")
+        e._tag = "Session.NotFoundError"
+        throw e
+      }
+      return origGet(input)
+    }
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.state).toBe("tombstone")
+    expect(readPairs(dir)[a.session_id].cancel_pending).toBeUndefined()
+  })
+
+  test("AC11 钉住不削弱水位线：第二次 cancel 的水位线相对**本次尝试**的快照", async () => {
+    const dir = repo("fcr-ac11")
+    const { ctx, sessions } = createFakeCtx({ staleBusyOnInterrupt: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    const T = Date.now()
+    // 第一次：基线在跑（busy > idle），水位线基线 = T+1000
+    s.time = { busy: T + 2000, idle: T + 1000 }
+    const r1 = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r1.state).not.toBe("tombstone")
+    expect(r1.reason).toBeTruthy()
+    const pinned = readPairs(dir)[a.session_id].cancel_pending
+    expect(pinned).toBeTruthy()
+    expect(pinned.baseline_idle).toBe(T + 1000)
+    // 第二次：基线水位线更高（T+4000）且**终态水位线未前移** ⇒ 必须拒绝
+    s.time = { busy: T + 5000, idle: T + 4000 }
+    const r2 = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r2.state).not.toBe("tombstone")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+  })
+
+  test("AC12 cancel 对不占槽条目 ⇒ 幂等 no-op（slot_already_released），不墓碑不放槽", async () => {
+    const dir = repo("fcr-ac12")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    setPairFields(dir, a.session_id, { state: "idle" })
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.reason).toBe("slot_already_released")
+    expect(r.idempotent).toBe(true)
+    expect(readPairs(dir)[a.session_id].state).toBe("idle")
+  })
+
+  test("AC13 不占槽 + 证据不足 ⇒ 仍是 slot_already_released（授权类优先于证据类）", async () => {
+    const dir = repo("fcr-ac13")
+    const { ctx } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    setPairFields(dir, a.session_id, { state: "suspended" })
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.reason).toBe("slot_already_released")
+    expect(readPairs(dir)[a.session_id].state).toBe("suspended")
+  })
+
+  test("AC14 ledger 可区分：证据类拒绝 ⇒ cancel_refused（无 cancelled 行）；force ⇒ cancel_forced（无 cancelled 行）", async () => {
+    const dir = repo("fcr-ac14")
+    const { ctx } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    let rows = ledgerRows(dir)
+    expect(rows.some((x: any) => x.event === "cancel_refused")).toBe(true)
+    expect(rows.some((x: any) => x.event === "cancelled")).toBe(false)
+    const refused = rows.find((x: any) => x.event === "cancel_refused")
+    expect(refused.reason).toBeTruthy()
+    expect(refused.forced_available).toBe(true)
+    expect(refused.outcome).toBeNull()
+    await run(cancelToolDefinition(ctx), { session_id: a.session_id, force: true })
+    rows = ledgerRows(dir)
+    expect(rows.some((x: any) => x.event === "cancel_forced")).toBe(true)
+    expect(rows.some((x: any) => x.event === "cancelled")).toBe(false)
+  })
+
+  test("AC15 严格模式：多实例 ⇒ 基线不在跑也要求水位线前移 ⇒ 拒绝 + foreign_instance + degraded；force 仍可用", async () => {
+    const dir = repo("fcr-ac15")
+    const { ctx, sessions } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    const s = sessions.get(a.session_id)!
+    s.busy = false
+    s.idle = Date.now() + 1000
+    // 伪造另一个**存活**实例（同 host、pid+1）⇒ tripwire 命中 ⇒ 严格模式
+    const stateDir = path.join(dir, ".rddf/state")
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(
+      path.join(stateDir, `.instance-${process.pid + 1}-other.json`),
+      JSON.stringify({ pid: process.pid + 1, host: hostname(), started_at: new Date().toISOString() }),
+    )
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.foreign_instance).toBe(true)
+    expect(r.stop_judge).toBe("degraded")
+    expect(r.reason).toBeTruthy()
+    expect(r.state).not.toBe("tombstone")
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+    // 严格模式下 `force` **仍可用**（偏离仅限 per-call 通道）
+    const r2 = await run(cancelToolDefinition(ctx), { session_id: a.session_id, force: true })
+    expect(r2.state).toBe("tombstone")
+    expect(r2.strict_mode).toBe(true)
+  })
+
+  test("AC17 单槽不变式：cancel 拒绝后同一 workRoot 仍 ≤1 个占槽条目", async () => {
+    const dir = repo("fcr-ac16")
+    const { ctx } = createFakeCtx({ interruptNoop: true })
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    const occupants = slotOccupants(readPairs(dir), path.resolve(dir))
+    expect(occupants.length).toBeLessThanOrEqual(1)
+    expect(occupants.map((o: any) => o.session_id)).toContain(a.session_id)
+  })
+
+  test("AC18 前端文案：含四步恢复序列；不得把裸 cancel 写成释放入口；force 前要求用户知情", async () => {
+    const md = readFileSync2(path.join(process.cwd(), "prompts/front.md"), "utf8")
+    const usage = readFileSync2(path.join(process.cwd(), "docs/front-delegate-usage.md"), "utf8")
+    for (const [doc, name] of [[md, "front.md"], [usage, "usage.md"]] as const) {
+      expect(`${name}:cancel_pending=${doc.includes("cancel_pending")}`).toBe(`${name}:cancel_pending=true`)
+      expect(`${name}:force=${doc.includes("force")}`).toBe(`${name}:force=true`)
+      expect(`${name}:wait_no_op=${doc.includes("wait_no_op")}`).toBe(`${name}:wait_no_op=true`)
+      expect(`${name}:cancel_refused=${doc.includes("cancel_refused")}`).toBe(`${name}:cancel_refused=true`)
+    }
+    // 不得再出现「槽位会由下一次派发的回收顺带释放」（被钉住时不成立）
+    expect(md.includes("槽位会由下一次派发的回收顺带释放")).toBe(false)
+    expect(usage.includes("槽位会由下一次派发的回收顺带释放")).toBe(false)
+  })
+
+  test("AC19 探针固化进仓库且可复跑（回归脚本：cancel 不得在后端仍在跑时放槽）", async () => {
+    const probe = path.join(process.cwd(), "tests/probes/probe-cancel-release.ts")
+    expect(existsSync(probe)).toBe(true)
+    const out = execFileSync("bun", [probe], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    expect(out).toContain("结论：✅ cancel 未在后端仍在跑时释放槽位")
   })
 })
 

@@ -58,6 +58,8 @@
 
 ⚠️ **`wait` 必须在 `interrupt` 之后**：放在之前会变成「等当前任务自然跑完」，把「暂停」变成「等待」，与 D1.1 的 execute 硬超时冲突。
 
+⚠️ **适用范围（`ADR-front-cancel-release` 扩写）**：本条的判据适用于**任何释放槽位的路径**，不只 `suspend` —— `cancel` 的释放同样以「本条的停机确认」为前提（证据不足 ⇒ **整单拒绝**：不墓碑、不放槽）。⇒ **「任一判不出来 ⇒ 不释放」不再是 `suspend` 的专属约定**。
+
 ### D2 进程内准入守卫（**不落盘**）：`wait` 返回**之后**的准入窗只能由写侧关闭
 
 `wait` 返回后仍有窗口（读水位线、锁内重验、释放槽位），其中到达的准入同样会起后继 execution —— **轮询关不掉「未来」**。
@@ -65,7 +67,8 @@
 - **实现形态：以 `stateRoot` + `workRoot` 为键的**进程内标记集**，**不写 `pair.json`。`claimSlot` 与既有同步 `delegate` 的槽位检查见到「同 `workRoot` 正在停机」⇒ **拒绝**并说明占槽后端（两处共用同一检查，D7.4「共用一张槽位表」不破）。
 - **为什么不持久化**：守卫的作用域是**进程内准入**（跨实例的准入不归本篇管，见 D1 的成立假设）⇒ 进程内标记足以覆盖可达面，且**崩溃即丢失**，不会留下持久化的中间态。**这直接消除「新增持久化状态 ⇒ 需要崩溃恢复规则 ⇒ 进程在停机窗口内死掉即死槽」的整类风险**。
 - **撤销路径**：删除集合与两处检查即可回退，**无落盘残留**（`pair.json` 枚举不变 ⇒ `ADR-front-multi-backend` D6.3 / D12 矩阵**无需修订**）。
-- **与 D7.3「强制接管」的边界**：停机**失败/超时**后守卫即清（③ 步的 `finally`），此时「`cancel` 旧条目 → `dispatch` 新后端」的强制接管恢复正常。⇒ 守卫持有窗口内（`suspend` 仍在等）的 `cancel` **允许**（它不产生新写入者），但随后的 `dispatch` 会被守卫拒绝 —— 这是**正确的保守行为**：接管必须等这次停机结束（成功或失败）后再做。
+- **与 D7.3「强制接管」的边界**：停机**失败/超时**后守卫即清（③ 步的 `finally`），此时强制接管恢复正常（**序列见 `ADR-front-cancel-release` D5**）。⇒ 守卫持有窗口内（`suspend` 仍在等）的 `cancel` **允许**（它**不产生**新写入者——本篇的 `cancel` 只 `interrupt` 不放槽），但随后的 `dispatch` 会被守卫拒绝 —— 这是**正确的保守行为**：接管必须等这次停机结束（成功或失败）后再做。
+  ⚠️ **真正的写入者窗口在「守卫清掉之后」**：`ADR-front-cancel-release` 起 `cancel` **会放槽**（墓碑 ⇒ 不占槽）⇒ 守卫清掉后的任何 `dispatch` 都可能被准入 ⇒ **「`cancel` 不产生新写入者」这句只对「守卫持有窗口内」成立**；`cancel` 落墓碑后放出的窗口由该篇的**停机证据门控**承担（证据不足 ⇒ 不放槽）。
 - **代价**：跨进程不生效（已由 D1 的成立假设覆盖）；必须保证 `finally` 清理（否则同进程内该 `workRoot` 永久拒派 —— 由 Verification **S4b** 兜住）。
 
 ### D3 已删后端：`wait` 抛 `NotFound` ⇒ **视为已停机**
@@ -78,7 +81,9 @@
 
 - `running0 = true` 分支：水位线前移是**正面证据** ⇒ 退化后仍可照常释放。
 - `running0 = false` 分支：**无正面证据**（只有「判活为假」这个否定证据）⇒ 退化时**拒绝释放**，返回「`wait` 不可用 ⇒ 无法确认该后端未在跑；请用 `cancel`，或设置 `RDDF_SUSPEND_ALLOW_DEGRADED=1` 显式承担风险」。
-- **留痕（「显式」必须可见）**：`stop_judge: "wait" | "degraded" | "degraded-forced"` 挂在 **`suspend` 的返回值**上（它是**一次停机尝试的结论**，不是 session 的观测属性 ⇒ 不污染只读的 `sessions`）；强开变量而成功释放的，另落一行 ledger（`event:"suspend_degraded"`）。
+- **留痕（「显式」必须可见）**：`stop_judge: "wait" | "degraded" | "degraded-forced"` 挂在**停机尝试的返回值**上（它是**一次停机尝试的结论**，不是 session 的观测属性 ⇒ 不污染只读的 `sessions`）；强开变量而成功释放的，另落一行 ledger（`event:"suspend_degraded"`）。
+  ⚠️ **作用域扩到 `cancel`**（`ADR-front-cancel-release` D2）：`cancel` 也返回 `stop_judge` ⇒ 本条的「退化」词汇对两个工具一致。
+  ⚠️ **本条的 env 赎回通道（`RDDF_SUSPEND_ALLOW_DEGRADED`）只对 `suspend` 有效**：`cancel` 侧**没有** env 通道，唯一的显式出口是 **per-call `force:true`**（`ADR-front-cancel-release` D4）⇒ **一条 env 通道（suspend）+ 一条 per-call 通道（cancel）并存**。
 - **启动自检**：`typeof ctx.session.wait === "function"`（不做真调用）；**存在但调用返回 4xx / `HandlerNotFound`** 同样归 `degraded`（`stop_judge` **不得**报 `"wait"`）。
 
 ### D5 关闭范围（写死，避免读者高估）
