@@ -111,8 +111,11 @@
 
 ## 8. 判据的已知局限（如实声明）
 
-- **AC16（锚点）**对 `/tmp/opencode/upstream-2.2.5`（`git archive v2.2.5` 导出）执行；本机
-  `/workspace/project/opencode` 是开发 commit（2.1.2）⇒ **不能**拿它跑（会假红）。已在脚本 `--src` 上声明。
+- **AC16（锚点）**对 `/tmp/opencode/upstream-2.2.5`（从本机 checkout `git archive v2.2.5` 导出）执行；
+  本机 `/workspace/project/opencode` 是**特性分支** `process-daemon-v0.5.0`（HEAD `1e791be6a5`，2026-11-10，
+  package.json 版本 **2.2.7**），与 v2.2.5 **已分叉**（v2.2.5 不是 HEAD 的祖先；HEAD 多 749 个提交，
+  分叉点 `958f965d35` / 2026-10-30）⇒ **不能**拿它跑（会假红）。已在脚本 `--src` 上声明。
+  ⚠️ **本条此前误记为「2.1.2」，2026-11-11 核对 git 后更正为 2.2.7**（结论不变：它是开发分支，不是 v2.2.5）。
 - **AC17 的 E2E** 在真实模型上跑；额度耗尽后无法重跑 ⇒ 有效证据是第一次通过的那轮（已固化在报告里）。
 - **「锚点脚本全绿」不等于「上游语义没变」**：它只校验本仓依赖的**语义断言**（不校验行号），
   新增的 A11/A12 也只覆盖「`resume:false` 不提升 inbox」「`nextPromotable` 优先 steer」两条。
