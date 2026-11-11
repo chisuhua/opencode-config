@@ -10,7 +10,8 @@
 | oracle 1 轮 | oracle | 四方案失败模式分析（形态 A–D）；推翻「跨进程异步锁」，提出「代号条件化 + 前置复检 + 机器化 tripwire」 | — |
 | critic 第 1 轮 | critic | **REJECT**（3 BLOCKER：B1 D12 矩阵冲突 / B2 重新采纳父篇已否决的 B4 未登记 / B3「只能 cancel 兜底」与实现矛盾）+ 7 SHOULD_FIX + 3 NITS | no |
 | critic 第 2 轮（复审） | critic | **REJECT**（B2/B3 判定**闭合**；B1 判定**部分闭合** ⇒ 新 BLOCKER：改写新引入的 D12 矩阵**动作混写**）+ 8 SHOULD_FIX + 5 NITS | no |
-| 第 2 轮后 | architect（自检闭合） | **按预算规则未开第 3 轮**（每 ADR ≤ 2 轮 critic；第 3 轮需用户批准）⇒ 第 2 轮唯一 BLOCKER（两处括号的动作混写）**逐字机械核对**后修正（见 §3），并逐条落实 8 SHOULD_FIX + 5 NITS | — |
+| 第 3 轮（用户批准后补开） | critic | **REJECT**：三处口径修订**未同步到汇总位**（D3 表 / Verification / AC 绑定）⇒ **3 个新 BLOCKER**（B1 D3⑧ 未同步 / B2 S11 仍把 TTL 当判据 / B3 严格模式 `stop_judge` 未按分支） | no |
+| 第 3 轮后 | architect（订正 + 自检） | 三处 BLOCKER 已按意见订正（B1/B2/B3），并落实 4 SHOULD_FIX + 3 NITS（锚点计数 17→19、戳文件名补 `<pid>`、Status 压缩）；**未开第 4 轮**（预算），订正后由 architect 自检 + 用户抽阅（critic 自己也建议不再开第 4 轮） | — |
 
 ## 1. critic 第 1 轮（REJECT）的 BLOCKER 与处置
 

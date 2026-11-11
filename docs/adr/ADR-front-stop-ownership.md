@@ -2,13 +2,13 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | **Accepted**（2026-11-11 **用户签批**（指令：「请根据你的推荐进行实施」）；oracle 1 轮 + **critic 2 轮（REJECT → REJECT）**：第 1 轮 3 BLOCKER（B1 D12 矩阵冲突 / B2 重新采纳 B4 未登记 / B3「cancel 兜底」与实现矛盾）、第 2 轮 B2/B3 闭合、新 BLOCKER 1 个（文档内 D12 矩阵**动作混写**）**逐字机械核对**后闭合；**未开第 3 轮**（预算：每 ADR ≤ 2 轮 critic，第 3 轮需用户批准 ⇒ 如需可补一轮仅验闭合的复审）。第 1 轮 7 SHOULD_FIX、第 2 轮 8 SHOULD_FIX/5 NITS **全部落实**；审稿记录 `.rddf/reviews/adr-front-stop-ownership-review.md`） |
+| Status | **Accepted**（2026-11-11 用户签批（指令：「请根据你的推荐进行实施」）；oracle 1 轮 + **critic 3 轮**：第 1 轮 REJECT（3 BLOCKER）→ 第 2 轮 REJECT（B2/B3 闭合、新 BLOCKER 1 个=文档内动作混写，机械核对后闭合）→ 第 3 轮 REJECT（三处口径修订**未同步到汇总位**：D3 表 / Verification / AC 绑定 ⇒ 已按意见订正；**未开第 4 轮**（预算：每 ADR ≤ 2 轮 + 1 次复审），订正后由 architect 自检 + 用户抽阅）。第 1 轮 7 SHOULD_FIX、第 2 轮 8 SHOULD_FIX/5 NITS、第 3 轮 4 SHOULD_FIX/3 NITS **全部落实**；审稿记录 `.rddf/reviews/adr-front-stop-ownership-review.md`） |
 | Date | 2026-11-11 |
 | Author | architect |
-| Parent | **部分取代** `ADR-front-stop-confirmation` **D1 条件③ 的分支结构**（`running0=false ⇒ 无附加要求`）——**仅在「检测到多实例部署」时**取代（等价于父篇选项表 **B4**，本篇选项表 **C8** 登记其重新采纳与理由）；**单实例口径不变**。**不取代** `ADR-front-multi-backend`（D7/D11.2 的「锁内重验后再翻转」**继续有效**，本篇把它从「重验状态」补全为「重验**授权**」；**D12 矩阵不变**）；**不取代** `ADR-front-stop-confirmation` 的 D1 判据本体与 D2 进程内守卫；⚠️ 父篇 **Verification S7b**（「`wait` 可用 ⇒ `stop_judge:"wait"`」）**在严格模式下不成立**（改判 `"degraded"` + `foreign_instance:true`） |
+| Parent | **部分取代** `ADR-front-stop-confirmation` **D1 条件③ 的分支结构**（`running0=false ⇒ 无附加要求`）——**仅在「检测到多实例部署」时**取代（等价于父篇选项表 **B4**，本篇选项表 **C8** 登记其重新采纳与理由）；**单实例口径不变**。**不取代** `ADR-front-multi-backend`（D7/D11.2 的「锁内重验后再翻转」**继续有效**，本篇把它从「重验状态」补全为「重验**授权**」；**D12 矩阵不变**）；**不取代** `ADR-front-stop-confirmation` 的 D1 判据本体与 D2 进程内守卫；⚠️ 父篇 **Verification S7b**（「`wait` 可用 ⇒ `stop_judge:"wait"`」）**仅在严格模式的 `running0 = false` 分支**不成立（改判 `"degraded"` + `foreign_instance:true`）；`running0 = true` 分支仍为 `"wait"` |
 | 关联 change | `openspec/changes/archive/2026-11-11-front-stop-ownership/`（2026-11-11 立项 → **实施完成并归档**；AC1–AC18）。improvement：[`front-stop-ownership.md`](../../.rddf/improvements/front-stop-ownership.md) |
 | AC 映射 | **AC1–AC14 ↔ S1–S14（同号）** + **AC15–AC18**（metis gap 分析新增的**实施期判据**：授权判定顺序 / 写者与锁边界 / tripwire 身份与容错 / 返回契约一致性）——见 `openspec/changes/archive/2026-11-11-front-stop-ownership/proposal.md` 的「AC ↔ ADR Verification 映射」段 |
-| 前置事实 | 上游 opencode **v2.2.5**（运行中的 `opencode --version`）；本篇的上游断言全部锚定 v2.2.5 源码，并由 `scripts/check-upstream-anchors.sh` 回归（17/17 全绿）。⚠️ 本机 `/workspace/project/opencode` 的 checkout 是**开发 commit**（包版本 2.1.2）⇒ 锚点须用 `git archive v2.2.5` 导出后再跑 |
+| 前置事实 | 上游 opencode **v2.2.5**（运行中的 `opencode --version`）；本篇的上游断言全部锚定 v2.2.5 源码，并由 `scripts/check-upstream-anchors.sh` 回归（**19/19 全绿**，对运行版本 v2.2.5）。⚠️ 本机 `/workspace/project/opencode` 的 checkout 是**开发 commit**（包版本 2.1.2）⇒ 锚点须用 `git archive v2.2.5` 导出后再跑 |
 
 ## 背景与问题
 
@@ -82,6 +82,8 @@ suspend → suspended=true judge=wait
   - **授权类**（释放被拒）：`slot_reclaimed`（归属已被别人认领）/ `slot_state_changed`（状态被并发改写）/ `slot_entry_gone`（条目消失）/ `slot_already_released`（已是 `idle`/`suspended` ⇒ 幂等 no-op，非失败）。
   - **证据类**（停机判不出来）：`wait_no_op`（两个观测矛盾）/ `wait_timeout` / `degraded_no_evidence` / `still_running` / `unreadable` / `missing`（后端已删 ⇒ 走 D12）。
   - **优先级**：**授权类优先**（归属已变是更根本的原因）⇒ 两者同现时只报授权类。
+    ⚠️ **例外**：**已删路径**（D12 处置）**不适用**本优先级规则 ⇒ 「已删 + 代号不符」按 D12
+    正常处置（返回 `missing` / `vanished`），**不得**返回 `slot_reclaimed`（那会拒绝释放 ⇒ 死槽）。
   - ⚠️ **不得**新增未在本表列出的 `reason` 取值（父篇已有取值：`missing`/`wait_timeout`/`degraded_no_evidence`/`still_running`/`unreadable`）。
 - **释放与字段回填必须同一临界区**：授权释放（状态翻转）与 `suspended_at_message_id`/`steer_residue` 的回填**在同一次锁内完成** ⇒ 杜绝「只写一半」的路径。
 
@@ -94,7 +96,7 @@ suspend → suspended=true judge=wait
 ### D2 跨实例：前提 + tripwire + 严格判据（不假装可解）
 
 - **前提（写进决策）**：本篇的停机保证以「**单 `opencode serve` 实例**」为前提（与父篇 `ADR-front-stop-confirmation` D1 的成立假设一致）。多实例部署下，`wait` 空转 ⇒ 判据退化为 DB 级证据。
-- **tripwire（机器可判）**：每个插件进程在 state dir 写一枚**实例戳** `.rddf/state/.instance-<uuid>`（含 `pid` / `host` / `started_at`）。
+- **tripwire（机器可判）**：每个插件进程在 state dir 写一枚**实例戳** `.rddf/state/.instance-<pid>-<uuid>.json`（含 `pid` / `host` / `started_at`）。
   - **写**：**首次工具调用时**写（插件 `setup` 阶段不写盘）；每次工具调用**刷新**该戳的 mtime（`utimes`；文件被删 ⇒ 重建，绝不抛错）。
   - **删**：进程退出时删（best-effort）；进程被 `SIGKILL` ⇒ 残留 ⇒ 由「pid 已死」自然判死。
   - **判活（关键）**：**同 host 且 `pid` 存活**（`process.kill(pid, 0)`；`EPERM` ⇒ 视为存活）⇒ 存活；跨 host ⇒ 视为存活（保守）。
@@ -104,7 +106,9 @@ suspend → suspended=true judge=wait
   - **人工清理入口**：删掉 `.rddf/state/.instance-*` 即可（跨 host 的远端残戳是唯一需要人工清理的情形）。
   - **触发**（检测到 ≥2 存活戳）⇒ 判定多实例部署 ⇒ ① 落 `event:"foreign_instance"` 的 ledger 行（**每次 `suspend` 触发都落一行**，便于计数与定位）；② `suspend` 切**严格模式**；③ `suspend` 返回值带 `foreign_instance: true`。
 - **严格模式**：多实例下 `wait` 不提供任何 execution 级证据 ⇒ `running0 = false` 时**也要求水位线前移**（等价于父篇选项表 **B4**，见选项表 C8 的重新采纳登记）。
-  - **`stop_judge` 词汇（不扩展父篇枚举）**：严格模式 ⇒ `stop_judge: "degraded"`（语义 = 「**没有 execution 级证据**」，与父篇 D4 的退化族同义）+ 额外字段 `foreign_instance: true`。
+  - **`stop_judge` 词汇（不扩展父篇枚举）**：严格模式的取值**按分支**定：
+    - `running0 = false`（无 execution 级证据可用 ⇒ 严格模式要求水位线前移）⇒ `stop_judge: "degraded"`（与父篇 D4 的退化族同义）+ 额外字段 `foreign_instance: true`；
+    - `running0 = true`（基线在跑 ⇒ `wait` 的证据**有效**）⇒ **保留** `stop_judge: "wait"`（**不得**误报 degraded）。
   - **严格模式下 `RDDF_SUSPEND_ALLOW_DEGRADED=1` 不生效**（有意为之）：D4 的退化是「**端点缺失**」（可由环境变量显式承担风险），而严格模式是「**已知存在另一实例**」⇒ 风险不可用环境变量赎回。⇒ **这是与 D4 的显式差异**。
 - **前端文案必须同步（本篇决策的下游义务）**：父篇的「`stop_judge:"degraded"` ⇒ 用 `cancel`」在**严格模式**下三条全不成立（`wait` 可用但空转；不可赎回；空闲后端的 `cancel` 是纯 no-op）⇒ `prompts/front.md` 与 `docs/front-delegate-usage.md` 必须改写该分支的文案：**不得**在严格模式（或 `wait_no_op`）下建议「用 `cancel` 释放空闲后端」。
 - **矛盾检测（轴②的可判定子集）**：`wait` 有界返回 **∧** 判活为真 ⇒ 两个观测**互相矛盾** ⇒ `wait` **没有提供任何信息** ⇒ reason 记 `wait_no_op`（**不是** `still_running`）⇒ 文案同时给出「可能仍在跑」与「若为多实例部署请用 `cancel`」两个出口，**不得**只说「再试一次」（否则模型会循环重试）。⚠️ 「用 `cancel`」这条出口**只对「判活为真」（后端确实在跑）的子情形成立**；空闲后端的 `cancel` 是 no-op ⇒ 文案须限定子情形。
@@ -129,7 +133,7 @@ suspend → suspended=true judge=wait
 | ⑤ | 上游复活：`interrupt({resume:false})` 不删 pending 行 ⇒ settle 起后继 execution | **未关闭**（父篇 D9 的上游语义）；缓解仍是释放后复检（`stop_raced` 留痕） |
 | ⑥ | 父篇 D5⑥ 的「准入已过、`prompt` 未投」窗口 | **未关闭**（根治需上游原子原语，见 feature request） |
 | ⑦ | `cancel` 的释放不校验停机证据 | **未关闭**（**另立** backlog，见选项表 C7） |
-| ⑧ | 已删后端 × 各 `state` 的 D12 处置 | **动作不变**（父篇矩阵逐动作不动）；D1 在该路径上**只叠加代号校验**（归属已变 ⇒ 不释放），**不改变动作** |
+| ⑧ | 已删后端 × 各 `state` 的 D12 处置 | **动作不变**（父篇矩阵逐动作不动）；该路径**不叠加代号校验**（死槽避免优先，见 D1 适用范围） |
 | ⑨ | 同步 `delegate` 的 `registerSession` 整条重建条目 ⇒ 归属版本被清零 | **关闭**（D1 的写者纪律：保留并按需 bump） |
 | ⑩ | **多实例下空闲后端无直接释放动作**（严格模式要求水位线前移；`cancel` 对空闲后端是 no-op） | **未关闭**（**新增代价**，非既有形态）：实际出口是下一次 `dispatch` 的 reconcile 顺带释放；若该后端在另一实例确实在跑 ⇒ 工作树被**正确**占住 |
 
@@ -163,7 +167,7 @@ suspend → suspended=true judge=wait
   - 实际出口 ②：若该后端在另一实例**确实在跑**（`time.busy` 跨实例可见 ⇒ 判活为真）⇒ reconcile **不**翻 ⇒ 工作树**被正确占住**（保守但正确，不是 bug）。
 - **`pair.json` 条目多一个字段** ⇒ 所有读条目的地方要容忍缺省（旧文件没有该字段 ⇒ 读作 `0`）。
 - **归属版本的写者纪律是硬约束**：任何**整条替换条目**的写入（当前 `registerSession` 就是）都会让计数器回退 ⇒ 后果是「旧快照重新匹配」⇒ lost update 复活。⇒ 必须有**回归断言**（Verification S11）而不是只靠评审。
-- **tripwire 是启发式的**：覆盖「同 state dir 有 ≥2 个存活戳」——**同一实例的两个 plugin 副本也会被检出**（各自一枚戳 ⇒ ≥2 存活）；真问题是**假阳性**：单实例多插件副本 ⇒ 误判多实例 ⇒ 严格模式 ⇒ 该窗口内空闲后端的 `suspend` 会失败（崩溃残留戳另加最多 TTL 60s 的误判窗口）。
+- **tripwire 是启发式的**：覆盖「同 state dir 有 ≥2 个存活 `(host, pid)`」——**同一进程**的多个 plugin 副本**不会**被检出（按 `(host, pid)` 去重）；只有**跨进程**副本才会。真问题是**跨 host 残戳 ⇒ 永久假阳性**（⇒ 严格模式长期钉住 ⇒ 空闲后端的 `suspend` 持续失败 ⇒ 人工删戳是唯一出口）；同 host 的崩溃残留**零窗口**（死 pid 即判死）。
 - **`interrupt` 的跨实例语义未核对** ⇒ 严格模式下的「等水位线前移」实际是「等对方**自然跑完**」⇒ 多实例下 `suspend` 的语义更接近「等它结束」而非「打断它」⇒ 该差异必须如实告知 front（文案）。
 
 **风险**
@@ -188,16 +192,16 @@ suspend → suspended=true judge=wait
 
 **跨实例（D2）**
 
-- [ ] **S8 tripwire**：state dir 出现 **2 个存活实例戳** ⇒ `suspend` 走**严格模式**（`running0=false` 也要求水位线前移 ⇒ 空闲后端**不被释放**）+ 落 `event:"foreign_instance"` ledger 行 + 返回值带 `foreign_instance:true` + `stop_judge:"degraded"`。
+- [ ] **S8 tripwire**：state dir 出现 **2 个存活 `(host, pid)`** ⇒ `suspend` 走**严格模式**（`running0=false` 也要求水位线前移 ⇒ 空闲后端**不被释放**）+ 落 `event:"foreign_instance"` ledger 行 + 返回值带 `foreign_instance:true`；`stop_judge` 按分支：`running0=false` ⇒ `"degraded"`，`running0=true` ⇒ 保留 `"wait"`。
 - [ ] **S9 严格模式不可赎回**：`RDDF_SUSPEND_ALLOW_DEGRADED=1` 在严格模式下**不生效**（不得出现 `degraded-forced`）。
 - [ ] **S10 矛盾检测**：`wait` 立即返回**但**判活为真 ⇒ reason 为 `wait_no_op`（**≠** `still_running`）、未释放槽位、文案同时给出「可能仍在跑」与「多实例部署请用 `cancel`」两个出口。
-- [ ] **S11 戳的生命周期**：进程退出删戳；崩溃残留戳在 TTL（60s）后不再计入；人工删除 `.rddf/state/.instance-*` 即可清场。
+- [ ] **S11 戳的生命周期**：进程退出删戳；**存活判定 = 同 host 且 pid 存活**（**不依赖 TTL** ⇒ 同 host 的崩溃残留（死 pid）**立即**判死、**零**误判窗口）；跨 host 视为存活（⇒ 残戳需**人工**清理）；`utimes` ENOENT 时重建；mtime 在未来按存活。
 
 **不变量与回归**
 
 - [ ] **S12 归属版本不回退**：同步 `delegate` 走 `registerSession`（**整条重建条目**）之后，条目的 `claim_gen` **不得**下降（必须保留并按需 bump）。
 - [ ] **S14 前端文案**：严格模式 / `wait_no_op` 下，`prompts/front.md` 与 `docs/front-delegate-usage.md` **不得**建议「用 `cancel` 释放空闲后端」（`cancel` 对空闲后端是 no-op）；且必须给出「可能仍在跑」与「多实例部署」两个可区分的出口。
-- [ ] **S13 单槽不变式 + 回归**：任意路径下，同一 `work_root` 的 `state ∈ {active, dispatching}` 条目 **≤ 1**（可作 CI 断言）；单测全绿；E2E L2-19 / L2-20 / L2-22 / L2-23 全绿；`suspend` 的**空闲路径**不明显变慢（相对改动前实测 +1.5s 内）；`scripts/check-upstream-anchors.sh` 对 **v2.2.5** 全绿（17/17）。
+- [ ] **S13 单槽不变式 + 回归**：任意路径下，同一 `work_root` 的 `state ∈ {active, dispatching}` 条目 **≤ 1**（可作 CI 断言）；单测全绿；E2E L2-19 / L2-20 / L2-22 / L2-23 全绿；`suspend` 的**空闲路径**不明显变慢（相对改动前实测 +1.5s 内）；`scripts/check-upstream-anchors.sh` 对 **v2.2.5** 全绿（**19/19**）。
 
 ## 实现约束（不属于决策，但会误导实现，先写死）
 
