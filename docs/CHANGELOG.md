@@ -10,6 +10,12 @@
 
 ---
 
+> **v2.10 变更摘要（2026-11-11，本地构建改为双分支 + 锁定官方版本）**：本地构建的源码来源从「`dev` 分支」改为「`local/build` 构建分支」。
+> ① **分支模型**：`dev` = **纯上游镜像**（跟踪 `upstream/dev`，只做 fast-forward）；`local/build` = `dev` + 尚未被上游合并的本地改动（`git merge feat/xxx`）。脚本每次构建前先更新 `dev`，再 merge 进 `local/build` ⇒ 既能跟踪上游，又能带着本地未合入的修复跑；`dev` 不被本地提交污染，永远能 `pull --ff-only`。
+> ② **锁定版本模式**：`--lock 2.2.5` 把构建固定到官方 v2.2.5 对应的 **dev 提交**（官方 tag 是 `release: vX`，其父提交才是 dev 提交），并在本地创建 `local/v2.2.5` tag；`--list` 列出官方版本 / 对应 dev 提交 / 本地 tag / 当前锁；`--unlock` 回到 `local/build`。锁文件 `~/.local/state/opencode-update/lock.json`。**锁定期间只构建纯官方版本**（不含本地改动），`--check` 会明确提示。
+> ③ **脚本健壮性**（实测踩到的坑）：重启服务会杀掉当前会话 ⇒ **在重启前**恢复源码仓到原分支（不再依赖 EXIT trap）；`build.ts` 内部会跑 `bun install` 改写 `bun.lock` ⇒ 切换分支前还原（registry 镜像改写直接丢弃）；GitHub TLS 偶发中断 ⇒ fetch 重试 3 次。
+> ④ **验证**：锁定构建（`v0.0.0-local-202611110702`）→ 解锁构建（`…0721`）→ 再次 `--lock`（幂等，tag 不重复创建）→ 失败路径（老版本 v0.0.1 / v0.3.59 拒绝、缺 tag、互斥参数、坏锁文件、锁与 tag 不一致）+ 2 个变异体（去掉祖先校验 / 用 tag 自身代替父提交）全部符合预期；锚点 21/21；服务 `local=true`、两插件加载、无 ERROR。
+
 > **v2.9 变更摘要（2026-11-11，本机 opencode 改为「从源码构建 + 自更新」）**：**运行中的 opencode 二进制不再来自上游发布版，而是从 `/workspace/main/opencode`（fork `chisuhua/opencode` 的 `dev` 分支）本地构建**。
 > ① **为什么**：让「运行版本」= 「可见源码」⇒ 上游语义漂移能被**立刻**发现并**就地**修复（修复走 PR 回上游，如 `anomalyco/opencode#63244`），而不是对着发布版猜。
 > ② **自更新**：`scripts/opencode-update.sh`（新增）——`拉 dev → bun install → build --single → 原子替换 → 重启服务`；自举 bun（按上游 `packageManager` 要求版本，本机装在 `~/.local/share/bun-<ver>/`）；工作区有未提交改动时**拒绝**构建（除 `bun.lock` 的 registry 镜像改写，会被归一化比较后丢弃）；构建失败**不动**现有二进制。

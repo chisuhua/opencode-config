@@ -60,7 +60,7 @@
 
 | 层 | 位置 | 职责 | 谁写 |
 |---|---|---|---|
-| **L0 宿主** | opencode —— **从本地源码构建**（`/workspace/main/opencode` 的 `dev` 分支 ⇒ `scripts/opencode-update.sh`；版本号形如 `0.0.0-local-<ts>`） | 插件加载、工具注册、权限判定、session 运行时 | 上游源码（**本机可改**，改动经 PR 回上游） |
+| **L0 宿主** | opencode —— **从本地源码构建**（`/workspace/main/opencode` 的 `local/build` = `dev` + 本地改动 ⇒ `scripts/opencode-update.sh`；版本号形如 `0.0.0-local-<ts>`） | 插件加载、工具注册、权限判定、session 运行时 | 上游源码（**本机可改**，改动经 PR 回上游） |
 | **L1 治理面** | `~/.config/opencode`（本仓库） | agent 定义、权限块、prompt、插件、状态文件、文档 | 本仓库 |
 | **L2 插件** | `plugins/delegate.ts`（插件壳，5 个工具注册）+ `lib/delegate-core.ts`（同步委托 18 步 + 槽位原语）+ `lib/delegate-async.ts`（异步派发面 + 槽位生命周期 + 消费确认） | 委托逻辑实现 | 本仓库 |
 | **L3 工程仓** | 被委托的 git 仓库 | 代码、测试、工程自己的 `.rddf/state/` | 工程 session |
@@ -73,7 +73,7 @@
 | `~/.config/opencode` | ✅ | 治理面：配置 + 插件 + 文档 + 状态 |
 | `~/rdd-workflow` | ❌ | rdd-workflow 产品本体；**不要**在这里改 front/delegate |
 | `/workspace/main/rdd-workflow-e2e` | ❌（只读作 fixture） | 外部 e2e 测试床；单测复制其工作树作示例工程 |
-| `/workspace/main/opencode` | ✅（**本机是源码来源**，改动走 PR） | 本机 opencode 二进制的**构建来源**（fork：`chisuhua/opencode`，分支 `dev`）；构建脚本见 `scripts/opencode-update.sh` |
+| `/workspace/main/opencode` | ✅（**本机是源码来源**，改动走 PR） | 本机 opencode 二进制的**构建来源**（fork：`chisuhua/opencode`；`dev` 纯上游镜像，`local/build` 是构建分支）；构建脚本见 `scripts/opencode-update.sh` |
 | `/workspace/project/opencode` | ❌（只读参考） | 上游源码的**另一个**开发 checkout，与运行版本早已分叉 ⇒ 锚点校验不用它 |
 
 > **为什么本机改上游**：所需原语（`ctx.tool.transform` / `options.permission` / `ctx.session.*` /
@@ -484,34 +484,55 @@ await ctx.tool.transform((editor: any) => {
 
 三条要记住的事实：
 
-1. `opencode upgrade` **只替换二进制**，不动 config / state / data；
-2. 自动更新策略默认 `notify`（只通知不自动换）——本仓库 `opencode.jsonc` 未设 `autoupdate` → 升级不会悄悄发生；
-3. **源码 checkout 不是「已部署版本」**，它只是只读参考快照；治理仓 `package.json` 里钉的
-   `@opencode-ai/plugin` 版本对本地 `.ts` 插件**不生效**（插件的 `@opencode/plugin` 由宿主注入）
-   → 以宿主 bundle 的版本为准。
+1. `opencode upgrade` **只替换二进制**，不动 config / state / data；但本机二进制是**源码构建**（`channel=local`）
+   ⇒ 手动 upgrade 会把它覆盖成上游发布版 ⇒ **不要用**（用 `scripts/opencode-update.sh`）；
+2. 自动更新：源码构建的 `local=true` ⇒ opencode 自带的更新检查**直接跳过**（发布版顶不掉它）；
+3. **`/workspace/main/opencode` 的 `local/build` 才是「已部署版本」**（= `dev` 纯上游镜像 + 本地未合并改动）；
+   治理仓 `package.json` 里钉的 `@opencode-ai/plugin` 版本对本地 `.ts` 插件**不生效**
+   （插件的 `@opencode/plugin` 由宿主注入）→ 以宿主 bundle 的版本为准。
 
 #### 6.9.2 升级前
 
 ```bash
-opencode --version                      # 记下当前版本（回滚要用）
-cd ~/.config/opencode && git status     # 必须干净；有未提交改动先提交
-cp ~/.opencode/bin/opencode ~/.opencode/bin/opencode.bak-$(opencode --version)   # 备份二进制
+opencode --version                        # 记下当前版本
+git -C /workspace/main/opencode status    # local/build 必须干净（脚本会拒绝带未提交改动构建）
 ```
 
-- **备份二进制是唯一的回滚手段**（升级是就地替换）；
-- 治理面的改动都在 git 里 → 配置侧回滚 = `git checkout`；
-- 确认没有关键任务在跑（升级后必须重启服务才能生效）。
+- 脚本会自动把现二进制备份成 `~/.opencode/bin/opencode.bak`（构建失败**不动**现有二进制）；
+- 源码侧的本地改动请**提交**并 merge 进 `local/build`，不要留未提交改动；
+- 确认没有关键任务在跑（重启服务会中断当前会话）。
 
 #### 6.9.3 升级动作
 
+分支模型（两条分支，职责分离）：
+
+- `dev`：**纯上游镜像**，只做 fast-forward（跟踪 `upstream/dev`）；
+- `local/build`：**构建分支** = `dev` + 尚未被上游合并的本地改动。本地改动通过
+  `git checkout local/build && git merge feat/xxx` 合进来。
+
 ```bash
-# ✅ 本机的正确做法：**拉源码 → 构建 → 安装**（不走发布版）
-scripts/opencode-update.sh            # 拉 dev → bun install → build → 安装 → 重启服务
-scripts/opencode-update.sh --check    # 只看将要发生什么，不改任何东西
-scripts/opencode-update.sh --no-pull  # 只重建当前工作树
+# 日常更新：更新 dev → 合并到 local/build → 构建 → 安装 → 重启
+scripts/opencode-update.sh
+scripts/opencode-update.sh --check      # 只看计划，不改任何东西
+scripts/opencode-update.sh --no-pull    # 不拉上游，只合并当前 dev 后构建
+
+# 锁定到官方发布版本（构建**纯官方**版本，不含 local/build 的本地改动）
+scripts/opencode-update.sh --lock 2.2.5   # 创建本地 dev tag local/v2.2.5（= 官方 v2.2.5 对应的 dev 提交）并构建
+scripts/opencode-update.sh --list         # 官方版本 / 对应 dev 提交 / 本地 tag / 当前锁
+scripts/opencode-update.sh --unlock       # 解除锁定，回到 local/build
 
 # ❌ 不要用：`opencode upgrade` 会下载上游**发布版**覆盖掉源码构建
-#    （源码构建的 channel=local ⇒ opencode 自带自动更新会跳过它，但**手动** upgrade 仍会覆盖）
+```
+
+- 锁文件：`~/.local/state/opencode-update/lock.json`（`--list` 查看 / `--unlock` 删除）；
+- 官方 release tag 的提交是 `release: vX`，它的**父提交**才是打该版本时 `dev` 的提交
+  ⇒ `local/v2.2.5` 指向父提交；老版本（v0.x / v1.x）的 release 不在 `dev` 上，会被拒绝；
+- **PR 合入上游后**：先丢弃已合并的本地提交，再重建构建分支，避免本地提交与上游重复：
+
+```bash
+git -C /workspace/main/opencode checkout dev && git -C /workspace/main/opencode pull --ff-only
+git -C /workspace/main/opencode branch -f local/build dev
+# 然后重新 merge 尚未合入上游的本地分支
 ```
 
 #### 6.9.4 升级后回归清单（按顺序，约 1 分钟）
@@ -601,7 +622,9 @@ opencode service restart
 
 # 升级（详见 §6.9：**用 scripts/opencode-update.sh**，不要用 opencode upgrade）
 opencode --version
-scripts/opencode-update.sh       # 拉源码 → 构建 → 安装 → 重启服务
+scripts/opencode-update.sh       # 更新 dev → 合并 local/build → 构建 → 安装 → 重启
+scripts/opencode-update.sh --list    # 当前锁 / 可锁的官方版本
+scripts/opencode-update.sh --lock 2.2.5   # 锁定官方版本
 
 # 插件与权限
 opencode plugin list
