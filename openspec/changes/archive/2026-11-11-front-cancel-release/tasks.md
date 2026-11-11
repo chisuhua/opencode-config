@@ -1,6 +1,6 @@
 # tasks — front-cancel-release
 
-> 来源：`openspec/changes/front-cancel-release/proposal.md`（AC1–AC19；与 ADR Verification F1–F19 同号）。
+> 来源：`openspec/changes/archive/2026-11-11-front-cancel-release/proposal.md`（AC1–AC19；与 ADR Verification F1–F19 同号）。
 > 决策：`docs/adr/ADR-front-cancel-release.md`（Accepted）。
 
 ## 不做什么（防顺手）
@@ -36,7 +36,7 @@
 ## 收口
 
 - [x] 3.1 **ADR 回填**：AC 映射回填到 `docs/adr/ADR-front-cancel-release.md` 的「AC 映射」行
-- [ ] 3.2 **归档前**：路径引用扫尾（`openspec/changes/front-cancel-release/` → `openspec/changes/archive/2026-11-11-front-cancel-release/`）
+- [x] 3.2 **归档前**：路径引用扫尾（`openspec/changes/archive/2026-11-11-front-cancel-release/` → `openspec/changes/archive/2026-11-11-front-cancel-release/`）
 
 ## 已知边界（写进 design）
 

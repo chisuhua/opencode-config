@@ -4,7 +4,7 @@
 |---|---|
 | 日期 | 2026-11-11 |
 | 验收者 | verifier（**只读 + 跑检查；不改实现**） |
-| change | `openspec/changes/front-cancel-release/`（proposal AC1–AC19 ↔ ADR Verification F1–F19 同号） |
+| change | `openspec/changes/archive/2026-11-11-front-cancel-release/`（proposal AC1–AC19 ↔ ADR Verification F1–F19 同号） |
 | 决策依据 | `docs/adr/ADR-front-cancel-release.md`（**Accepted**） |
 | 判据来源（按优先级） | ① 用户本轮要求「独立一轮完整实现 + 独立验收（含变异验证与 E2E）」；② proposal 的 AC1–AC19；③ ADR 的 F1–F19；④ 实现自述（design.md） |
 | 已用轮次 | 第 **1** 轮（上限 3） |
@@ -131,5 +131,12 @@
 | `bun tests/probes/probe-cancel-release.ts` | **exit 0**（「✅ cancel 未在后端仍在跑时释放槽位」） |
 | `scripts/check-upstream-anchors.sh --src .../upstream-2.2.5` | **21/21** |
 
-**下一步**：交用户确认 → commit → `openspec validate` + `openspec archive front-cancel-release --yes`
-→ 路径引用扫尾（improvement / 本报告 / ADR「关联 change」/ 归档目录内自引用）→ 回填两篇 ADR 的 AC 映射。
+**归档（2026-11-11，用户授权「提交并归档」）**：
+
+| 步骤 | 结果 |
+|---|---|
+| commit | `09fdb01`（`opencode.jsonc.opencode-go` 未提交） |
+| `openspec archive front-cancel-release --yes --skip-specs` | ✅ 归档为 `openspec/changes/archive/2026-11-11-front-cancel-release/`（⚠️ 该 change 无 specs delta ⇒ 必须 `--skip-specs`；`openspec validate` 对它返回 exit 1「No deltas found」属预期） |
+| 路径引用扫尾 | ✅ 5 个文件 / 6 处：`improvement` / 本报告 / ADR-front-cancel-release（2 处）/ ADR-front-stop-ownership / `scripts/mutate-cancel-release.sh` + 归档目录内自引用 2 处；全仓复查 **0 残留** |
+| ADR AC 映射回填 | ✅ `ADR-front-cancel-release` 的「关联 change」与「AC 映射」两行已回填为「已实施 + 已验收 + 已归档」 |
+| docs 沉淀 | ✅ `docs/CHANGELOG.md`（v2.8 变更摘要）/ `docs/front-delegate-architecture.md` §4.4（当前态：四步切换 + 停机证据门控 + reconcile 例外）/ `docs/front-delegate-testing.md` §3（目录清单补 `tests/probes/` 与两个脚本） |

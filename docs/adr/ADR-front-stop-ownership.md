@@ -134,7 +134,7 @@ suspend → suspended=true judge=wait
 | ④ | 跨进程：`wait` 空转 ⇒ 判据退化 | **如实保留**（前提已写死） |
 | ⑤ | 上游复活：`interrupt({resume:false})` 不删 pending 行 ⇒ settle 起后继 execution | **未关闭**（父篇 D9 的上游语义）；缓解仍是释放后复检（`stop_raced` 留痕） |
 | ⑥ | 父篇 D5⑥ 的「准入已过、`prompt` 未投」窗口 | **未关闭**（根治需上游原子原语，见 feature request） |
-| ⑦ | `cancel` 的释放不校验停机证据 | **已关闭**（`ADR-front-cancel-release`：**Accepted**，本篇**结案**该项；实现见 `openspec/changes/front-cancel-release/`） |
+| ⑦ | `cancel` 的释放不校验停机证据 | **已关闭**（`ADR-front-cancel-release`：**Accepted**，本篇**结案**该项；实现见 `openspec/changes/archive/2026-11-11-front-cancel-release/`） |
 | ⑧ | 已删后端 × 各 `state` 的 D12 处置 | **动作不变**（父篇矩阵逐动作不动）；该路径**不叠加代号校验**（死槽避免优先，见 D1 适用范围） |
 | ⑨ | 同步 `delegate` 的 `registerSession` 整条重建条目 ⇒ 归属版本被清零 | **关闭**（D1 的写者纪律：保留并按需 bump） |
 | ⑩ | **多实例下空闲后端无直接释放动作**（严格模式要求水位线前移） | **部分关闭**（`ADR-front-cancel-release` D6：多实例下可用 `cancel(X, {force:true})` ⇒ **直接释放动作存在**；⚠️ **被 `cancel_pending` 钉住时，reconcile 顺带释放这条出口不可用**）——**其余部分未关闭**（**新增代价**，非既有形态）：实际出口是下一次 `dispatch` 的 reconcile 顺带释放；若该后端在另一实例确实在跑 ⇒ 工作树被**正确**占住 |

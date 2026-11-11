@@ -17,7 +17,7 @@
 
 ## Acceptance
 
-AC1–AC19 ↔ ADR Verification F1–F19（同号）；详见 `openspec/changes/front-cancel-release/proposal.md`。
+AC1–AC19 ↔ ADR Verification F1–F19（同号）；详见 `openspec/changes/archive/2026-11-11-front-cancel-release/proposal.md`。
 
 ## Capabilities
 

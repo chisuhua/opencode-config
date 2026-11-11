@@ -6,8 +6,8 @@
 | Date | 2026-11-11 |
 | Author | architect |
 | Parent | **部分取代** `ADR-front-multi-backend` **D7.2 / D7.3 / D9（cancel 行）/ D11.3 / AC28 / V32–V37**；**部分取代** `ADR-front-stop-confirmation` **D1（判据适用于所有释放路径）/ D2:68 / D4（退化通道只对 suspend）**；**部分取代** `ADR-front-stop-ownership` **D2/S9（严格模式的赎回通道）/ D3⑩（多实例下空闲后端的出口）/ 实现约束·写者纪律（扩到 `cancel_pending`）**；**结案** `ADR-front-stop-ownership` **C7 / D3⑦**。**不动** stop-ownership 的 **D1（授权释放的判定顺序）/ S5** ⇒ `cancel` 对**不占槽**条目（`idle`/`suspended`）保持今天的**幂等 no-op**（见「已知行为」与 backlog） |
-| 关联 change | `openspec/changes/front-cancel-release/`（**待立项**）。improvement：`front-cancel-release.md`（**待建**） |
-| AC 映射 | **AC1–AC19 ↔ F1–F19（同号）** —— change：`openspec/changes/front-cancel-release/`（**实施完成，待验收**）；实现：`lib/delegate-async.ts`（`cancel` 判据链 / `markCancelPending` / `sessions` 可见性）+ `lib/delegate-core.ts`（`registerSession` 写者纪律）；用例：`tests/delegate-async.test.ts`（AC1–AC19）+ 探针 `tests/probes/probe-cancel-release.ts`（AC19）+ 变异脚本 `scripts/mutate-cancel-release.sh`（5/5 捕获）+ E2E `L2-24` |
+| 关联 change | `openspec/changes/archive/2026-11-11-front-cancel-release/`（**已实施 + 已验收 + 已归档**，2026-11-11）。improvement：`.rddf/improvements/front-cancel-release.md` |
+| AC 映射 | **AC1–AC19 ↔ F1–F19（同号）** —— change：`openspec/changes/archive/2026-11-11-front-cancel-release/`（**已实施 + 已验收 + 已归档**，2026-11-11）；实现：`lib/delegate-async.ts`（`cancel` 判据链 / `markCancelPending` / `sessions` 可见性）+ `lib/delegate-core.ts`（`registerSession` 写者纪律）；用例：`tests/delegate-async.test.ts`（AC1–AC19）+ 探针 `tests/probes/probe-cancel-release.ts`（AC19）+ 变异脚本 `scripts/mutate-cancel-release.sh`（5/5 捕获）+ E2E `L2-24` |
 | 前置事实 | 上游 opencode **v2.2.5**（`scripts/check-upstream-anchors.sh` 对 v2.2.5 **19/19**）；探针 `/tmp/opencode/probe/probe-cancel-release.ts`（`cancel` 误放槽的实证；**归档前须固化进仓库**，见 Verification F19） |
 
 ## 背景与问题

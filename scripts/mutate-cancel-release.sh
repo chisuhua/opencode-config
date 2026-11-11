@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 变异验证（`openspec/changes/front-cancel-release/tasks.md` 2.3）：
+# 变异验证（`openspec/changes/archive/2026-11-11-front-cancel-release/tasks.md` 2.3）：
 # 每组变异**故意破坏**一条判据 ⇒ 对应用例**必须变红**（否则该用例没有守住这条判据）。
 #
 # 用法：scripts/mutate-cancel-release.sh

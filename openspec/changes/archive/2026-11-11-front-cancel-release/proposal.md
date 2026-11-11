@@ -18,6 +18,7 @@ X 仍在跑 = true                ← X 还在写
 
 ## What Changes（ADR D1–D6）
 
+
 1. **D1**：`cancel` 复用 `suspend` 的停机判据（⓪ 授权前置 → 快照 → 守卫 → interrupt → `wait` → 判活 → 水位线 → 授权释放）；`interrupt` 的返回值**降级为诊断字段**。
 2. **D2**：证据不足 ⇒ **整单拒绝**（不墓碑、不放槽）+ `reason`（证据类/授权类）+ `stop_judge` + `forced_available:true` + `event:"cancel_refused"`。
 3. **D3**：`cancel_pending` 字段（`{baseline_idle, baseline_running, at}`）—— 记录本次尝试的起点；**水位线仍相对本次尝试的快照**；**挡住 reconcile 的自动放行**（D7.1/D7.3/V32–V33 须改）；**只在证据类拒绝且 `claim_gen` 未变时**写钉；写者纪律扩展到该字段。
