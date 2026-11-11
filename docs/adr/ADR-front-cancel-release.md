@@ -8,7 +8,7 @@
 | Parent | **部分取代** `ADR-front-multi-backend` **D7.2 / D7.3 / D9（cancel 行）/ D11.3 / AC28 / V32–V37**；**部分取代** `ADR-front-stop-confirmation` **D1（判据适用于所有释放路径）/ D2:68 / D4（退化通道只对 suspend）**；**部分取代** `ADR-front-stop-ownership` **D2/S9（严格模式的赎回通道）/ D3⑩（多实例下空闲后端的出口）/ 实现约束·写者纪律（扩到 `cancel_pending`）**；**结案** `ADR-front-stop-ownership` **C7 / D3⑦**。**不动** stop-ownership 的 **D1（授权释放的判定顺序）/ S5** ⇒ `cancel` 对**不占槽**条目（`idle`/`suspended`）保持今天的**幂等 no-op**（见「已知行为」与 backlog） |
 | 关联 change | `openspec/changes/archive/2026-11-11-front-cancel-release/`（**已实施 + 已验收 + 已归档**，2026-11-11）。improvement：`.rddf/improvements/front-cancel-release.md` |
 | AC 映射 | **AC1–AC19 ↔ F1–F19（同号）** —— change：`openspec/changes/archive/2026-11-11-front-cancel-release/`（**已实施 + 已验收 + 已归档**，2026-11-11）；实现：`lib/delegate-async.ts`（`cancel` 判据链 / `markCancelPending` / `sessions` 可见性）+ `lib/delegate-core.ts`（`registerSession` 写者纪律）；用例：`tests/delegate-async.test.ts`（AC1–AC19）+ 探针 `tests/probes/probe-cancel-release.ts`（AC19）+ 变异脚本 `scripts/mutate-cancel-release.sh`（5/5 捕获）+ E2E `L2-24` |
-| 前置事实 | 上游 opencode **v2.2.5**（`scripts/check-upstream-anchors.sh` 对 v2.2.5 **19/19**）；探针 `/tmp/opencode/probe/probe-cancel-release.ts`（`cancel` 误放槽的实证；**归档前须固化进仓库**，见 Verification F19） |
+| 前置事实 | 上游 opencode —— **本机跑的是从源码构建的版本**（`/workspace/main/opencode` 的 `dev` 分支 ⇒ `scripts/opencode-update.sh`，版本号形如 `0.0.0-local-<ts>`）；`scripts/check-upstream-anchors.sh` 对**该源码** **21/21** 全绿；探针已固化进仓库 `tests/probes/probe-cancel-release.ts`（`cancel` 误放槽的实证，见 Verification F19） |
 
 ## 背景与问题
 
@@ -233,7 +233,7 @@ B6 反对的是「**新增一个状态枚举值**（如 `suspending`）⇒ 进�
 **跨实例与回归（D6）**
 
 - [ ] **F15 严格模式**：多实例 ⇒ `cancel` 的 `running0=false` 也要求水位线前移 ⇒ 空闲后端被拒 + `foreign_instance:true` + `stop_judge:"degraded"`；`running0=true` ⇒ 保留 `"wait"`；严格模式下 `force` 仍可用且带 `strict_mode:true`。
-- [ ] **F16 上游锚点**：`scripts/check-upstream-anchors.sh` 对 v2.2.5 全绿（≥19），并新增：`interrupt({resume:false})` **不删除** pending inbox 行、`nextPromotable` **优先提升** steer。
+- [ ] **F16 上游锚点**：`scripts/check-upstream-anchors.sh` 对**运行中的那份源码**（`/workspace/main/opencode` 的 `dev`）全绿（≥19），并新增：`interrupt({resume:false})` **不提升** pending inbox 行、`nextPromotable` **优先提升** steer。
 - [ ] **F17 单槽不变式 + 回归**：任一时刻同一 `work_root` 占槽条目 ≤ 1；单测全绿；E2E L2-19/L2-20/L2-22/L2-23 绿；新增 E2E「running → cancel 拒绝 → force → dispatch 成功」。
 - [ ] **F18 前端文案**：`prompts/front.md` 与 `docs/front-delegate-usage.md` 含 **D5** 的恢复序列；**不得**出现「用裸 `cancel` 释放运行中的后端」的表述；`force` 前要求用户知情。
 - [ ] **F19 探针固化**：本篇引用的探针 `/tmp/opencode/probe/probe-cancel-release.ts` **须固化进仓库**（否则归档后前置事实不可复核）⇒ 与 F1 的假 ctx 形态同源。

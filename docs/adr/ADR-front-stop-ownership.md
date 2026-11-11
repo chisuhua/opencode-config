@@ -8,7 +8,7 @@
 | Parent | **部分取代** `ADR-front-stop-confirmation` **D1 条件③ 的分支结构**（`running0=false ⇒ 无附加要求`）——**仅在「检测到多实例部署」时**取代（等价于父篇选项表 **B4**，本篇选项表 **C8** 登记其重新采纳与理由）；**单实例口径不变**。**不取代** `ADR-front-multi-backend`（D7/D11.2 的「锁内重验后再翻转」**继续有效**，本篇把它从「重验状态」补全为「重验**授权**」；**D12 矩阵不变**）；**不取代** `ADR-front-stop-confirmation` 的 D1 判据本体与 D2 进程内守卫；⚠️ 父篇 **Verification S7b**（「`wait` 可用 ⇒ `stop_judge:"wait"`」）**仅在严格模式的 `running0 = false` 分支**不成立（改判 `"degraded"` + `foreign_instance:true`）；`running0 = true` 分支仍为 `"wait"` |
 | 关联 change | `openspec/changes/archive/2026-11-11-front-stop-ownership/`（2026-11-11 立项 → **实施完成并归档**；AC1–AC18）。improvement：[`front-stop-ownership.md`](../../.rddf/improvements/front-stop-ownership.md) |
 | AC 映射 | **AC1–AC14 ↔ S1–S14（同号）** + **AC15–AC18**（metis gap 分析新增的**实施期判据**：授权判定顺序 / 写者与锁边界 / tripwire 身份与容错 / 返回契约一致性）——见 `openspec/changes/archive/2026-11-11-front-stop-ownership/proposal.md` 的「AC ↔ ADR Verification 映射」段 |
-| 前置事实 | 上游 opencode **v2.2.5**（运行中的 `opencode --version`）；本篇的上游断言全部锚定 v2.2.5 源码，并由 `scripts/check-upstream-anchors.sh` 回归（**19/19 全绿**，对运行版本 v2.2.5）。⚠️ 本机 `/workspace/project/opencode` 的 checkout 在**特性分支** `process-daemon-v0.5.0`（HEAD `1e791be6a5`，2026-11-10，包版本 **2.2.7**）⇒ 与 v2.2.5 **已分叉**（v2.2.5 不是 HEAD 的祖先）⇒ 锚点须用 `git archive v2.2.5` 导出后再跑 |
+| 前置事实 | 上游 opencode —— **本机跑的是从源码构建的版本**（`/workspace/main/opencode` 的 `dev` 分支 ⇒ `scripts/opencode-update.sh`；版本号形如 `0.0.0-local-<ts>`）；本篇的上游断言全部锚定**该源码**，并由 `scripts/check-upstream-anchors.sh` 回归（**21/21 全绿**，对运行源码）。⚠️ 锚点的默认来源已改为 **`/workspace/main/opencode`**（= 本机二进制的构建来源，跑的是它的 `dev` 分支）⇒ **直接对着真正在跑的源码校验**；旧的 `/workspace/project/opencode` 是另一个开发 checkout（与运行版本早已分叉）⇒ 不用它 |
 
 ## 背景与问题
 

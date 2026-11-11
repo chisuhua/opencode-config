@@ -11,6 +11,7 @@ bun.lock
 
 # opencode 运行时凭据 — 含真实 auth password，绝不入库
 service.json
+service-local.json
 
 # Backup files / snapshots — never commit (some hold plaintext API keys)
 *.backup-*

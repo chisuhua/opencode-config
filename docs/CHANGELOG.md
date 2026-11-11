@@ -10,6 +10,14 @@
 
 ---
 
+> **v2.9 变更摘要（2026-11-11，本机 opencode 改为「从源码构建 + 自更新」）**：**运行中的 opencode 二进制不再来自上游发布版，而是从 `/workspace/main/opencode`（fork `chisuhua/opencode` 的 `dev` 分支）本地构建**。
+> ① **为什么**：让「运行版本」= 「可见源码」⇒ 上游语义漂移能被**立刻**发现并**就地**修复（修复走 PR 回上游，如 `anomalyco/opencode#63244`），而不是对着发布版猜。
+> ② **自更新**：`scripts/opencode-update.sh`（新增）——`拉 dev → bun install → build --single → 原子替换 → 重启服务`；自举 bun（按上游 `packageManager` 要求版本，本机装在 `~/.local/share/bun-<ver>/`）；工作区有未提交改动时**拒绝**构建（除 `bun.lock` 的 registry 镜像改写，会被归一化比较后丢弃）；构建失败**不动**现有二进制。
+> ③ **不会被发布版顶掉**：构建时 `OPENCODE_CHANNEL=local` ⇒ 二进制 `local=true` ⇒ opencode 自带的自动更新**自动跳过**（上游 `packages/cli/src/services/updater.ts`：`OPENCODE_LOCAL` 时 `inspect()` 直接返回）。⚠️ **手动 `opencode upgrade` 仍会覆盖** ⇒ 已在脚本输出与 `docs/front-delegate-architecture.md` §6.9 标明「不要用」。
+> ④ **锚点改指真实运行源码**：`scripts/check-upstream-anchors.sh` 的默认 `--src` 从 `/workspace/project/opencode`（另一个开发 checkout，早已与运行版本分叉）改为 **`/workspace/main/opencode`** ⇒ **21/21 全绿** ⇒ 本轮的上游语义断言（`interrupt` 跨实例 / `remove` 语义 / `time_suspended` 语义）在 `dev` 上**依然成立** ⇒ 两篇 ADR 的「前置事实」已同步改写为「本机跑的是从源码构建的版本」。
+> ⑤ **副作用修正**：源码构建的二进制换掉后，旧的发布版服务进程成了孤儿（端口 49374，exe 已 unlink）⇒ 已清理；E2E 的 `l2_cleanup_backends` 端口兜底从写死 49374 改为读 `opencode service status` 的实际地址（外部仓 `rdd-workflow-e2e` 的 commit `c7336c0`）。
+> ⑥ **bun 版本**：上游要求 `bun@1.4.4`（`packageManager` 字段 + `packages/script/src/index.ts` 的硬校验）⇒ 本机全局 bun 仍是 1.3.14 ⇒ 构建用**局部** bun 1.4.4（`~/.local/share/bun-1.4.4/`），**不动全局**。
+
 > **v2.8 变更摘要（2026-11-11，ADR-front-cancel-release 落地）**：**`cancel` 的释放判据 = 与 `suspend` 同源 + 显式 `force` 出口**。
 > ① **背景（探针实证）**：`ADR-front-stop-confirmation` D1 早已裁定「`interrupt` 的返回值**不是**停机判据」，但 `cancel` 至今**只看该返回值**就放槽 + 置墓碑 ⇒ 探针复现：**后端仍在跑时 `cancel` 释放了槽位 ⇒ 同一工作树两个写入者**。⇒ 该路径正是 `ADR-front-multi-backend` **D7.3「强制接管」（推荐恢复路径）**的实现 ⇒ **推荐路径本身是双写者生成器**；反向也坏（`interrupted:false` ⇒ 纯 no-op ⇒ D7.2「cancel 后重派」在后端从未起跑时是**死锁**）。
 > ② **判据**：`cancel` 复用 `suspend` 的停机判据（`wait` + 判活 + 水位线）；`interrupt` 的返回值**降级为诊断字段**。

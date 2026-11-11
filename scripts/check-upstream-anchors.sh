@@ -9,7 +9,7 @@
 # 用法:
 #   scripts/check-upstream-anchors.sh [--src DIR] [--quiet]
 #
-#   --src DIR   上游源码根（默认 $OPENCODE_SRC，再回退 /workspace/project/opencode）
+#   --src DIR   上游源码根（默认 $OPENCODE_SRC，再回退 /workspace/main/opencode）
 #   --quiet     只输出 FAIL / SKIP
 #
 # 退出码:
@@ -19,7 +19,11 @@
 # 约定：锚点只写「语义断言 + 文件 + grep 模式」，不写行号。
 set -uo pipefail
 
-SRC="${OPENCODE_SRC:-/workspace/project/opencode}"
+# ⚠️ 默认指向**本地源码构建所用的那份源码**（`/workspace/main/opencode` 的 `dev` 分支）——
+#    本机的 opencode 二进制已改为「从这份源码构建」（见 `scripts/opencode-update.sh`）⇒
+#    锚点必须对着**真正在跑的那份源码**校验，而不是某个发布版的快照。
+#    （旧的 `/workspace/project/opencode` 是另一个开发 checkout，与运行版本早已分叉。）
+SRC="${OPENCODE_SRC:-/workspace/main/opencode}"
 QUIET=0
 while [ $# -gt 0 ]; do
   case "$1" in

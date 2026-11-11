@@ -60,7 +60,7 @@
 
 | 层 | 位置 | 职责 | 谁写 |
 |---|---|---|---|
-| **L0 宿主** | opencode v2.2.5（`/workspace/project/opencode` 上游） | 插件加载、工具注册、权限判定、session 运行时 | 上游（只读参考） |
+| **L0 宿主** | opencode —— **从本地源码构建**（`/workspace/main/opencode` 的 `dev` 分支 ⇒ `scripts/opencode-update.sh`；版本号形如 `0.0.0-local-<ts>`） | 插件加载、工具注册、权限判定、session 运行时 | 上游源码（**本机可改**，改动经 PR 回上游） |
 | **L1 治理面** | `~/.config/opencode`（本仓库） | agent 定义、权限块、prompt、插件、状态文件、文档 | 本仓库 |
 | **L2 插件** | `plugins/delegate.ts`（插件壳，5 个工具注册）+ `lib/delegate-core.ts`（同步委托 18 步 + 槽位原语）+ `lib/delegate-async.ts`（异步派发面 + 槽位生命周期 + 消费确认） | 委托逻辑实现 | 本仓库 |
 | **L3 工程仓** | 被委托的 git 仓库 | 代码、测试、工程自己的 `.rddf/state/` | 工程 session |
@@ -73,10 +73,13 @@
 | `~/.config/opencode` | ✅ | 治理面：配置 + 插件 + 文档 + 状态 |
 | `~/rdd-workflow` | ❌ | rdd-workflow 产品本体；**不要**在这里改 front/delegate |
 | `/workspace/main/rdd-workflow-e2e` | ❌（只读作 fixture） | 外部 e2e 测试床；单测复制其工作树作示例工程 |
-| `/workspace/project/opencode` | ❌（只读参考） | 上游源码，**不改**（所有所需原语 v2.2.5 已具备） |
+| `/workspace/main/opencode` | ✅（**本机是源码来源**，改动走 PR） | 本机 opencode 二进制的**构建来源**（fork：`chisuhua/opencode`，分支 `dev`）；构建脚本见 `scripts/opencode-update.sh` |
+| `/workspace/project/opencode` | ❌（只读参考） | 上游源码的**另一个**开发 checkout，与运行版本早已分叉 ⇒ 锚点校验不用它 |
 
-> **为什么不改上游**：所需原语（`ctx.tool.transform` / `options.permission` / `ctx.session.*` /
-> `session.permissions`）在已安装版本全部存在；改上游会把维护成本转移到 fork 同步。
+> **为什么本机改上游**：所需原语（`ctx.tool.transform` / `options.permission` / `ctx.session.*` /
+> `session.permissions`）在已安装版本全部存在；本机把二进制改为**从源码构建**（`scripts/opencode-update.sh`），
+> 目的是让「运行版本」= 「可见源码」⇒ 上游语义漂移能被立刻发现与修复 ⇒ **修复走 PR 回上游**（如 `anomalyco/opencode#63244`），
+> 而不是在本机打补丁了事。
 
 ---
 
@@ -502,9 +505,13 @@ cp ~/.opencode/bin/opencode ~/.opencode/bin/opencode.bak-$(opencode --version)  
 #### 6.9.3 升级动作
 
 ```bash
-opencode upgrade                 # 最新版
-opencode upgrade v2.2.5          # 指定版本（回滚也用它）
-opencode service restart         # 让新二进制生效（服务是常驻进程）
+# ✅ 本机的正确做法：**拉源码 → 构建 → 安装**（不走发布版）
+scripts/opencode-update.sh            # 拉 dev → bun install → build → 安装 → 重启服务
+scripts/opencode-update.sh --check    # 只看将要发生什么，不改任何东西
+scripts/opencode-update.sh --no-pull  # 只重建当前工作树
+
+# ❌ 不要用：`opencode upgrade` 会下载上游**发布版**覆盖掉源码构建
+#    （源码构建的 channel=local ⇒ opencode 自带自动更新会跳过它，但**手动** upgrade 仍会覆盖）
 ```
 
 #### 6.9.4 升级后回归清单（按顺序，约 1 分钟）
@@ -592,9 +599,9 @@ cd ~/.config/opencode && git checkout <上一个 commit>
 opencode service status
 opencode service restart
 
-# 升级（详见 §6.9：升级前备份二进制，升级后跑 §6.9.4 的 7 条回归）
+# 升级（详见 §6.9：**用 scripts/opencode-update.sh**，不要用 opencode upgrade）
 opencode --version
-opencode upgrade                 # 指定版本：opencode upgrade v2.2.5
+scripts/opencode-update.sh       # 拉源码 → 构建 → 安装 → 重启服务
 
 # 插件与权限
 opencode plugin list
