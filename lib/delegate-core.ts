@@ -153,16 +153,19 @@ export function isKebabSlug(value: unknown): boolean {
 export function slotOccupants(
   pairs: Record<string, any> | undefined,
   workRoot: string,
-): Array<{ session_id: string; state: SlotState; work_root: string }> {
+): Array<{ session_id: string; state: SlotState; work_root: string; owner_agent: "front" | "plan"; owner_session_id: string | null }> {
   if (!pairs || typeof pairs !== "object") return []
-  const out: Array<{ session_id: string; state: SlotState; work_root: string }> = []
+  const out: Array<{ session_id: string; state: SlotState; work_root: string; owner_agent: "front" | "plan"; owner_session_id: string | null }> = []
   for (const [sessionID, entry] of Object.entries(pairs)) {
     if (!entry || typeof entry !== "object") continue
     const wr = entry.work_root
     if (typeof wr !== "string" || wr !== workRoot) continue
     const state = entry.state
     if (!isSlotState(state) || !SLOT_OCCUPYING.includes(state)) continue
-    out.push({ session_id: sessionID, state, work_root: wr })
+    // owner_kind 缺失一律按 front（D5 默认值）；owner session id 用于判活
+    const ownerAgent = entry.owner_agent === "plan" ? "plan" : "front"
+    const ownerSessionID = typeof entry.front_session_id === "string" ? entry.front_session_id : null
+    out.push({ session_id: sessionID, state, work_root: wr, owner_agent: ownerAgent, owner_session_id: ownerSessionID })
   }
   return out
 }
@@ -258,8 +261,65 @@ export function contextMessageIds(messages: any): Set<string> {
 }
 
 /** 槽位占用说明（拒绝时给 front 的可执行提示）。 */
-export function describeHolder(holder: { session_id: string; state: SlotState; work_root: string }): string {
+export function describeHolder(holder: {
+  session_id: string
+  state: SlotState
+  work_root: string
+  owner_agent?: "front" | "plan"
+}): string {
   return `后端 ${holder.session_id}（state=${holder.state}）已占用该工作树；先 suspend 它再派发`
+}
+
+/**
+ * 跨 owner-kind 的占用文案（ADR D7.4）。
+ *
+ * - 被 **plan** 占：plan 优先，front 不得抢占或接管。
+ * - 被 **front** 占：不自动抢占（plan 也不替 front 决定何时停）。
+ * 同 owner-kind 的占用走既有的 `describeHolder`（先 suspend 它再派发）。
+ */
+export function describeHolderByOwner(
+  holder: { session_id: string; state: SlotState; work_root: string; owner_agent?: "front" | "plan" },
+  callerKind: "front" | "plan",
+): string {
+  const ownerKind = holder.owner_agent === "plan" ? "plan" : "front"
+  if (ownerKind === callerKind) return describeHolder(holder)
+  if (ownerKind === "plan") {
+    return (
+      `该工作树被 plan 的后端 ${holder.session_id} 占用（owner=plan, state=${holder.state}）。` +
+      `按 ADR-plan-delegate-engineering-session D7，plan 优先：front 不得抢占或接管该后端。` +
+      `可选动作：① 让 plan 侧 suspend/cancel 它；② front 改派其他工作树；③ 由用户协调`
+    )
+  }
+  return (
+    `该工作树被 front 的后端 ${holder.session_id} 占用（owner=front, state=${holder.state}）。` +
+    `按 ADR-plan-delegate-engineering-session D7，plan 不自动抢占：请让 front 侧 suspend/cancel 它，或由用户协调`
+  )
+}
+
+/** 落 D7 的可观测事件（拒绝点追加，不依赖收尾写）。 */
+export function appendPriorityBlocked(
+  stateRoot: string,
+  record: {
+    path: "delegate" | "dispatch" | "resume" | "cancel"
+    callerKind: "front" | "plan"
+    holderKind: "front" | "plan"
+    holderState: string
+    holderSessionID: string
+    workRoot: string
+    reason: string
+  },
+): void {
+  appendLedger(stateRoot, {
+    event: "priority_blocked",
+    recorded_at: new Date().toISOString(),
+    path: record.path,
+    caller_kind: record.callerKind,
+    holder_kind: record.holderKind,
+    holder_state: record.holderState,
+    holder_session_id: record.holderSessionID,
+    work_root: record.workRoot,
+    reason: record.reason,
+  })
 }
 
 // ─────────────────── 停机窗口的**进程内**准入守卫（ADR-front-stop-confirmation D2）───────────────────
@@ -330,11 +390,11 @@ export async function slotBusyHolders(
   stateRoot: string,
   workRoot: string,
   excludeSessionID?: string,
-): Promise<Array<{ session_id: string; state: SlotState; work_root: string }>> {
+): Promise<Array<{ session_id: string; state: SlotState; work_root: string; owner_agent: "front" | "plan"; owner_session_id: string | null }>> {
   const candidates = slotOccupants(readPairs(stateRoot), workRoot).filter(
     (c) => c.session_id !== excludeSessionID,
   )
-  const busy: Array<{ session_id: string; state: SlotState; work_root: string }> = []
+  const busy: Array<{ session_id: string; state: SlotState; work_root: string; owner_agent: "front" | "plan"; owner_session_id: string | null }> = []
   for (const c of candidates) {
     try {
       const info = await ctx.session.get({ sessionID: c.session_id })
@@ -571,6 +631,21 @@ export function validatePlanRef(input: {
     return { ok: false, message: `plan_ref 指向的文件不存在: ${resolved}（accepted roots: ${roots}）` }
   }
   return { ok: true, resolved }
+}
+
+/**
+ * owner 会话是否仍存活（**全仓唯一实现**）。
+ *
+ * 归属门控（suspend）、跨 owner-kind 的 resume / cancel 硬拒（D7）共用它 ——
+ * 不另写第二份「owner 是否消亡」的判断（ADR D7.2/D7.3 的「禁止第三套谓词」约束）。
+ */
+export async function frontAlive(ctx: any, frontSessionID: string): Promise<boolean> {
+  try {
+    const info = await ctx.session.get({ sessionID: frontSessionID })
+    return !!info
+  } catch {
+    return false
+  }
 }
 
 /** 派发方 agent（用于判定 plan 侧 D2 强制与 owner_agent 归属）。 */
@@ -1318,8 +1393,24 @@ export function delegateToolDefinition(ctx: any): any {
           }
           const busyHolders = await slotBusyHolders(ctx, stateRoot, workRoot, brief.resume_session)
           if (busyHolders.length > 0) {
+            const holder = busyHolders[0]
+            // 跨 owner-kind ⇒ plan 优先、不抢占（ADR D7.2/D7.4）；同 kind 走既有文案。
+            if (holder.owner_agent !== ownerAgent) {
+              appendPriorityBlocked(stateRoot, {
+                path: "delegate",
+                callerKind: ownerAgent,
+                holderKind: holder.owner_agent,
+                holderState: holder.state,
+                holderSessionID: holder.session_id,
+                workRoot,
+                reason: "cross-owner-kind slot conflict",
+              })
+              throw fail(
+                `${describeHolderByOwner(holder, ownerAgent)}；既有 delegate 与 dispatch 共用槽位表（ADR D7.4）`,
+              )
+            }
             throw fail(
-              `${describeHolder(busyHolders[0])}；既有 delegate 与 dispatch 共用槽位表（ADR D7.4）`,
+              `${describeHolder(holder)}；既有 delegate 与 dispatch 共用槽位表（ADR D7.4）`,
             )
           }
 
@@ -1360,6 +1451,29 @@ export function delegateToolDefinition(ctx: any): any {
             resumedByOtherFront = Boolean(
               existing.front_session_id && frontSessionID && existing.front_session_id !== frontSessionID,
             )
+            // 跨 owner-kind 的 resume ⇒ 硬拒（ADR D7.3）；owner 会话已亡 ⇒ 放行（亡主例外）。
+            // ⚠️ 必须发生在 registerSession / claimSlot **之前**（否则被拒的接管仍会先翻转归属字段）。
+            const existingOwnerKind = existing.owner_agent === "plan" ? "plan" : "front"
+            if (existingOwnerKind !== ownerAgent) {
+              const ownerSessionID = typeof existing.front_session_id === "string" ? existing.front_session_id : ""
+              const alive = ownerSessionID.length > 0 ? await frontAlive(ctx, ownerSessionID) : false
+              if (alive) {
+                appendPriorityBlocked(stateRoot, {
+                  path: "resume",
+                  callerKind: ownerAgent,
+                  holderKind: existingOwnerKind,
+                  holderState: String(existing.state ?? "unknown"),
+                  holderSessionID: brief.resume_session ?? "",
+                  workRoot,
+                  reason: "cross-owner-kind resume refused (owner session alive)",
+                })
+                throw fail(
+                  `后端 ${brief.resume_session} 归属于 ${existingOwnerKind}（owner 会话 ${ownerSessionID} 仍存活）：` +
+                    `按 ADR-plan-delegate-engineering-session D7.3，不得跨 owner-kind 接管该后端。` +
+                    `可选动作：① 让 ${existingOwnerKind} 侧自己处理；② 由用户协调；③ 等该 owner 会话结束后再接管`,
+                )
+              }
+            }
           }
 
           // 只读 session 恒注入单条 edit deny，绝不注入 scope 派生 allow

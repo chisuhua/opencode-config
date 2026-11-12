@@ -36,7 +36,7 @@ import {
   suspendToolDefinition,
   waitBriefConsumed,
 } from "../lib/delegate-async.ts"
-import { __pendingStops, backfillPairEntry, canonicalRoot, detectForeignInstances, ensureInstanceStamp, enterStopGuard, leaveStopGuard, readPairs, registerSession, slotOccupants, slotBusyHolders, stillRunning } from "../lib/delegate-core.ts"
+import { __pendingStops, backfillPairEntry, canonicalRoot, detectForeignInstances, ensureInstanceStamp, enterStopGuard, leaveStopGuard, readPairs, registerSession, slotOccupants, slotBusyHolders, stillRunning, writePairs } from "../lib/delegate-core.ts"
 import { countActiveBackends, planSlot, setPairFields, stopTimeoutMs } from "../lib/delegate-async.ts"
 import { readFileSync as readFileSync2 } from "node:fs"
 import { hostname } from "node:os"
@@ -348,6 +348,235 @@ describe("plan 派发主体 + owner 归属（ADR-plan-delegate-engineering-sessi
     expect(planList.items.map((i: any) => i.session_id)).not.toContain(a.session_id)
     // 全局配额**owner 无关**：两个 owner 的后端都计入
     expect(await countActiveBackends(ctx)).toBe(2)
+  })
+})
+
+describe("D7：派发优先级（plan 优先、不抢占）", () => {
+  const registerCaller = (sessions: Map<string, any>, id: string, agent: string, dir: string) => {
+    sessions.set(id, {
+      id,
+      agent,
+      location: { directory: dir },
+      metadata: {},
+      messages: [],
+      busy: false,
+      outcome: null,
+      idle: 0,
+      updated: Date.now(),
+    })
+  }
+  /** 两个调用方都登记进 fake ctx（生产里调用方会话必然存在；owner 判活依赖它）。 */
+  const registerCallers = (sessions: Map<string, any>, dir: string) => {
+    registerCaller(sessions, "ses_front_test", "front", dir)
+    registerCaller(sessions, "ses_plan_test", "plan", dir)
+  }
+  const planFile = (dir: string) => {
+    mkdirSync(path.join(dir, ".rddf", "plans"), { recursive: true })
+    writeFileSync(path.join(dir, ".rddf", "plans", "p.md"), "p")
+    return ".rddf/plans/p.md"
+  }
+  const ledgerOf = (dir: string) => readFileSync(path.join(dir, ".rddf/state/ledger.jsonl"), "utf8")
+
+  test("V16 front 被 plan 占用挡住 ⇒ 文案指名 plan，不抢占（plan 后端仍活）", async () => {
+    const dir = repo("d7-v16")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const a = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), plan_ref: planRef },
+      "ses_plan_test",
+    )
+    await expect(
+      run(dispatchToolDefinition(ctx), baseInput(dir, "goal-front")),
+    ).rejects.toThrow(/owner=plan/)
+    await expect(
+      run(dispatchToolDefinition(ctx), baseInput(dir, "goal-front")),
+    ).rejects.toThrow(new RegExp(a.session_id))
+    // 不抢占：plan 的后端仍在跑、槽位未被释放
+    expect(readPairs(dir)[a.session_id].state).toBe("active")
+    expect(sessions.get(a.session_id).busy).toBe(true)
+  })
+
+  test("V17 plan 被 front 占用挡住 ⇒ 文案指名 front，不自动 suspend", async () => {
+    const dir = repo("d7-v17")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const f = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-front"))
+    await expect(
+      run(
+        dispatchToolDefinition(ctx),
+        { ...baseInput(dir, "goal-plan"), plan_ref: planRef },
+        "ses_plan_test",
+      ),
+    ).rejects.toThrow(/owner=front/)
+    // 不自动抢占：front 的后端仍在跑
+    expect(readPairs(dir)[f.session_id].state).toBe("active")
+  })
+
+  test("V18a front resume plan 的后端 ⇒ 硬拒（owner 会话存活）", async () => {
+    const dir = repo("d7-v18a")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const a = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), plan_ref: planRef },
+      "ses_plan_test",
+    )
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id }),
+    ).rejects.toThrow(/归属于 plan/)
+  })
+
+  test("V18b plan resume front 的后端 ⇒ 硬拒", async () => {
+    const dir = repo("d7-v18b")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const f = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-front"))
+    await expect(
+      run(
+        dispatchToolDefinition(ctx),
+        { ...baseInput(dir, "goal-front"), resume_session: f.session_id, plan_ref: planRef },
+        "ses_plan_test",
+      ),
+    ).rejects.toThrow(/归属于 front/)
+  })
+
+  test("V19 同 owner-kind 的跨会话 resume 仍放行（隔天回来继续不被破坏）", async () => {
+    const dir = repo("d7-v19")
+    const { ctx, sessions } = createFakeCtx()
+    registerCaller(sessions, "ses_front_2", "front", dir)
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 后端跑完（不占运行位）⇒ 可被续接
+    const sa = sessions.get(a.session_id)
+    sa.busy = false
+    sa.idle = Date.now()
+    // 换一个 front 会话 resume 同一后端 ⇒ 放行
+    const r = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), resume_session: a.session_id },
+      "ses_front_2",
+    )
+    expect(r.session_id).toBe(a.session_id)
+  })
+
+  test("V20 拒绝点在 ledger 落 priority_blocked（dispatch / resume 两条路径）", async () => {
+    const dir = repo("d7-v20")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const a = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), plan_ref: planRef },
+      "ses_plan_test",
+    )
+    await expect(run(dispatchToolDefinition(ctx), baseInput(dir, "goal-front"))).rejects.toThrow()
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir, "goal-a"), resume_session: a.session_id }),
+    ).rejects.toThrow()
+    const ledger = ledgerOf(dir)
+    expect(ledger).toContain('"event":"priority_blocked"')
+    expect(ledger).toContain('"caller_kind":"front"')
+    expect(ledger).toContain('"holder_kind":"plan"')
+    expect(ledger).toContain('"path":"dispatch"')
+    expect(ledger).toContain('"path":"resume"')
+  })
+
+  test("V21 plan resume 自己被 suspend 的后端、槽位已被 front 占 ⇒ 拒 + 无副作用", async () => {
+    const dir = repo("d7-v21")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const a = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), plan_ref: planRef },
+      "ses_plan_test",
+    )
+    // plan 自己 suspend 它（释放槽位）⇒ front 可以占用同一工作树
+    await run(suspendToolDefinition(ctx), { session_id: a.session_id }, "ses_plan_test")
+    await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-front"))
+    // plan 再 resume 自己的后端 ⇒ 被 front 的活跃占用挡住（D7.2），且自己的后端保持 suspended
+    await expect(
+      run(
+        dispatchToolDefinition(ctx),
+        { ...baseInput(dir, "goal-a"), resume_session: a.session_id, plan_ref: planRef },
+        "ses_plan_test",
+      ),
+    ).rejects.toThrow(/owner=front/)
+    expect(readPairs(dir)[a.session_id].state).toBe("suspended")
+  })
+
+  test("V22 legacy 条目（无 owner_agent）按 front 解释 ⇒ plan resume 被拒", async () => {
+    const dir = repo("d7-v22")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // 抹掉 owner_agent ⇒ 模拟 D5 之前的旧条目
+    const pairs = readPairs(dir)
+    delete (pairs[a.session_id] as any).owner_agent
+    writePairs(dir, pairs)
+    await expect(
+      run(
+        dispatchToolDefinition(ctx),
+        { ...baseInput(dir, "goal-a"), resume_session: a.session_id, plan_ref: planRef },
+        "ses_plan_test",
+      ),
+    ).rejects.toThrow(/归属于 front/)
+  })
+
+  test("V23 作用域护栏：plan 在 workRoot A 活跃时，front 派 workRoot B 成功", async () => {
+    const dirA = repo("d7-v23-a")
+    const dirB = repo("d7-v23-b")
+    const { ctx, sessions } = createFakeCtx()
+    registerCaller(sessions, "ses_plan_test", "plan", dirA)
+    const planRef = planFile(dirA)
+    await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dirA, "goal-a"), plan_ref: planRef },
+      "ses_plan_test",
+    )
+    const b = await run(dispatchToolDefinition(ctx), baseInput(dirB, "goal-b"))
+    expect(b.session_id).toBeTruthy()
+  })
+
+  test("V24 跨 owner-kind 的 cancel 硬拒：front cancel plan 活后端 ⇒ 拒", async () => {
+    const dir = repo("d7-v24")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const a = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), plan_ref: planRef },
+      "ses_plan_test",
+    )
+    const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
+    expect(r.reason).toBe("cross_owner_kind")
+    expect(r.state).not.toBe("tombstone")
+  })
+
+  test("V25 后端仍活 + owner 已亡 ⇒ 派发仍被拒；经亡主门控回收后可再派", async () => {
+    const dir = repo("d7-v25")
+    const { ctx, sessions } = createFakeCtx()
+    registerCallers(sessions, dir)
+    const planRef = planFile(dir)
+    const a = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir, "goal-a"), plan_ref: planRef },
+      "ses_plan_test",
+    )
+    // owner 会话消亡（后端仍活）⇒ 冲突**不**消解（只看后端活体）
+    sessions.delete("ses_plan_test")
+    await expect(run(dispatchToolDefinition(ctx), baseInput(dir, "goal-front"))).rejects.toThrow()
+    // 走既有亡主门控回收（suspend：owner 已亡 ⇒ 允许接管）
+    const s = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
+    expect(s.state).toBe("suspended")
+    // 回收后再派 ⇒ 成功
+    const again = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-front"))
+    expect(again.session_id).toBeTruthy()
   })
 })
 
@@ -802,10 +1031,14 @@ describe("cancel：停机证据门控（ADR-front-cancel-release）", () => {
     const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
     // 让**基线读取**失败（locate 的那次要成功 ⇒ 否则会走「无法确认该后端是否仍存在」）
     const origGet = ctx.session.get
-    let gets = 0
+    // ⚠️ 只统计**该后端**的读取：cancel 路径还会读调用方会话（判 owner kind，D7.8），
+    // 全局计数会把"基线读取"的位置挤掉 ⇒ 误测。
+    let backendGets = 0
     ctx.session.get = async (input: any) => {
-      gets++
-      if (gets === 2) throw new Error("ECONNRESET: read failed")
+      if (input?.sessionID === a.session_id) {
+        backendGets++
+        if (backendGets === 2) throw new Error("ECONNRESET: read failed")
+      }
       return origGet(input)
     }
     const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })

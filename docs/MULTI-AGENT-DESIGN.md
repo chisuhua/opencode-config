@@ -117,6 +117,7 @@
 - **职责**：只读探索、评估取舍、产出可验证的计划；**可委托**工程 session 实施（v2.17 起）
 - **核心 prompt**：`prompts/plan.md`
 - **权限**：严格只读 + `edit` 仅 `.rddf/plans/*.md` / `docs/adr/draft-*.md` / `openspec/changes/*/design.md` 允许 + bash 仅允许安全只读子集（`.env` 读取 deny）
+- **派发优先级**（v2.18，`ADR-plan-delegate-engineering-session` D7）：**plan 优先、但不抢占** —— 目标工作树被**另一 owner-kind** 的活跃后端占用时，报错**指名占用者**并拒绝派发/resume/cancel（owner 会话已亡 ⇒ 放行）；作用域**按工作树**，不扩到仓库/全局。跨 owner-kind 的 resume 由软信号改为硬拒（判据用 owner-kind ⇒ 同 kind 的"隔天回来继续"不受影响）
 - **delegate 通道**（v2.17）：与 `front` **并列**的放行主体 —— agent 级放行 `delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel`（顶层仍全 `deny`，门控边界唯一）。派**可写实施**时必须带 `plan_ref`（引用已存在的计划文件；accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`）—— 见 `docs/adr/ADR-plan-delegate-engineering-session.md`
 - **典型 workflow**：
   1. 用户切到 plan（Tab 键）

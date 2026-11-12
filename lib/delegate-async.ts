@@ -44,6 +44,9 @@ import {
   nextClaimGen,
   readClaimGen,
   removeInstanceStamp,
+  appendPriorityBlocked,
+  describeHolderByOwner,
+  frontAlive,
   ownerAgentOf,
   planRefRootLabels,
   resolveCallerAgent,
@@ -134,14 +137,9 @@ export function detectSteerResidue(
 }
 
 /** AC48：登记 front 是否仍存活（`get` 抛错 ⇒ 视为亡主）。 */
-export async function frontAlive(ctx: any, frontSessionID: string): Promise<boolean> {
-  try {
-    const info = await ctx.session.get({ sessionID: frontSessionID })
-    return !!info
-  } catch {
-    return false
-  }
-}
+// owner 判活的**唯一实现**在 core（`ADR-plan-delegate-engineering-session` D7.2/D7.3：
+// 不另写第二份「owner 是否消亡」的判断）；此处仅转出，保持既有导出面不变。
+export { frontAlive }
 
 export function aggregateStates(
   items: Array<{ state: string; running: boolean; outcome?: string | null }>,
@@ -563,7 +561,7 @@ export async function planSlot(
 
 export interface SlotClaim {
   ok: boolean
-  holder?: { session_id: string; state: SlotState; work_root: string }
+  holder?: { session_id: string; state: SlotState; work_root: string; owner_agent: "front" | "plan"; owner_session_id: string | null }
   /** 被 reconcile 释放（翻转为 idle）的条目。 */
   released?: string[]
   /** 命中「该工作树正在停机」的进程内守卫（`ADR-front-stop-confirmation` D2）。 */
@@ -1174,6 +1172,29 @@ export function dispatchToolDefinition(ctx: any): any {
         if (typeof prevIntent === "string" && prevIntent.length > 0 && prevIntent !== goalKey.intent) {
           throw fail(`resume_session 的 goal_key 不一致（${prevIntent} ≠ ${goalKey.intent}）：不同目标须新建 session`)
         }
+        // 跨 owner-kind 的 resume ⇒ 硬拒（ADR D7.3）；owner 会话已亡 ⇒ 放行（亡主例外）。
+        // ⚠️ 必须落在 vanished 墓碑处置**之前**，保住既有「拒绝零副作用」原则。
+        const existingOwnerKind = existing.owner_agent === "plan" ? "plan" : "front"
+        if (existingOwnerKind !== ownerAgent) {
+          const ownerSessionID = typeof existing.front_session_id === "string" ? existing.front_session_id : ""
+          const alive = ownerSessionID.length > 0 ? await frontAlive(ctx, ownerSessionID) : false
+          if (alive) {
+            appendPriorityBlocked(stateRoot, {
+              path: "resume",
+              callerKind: ownerAgent,
+              holderKind: existingOwnerKind,
+              holderState: String(existing.state ?? "unknown"),
+              holderSessionID: brief.resume_session ?? "",
+              workRoot,
+              reason: "cross-owner-kind resume refused (owner session alive)",
+            })
+            throw fail(
+              `后端 ${brief.resume_session} 归属于 ${existingOwnerKind}（owner 会话 ${ownerSessionID} 仍存活）：` +
+                `按 ADR-plan-delegate-engineering-session D7.3，不得跨 owner-kind 接管该后端。` +
+                `可选动作：① 让 ${existingOwnerKind} 侧自己处理；② 由用户协调；③ 等该 owner 会话结束后再接管`,
+            )
+          }
+        }
         // ── ADR D12 派发面处置：resume 命中**已删**后端 ──
         // 上游 404 = **正面证据**（不是"看不到"）⇒ 必须处置，否则旧条目的
         // `state=dispatching` 会**永久占死该 workRoot**（cancel/suspend 也定位不到它）。
@@ -1289,7 +1310,21 @@ export function dispatchToolDefinition(ctx: any): any {
             /* 清理失败不掩盖主错误 */
           }
         }
-        throw fail(describeHolder(claim.holder!))
+        const holder = claim.holder!
+        if (holder.owner_agent !== ownerAgent) {
+          // 跨 owner-kind ⇒ plan 优先、不抢占（ADR D7.2/D7.4）
+          appendPriorityBlocked(stateRoot, {
+            path: "dispatch",
+            callerKind: ownerAgent,
+            holderKind: holder.owner_agent,
+            holderState: holder.state,
+            holderSessionID: holder.session_id,
+            workRoot,
+            reason: "cross-owner-kind slot conflict",
+          })
+          throw fail(describeHolderByOwner(holder, ownerAgent))
+        }
+        throw fail(describeHolder(holder))
       }
 
       const dispatchedAt = new Date().toISOString()
@@ -1955,6 +1990,47 @@ export function cancelToolDefinition(ctx: any): any {
       const located = await locateBackend(ctx, sessionID, hintDir)
       const { stateRoot, entry } = located
       const state = isSlotState(entry?.state) ? entry.state : "idle"
+
+      // ── 跨 owner-kind 的 cancel ⇒ 硬拒（ADR D7.8）──
+      // owner-alive 门控此前**只在 suspend 路径**存在 ⇒ front 可绕过优先级直接终止
+      // plan 的活后端。D7.8 把同一门控**同构补到 cancel**：owner 会话仍存活 ⇒ 拒；
+      // 已亡 ⇒ 放行（亡主接管语义不变）。
+      if (entry) {
+        const callerKind = ownerAgentOf(await resolveCallerAgent(ctx, _toolContext?.sessionID))
+        const holderKind = entry.owner_agent === "plan" ? "plan" : "front"
+        if (holderKind !== callerKind) {
+          const ownerSessionID = typeof entry.front_session_id === "string" ? entry.front_session_id : ""
+          const alive = ownerSessionID.length > 0 ? await frontAlive(ctx, ownerSessionID) : false
+          if (alive) {
+            appendPriorityBlocked(stateRoot, {
+              path: "cancel",
+              callerKind,
+              holderKind,
+              holderState: state,
+              holderSessionID: sessionID,
+              workRoot: typeof entry.work_root === "string" ? entry.work_root : "",
+              reason: "cross-owner-kind cancel refused (owner session alive)",
+            })
+            return {
+              content: JSON.stringify(
+                {
+                  session_id: sessionID,
+                  interrupted: false,
+                  state,
+                  reason: "cross_owner_kind",
+                  forced_available: false,
+                  message:
+                    `该后端归属于 ${holderKind}（owner 会话 ${ownerSessionID} 仍存活）：` +
+                    `按 ADR-plan-delegate-engineering-session D7.8，不得跨 owner-kind 终止它。` +
+                    `可选动作：① 让 ${holderKind} 侧自己 cancel；② 由用户协调；③ 等该 owner 会话结束后再接管`,
+                },
+                null,
+                2,
+              ),
+            }
+          }
+        }
+      }
 
       // ── ADR D12：已删后端（上游 404 = 正面证据）——
       if (located.unknown) {

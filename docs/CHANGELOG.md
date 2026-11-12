@@ -18,6 +18,14 @@
 > ⑤ **验证**：`bun test tests/` **385 pass**（config-guards +2 护栏）；anchors 23/23；`opencode debug agents` 确认 context-builder 可见且 `hidden=False`。
 > ⑥ **残留**：采纳率是否回升只能上线后观察（`ERROR: missing intent` 出现频率是"调用方不给 intent"的先行指标）；「plan → critic 条件配对」登记为 backlog。
 
+> **v2.18 变更摘要（2026-11-13，D7 派发优先级：plan 优先、但不抢占）**：
+> ① **诉求**：「plan 活跃的情况下，front 不能调用 build 的后端 session」。已确认边界：作用域**保持按工作树**、**只报错不抢占**。
+> ② **ADR 修订**：`docs/adr/ADR-plan-delegate-engineering-session.md` 新增 **D7**（D4 增补指向）。核心：① **D7.2** 冲突判定**富化既有占槽拒绝点**（不新建锁外预检，避免 TOCTOU 与两面活体口径漂移），holder 结构体扩 `owner_agent`；② **D7.3** 跨 owner-kind 的 **resume 硬拒**（判据用 owner-kind 而非 session id ⇒ 保住"隔天回来继续"；亡主例外复用 `frontAlive`）；③ **D7.4** 两种指名文案（被 plan 占 / 被 front 占）+ 可执行下一步；④ **D7.5** owner 亡主**不消解冲突**（只看后端活体；出口是既有亡主门控回收后再派）；⑤ **D7.6** 拒绝点落 ledger 事件 `priority_blocked`（caller_kind / holder_kind / holder_state / holder_session_id / work_root / path）；⑥ **D7.8** 跨 owner-kind 的 **cancel 硬拒**（补齐归属门控只在 suspend 路径的缺口，否则 front 可绕过优先级直接终止 plan 的活后端）。
+> ③ **审查链**：oracle `PASS-WITH-NOTES`（7 条 finding 全部并入）→ critic `REJECT`（1 BLOCKER：D7.5 与 D7.2 二义）→ 修订 → critic 复审 `APPROVE_WITH_CONDITIONS / mergeable: yes`（2 条措辞级 SHOULD_FIX + 1 NIT 已并入）。
+> ④ **实施**：代码（`frontAlive` **下沉到 core** 作全仓唯一实现、holder 扩 owner 字段、`describeHolderByOwner` 两文案、`appendPriorityBlocked` 拒绝点落行、delegate/dispatch/resume/cancel 四条路径的跨 owner-kind 硬拒）；prompt（`front.md` 增「占槽者是 plan 时不要 suspend、也不要 cancel」的指引；`plan.md` 增「plan 优先但不自动抢占」指引）；测试（+13：V16–V25）。
+> ⑤ **验证**：`bun test tests/` **396 pass / 0 fail**；anchors 23/23；owner 判活全仓仅一份实现。
+> ⑥ **残留**：① 同 owner-kind 的跨会话 resume 仍放行（"隔天回来继续"不受影响，这是有意的）；② plan 的后端转 suspended 后，front 仍可占用该工作树（plan resume 时才冲突）—— 未加规则，登记备查；③ `priority_blocked` 的线上频次统计待部署后积累。
+
 > **v2.17 变更摘要（2026-11-13，plan 获得 delegate 派发主体 + ADR 签批）**：
 > ① **问题**：plan（planner 角色）只有 `subagent`（全量 allow），**没有任何工程行动出口** —— 计划与实施之间没有可编程的交接面。
 > ② **ADR**：`docs/adr/ADR-plan-delegate-engineering-session.md`（**Accepted**）—— 只扩展"谁可以派发"，不改单槽 / 归属门控 / 停机证据 / 写隔离 / grants 白名单。关键决策：D1 plan 与 front 并列放行同一 delegate 通道（顶层仍全 deny）+ plan 计划产出口径收敛到 `.rddf/plans/`；D2 派可写实施须带 **`plan_ref`**（accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`；**可写 ≠ 可引用**；存在性校验是强制函数、非相关性证明）；D3 `sessions` 按 **owner 过滤**（过滤只发生在 sessions 的 execute 内，`countActiveBackends` / dispatch 超限诊断保持 owner 无关）；D4 槽位仍按 `workRoot` 全局单槽；D5 `owner_agent` 落 pair/ledger（缺失按 front 解释）；D6 关闭范围。
