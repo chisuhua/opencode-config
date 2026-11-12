@@ -125,6 +125,55 @@ describe("判定：结构合规 / 不合规 / 长度", () => {
   })
 })
 
+describe("档位可观测：profileMissing 独立于 violations / 豁免", () => {
+  test("7 字段齐全 → profileMissing=false", () => {
+    const r = evaluatePrompt(CRITIC, { agent: "critic", prompt: COMPLIANT, isResume: false })
+    expect(r.ok).toBe(true)
+    expect(r.profileMissing).toBe(false)
+  })
+
+  test("首审轮缺 review_profile → profileMissing=true（且照常判违规）", () => {
+    const prompt = COMPLIANT.replace("## review_profile\nbuild\n\n", "")
+    const r = evaluatePrompt(CRITIC, { agent: "critic", prompt, isResume: false })
+    expect(r.ok).toBe(false)
+    expect(r.profileMissing).toBe(true)
+    expect(r.violations.map((v) => v.code)).toContain("missing-sections")
+  })
+
+  test("复审轮豁免小节检查，但缺档位时 profileMissing 仍为 true（可观测）", () => {
+    const r = evaluatePrompt(CRITIC, {
+      agent: "critic",
+      prompt: "这是复审（第 2 轮），只判定上一轮 BLOCK 是否闭合。" + "x".repeat(200),
+      isResume: false,
+    })
+    expect(r.ok).toBe(true)
+    expect(r.exempted).toBe(true)
+    expect(r.profileMissing).toBe(true)
+  })
+
+  test("复审轮声明继承档位 → profileMissing=false", () => {
+    const r = evaluatePrompt(CRITIC, {
+      agent: "critic",
+      prompt:
+        "这是复审（第 2 轮），只判定上一轮 BLOCK 是否闭合。\n\n## review_profile\n继承第 1 轮：arch\n" +
+        "x".repeat(200),
+      isResume: false,
+    })
+    expect(r.ok).toBe(true)
+    expect(r.exempted).toBe(true)
+    expect(r.profileMissing).toBe(false)
+  })
+
+  test("续接（isResume）不要求档位", () => {
+    const r = evaluatePrompt(CRITIC, {
+      agent: "critic",
+      prompt: "补充一点材料。",
+      isResume: true,
+    })
+    expect(r.profileMissing).toBe(false)
+  })
+})
+
 describe("豁免：复审轮（关键词）+ 状态继承（兜底）", () => {
   test("关键词豁免：prompt 含「复审」→ 跳过小节检查（长度仍查）", () => {
     const r = evaluatePrompt(CRITIC, {

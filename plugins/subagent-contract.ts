@@ -122,6 +122,9 @@ export default Plugin.define({
         exempted: result.evaluation.exempted,
         exemption: result.evaluation.exemption,
         violations: result.evaluation.violations,
+        profileMissing: result.evaluation.profileMissing === true,
+        // 档位缺失单独成事件，便于统计「档位声明率」（复审轮豁免也会命中）
+        ...(result.evaluation.profileMissing ? { event: "profile_missing" } : {}),
       })
 
       if (result.blocked) throw new Error(result.message ?? "subagent input rejected")
@@ -178,6 +181,8 @@ export default Plugin.define({
         exempted: result.evaluation.exempted,
         exemption: result.evaluation.exemption,
         violations: result.evaluation.violations,
+        profileMissing: result.evaluation.profileMissing === true,
+        ...(result.evaluation.profileMissing ? { event: "profile_missing" } : {}),
       })
     })
   },

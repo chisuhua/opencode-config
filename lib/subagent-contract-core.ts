@@ -171,6 +171,13 @@ export interface Evaluation {
   violations: Violation[]
   /** 面向模型的错误文案（可执行：说清缺什么、怎么改） */
   message?: string
+  /**
+   * 首审轮是否缺 `review_profile`（档位）。
+   *
+   * 刻意独立于 violations：复审轮会豁免"小节齐全"，但**档位是判据前提**，
+   * 缺了会让同一 change 的两轮用不同判据集 —— 需要可观测，而不是随豁免一起消失。
+   */
+  profileMissing?: boolean
 }
 
 /**
@@ -342,6 +349,7 @@ export function evaluatePrompt(rule: ContractRule, input: PromptInput): Evaluati
     exempted,
     exemption,
     violations,
+    profileMissing: !isResume && !hasSection(text, "review_profile"),
     message: ok ? undefined : buildRejectionMessage(input.agent, rule, violations),
   }
 }
@@ -438,7 +446,7 @@ export function evaluateChain(
       // 无契约的 agent：不受约束
       return {
         entry,
-        evaluation: { agent: entry.agent, ok: true, exempted: false, violations: [] },
+        evaluation: { agent: entry.agent, ok: true, exempted: false, violations: [], profileMissing: false },
       }
     }
     const evaluation = evaluatePrompt(rule, {
@@ -532,7 +540,7 @@ export function gate(input: GateInput, config: ContractConfig, state: CompliantS
       blocked: false,
       shouldLog: false,
       mode,
-      evaluation: { agent: input.agent, ok: true, exempted: false, violations: [] },
+      evaluation: { agent: input.agent, ok: true, exempted: false, violations: [], profileMissing: false },
     }
   }
 

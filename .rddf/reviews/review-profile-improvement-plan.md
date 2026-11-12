@@ -2,7 +2,7 @@
 
 > 角色：architect（治理面）
 > 日期：2026-11-12
-> 状态：**方案，待用户选组合**（实施需 oracle → critic；lib/ 与 tests/ 部分归 builder）
+> 状态：**A + C + D 已实施**（2026-11-12，用户选定）；B / E 暂缓，等 D 的数据再定
 > 前置：本轮已给 `prompts/critic.md` 补「评审对象边界」（oracle `PASS-WITH-NOTES` → critic `APPROVE_WITH_CONDITIONS / mergeable: yes`）
 
 ---
@@ -82,3 +82,34 @@ L3 日志只记 `violation` / `exempted` / `injected`（`~/.local/share/opencode
 2. B（缺档位一律 mixed）是否现在就做？—— 取决于是否接受"更宽松但确定"的取舍。
 3. E（契约提为独立必填 + enforce）是否等 D 的数据？
 4. D / E / AC4 涉及 `lib/**` 与 `tests/**`（builder 归属）—— 是否由我出规格后切 builder 实施？
+
+---
+
+## 7. 实施记录（A + C + D）
+
+| 项 | 落点 | 改动 |
+|---|---|---|
+| **A 继承式档位** | `prompts/build.md:86` | 复审协议改为「两样东西 + **一行档位**」：`## review_profile` 写 `继承第 N 轮：<profile>`；内容可豁免，**档位不可豁免** |
+| | `prompts/critic.md:90` | 复审轮缺档位时：有「继承第 N 轮：X」就用 X；无法确定 → `profile: mixed` 并在输出首行声明所用档位 |
+| **C 首审轮默认骨架** | `prompts/build.md:149` | 「首审轮默认先跑方式 C 取骨架」，再按 A / B 补 4 个字段；并修正方式 C 的陈旧描述（脚本实际自动填 `changes_summary` / `review_profile` / `diff_or_paths`） |
+| **D 可观测** | `lib/subagent-contract-core.ts` | `Evaluation` 新增 `profileMissing`；`evaluatePrompt` 计算 `!isResume && !hasSection(text, "review_profile")` —— **独立于 violations**，复审轮豁免时仍为 true |
+| | `plugins/subagent-contract.ts` | L1 / L2 日志记录 `profileMissing`，缺失时追加 `event: "profile_missing"`（可用 grep 统计档位声明率） |
+| | `tests/subagent-contract-core.test.ts` | 新增 5 条：齐备=false / 首审缺=true 且判违规 / 复审豁免但缺=true / 复审声明继承=false / 续接不要求 |
+
+**验证**：`bun test tests/` = **365 pass / 0 fail**（+5）；anchors 23/23。
+
+**AC 状态**：
+
+| AC | 状态 |
+|---|---|
+| AC1 复审轮携带档位 ≥90% | ⏳ 需线上数据（D 已就绪，等新日志累计） |
+| AC2 首审轮声明率 ≥85% | ⏳ 同上 |
+| AC3 轮间档位一致 | ⏳ 同上 |
+| AC4 critic.md 不再持有路径推断配方 | **不适用**（AC4 属方案 B，本轮未做 B；路径推断仍作为 build 未给档位时的兜底） |
+| AC5 日志出现 `profile_missing` 事件 | ✅ 代码就绪；实测需下一次真实 critic 调用 |
+| AC6 无回归 | ✅ 365 pass + anchors 23/23 |
+
+**暂缓**：
+
+- **B（缺档位一律 mixed）**：等 D 的「档位声明率 / 缺档位与漏判的相关性」数据。
+- **E（契约提为独立必填 + enforce）**：同上；且当前默认 warn 模式下 E 只多一条日志。

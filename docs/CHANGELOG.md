@@ -10,6 +10,13 @@
 
 ---
 
+> **v2.16 变更摘要（2026-11-12，critic 档位显式化 A+C+D）**：
+> ① **问题**：11-03 后 182 个 critic prompt 里，显式声明 `review_profile` 的只有首审轮 **55%**、复审轮 **33%**。最伤的是复审轮——协议规定「只提交闭合证据 + 增量」，档位不在其中，而 critic 缺档位时按路径猜 ⇒ 同一 change 两轮可能用**不同判据集**，闭合验证结论不稳。
+> ② **A 继承式档位**：`build.md:86` 复审协议改为「两样东西 + 一行档位」（`继承第 N 轮：<profile>`），**内容可豁免、档位不可豁免**；`critic.md:90` 复审轮缺档位时按继承声明取值，无法确定则 `mixed` 并声明。
+> ③ **C 首审轮默认骨架**：`build.md:149` 明确「首审轮默认先跑 `build_critic_prompt.sh` 取骨架」（档位由脚本按路径预填），并订正脚本实际自动填的 3 个字段（原文漏了 `review_profile`）。
+> ④ **D 可观测**：`Evaluation` 新增 `profileMissing`（**独立于 violations**，复审轮豁免时仍可观测）；L1/L2 日志记 `profileMissing` 并在缺失时追加 `event: "profile_missing"`，使「档位声明率」可 grep 统计。
+> ⑤ **验证**：`bun test tests/` **365 pass**（新增 5 条）；anchors 23/23。**暂缓**：B（缺档位一律 mixed）、E（契约提为独立必填 + enforce）等 D 的线上数据。方案全文见 `.rddf/reviews/review-profile-improvement-plan.md`。
+
 > **v2.15 变更摘要（2026-11-12，critic 的「评审对象边界」）**：
 > ① **问题**：critic 的判据轴是**产物档位**（arch / plan / build / archive），但"评审对象必须是可签批产物、建议类产出只作上下文"这条边界只存在于设计文档与口头共识 —— critic 自己的 prompt 里没有。父模型若把 oracle 四节结论 / metis 六节 gap 分析塞进 `diff_or_paths`，critic 会拿只对决策文档成立的判据（如 arch 档「决策缺备选方案」）去评一份**结论**，产出无法落地的 BLOCKER；而 `build.md:85` 规定「只有 BLOCKER 触发返工」⇒ 白触发一轮返工并消耗「同一 change 最多 2 轮 critic」预算。
 > ② **改动**：`prompts/critic.md` 新增「评审对象边界」小节 —— 评审对象须**证据自足、可签批**（ADR / proposal / 代码 / 归档增量 / 治理面规则文件等）；建议类产出只作上下文（写进 `context` 或作为 `intent` 来源）；复核建议要审**它指向的产物**、按该产物路径对应的档位；建议将被采纳则**先落成产物**再审；整份输入都是建议类 ⇒ 走**无评审对象出口**（`profile: none` + 理由，不产出任何 finding、不给 `mergeable`）。档位推断段加先后约束：推断前先过对象边界。

@@ -87,6 +87,8 @@ diff 跨档时**分档判**：
 
 档位由 build 显式给出；缺失时按路径推断（**推断前先过「评审对象边界」**：整份输入无可审产物 ⇒ 明说「无评审对象」，不做档位推断、不给 `mergeable` 判定）：优先读项目配置 `.rddf/config/arch-docs.json` 的 `arch_paths[]`（`arch`），再看 `openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements`（`plan`），最后 `src` / `include` / `tests` / `scripts` / `tools`（`build`）。配置缺失时 arch 档按 `prompts/build.md` §架构文档范围 的「目录集口径」里的 fallback 目录集兜底（`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/` 等目录）—— **build 侧是权威映射**，critic 侧的路径推断只是 build 未给 profile 时的兜底。推断不出就写 `profile: mixed` 并说明理由。
 
+**复审轮**：prompt 缺档位时，若声明了「继承第 N 轮：X」就用 X；没有声明且无法从上下文确定 → 写 `profile: mixed` 并在输出首行声明所用档位（别让两轮用不同判据集）。
+
 ## 结论判定（硬规则）
 
 - 只有 BLOCKER 才允许给 REJECT。

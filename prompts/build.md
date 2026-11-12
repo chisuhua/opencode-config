@@ -83,7 +83,7 @@ critic 只审架构方向与关键决策。满足以下**任一**条件才调：
 
 - **同一 change 最多 2 轮 critic 评审**。第 3 轮起必须先获得用户明确批准，否则停手、把剩余 finding 记入 backlog。
 - **只有 BLOCKER 触发返工与复审**。SHOULD_FIX / NITS 记入 change 的 notes 或 backlog，直接放行。
-- **复审只提交两样东西**：上一轮 BLOCKER 的闭合证据 + 本轮新增 diff。禁止全量重审，禁止要求重审上一轮没提的部分。
+- **复审只提交两样东西 + 一行档位**：上一轮 BLOCKER 的闭合证据 + 本轮新增 diff，外加 `## review_profile`（写 `继承第 N 轮：<profile>`）。内容可豁免，**档位不可豁免** —— 它是判据前提，丢了会让同一 change 的两轮用不同判据集。禁止全量重审，禁止要求重审上一轮没提的部分。
 - **归档前评审按增量**：只判定「上一轮 BLOCKER 是否闭合」+「新 diff 是否引入新 BLOCKER」，不重新审全文。
 - **禁止在委派 prompt 里写**「攻击这个新判据」「还有哪些形态会漏」「做变异测试找出逃逸」这类开放式找漏洞指令——这会让每轮必然产出新 finding，形成无限循环。只允许写「验证上一轮 BLOCKER 是否闭合」。
 - critic 返回 `scope_exceeded: true` 的条目**不得进入返工队列**，记 backlog。
@@ -146,6 +146,8 @@ critic 的判据随产物变，**不按 role.json 判**（角色会中途切换�
 
 #### 三种组装方式（按推荐度）
 
+**首审轮默认先跑方式 C 取骨架**（`review_profile` 由脚本按路径预填，可人工覆盖），再按方式 A / B 补 `intent` / `focus` / `context` / `expected_format`；方式 A 仍适用于复杂改动。
+
 **方式 A（推荐）：context-builder subagent**
 
 调 `subagent` 工具（`agent: "context-builder"`）给它原始材料（git diff、commit msg、相关文件），让它返回组装好的 7 字段文本。你再把这个文本喂给 critic。给它**本轮** diff，不要给全仓或历史轮次的累积 diff。
@@ -166,7 +168,7 @@ scripts/build_critic_prompt.sh --copy         # 复制到剪贴板
 scripts/build_critic_prompt.sh main           # 与 main 对比
 ```
 
-脚本会跑 `git diff --stat` + `git diff` 自动填 `changes_summary` 和 `diff_or_paths`，剩 4 个 TODO 字段你自己补。
+脚本会跑 `git diff --stat` + `git diff`，自动填 `changes_summary` / `review_profile`（按路径推断）/ `diff_or_paths`，剩 4 个字段（`intent` / `focus` / `context` / `expected_format`）你自己补。
 
 #### 自检清单（调 critic 前 30 秒过一遍）
 
