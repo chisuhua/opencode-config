@@ -76,7 +76,12 @@ export interface ContractRule {
   inheritIf?: ContractPattern[]
 }
 
-/** 豁免判断的默认生效窗口（字符数，从 prompt 开头算） */
+/**
+ * 豁免判断的默认生效窗口（字符数，从 prompt 开头算）。
+ *
+ * 名字沿用 KEYWORD：最早它只管关键词豁免；现在同时管 {@link ContractRule.inheritIf}
+ * 的"上一轮引用"前置 —— 两者都只认任务陈述区（prompt 开头）。
+ */
 export const EXEMPT_KEYWORD_WINDOW_CHARS = 400
 
 export interface ContractAgentOverride {
@@ -383,7 +388,7 @@ export function describeContract(rule: ContractRule): string {
   if (rule.maxChars !== undefined) parts.push(`- prompt 至多 ${rule.maxChars} 字符`)
   if (rule.requireDiff) parts.push(`- prompt 必须含真实 diff（"diff --git"）`)
   if ((rule.exemptIf ?? []).length > 0) {
-    const window = rule.exemptKeywordWindow ?? EXEMPT_KEYWORD_WINDOW_CHARS
+    const window = rule.exemptWindow ?? EXEMPT_KEYWORD_WINDOW_CHARS
     const inherit = (rule.inheritIf ?? []).length > 0
     parts.push(
       `- 复审轮可豁免小节要求（关键词需出现在开头 ${window} 字符内${inherit ? "；继承上一轮时本轮需引用上一轮" : ""}）`,

@@ -4,7 +4,7 @@
  * 覆盖：
  *  - 只审计有父会话的子会话（主会话的 user 消息不受约束）
  *  - 规则按条目自己的 agent 解析（oracle 不被 critic 的规则误判）
- *  - 状态继承：同一父会话内先合规后违规 → 后者被豁免
+ *  - 状态继承：同一父会话内复审链 → 引用上一轮的续轮被豁免；不引用上一轮的新评审不被放行
  *  - CLI 退出码：--strict 有违规 exit 1；否则 exit 0
  *
  * 运行：bun test tests/subagent-contract-audit.test.ts
@@ -53,6 +53,9 @@ const COMPLIANT = [
 
 /** 复审轮：命中关键词豁免，但长度仍要达标 */
 const REVIEW_ROUND = "这是复审（第 2 轮），只判定上一轮 BLOCK 是否闭合。" + "x".repeat(220)
+
+/** 续接复审：自身引用上一轮 ⇒ 可继承"复审模式" */
+const FOLLOWUP_REVIEW = "已按上一轮意见修复，补充说明。" + "x".repeat(220)
 
 /**
  * 不合规：缺小节，但长度达标（≥200）——
@@ -112,6 +115,16 @@ function seed(): void {
     "C3",
     1,
     "user",
+    JSON.stringify({ text: "You are a subagent spawned by another session.\n" + FOLLOWUP_REVIEW }),
+  )
+
+  // 父会话 P2：另一个**新评审**（不引用上一轮）→ 不得继承上一轮的"复审模式"
+  insSession.run("C5", "P2", "critic", "critic 另一个新评审", t(5))
+  insMessage.run(
+    "m5",
+    "C5",
+    1,
+    "user",
     JSON.stringify({ text: "You are a subagent spawned by another session.\n" + NON_COMPLIANT }),
   )
 
@@ -147,8 +160,8 @@ afterAll(() => {
 describe("审计器", () => {
   test("只收集有父会话的子会话（主会话不进来）", () => {
     const rows = collectRows(DB_PATH, { dbPath: DB_PATH, strict: false })
-    expect(rows.length).toBe(4)
-    expect(rows.map((r) => r.sessionID).sort()).toEqual(["C1", "C2", "C3", "C4"])
+    expect(rows.length).toBe(5)
+    expect(rows.map((r) => r.sessionID).sort()).toEqual(["C1", "C2", "C3", "C4", "C5"])
   })
 
   test("规则按条目自己的 agent 解析：oracle 不被 critic 的规则误判", () => {
@@ -158,19 +171,26 @@ describe("审计器", () => {
 
   test("不合规被报出，且列出缺失小节", () => {
     const report = audit(DB_PATH, { dbPath: DB_PATH, strict: false })
-    expect(report.violations.length).toBe(1)
-    expect(report.violations[0]!.sessionID).toBe("C1")
+    expect(report.violations.map((v) => v.sessionID).sort()).toEqual(["C1", "C5"])
     expect(report.violations[0]!.evaluation.violations.map((v) => v.code)).toContain(
       "missing-sections",
     )
   })
 
-  test("状态继承：同父会话内复审链 → 后续缺小节的轮次被豁免", () => {
+  test("状态继承：同父会话内复审链 → 引用上一轮的续轮被豁免", () => {
     const report = audit(DB_PATH, { dbPath: DB_PATH, strict: false })
-    expect(report.summary.critic).toEqual({ total: 3, violations: 1, exempted: 2 })
+    expect(report.summary.critic).toEqual({ total: 4, violations: 2, exempted: 2 })
     const c3 = report.rows.find((r) => r.sessionID === "C3")!
     expect(c3.evaluation.ok).toBe(true)
     expect(c3.evaluation.exemption).toBe("prior-review-round")
+  })
+
+  test("状态继承不跨对象：不引用上一轮的新评审不被放行", () => {
+    const report = audit(DB_PATH, { dbPath: DB_PATH, strict: false })
+    const c5 = report.rows.find((r) => r.sessionID === "C5")!
+    expect(c5.evaluation.ok).toBe(false)
+    expect(c5.evaluation.exempted).toBe(false)
+    expect(c5.evaluation.violations.map((v) => v.code)).toContain("missing-sections")
   })
 })
 

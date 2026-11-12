@@ -22,10 +22,12 @@
 3. **L3（生成前）**：`session.hook("context")` 把契约注入 `subagent` 工具描述 ⇒ 父模型在采样前就看到判据（与 opencode 注入 `Available subagents:` 同一手法，幂等）。
 4. **L1（执行前，硬门）**：`tool.hook("execute.before")` 校验 `input.agent` + `input.prompt`；不合规 ⇒ **抛错** ⇒ 宿主包成受控 `Tool.Error` ⇒ 父模型看到缺失项与修正指引，同回合重发。**这是宿主唯一允许失败的钩子**（`packages/core/src/plugin/hooks.ts` 的 `Failures` 类型）。
 5. **L2（落库前，检测）**：`session.hook("prompt")` 兜底覆盖 `command(subagent:true)` 等不经 tool 的路径。**不得抛错**（session 域钩子不可失败）⇒ 只检测 + 记录。
-6. **豁免语义（关键词优先 + 结构前置 + 状态继承）**：
+6. **豁免语义（关键词优先 + 结构前置 + 任务陈述区窗口 + 状态继承 + 继承自证）**：
    - 关键词命中（复审 / 第 N 轮 / 闭合证据 / closure）⇒ 豁免小节检查
    - **结构前置条件**：仅当缺失小节 ≥ 半数（ceil(7/2)=4）才允许豁免 —— 否则"第 2 轮"这类措辞在真实 diff 里的偶发命中会误放行
+   - **任务陈述区窗口**：关键词只认 prompt 开头 400 字符 —— 后半段输出模板里的"复审/上一轮"（"不需要复审代码"、"会被 critic 复审时升级为 BLOCKER"）不构成豁免依据
    - **状态继承**：继承的是"上一轮被判为复审轮"这个**模式**（不是"上一轮合规"）⇒ 复审链可持续豁免，而同一父会话里的**新评审不会被放行**
+   - **继承需自证**：走继承路径时，本轮 prompt 自己也要引用上一轮 —— 防"连着审不同对象"（ADR-090/091/092）时把新评审一并放行
 7. **L5 审计 CLI**：`scripts/audit-subagent-prompts.ts` 用**同一份** core 逻辑评估历史子会话 ⇒ 灰度期的决策依据；`--strict` 时有违规 exit 1（可作 CI 断言）。
 8. **灰度**：默认 `warn`（只记录 + 审计），配置可逐 agent 切 `enforce`；配置每次调用重读 ⇒ 改配置即时生效，无需重启。
 
@@ -38,7 +40,7 @@
 | AC3 | L3 注入契约且幂等（重复触发不叠加） | 同上 + live 观察父会话工具描述 |
 | AC4 | L1：enforce 下拦截并给出**可执行**修正文案；warn 下只记录 | live e2e（见验收报告） |
 | AC5 | L2 只检测不抛错（宿主 `Failures` 契约） | `scripts/check-upstream-anchors.sh` A13/A13b |
-| AC6 | 豁免：关键词 + 结构前置 + 状态继承；续接轮不清零复审模式 | 单测「复审链回归」 |
+| AC6 | 豁免：关键词 + 结构前置 + 任务陈述区窗口 + 状态继承 + 继承需自证；续接轮不清零复审模式 | 单测「复审链回归」「关键词只在前 400 字符内生效」「状态继承有前置」+ `.rddf/reviews/subagent-contract-exemption-sampling.md` |
 | AC7 | 审计 CLI：报告 / `--strict` exit 1 / `--agent` `--session` `--since` `--json` | `tests/subagent-contract-audit.test.ts`（含 CLI 子进程退出码） |
 | AC8 | 默认 warn；逐 agent 可覆盖；配置即时生效 | `subagent-contract.json` + 插件每次调用重读 |
 | AC9 | live：warn 模式日志留下 L1+L2 违规记录；enforce 模式 `subagent` 调用被拒 | `~/.local/share/opencode/subagent-contract.log` + 会话记录 |

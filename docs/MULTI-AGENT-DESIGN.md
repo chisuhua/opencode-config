@@ -6,7 +6,7 @@
 
 本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
 
-> **本版（v2.3.0）变更**：新增 §2.9「subagent 输入契约」—— 把 `prompts/build.md` 里「7 字段上下文契约」从**散文**变成**可判定的门**：规则真源 `lib/subagent-contract-core.ts`、宿主接线 `plugins/subagent-contract.ts`（L3 `session.hook("context")` 生成前告知 / **L1 `tool.hook("execute.before")` 硬门** / L2 `session.hook("prompt")` 检测）、审计 CLI `scripts/audit-subagent-prompts.ts`。默认 **warn**（灰度），逐 agent 可切 `enforce`；豁免 = 关键词 + 结构前置（缺失 ≥4/7）+ 状态继承（继承“复审模式”，续接轮不清零）。
+> **本版（v2.3.0）变更**：新增 §2.9「subagent 输入契约」—— 把 `prompts/build.md` 里「7 字段上下文契约」从**散文**变成**可判定的门**：规则真源 `lib/subagent-contract-core.ts`、宿主接线 `plugins/subagent-contract.ts`（L3 `session.hook("context")` 生成前告知 / **L1 `tool.hook("execute.before")` 硬门** / L2 `session.hook("prompt")` 检测）、审计 CLI `scripts/audit-subagent-prompts.ts`。默认 **warn**（灰度），逐 agent 可切 `enforce`；豁免 = 关键词（限任务陈述区 400 字符）+ 结构前置（缺失 ≥4/7）+ 状态继承（继承"复审模式"且本轮自证引用上一轮，续接轮不清零）。
 >
 > **本版（v2.2.3）变更**：运行环境修复（非规则变更）—— `kimi-code` provider 迁到 V2 包名 `@opencode/ai/providers/openai-compatible`，并为 `kimi-for-coding` / `k3-256k` 补 `variants`（`reasoning_effort` 映射），修复 oracle 的 `Variant unavailable`。
 >
@@ -471,17 +471,26 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 > **分层依据**：宿主 `packages/core/src/plugin/hooks.ts` 的 `Failures` 类型把 session / aisdk / permission / shell 域标为 `NoFailures`，只有 `tool` 域是 `ToolFailures`。这是本设计的承重墙，已登记为上游锚点 **A13 / A13b**（`scripts/check-upstream-anchors.sh`）。
 
-#### 豁免语义（三重收窄）
+#### 豁免语义（五重收窄）
 
 ```
 ① 关键词命中     复审 / 第 N 轮 / 闭合证据 / closure
 ② 结构前置       仅当缺失小节 ≥ ceil(必需/2)（critic = 4/7）才可能豁免
-③ 状态继承       继承"上一轮被判为复审轮"这个模式（不是"上一轮合规"）
-④ 续接轮不清零   isResume 既不是新评审，也不该重置复审模式
+③ 任务陈述区     关键词只认 prompt 开头 400 字符（输出模板/约束里的"复审"不算）
+④ 状态继承       继承"上一轮被判为复审轮"这个模式（不是"上一轮合规"）
+⑤ 继承需自证     本轮 prompt 自己也要引用上一轮（同一父会话审不同对象时不许继承）
+⑥ 续接轮不清零   isResume 既不是新评审，也不该重置复审模式
 ```
 
 ②③ 的来源：初版"关键词命中即豁免"会把真实 diff 里偶现的「第 2 轮」当成复审，一次误豁免 + 状态继承
 会让整个父会话后续 30 分钟都进复审模式（critic 第 1 轮 SHOULD_FIX）。
+
+③⑤ 的来源：**豁免误命中抽样**（真实库 90 条豁免全量复核，误命中 12 条 = 13.3% > 10% 阈值）。
+误命中两类：关键词落在后半段输出模板（"不需要复审代码" / "会被 critic 复审时升级为 BLOCKER"，
+位置 1194–5377）；以及**跨对象继承**（同一父会话连着审 ADR-090/091/092、连着审"治理面 MD §2.8 批"与
+"kimi-code 批"，上一轮的复审模式把新评审一并放行，9 条）。
+收紧后：真豁免的命中位置全部落在 **47–231** 字符，误命中全部落在 **1194–5377**，中间是空档。
+逐条证据见 `.rddf/reviews/subagent-contract-exemption-sampling.md`。
 
 #### 灰度与观测
 
@@ -495,11 +504,11 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 | 文件 | 作用 |
 |---|---|
-| `lib/subagent-contract-core.ts` | 规则真源（`CONTRACTS`）+ 小节识别（5 种写法）+ 豁免 + 三钩子处理函数（零宿主依赖） |
+| `lib/subagent-contract-core.ts` | 规则真源（`CONTRACTS`）+ 小节识别（5 种写法）+ 豁免（关键词窗口 / 结构前置 / 继承自证）+ 三钩子处理函数（零宿主依赖） |
 | `plugins/subagent-contract.ts` | 宿主接线壳（只注册钩子） |
 | `scripts/audit-subagent-prompts.ts` | 审计 CLI |
-| `tests/subagent-contract-core.test.ts` | 规则引擎 39 例 |
-| `tests/subagent-contract-audit.test.ts` | 审计器 + CLI 退出码 7 例 |
+| `tests/subagent-contract-core.test.ts` | 规则引擎 40 例 |
+| `tests/subagent-contract-audit.test.ts` | 审计器 + CLI 退出码 8 例 |
 | `tests/config-guards.test.ts`（L4 段） | 规则真源 ↔ `prompts/critic.md` ↔ `prompts/build.md` 防漂移 |
 
 #### 已知边界（不掩盖）
@@ -507,8 +516,10 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 1. **语义不可判定** —— 只判结构；"intent 写得对不对"没有自动手段。
 2. **L2 不可拦** —— `command(subagent:true)` 的输入只能被检出与审计。
 3. **关键词是启发式** —— ② 的阈值把误命中限制在"缺 ≥4 个字段且命中关键词"的窄交集。
-4. **状态是进程内的** —— 服务重启后复审链继承失效（退回关键词豁免）。
-5. **只约束 critic** —— 其余 agent 没有 7 字段契约，收益形态不同，暂不设契约。
+4. **任务陈述区窗口是启发式** —— 真复审轮若把"上一轮"写在开头 400 字符之后，会被误判为新评审（代价：多报一次违规 + 模型重发；反向误放行代价更大）。
+5. **继承无对象级校验** —— 只要求"引用上一轮"，不校验"上一轮的对象 = 本轮的对象"；连续审两个对象且第二个明写"上一轮"仍会被继承放行（当前语料 0 例）。
+6. **状态是进程内的** —— 服务重启后复审链继承失效（退回关键词豁免）。
+7. **只约束 critic** —— 其余 agent 没有 7 字段契约，收益形态不同，暂不设契约。
 
 ## 3. 委派拓扑
 

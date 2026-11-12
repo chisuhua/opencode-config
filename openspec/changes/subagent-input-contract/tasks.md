@@ -30,6 +30,9 @@
 ## 遗留 / 后续
 
 - [ ] 7.1 **灰度观察**：默认 warn 期跑一周，用 `scripts/audit-subagent-prompts.ts --agent critic` 看违规率与豁免误命中率，再决定是否对 critic 开 enforce（用户已签批"先 warn 后 enforce"）。
-- [ ] 7.2 **豁免误命中抽样**：从豁免样本抽 ~20 条人工核对，若"新评审误命中关键词"比例 > 10%，再收紧关键词或调整 `exemptMinMissing`。
-- [ ] 7.3 **L0 备选**：若拒绝重试路径的 token 成本不可接受，再评估结构化子工具（本期明确不做）。
-- [ ] 7.4 **契约推广**：critic 稳定后再评估是否给 `oracle` / `metis` 设契约（它们没有 7 字段契约，收益形态不同）。
+      - 当前基线（2026-11-12，收紧后）：critic 331 次调用 / 违规 110 / 豁免 78 / 合规 143（43.2%）。
+      - 观察命令：`bun scripts/audit-subagent-prompts.ts --agent critic --since <YYYY-MM-DD>`；误命中率按 `.rddf/reviews/subagent-contract-exemption-sampling.md` §1 的口径复核。
+      - 决策门槛：误命中率 ≤ 2% 且违规率连续下降 ⇒ 可对 critic 开 enforce。**需等待一周数据，本轮未完成。**
+- [x] 7.2 **豁免误命中抽样**：真实库 **90 条豁免全量复核**（不是抽 20 条），误命中 **12 条 = 13.3% > 10% 阈值** ⇒ 已收紧：① 豁免只看任务陈述区（prompt 开头 400 字符）② 状态继承需本轮自证引用上一轮。收紧后 110 违规 / 78 豁免，真豁免零误伤。证据：`.rddf/reviews/subagent-contract-exemption-sampling.md`。
+- [-] 7.3 **L0 备选**：**本期明确不做**（用户已拍板：结构化子工具不在本期范围）。仅当 enforce 后的"拒绝→重发"token 成本不可接受时才重开此项。
+- [ ] 7.4 **契约推广**：critic 稳定后再评估是否给 `oracle` / `metis` 设契约（它们没有 7 字段契约，收益形态不同）。**前置条件未到**（critic 仍为 warn 灰度，等 7.1 数据）。
