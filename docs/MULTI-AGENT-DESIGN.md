@@ -104,7 +104,7 @@
 #### `front` —— 用户交互内核 / 委托出口
 - **职责**：与用户对话、明确意图、给选项；**一切工程行动经 `delegate` 插件工具转交工程 session**
 - **核心 prompt**：`prompts/front.md`（四分类路由 + 委托 brief 契约 + 状态扫描清单 + 降级纪律）
-- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`"*": deny` **必须是第一条**，v2.5 + ADR D2.1：opencode 的工具可见性判定取该 action **最后一条**匹配规则，`"*": deny` 放末尾会把整个 `subagent` 工具隐藏）；`delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel` allow（**唯一登记型通道**——五个 action 同挂 `delegate` 插件、各自独立放行；「唯一」指**门控边界**唯一，**不是工具名**唯一，ADR `docs/adr/ADR-front-multi-backend.md` D1）
+- **权限**：`read`/`grep`/`glob`/`list` allow；`shell` **只读白名单**（`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny，含 `"* /*": deny` 禁绝对路径）；`external_directory` 按路径 allow（`/workspace/**` + 治理面目录）；`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`"*": deny` **必须是第一条**，v2.5 + ADR D2.1：opencode 的工具可见性判定取该 action **最后一条**匹配规则，`"*": deny` 放末尾会把整个 `subagent` 工具隐藏）；`delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel` allow（**唯一登记型通道**——五个 action 同挂 `delegate` 插件、各自独立放行；「唯一」指**门控边界**唯一，**不是工具名**唯一，ADR `docs/adr/ADR-front-multi-backend.md` D1）；**v2.17 起 `plan` 也是放行主体**（同一通道，不新建第二套协议；ADR `docs/adr/ADR-plan-delegate-engineering-session.md`）
 - **门控**：五个工具各声明**独立** `options.permission`（`delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel`）→ 全局 deny + 仅 front allow ⇒ 其余 agent 调用时答 `NO_TOOL`
 - **典型 workflow**：
   1. 判类（理解性 / 实施性 / 流程性 / 需裁决）
@@ -114,16 +114,18 @@
 - **详见**：`docs/dual-session-delegation.md`
 
 #### `plan` —— 设计者 agent
-- **职责**：只读探索、评估取舍、产出可验证的计划
-- **核心 prompt**：`prompts/plan.md`（3932 字节，103 行）
-- **权限**：严格只读 + `edit` 仅 `.plans/*.md` / `docs/adr/draft-*.md` / `openspec/changes/*/design.md` 允许 + bash 仅允许安全只读子集（`.env` 读取 deny）
+- **职责**：只读探索、评估取舍、产出可验证的计划；**可委托**工程 session 实施（v2.17 起）
+- **核心 prompt**：`prompts/plan.md`
+- **权限**：严格只读 + `edit` 仅 `.rddf/plans/*.md` / `docs/adr/draft-*.md` / `openspec/changes/*/design.md` 允许 + bash 仅允许安全只读子集（`.env` 读取 deny）
+- **delegate 通道**（v2.17）：与 `front` **并列**的放行主体 —— agent 级放行 `delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel`（顶层仍全 `deny`，门控边界唯一）。派**可写实施**时必须带 `plan_ref`（引用已存在的计划文件；accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`）—— 见 `docs/adr/ADR-plan-delegate-engineering-session.md`
 - **典型 workflow**：
   1. 用户切到 plan（Tab 键）
   2. 阅读需求
   3. 优先委派 `metis` 做 gap 分析
   4. 委派 `explore` 摸清现状
-  5. 写 `<project-root>/.plans/YYYYMMDD-<slug>.md` 计划文件
+  5. 写 `<project-root>/.rddf/plans/YYYYMMDD-<slug>.md` 计划文件
   6. 给用户选择题（不替用户拍板）
+  7. 需要落地实施 ⇒ **委托**工程 session（`delegate` / `dispatch`），带 `plan_ref`（**委托实施 ≠ 自己实施**：写动作只发生在后端 session 内）
 
 ### 2.3 Subagents（7 个，subagent 工具调用）
 
@@ -965,6 +967,8 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 | 旧（v1.0） | 新（v1.1） |
 |---|---|
 | `<project>/.opencode/plan/*.md` | `<project>/.plans/*.md` |
+
+> **v2.17 订正（2026-11-13）**：plan 的**计划产出口径收敛到 `<project>/.rddf/plans/<slug>.md`**（与 builder 的 TDD 计划同址，ADR `docs/adr/ADR-plan-delegate-engineering-session.md` D1/V15）。配置里 `.plans/*.md` 的 `edit` 放行**保留**（不破坏既有流程），但**不再是产出口径，也不在 `plan_ref` 的 accepted roots 内**（可写 ≠ 可引用）。
 
 **命名空间动机**：opencode 引擎自身用 `.opencode/` 存会话/快照，plan agent 的草稿与引擎内部状态**不应共用命名空间**，否则后续 opencode 升级易冲突。
 

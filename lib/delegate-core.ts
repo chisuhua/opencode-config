@@ -274,7 +274,7 @@ export interface StopGuardEntry {
   token: string
   /** 正在被停机的后端。 */
   backend_session_id: string
-  /** 发起停机的前端（用于错误文案「正在停机（由 front … 发起）」）。 */
+  /** 发起停机的会话（用于错误文案「正在停机（由会话 … 发起）」）。 */
   front_session_id?: string
 }
 
@@ -518,6 +518,77 @@ export function validateGrants(grants: any): Array<{ action: string; resource: s
   return out
 }
 
+/**
+ * D2 accepted roots（`ADR-plan-delegate-engineering-session` D2）：
+ * plan 派发**可写实施**（agent=build）时必须引用一个**已存在**的计划文件。
+ *
+ * 通则：**可写 ≠ 可引用** —— accepted roots 是唯一判据，与 plan 的 edit 白名单
+ * 无包含关系（plan 可写但不在清单内的路径引用时一律被拒，是有意边界）。
+ * 校验性质：存在性校验是"计划先行"的强制函数，**不是相关性证明**。
+ */
+export const PLAN_REF_ROOTS = [
+  { label: ".rddf/plans/**", re: /(^|\/)\.rddf\/plans\/[^/]+\.md$/ },
+  { label: ".rddf/improvements/**", re: /(^|\/)\.rddf\/improvements\/[^/]+\.md$/ },
+  { label: ".rddf/roadmap/**", re: /(^|\/)\.rddf\/roadmap\/[^/]+\.md$/ },
+  { label: "openspec/changes/*/proposal.md", re: /(^|\/)openspec\/changes\/[^/]+\/proposal\.md$/ },
+] as const
+
+export function planRefRootLabels(): string {
+  return PLAN_REF_ROOTS.map((r) => r.label).join(" / ")
+}
+
+/**
+ * 校验 plan_ref。
+ *
+ * - 解析根：绝对路径原样使用；相对路径**相对 project_dir** 解析（不用插件进程 cwd ——
+ *   后者与派发方 session 的 cwd 无关）。
+ * - 判定：先过 accepted roots（相对路径按 project_dir 相对路径判；绝对路径按全路径判），
+ *   再判文件存在。
+ */
+export function validatePlanRef(input: {
+  planRef: unknown
+  projectDir: string
+  required: boolean
+}): { ok: true; resolved: string } | { ok: false; message: string } {
+  const roots = planRefRootLabels()
+  const raw = input.planRef === undefined || input.planRef === null ? "" : String(input.planRef).trim()
+  if (raw.length === 0) {
+    if (!input.required) return { ok: true, resolved: "" }
+    return {
+      ok: false,
+      message:
+        `plan_ref 必填：派发可写实施（agent=build）时必须引用已产出的计划文件（accepted roots: ${roots}）`,
+    }
+  }
+  const absolute = isAbsolute(raw)
+  const resolved = absolute ? raw : path.resolve(input.projectDir, raw)
+  const target = absolute ? resolved : path.relative(input.projectDir, resolved)
+  const hit = PLAN_REF_ROOTS.find((r) => r.re.test(target))
+  if (!hit) {
+    return { ok: false, message: `plan_ref 不在 accepted roots 内: ${raw}（accepted roots: ${roots}）` }
+  }
+  if (!existsSync(resolved)) {
+    return { ok: false, message: `plan_ref 指向的文件不存在: ${resolved}（accepted roots: ${roots}）` }
+  }
+  return { ok: true, resolved }
+}
+
+/** 派发方 agent（用于判定 plan 侧 D2 强制与 owner_agent 归属）。 */
+export async function resolveCallerAgent(ctx: any, sessionID: string | undefined): Promise<string | undefined> {
+  if (!sessionID) return undefined
+  try {
+    const session = await ctx.session.get({ sessionID })
+    return (session as any)?.agent
+  } catch {
+    return undefined
+  }
+}
+
+/** owner_agent：只有 plan 是新主体；缺失一律按 front 解释（旧数据默认 front）。 */
+export function ownerAgentOf(agent: string | undefined): "front" | "plan" {
+  return agent === "plan" ? "plan" : "front"
+}
+
 export function validateBrief(input: any): {
   project_dir: string
   agent: string
@@ -532,6 +603,7 @@ export function validateBrief(input: any): {
   resume_session?: string
   remove: boolean
   goal_key?: GoalKey
+  plan_ref?: string
 } {
   const projectDir = String(input.project_dir ?? "")
   if (projectDir.length === 0) throw fail("project_dir 必填")
@@ -548,6 +620,9 @@ export function validateBrief(input: any): {
   ] as const) {
     if (value.trim().length === 0) throw fail(`${name} 必填且不能为空`)
   }
+
+  const planRefRaw = input.plan_ref === undefined || input.plan_ref === null ? "" : String(input.plan_ref).trim()
+  const plan_ref = planRefRaw.length > 0 ? planRefRaw : undefined
 
   const agentProvided = input.agent !== undefined && input.agent !== null
   const agent = String(input.agent ?? "build").trim() || "build"
@@ -606,15 +681,17 @@ export function validateBrief(input: any): {
     resume_session: resume,
     remove,
     goal_key,
+    plan_ref,
   }
 }
 
 export function buildBrief(brief: ReturnType<typeof validateBrief>, projectRoot: string): string {
   const lines: string[] = []
-  lines.push("## 委托简报（来自 front）")
+  lines.push("## 委托简报（来自委托方会话）")
   lines.push("")
   lines.push(`- 目标（goal）: ${brief.goal}`)
   lines.push(`- 工程根: ${projectRoot}`)
+  if (brief.plan_ref) lines.push(`- 计划引用（plan_ref）: ${brief.plan_ref}`)
   lines.push(`- 类型（kind）: ${brief.kind}`)
   if (brief.kind === "engineering") {
     lines.push(`- 允许变更范围（scope）: ${brief.scope.join(", ")}`)
@@ -783,7 +860,7 @@ export function registerSession(
   agent: string,
   kind: DelegateKind = kindOfAgent(agent),
   ledgerRow?: any,
-  extra?: { work_root?: string; state?: SlotState; goal_key?: GoalKey },
+  extra?: { work_root?: string; state?: SlotState; goal_key?: GoalKey; owner_agent?: "front" | "plan" },
   /**
    * `bumpClaim=true` ⇒ 本次登记**认领**了槽位（归属变更 ⇒ `claim_gen` +1）；
    * 默认（收尾写 outcome 等字段）⇒ **良性写** ⇒ 不 bump，但**必须保留**既有的
@@ -801,6 +878,9 @@ export function registerSession(
     const existing = pairs[sessionID]
     pairs[sessionID] = {
       front_session_id: frontSessionID ?? null,
+      // 归属主体（`ADR-plan-delegate-engineering-session` D5）：front | plan；
+      // **缺失一律按 front 解释**（旧数据默认 front）。
+      owner_agent: extra?.owner_agent ?? existing?.owner_agent ?? "front",
       canonical_root: root,
       agent,
       kind,
@@ -1163,9 +1243,9 @@ export function delegateToolDefinition(ctx: any): any {
   return {
         name: TOOL_NAME,
         description:
-          "把一个工程任务交给另一个工程 session 执行（agent=build），并取回结果。这是 front 唯一的工程行动出口。" +
+          "把一个工程任务交给另一个工程 session 执行（agent=build），并取回结果。这是**工程行动的唯一出口**（front 与 plan 共用同一通道）。" +
           "必填：project_dir（工程根绝对路径）、task（任务原话）、goal（一句话目标）、scope（允许变更的路径前缀数组）、acceptance（可判定的验收判据）。" +
-          "选填：agent、constraints、grants（用户预批的操作 [{action,resource}]）、resume_session、remove。" +
+          "选填：agent、constraints、grants（用户预批的操作 [{action,resource}]）、resume_session、remove、plan_ref（计划引用）。" +
           "返回：session_id / outcome / 最后回复 / blocked_reason / out_of_scope_files。",
         input: {
           type: "object",
@@ -1196,6 +1276,12 @@ export function delegateToolDefinition(ctx: any): any {
             },
             resume_session: { type: "string", description: "续接既有工程 session 的 id" },
             remove: { type: "boolean", description: "完成后删除工程 session，默认 false" },
+            plan_ref: {
+              type: "string",
+              description:
+                "计划文件引用（绝对路径，或相对 project_dir 的相对路径）。**plan 派发可写实施（agent=build）时必填**；" +
+                `accepted roots: ${planRefRootLabels()}。可写 ≠ 可引用：不在清单内的路径会被拒`,
+            },
           },
           required: ["project_dir", "task", "goal", "scope", "acceptance"],
           additionalProperties: false,
@@ -1206,6 +1292,16 @@ export function delegateToolDefinition(ctx: any): any {
           // AC6 逐点绑定（ADR D2）：状态落盘用 stateRoot，变更检测/scope 解析用 workRoot。
           const { stateRoot, workRoot, vcs } = canonicalRoot(brief.project_dir)
           const frontSessionID = toolContext?.sessionID
+          // 派发方身份（`ADR-plan-delegate-engineering-session` D1/D2/D5）：
+          // owner = 调用方会话；plan 派发**可写实施**时强制携带 plan_ref。
+          const callerAgent = await resolveCallerAgent(ctx, toolContext?.sessionID)
+          const ownerAgent = ownerAgentOf(callerAgent)
+          const planRefCheck = validatePlanRef({
+            planRef: brief.plan_ref,
+            projectDir: brief.project_dir,
+            required: callerAgent === "plan" && brief.kind === "engineering",
+          })
+          if (!planRefCheck.ok) throw fail(planRefCheck.message)
 
           // —— 槽位检查（AC50① / ADR D7.4）：与 `dispatch` **共用同一张槽位表** ——
           // 同工作树已有**仍在跑**的占槽后端 ⇒ 拒绝（不排队、不并发写同一工作树）。
@@ -1216,7 +1312,7 @@ export function delegateToolDefinition(ctx: any): any {
           const stopGuard = stopGuardAt(stateRoot, workRoot)
           if (stopGuard) {
             throw fail(
-              `后端 ${stopGuard.backend_session_id} 正在停机（由 front ${stopGuard.front_session_id ?? "另一会话"} 发起），` +
+              `后端 ${stopGuard.backend_session_id} 正在停机（由会话 ${stopGuard.front_session_id ?? "另一会话"} 发起），` +
                 `请等它结束再派发`,
             )
           }
@@ -1230,7 +1326,7 @@ export function delegateToolDefinition(ctx: any): any {
           // —— resume 校验：必须在该工程仓库的 pair 登记表内 ——
           // 登记表本身就是访问控制（只能续接本工程登记过的 session）。
           // 不硬校验 front_session_id：每次新对话都是新 front session，硬校验会让
-          // "隔天回来继续"这种正常用法失效；改为返回软信号，由 front 告知用户。
+          // "隔天回来继续"这种正常用法失效；改为返回软信号，由调用方告知用户。
           let existing: any = undefined
           let resumedByOtherFront = false
           let effectiveAgent = brief.agent
@@ -1301,6 +1397,8 @@ export function delegateToolDefinition(ctx: any): any {
             effectiveAgent,
             kind,
             undefined,
+            { owner_agent: ownerAgent },
+            undefined,
             { work_root: workRoot, state: "active" },
             { bumpClaim: true }, // 认领 ⇒ 归属变更 ⇒ claim_gen +1
           )
@@ -1322,6 +1420,7 @@ export function delegateToolDefinition(ctx: any): any {
             recorded_at: new Date().toISOString(),
             kind,
             front_session_id: frontSessionID ?? null,
+            owner_agent: ownerAgent,
             backend_session_id: sessionID,
             agent: effectiveAgent,
             goal: brief.goal,
@@ -1433,6 +1532,7 @@ export function delegateToolDefinition(ctx: any): any {
             // AC46①：同步 `delegate` 的 `wait` 返回即本轮结束 ⇒ **自翻转 idle**（不占槽）
             work_root: workRoot,
             state: "idle",
+            owner_agent: ownerAgent,
           })
 
           if (brief.remove) {

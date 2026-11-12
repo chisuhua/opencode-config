@@ -10,6 +10,14 @@
 
 ---
 
+> **v2.17 变更摘要（2026-11-13，plan 获得 delegate 派发主体 + ADR 签批）**：
+> ① **问题**：plan（planner 角色）只有 `subagent`（全量 allow），**没有任何工程行动出口** —— 计划与实施之间没有可编程的交接面。
+> ② **ADR**：`docs/adr/ADR-plan-delegate-engineering-session.md`（**Accepted**）—— 只扩展"谁可以派发"，不改单槽 / 归属门控 / 停机证据 / 写隔离 / grants 白名单。关键决策：D1 plan 与 front 并列放行同一 delegate 通道（顶层仍全 deny）+ plan 计划产出口径收敛到 `.rddf/plans/`；D2 派可写实施须带 **`plan_ref`**（accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`；**可写 ≠ 可引用**；存在性校验是强制函数、非相关性证明）；D3 `sessions` 按 **owner 过滤**（过滤只发生在 sessions 的 execute 内，`countActiveBackends` / dispatch 超限诊断保持 owner 无关）；D4 槽位仍按 `workRoot` 全局单槽；D5 `owner_agent` 落 pair/ledger（缺失按 front 解释）；D6 关闭范围。
+> ③ **审查链**：oracle `BLOCK`（D2 白名单与 plan 实际产出契约不符 + "task 引用"不可判定 + 解析根未定义）→ 修订 → critic `REJECT`（1 BLOCKER：accepted roots 与 plan 实际可写路径矛盾）→ 修订 → critic 复审 `APPROVE_WITH_CONDITIONS / mergeable: yes`（2 条措辞级 SHOULD_FIX 已并入）。审稿报告：`.rddf/reviews/adr-plan-delegate-engineering-session-review.md`。
+> ④ **实施**：配置（plan 放行五个 delegate 权限项 + `edit` 放行 `.rddf/plans/*.md`）；代码（`plan_ref` 校验 + `owner_agent` 写入 + `sessions` owner 过滤 + 工具描述去 front 化 + 「可写 ≠ 可引用」通则）；prompt（`plan.md` 新增「委派工程实施」章节与边界句、口径收敛；`build.md` planner 行同句）；测试（+14：plan_ref/owner 单测 8 + 派发主体与 owner 过滤集成 6；config-guards +3）。
+> ⑤ **验证**：`bun test tests/` **379 pass / 0 fail**；anchors 23/23。
+> ⑥ **残留**：① plan 与 front 争同一工作树会互斥（单槽，需人协调）；② `sessions` 按 owner 过滤后失去"全机后端"运维视图（候选增强 `scope: owner|all`，v1 不做）；③ 后端 session 写 `.rddf/state/role.json` 顶层镜像的展示面冲突（属残留，非权限冲突）。
+
 > **v2.16 变更摘要（2026-11-12，critic 档位显式化 A+C+D）**：
 > ① **问题**：11-03 后 182 个 critic prompt 里，显式声明 `review_profile` 的只有首审轮 **55%**、复审轮 **33%**。最伤的是复审轮——协议规定「只提交闭合证据 + 增量」，档位不在其中，而 critic 缺档位时按路径猜 ⇒ 同一 change 两轮可能用**不同判据集**，闭合验证结论不稳。
 > ② **A 继承式档位**：`build.md:86` 复审协议改为「两样东西 + 一行档位」（`继承第 N 轮：<profile>`），**内容可豁免、档位不可豁免**；`critic.md:90` 复审轮缺档位时按继承声明取值，无法确定则 `mixed` 并声明。

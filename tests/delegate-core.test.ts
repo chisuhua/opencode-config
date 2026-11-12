@@ -37,7 +37,10 @@ import {
   scopeEditRules,
   sliceRoundMessages,
   summarizeDelivery,
+  ownerAgentOf,
+  planRefRootLabels,
   validateBrief,
+  validatePlanRef,
   validateGrants,
   withLock,
   writeJsonAtomic,
@@ -682,6 +685,73 @@ describe("sliceRoundMessages：只保留本轮消息", () => {
 
   test("无 baseline → 全量", () => {
     expect(sliceRoundMessages(msgs, "")).toHaveLength(3)
+  })
+})
+
+describe("D2：plan_ref 校验（ADR-plan-delegate-engineering-session D2）", () => {
+  const mk = (rel: string, content = "plan") => {
+    const p = path.join(TMP, "planref", rel)
+    mkdirSync(path.dirname(p), { recursive: true })
+    writeFileSync(p, content)
+    return p
+  }
+  const root = path.join(TMP, "planref")
+
+  test("缺失 + required ⇒ 拒绝，且错误信息列出 accepted roots", () => {
+    const r = validatePlanRef({ planRef: undefined, projectDir: root, required: true })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.message).toContain("plan_ref 必填")
+      for (const label of [".rddf/plans/**", ".rddf/improvements/**", "openspec/changes/*/proposal.md"]) {
+        expect(r.message).toContain(label)
+      }
+    }
+  })
+
+  test("缺失 + 非 required（知识后端）⇒ 放行", () => {
+    const r = validatePlanRef({ planRef: undefined, projectDir: root, required: false })
+    expect(r.ok).toBe(true)
+  })
+
+  test("accepted root 内且文件存在 ⇒ 放行（相对 project_dir 解析）", () => {
+    mk(".rddf/plans/x.md")
+    const r = validatePlanRef({ planRef: ".rddf/plans/x.md", projectDir: root, required: true })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.resolved.endsWith("/.rddf/plans/x.md")).toBe(true)
+  })
+
+  test("accepted root 内但文件不存在 ⇒ 拒绝（存在性是强制函数）", () => {
+    const r = validatePlanRef({ planRef: ".rddf/plans/missing.md", projectDir: root, required: true })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.message).toContain("不存在")
+  })
+
+  test("根外路径 ⇒ 拒绝（可写 ≠ 可引用）", () => {
+    mk(".plans/x.md")
+    mk("docs/adr/draft-x.md")
+    for (const bad of [".plans/x.md", "docs/adr/draft-x.md", "openspec/changes/c1/design.md"]) {
+      const r = validatePlanRef({ planRef: bad, projectDir: root, required: true })
+      expect(r.ok, `${bad} 应被拒`).toBe(false)
+      if (!r.ok) expect(r.message).toContain("accepted roots")
+    }
+  })
+
+  test("越界相对路径（../）⇒ 拒绝", () => {
+    const r = validatePlanRef({ planRef: "../../etc/passwd", projectDir: root, required: true })
+    expect(r.ok).toBe(false)
+  })
+
+  test("绝对路径且命中 accepted root ⇒ 放行", () => {
+    const abs = mk(".rddf/improvements/y.md")
+    const r = validatePlanRef({ planRef: abs, projectDir: root, required: true })
+    expect(r.ok).toBe(true)
+  })
+
+  test("owner_agent：只有 plan 是新主体；未知/缺失一律按 front 解释", () => {
+    expect(ownerAgentOf("plan")).toBe("plan")
+    expect(ownerAgentOf("front")).toBe("front")
+    expect(ownerAgentOf(undefined)).toBe("front")
+    expect(ownerAgentOf("build")).toBe("front")
   })
 })
 

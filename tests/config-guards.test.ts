@@ -191,6 +191,49 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     expect(splitList(cardList![1] as string), "MULTI-AGENT-DESIGN.md 的 metis 卡片与 metis.md 不一致（含顺序）").toEqual(headings)
   })
 
+  test("delegate 通道的放行主体：顶层全 deny + front / plan 各自放行五项（ADR-plan-delegate-engineering-session D1）", () => {
+    const ACTIONS = ["delegate", "delegate_dispatch", "delegate_sessions", "delegate_suspend", "delegate_cancel"]
+    const top = (config.permission ?? {}) as Record<string, string>
+    for (const a of ACTIONS) {
+      expect(top[a], `顶层 permission.${a} 应保持 deny`).toBe("deny")
+    }
+    for (const agent of ["front", "plan"]) {
+      const perm = (config.agent[agent] as any).permission as Record<string, string>
+      for (const a of ACTIONS) {
+        expect(perm[a], `${agent} 的 ${a} 应为 allow`).toBe("allow")
+      }
+    }
+    // 其它 agent 不得被放行（唯一门控边界不扩散）
+    for (const agent of ["build", "explore", "librarian", "oracle", "metis", "critic"]) {
+      const perm = (config.agent[agent] as any)?.permission as Record<string, string> | undefined
+      for (const a of ACTIONS) {
+        expect(perm?.[a], `${agent} 不应放行 ${a}`).toBeUndefined()
+      }
+    }
+  })
+
+  test("plan 的计划产出口径收敛到 .rddf/plans/（ADR-plan-delegate-engineering-session V15）", () => {
+    const edit = (config.agent.plan as any).permission.edit as Record<string, string>
+    expect(edit[".rddf/plans/*.md"], "plan 应放行写 .rddf/plans/*.md").toBe("allow")
+    const planMd = readFileSync(path.join(ROOT, "prompts", "plan.md"), "utf8")
+    expect(planMd, "plan.md 不应再出现 .plans/ 口径").not.toContain(".plans/")
+    expect(planMd, "plan.md 应写明 .rddf/plans/<slug>.md").toContain(".rddf/plans/<slug>.md")
+  })
+
+  test("plan.md 含委派实施的规则与边界句；build.md planner 行同句（V10 / V11）", () => {
+    const planMd = readFileSync(path.join(ROOT, "prompts", "plan.md"), "utf8")
+    for (const needle of ["plan_ref", "dispatch` 返回 ≠ 任务完成", "单槽", "委托实施 ≠ 自己实施"]) {
+      expect(planMd, `plan.md 缺少「${needle}」`).toContain(needle)
+    }
+    const buildMd = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+    // build.md 有两张 planner 表（增强层 + 角色矩阵）；边界句必须在**角色矩阵**那张上
+    const plannerRows = buildMd.split("\n").filter((l) => l.startsWith("| `planner` |"))
+    expect(plannerRows.length, "build.md 找不到 planner 行").toBeGreaterThan(0)
+    const matrixRow = plannerRows.find((l) => l.includes("起草、讨论"))
+    expect(matrixRow, "build.md 找不到角色矩阵的 planner 行").toBeTruthy()
+    expect(matrixRow as string, "build.md 的 planner 行缺边界句").toContain("委托实施 ≠ 自己实施")
+  })
+
   test("判定词表单一真源：只在 prompts/oracle.md 定义，build.md / MULTI-AGENT-DESIGN.md 只指向它", () => {
     const oracleMd = readFileSync(path.join(ROOT, "prompts", "oracle.md"), "utf8")
     expect(oracleMd).toContain("治理面判定: PASS | BLOCK | PASS-WITH-NOTES")

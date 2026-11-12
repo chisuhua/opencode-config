@@ -18,6 +18,7 @@ process.env.RDDF_CONSUME_TIMEOUT_MS = "200"
 process.env.RDDF_STOP_TIMEOUT_MS = "300"
 
 import {
+  countActiveBackends,
   aggregateStates,
   groupByWorkRoot,
   detectSteerResidue,
@@ -230,6 +231,124 @@ const baseInput = (dir: string, intent = "fix-readme") => ({
   goal_key: { intent },
   scope: ["a.txt"],
   acceptance: "a.txt 内容为 b",
+})
+
+describe("plan 派发主体 + owner 归属（ADR-plan-delegate-engineering-session）", () => {
+  const registerCaller = (sessions: Map<string, any>, id: string, agent: string, dir: string) => {
+    sessions.set(id, {
+      id,
+      agent,
+      location: { directory: dir },
+      metadata: {},
+      messages: [],
+      busy: false,
+      outcome: null,
+      idle: 0,
+      updated: Date.now(),
+    })
+  }
+
+  test("plan 派发可写实施但无 plan_ref ⇒ 拒绝并列出 accepted roots", async () => {
+    const dir = repo("plan-noref")
+    const { ctx, sessions } = createFakeCtx()
+    registerCaller(sessions, "ses_plan_test", "plan", dir)
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir), agent: "build" }, "ses_plan_test"),
+    ).rejects.toThrow(/plan_ref 必填/)
+  })
+
+  test("plan 派发可写实施，plan_ref 根外 ⇒ 拒绝（可写 ≠ 可引用）", async () => {
+    const dir = repo("plan-badroot")
+    const { ctx, sessions } = createFakeCtx()
+    registerCaller(sessions, "ses_plan_test", "plan", dir)
+    mkdirSync(path.join(dir, ".plans"), { recursive: true })
+    writeFileSync(path.join(dir, ".plans", "p.md"), "p")
+    await expect(
+      run(
+        dispatchToolDefinition(ctx),
+        { ...baseInput(dir), agent: "build", plan_ref: ".plans/p.md" },
+        "ses_plan_test",
+      ),
+    ).rejects.toThrow(/accepted roots/)
+  })
+
+  test("plan 派发可写实施，plan_ref 合法 ⇒ 成功", async () => {
+    const dir = repo("plan-ok")
+    const { ctx, sessions } = createFakeCtx()
+    registerCaller(sessions, "ses_plan_test", "plan", dir)
+    mkdirSync(path.join(dir, ".rddf", "plans"), { recursive: true })
+    writeFileSync(path.join(dir, ".rddf", "plans", "p.md"), "p")
+    const r = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir), agent: "build", plan_ref: ".rddf/plans/p.md" },
+      "ses_plan_test",
+    )
+    expect(r.session_id).toBeTruthy()
+    expect(sessions.get(r.session_id).metadata.owner_agent).toBe("plan")
+    // V09：pair.json 落 owner_agent（缺失一律按 front 解释 ⇒ 本例显式为 plan）
+    expect(readPairs(dir)[r.session_id].owner_agent).toBe("plan")
+  })
+
+  test("plan 派发知识后端（只读）不带 plan_ref ⇒ 成功（D2 只约束可写实施）", async () => {
+    const dir = repo("plan-knowledge")
+    const { ctx, sessions } = createFakeCtx()
+    registerCaller(sessions, "ses_plan_test", "plan", dir)
+    const r = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir), agent: "oracle", scope: [] },
+      "ses_plan_test",
+    )
+    expect(r.session_id).toBeTruthy()
+  })
+
+  test("front 派发可写实施不带 plan_ref ⇒ 成功（D2 只绑定 plan 主体）", async () => {
+    const dir = repo("front-noref")
+    const { ctx } = createFakeCtx()
+    const r = await run(dispatchToolDefinition(ctx), { ...baseInput(dir), agent: "build" })
+    expect(r.session_id).toBeTruthy()
+  })
+
+  test("跨 owner 同一工作树 ⇒ 槽位互斥，报错含占槽者 id（V05 / V08）", async () => {
+    const dir = repo("owner-slot")
+    const { ctx, sessions } = createFakeCtx()
+    registerCaller(sessions, "ses_plan_test", "plan", dir)
+    mkdirSync(path.join(dir, ".rddf", "plans"), { recursive: true })
+    writeFileSync(path.join(dir, ".rddf", "plans", "p.md"), "p")
+    // front 先占槽
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
+    // plan 派同一工作树 ⇒ 被拒（单槽与 owner 无关）
+    await expect(
+      run(
+        dispatchToolDefinition(ctx),
+        { ...baseInput(dir, "goal-b"), plan_ref: ".rddf/plans/p.md" },
+        "ses_plan_test",
+      ),
+    ).rejects.toThrow(new RegExp(a.session_id))
+  })
+
+  test("owner 过滤：两个 owner 互不可见，但全局配额计数含两者（D3 硬约束）", async () => {
+    const dirA = repo("owner-a")
+    const dirB = repo("owner-b")
+    const { ctx, sessions } = createFakeCtx()
+    registerCaller(sessions, "ses_plan_test", "plan", dirB)
+    // plan 侧派发实施必须带 plan_ref（D2）
+    mkdirSync(path.join(dirB, ".rddf", "plans"), { recursive: true })
+    writeFileSync(path.join(dirB, ".rddf", "plans", "p.md"), "p")
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dirA, "goal-a"))
+    const b = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dirB, "goal-b"), plan_ref: ".rddf/plans/p.md" },
+      "ses_plan_test",
+    )
+    const frontList = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
+    const planList = await run(sessionsToolDefinition(ctx), {}, "ses_plan_test")
+    expect(frontList.items.map((i: any) => i.session_id)).toContain(a.session_id)
+    expect(frontList.items.map((i: any) => i.session_id)).not.toContain(b.session_id)
+    expect(planList.items.map((i: any) => i.session_id)).toContain(b.session_id)
+    expect(planList.items.map((i: any) => i.session_id)).not.toContain(a.session_id)
+    // 全局配额**owner 无关**：两个 owner 的后端都计入
+    expect(await countActiveBackends(ctx)).toBe(2)
+  })
 })
 
 afterAll(() => rmSync(TMP, { recursive: true, force: true }))
@@ -945,7 +1064,7 @@ describe("sessions（AC4/AC10/AC11/AC29）", () => {
     const { ctx, calls } = createFakeCtx()
     await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
     const promptBefore = calls.prompt
-    await run(sessionsToolDefinition(ctx), {}, "f")
+    await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
     expect(calls.prompt).toBe(promptBefore)
   })
 
@@ -953,7 +1072,7 @@ describe("sessions（AC4/AC10/AC11/AC29）", () => {
     const dir = repo("sess-schema")
     const { ctx } = createFakeCtx()
     await run(dispatchToolDefinition(ctx), baseInput(dir, "goal-a"))
-    const r = await run(sessionsToolDefinition(ctx), {}, "f")
+    const r = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
     expect(Object.keys(r).sort()).toEqual(["groups", "headline", "items", "overall"])
     const item = r.items[0]
     for (const k of [
@@ -1065,14 +1184,14 @@ describe("槽位悬挂标记（AC47③）", () => {
     const { ctx, sessions } = createFakeCtx()
     const r = await run(dispatchToolDefinition(ctx), baseInput(dir))
     // 刚派发：不超阈值 ⇒ 不悬挂
-    let out = await run(sessionsToolDefinition(ctx), {}, "f")
+    let out = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
     expect(out.items[0].slot.dangling).toBe(false)
     // 把最后活动时间推到很久以前 + 标记不在跑
     const s = sessions.get(r.session_id)
     s.busy = false
     s.idle = Date.now()
     s.updated = Date.now() - 10 * 60 * 1000
-    out = await run(sessionsToolDefinition(ctx), {}, "f")
+    out = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
     expect(out.items[0].slot.dangling).toBe(true)
   })
 })
@@ -1371,7 +1490,7 @@ describe("AC57 常驻与往返切换（自然跑完 → B → 回到 A）", () =
     expect(b.state).toBe("active")
 
     // ④ sessions：A 与 B **同组列出**（同一 work_root）
-    const list = await run(sessionsToolDefinition(ctx), {}, "f")
+    const list = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
     const ids = list.items.map((i: any) => i.session_id)
     expect(ids).toContain(a.session_id)
     expect(ids).toContain(b.session_id)

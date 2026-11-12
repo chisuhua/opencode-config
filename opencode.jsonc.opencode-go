@@ -191,6 +191,7 @@
         },
         "edit": {
           "*": "ask",
+          ".rddf/plans/*.md": "allow",
           ".plans/*.md": "allow",
           "docs/adr/draft-*.md": "allow",
           "openspec/changes/*/design.md": "allow"
@@ -202,6 +203,11 @@
         "skill": "allow",
         "subagent": "allow",
         "question": "allow",
+        "delegate": "allow",
+        "delegate_dispatch": "allow",
+        "delegate_sessions": "allow",
+        "delegate_suspend": "allow",
+        "delegate_cancel": "allow",
         "codebase-memory-mcp_index_repository": "ask",
         "codebase-memory-mcp_ingest_traces": "ask",
         "codebase-memory-mcp_manage_adr": "ask",

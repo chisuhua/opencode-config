@@ -44,6 +44,10 @@ import {
   nextClaimGen,
   readClaimGen,
   removeInstanceStamp,
+  ownerAgentOf,
+  planRefRootLabels,
+  resolveCallerAgent,
+  validatePlanRef,
   stillRunning,
   stopGuardAt,
   toMillis,
@@ -143,7 +147,7 @@ export function aggregateStates(
   items: Array<{ state: string; running: boolean; outcome?: string | null }>,
 ): { overall: "completed" | "partial_unverified" | "in_progress" | "no_verifiable_delivery"; headline: string } {
   const total = items.length
-  if (total === 0) return { overall: "completed", headline: "本 front 名下没有后端" }
+  if (total === 0) return { overall: "completed", headline: "本会话名下没有后端" }
   const running = items.filter((i) => i.running).length
   const finished = items.filter((i) => !i.running)
   const unverified = finished.filter((i) => i.outcome === "unverified").length
@@ -569,7 +573,7 @@ export interface SlotClaim {
 /** 停机守卫命中时的拒绝文案（**不得**含「请先 suspend」，否则模型会循环重试）。 */
 export function stopBlockedMessage(guard: { backend_session_id: string; front_session_id?: string }): string {
   return (
-    `后端 ${guard.backend_session_id} 正在停机（由 front ${guard.front_session_id ?? "另一会话"} 发起），` +
+    `后端 ${guard.backend_session_id} 正在停机（由会话 ${guard.front_session_id ?? "另一会话"} 发起），` +
     `请等它结束再派发`
   )
 }
@@ -586,6 +590,7 @@ export function claimSlot(input: {
   busyOf: Record<string, boolean>
   sessionID: string
   frontSessionID: string | undefined
+  ownerAgent?: "front" | "plan"
   agent: string
   kind: string
   goalKey?: GoalKey
@@ -631,6 +636,8 @@ export function claimSlot(input: {
         // 认领 = **归属变更** ⇒ 归属版本 +1（既有条目保留并递增，不归零）。
         claim_gen: nextClaimGen(pairs[sessionID]),
         front_session_id: input.frontSessionID ?? null,
+        // 归属主体（`ADR-plan-delegate-engineering-session` D5）；缺失一律按 front 解释
+        owner_agent: input.ownerAgent ?? pairs[sessionID]?.owner_agent ?? "front",
         canonical_root: stateRoot,
         agent: input.agent,
         kind: input.kind,
@@ -840,10 +847,12 @@ export function buildMetadata(input: {
   baselineMessageID: string | undefined
   dispatchedAt: string
   state: SlotState
+  ownerAgent?: "front" | "plan"
 }): Record<string, unknown> {
   return {
     delegated_by: DELEGATED_BY,
     front_session_id: input.frontSessionID ?? null,
+    owner_agent: input.ownerAgent ?? "front",
     goal_key: input.goalKey,
     canonical_root: input.canonicalRoot,
     work_root: input.workRoot,
@@ -1107,6 +1116,12 @@ export function dispatchToolDefinition(ctx: any): any {
         acceptance: { type: "string", description: "可判定的验收判据" },
         constraints: { type: "string", description: "额外约束（可选）" },
         resume_session: { type: "string", description: "续接既有工程 session 的 id（须同 goal_key）" },
+        plan_ref: {
+          type: "string",
+          description:
+            "计划文件引用（绝对路径，或相对 project_dir 的相对路径）。**plan 派发可写实施（agent=build）时必填**；" +
+            `accepted roots: ${planRefRootLabels()}。可写 ≠ 可引用：不在清单内的路径会被拒`,
+        },
       },
       required: ["project_dir", "task", "goal", "goal_key", "scope", "acceptance"],
       additionalProperties: false,
@@ -1119,6 +1134,15 @@ export function dispatchToolDefinition(ctx: any): any {
       }
       const { stateRoot, workRoot } = canonicalRoot(brief.project_dir)
       const frontSessionID = toolContext?.sessionID
+      // 派发方身份（`ADR-plan-delegate-engineering-session` D1/D2/D5）
+      const callerAgent = await resolveCallerAgent(ctx, toolContext?.sessionID)
+      const ownerAgent = ownerAgentOf(callerAgent)
+      const planRefCheck = validatePlanRef({
+        planRef: brief.plan_ref,
+        projectDir: brief.project_dir,
+        required: callerAgent === "plan" && brief.kind === "engineering",
+      })
+      if (!planRefCheck.ok) throw fail(planRefCheck.message)
 
       // ── 停机守卫（`ADR-front-stop-confirmation` D2）：该工作树正在停机 ⇒ 拒绝 ──
       // 放在最前：两个判据（停机守卫 / 活体）同时命中时，**以停机守卫为准**（AC9）。
@@ -1240,6 +1264,7 @@ export function dispatchToolDefinition(ctx: any): any {
         busyOf: plan.busyOf,
         sessionID: sid,
         frontSessionID,
+        ownerAgent,
         agent: brief.agent,
         kind: brief.kind,
         goalKey,
@@ -1276,6 +1301,7 @@ export function dispatchToolDefinition(ctx: any): any {
         recorded_at: dispatchedAt,
         kind: brief.kind,
         front_session_id: frontSessionID ?? null,
+        owner_agent: ownerAgent,
         backend_session_id: sessionID,
         agent: brief.agent,
         goal: brief.goal,
@@ -1292,6 +1318,7 @@ export function dispatchToolDefinition(ctx: any): any {
           sessionID,
           metadata: buildMetadata({
             frontSessionID,
+            ownerAgent,
             goalKey,
             canonicalRoot: stateRoot,
             workRoot,
@@ -1316,6 +1343,7 @@ export function dispatchToolDefinition(ctx: any): any {
           recorded_at: new Date().toISOString(),
           kind: brief.kind,
           front_session_id: frontSessionID ?? null,
+          owner_agent: ownerAgent,
           backend_session_id: sessionID,
           agent: brief.agent,
           goal: brief.goal,
@@ -1406,7 +1434,8 @@ export function sessionsToolDefinition(ctx: any): any {
   return {
     name: TOOL_SESSIONS,
     description:
-      "**只读**列出本 front 名下的后端工程 session 及其状态与证据（不投递任何 prompt，不污染后端）。" +
+      "**只读**列出**本会话名下**的后端工程 session 及其状态与证据（不投递任何 prompt，不污染后端）。" +
+      "只列 owner = 调用方会话的后端（`ADR-plan-delegate-engineering-session` D3）；" +
       "返回：overall（聚合态）/ headline（一句话）/ items（逐项明细，永远列出）。",
     input: {
       type: "object",
@@ -1414,9 +1443,15 @@ export function sessionsToolDefinition(ctx: any): any {
       additionalProperties: false,
     },
     options: { permission: ACTION_SESSIONS, codemode: false },
-    async execute(_input: any, _toolContext: any) {
+    async execute(_input: any, toolContext: any) {
       // ⚠️ **绝不投递 prompt**（AC4）：本工具只读后端会话 + 读/写本地索引。
-      const backends = await listDelegatedSessions(ctx)
+      // owner 过滤**只发生在本工具的展示层**（`ADR-plan-delegate-engineering-session` D3）：
+      // `listDelegatedSessions` / `countActiveBackends` / dispatch 超限诊断保持 owner 无关。
+      const ownerSessionID = toolContext?.sessionID
+      const allBackends = await listDelegatedSessions(ctx)
+      const backends = ownerSessionID
+        ? allBackends.filter((b: any) => (b as any)?.metadata?.front_session_id === ownerSessionID)
+        : allBackends
       const items: any[] = []
       for (const b of backends) {
         const md = (b as any)?.metadata ?? {}
