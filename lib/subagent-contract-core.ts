@@ -52,9 +52,32 @@ export interface ContractRule {
    * 缺省 = ceil(必需小节数 / 2)。
    */
   exemptMinMissing?: number
+  /**
+   * 豁免判断只看 prompt 开头 N 个字符（"任务陈述区"；缺省 {@link EXEMPT_KEYWORD_WINDOW_CHARS}）。
+   *
+   * 为什么需要：prompt 后半段多是**输出模板/约束**（"SHOULD_FIX 会被 critic 复审时
+   * 升级为 BLOCKER"、"不需要复审代码"、"不要要求复审上一轮没提的部分"），那里出现的
+   * "复审/上一轮"描述的是规则本身，不是本次任务。实测 90 条豁免里 4 条属于这类
+   * 尾部误命中（位置 1194 / 1634 / 1958 / 5377），而真豁免全部落在 47–231 字符内。
+   *
+   * 同一窗口也用于 {@link ContractRule.inheritIf}（继承前置同样看任务陈述区）。
+   */
+  exemptWindow?: number
   /** 命中即豁免（小节检查降级为长度检查） */
   exemptIf?: ContractPattern[]
+  /**
+   * 状态继承的**附加前置**：本轮 prompt 自身必须引用上一轮（否则不算复审轮）。
+   *
+   * 为什么需要：同一父会话里连着审不同对象（ADR-090 / ADR-091 / ADR-092、
+   * "MD §2.8 批" / "kimi-code 批"）时，上一轮的"复审模式"会把**全新的评审**
+   * 一并放行 —— 实测 90 条豁免里有 8 条属于这种跨对象继承误伤。
+   * 缺省不设（= 旧行为：继承即豁免）。
+   */
+  inheritIf?: ContractPattern[]
 }
+
+/** 豁免判断的默认生效窗口（字符数，从 prompt 开头算） */
+export const EXEMPT_KEYWORD_WINDOW_CHARS = 400
 
 export interface ContractAgentOverride {
   mode?: ContractMode
@@ -63,6 +86,7 @@ export interface ContractAgentOverride {
   maxChars?: number
   requireDiff?: boolean
   exemptIf?: ContractPattern[]
+  inheritIf?: ContractPattern[]
 }
 
 export interface ContractConfig {
@@ -100,6 +124,14 @@ export const CONTRACTS: ContractRule[] = [
     exemptIf: [
       // 复审轮：只提交"上一轮 BLOCK 闭合证据"，天然不含完整 7 字段
       { name: "re-review-round", pattern: "(复审|第\\s*\\d+\\s*轮|闭合证据|closure|verify\\s+closure)" },
+    ],
+    // 继承"复审模式"时，本轮自己也必须指向上一轮（防同一父会话里审不同对象时误继承）
+    inheritIf: [
+      {
+        name: "prev-round-reference",
+        pattern:
+          "(上一轮|上轮|前\\s*\\d+\\s*轮|第\\s*\\d+\\s*轮|[二三四]\\s*轮|rev\\.\\s*\\d+|闭合|closure|本轮修复|本轮增量)",
+      },
     ],
   },
 ]
@@ -214,6 +246,7 @@ export function resolveRule(
     maxChars: override.maxChars ?? base.maxChars,
     requireDiff: override.requireDiff ?? base.requireDiff,
     exemptIf: override.exemptIf ?? base.exemptIf,
+    inheritIf: override.inheritIf ?? base.inheritIf,
   }
 }
 
@@ -258,22 +291,28 @@ export function evaluatePrompt(rule: ContractRule, input: PromptInput): Evaluati
    * 后续 30 分钟都拉进复审模式。
    */
   const canExempt = exemptThreshold > 0 && missing.length >= exemptThreshold
+  // 豁免只看"任务陈述区"：后文是输出模板/约束，那里的"复审/上一轮"描述的是规则本身
+  const taskStatement = text.slice(0, rule.exemptWindow ?? EXEMPT_KEYWORD_WINDOW_CHARS)
 
   let exempted = false
   let exemption: string | undefined
 
   if (!isResume && canExempt) {
     for (const ex of rule.exemptIf ?? []) {
-      if (safeTest(ex.pattern, text)) {
+      if (safeTest(ex.pattern, taskStatement)) {
         exempted = true
         exemption = ex.name
         break
       }
     }
-    // 状态继承兜底：上一轮被判为"复审轮" → 本轮也按复审轮处理
+    // 状态继承兜底：上一轮被判为"复审轮" → 本轮也按复审轮处理。
+    // 配了 inheritIf 时，本轮 prompt 自己也要指向上一轮，否则视为新评审。
     if (!exempted && input.priorReviewRound === true) {
-      exempted = true
-      exemption = "prior-review-round"
+      const hints = rule.inheritIf ?? []
+      if (hints.length === 0 || hints.some((h) => safeTest(h.pattern, taskStatement))) {
+        exempted = true
+        exemption = "prior-review-round"
+      }
     }
   }
 
@@ -344,8 +383,10 @@ export function describeContract(rule: ContractRule): string {
   if (rule.maxChars !== undefined) parts.push(`- prompt 至多 ${rule.maxChars} 字符`)
   if (rule.requireDiff) parts.push(`- prompt 必须含真实 diff（"diff --git"）`)
   if ((rule.exemptIf ?? []).length > 0) {
+    const window = rule.exemptKeywordWindow ?? EXEMPT_KEYWORD_WINDOW_CHARS
+    const inherit = (rule.inheritIf ?? []).length > 0
     parts.push(
-      `- 复审/续接轮可豁免小节要求（命中：${(rule.exemptIf ?? []).map((e) => e.name).join(", ")}）`,
+      `- 复审轮可豁免小节要求（关键词需出现在开头 ${window} 字符内${inherit ? "；继承上一轮时本轮需引用上一轮" : ""}）`,
     )
   }
   parts.push(`- 不满足时工具调用会被拒绝并返回缺失项；请按缺失项补齐后重发，不要原样重试。`)

@@ -377,7 +377,7 @@
       "prompt": "{file:./prompts/front.md}"
     },
     "explore": {
-      "model": "opencode/deepseek-v4.1-flash-free",
+      "model": "opencode-go/deepseek-v4.1-flash",
       "variant": "low",
       "temperature": 0.1,
       "mode": "subagent",
@@ -522,7 +522,7 @@
       "prompt": "{file:./prompts/explore.md}"
     },
     "librarian": {
-      "model": "opencode/deepseek-v4.1-flash-free",
+      "model": "opencode-go/deepseek-v4.1-flash",
       "variant": "low",
       "temperature": 0.1,
       "mode": "subagent",
@@ -1216,14 +1216,14 @@
       "prompt": "{file:./prompts/critic.md}"
     },
     "title": {
-      "model": "opencode/deepseek-v4.1-flash-free",
+      "model": "opencode-go/deepseek-v4.1-flash",
       "variant": "low",
       "mode": "primary",
       "hidden": true,
       "description": "会话标题/摘要生成。用实测不思考的模型（glm-5.3-flash，reasoning_tokens=0），省 token。"
     },
     "context-builder": {
-      "model": "opencode/deepseek-v4.1-flash-free",
+      "model": "opencode-go/deepseek-v4.1-flash",
       "temperature": 0.1,
       "mode": "subagent",
       "hidden": true,

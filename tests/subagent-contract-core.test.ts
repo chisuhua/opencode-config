@@ -13,6 +13,7 @@ import {
   type CompliantState,
   CONTRACTS,
   type ContractConfig,
+  EXEMPT_KEYWORD_WINDOW_CHARS,
   applyContextInjection,
   describeContract,
   evaluateChain,
@@ -146,15 +147,41 @@ describe("豁免：复审轮（关键词）+ 状态继承（兜底）", () => {
     expect(r.violations.map((v) => v.code)).toContain("too-short")
   })
 
-  test("状态继承：同一父会话此前已有合规调用 → 后续视为复审轮", () => {
+  test("状态继承：上一轮是复审，且本轮引用了上一轮 → 视为复审轮", () => {
     const r = evaluatePrompt(CRITIC, {
       agent: "critic",
-      prompt: "只有一句话的补充说明。" + "x".repeat(200),
+      prompt: "已按上轮意见修复，补充说明。" + "x".repeat(200),
       isResume: false,
       priorReviewRound: true,
     })
     expect(r.ok).toBe(true)
     expect(r.exemption).toBe("prior-review-round")
+  })
+
+  test("状态继承有前置：上一轮是复审但本轮不引用上一轮 → 按新评审判（不豁免）", () => {
+    // 同一父会话里连着审不同对象（ADR-090 → ADR-091）时不能继承"复审模式"
+    const r = evaluatePrompt(CRITIC, {
+      agent: "critic",
+      prompt: "请审另一份 ADR 草案的技术正确性。" + "x".repeat(200),
+      isResume: false,
+      priorReviewRound: true,
+    })
+    expect(r.exempted).toBe(false)
+    expect(r.violations.map((v) => v.code)).toContain("missing-sections")
+  })
+
+  test("关键词只在前 400 字符内生效：后文输出模板里的「复审」不构成豁免", () => {
+    const r = evaluatePrompt(CRITIC, {
+      agent: "critic",
+      prompt:
+        "请审这份刚起草的 ADR 草案。" +
+        "x".repeat(600) +
+        "\n### SHOULD_FIX（会被 critic 复审时升级为 BLOCKER）\n" +
+        "y".repeat(200),
+      isResume: false,
+    })
+    expect(r.exempted).toBe(false)
+    expect(r.violations.map((v) => v.code)).toContain("missing-sections")
   })
 
   test("续接（isResume）跳过小节检查与长度下限（续接只是补充说明）", () => {
@@ -275,6 +302,12 @@ describe("L3：契约注入（幂等）", () => {
   test("describeContract 列出必需小节", () => {
     const text = describeContract(CRITIC)
     for (const s of CRITIC.requiredSections!) expect(text).toContain(s)
+  })
+
+  test("describeContract 说明豁免前置（关键词窗口 + 继承需引用上一轮）", () => {
+    const text = describeContract(CRITIC)
+    expect(text).toContain(`开头 ${EXEMPT_KEYWORD_WINDOW_CHARS} 字符`)
+    expect(text).toContain("继承上一轮时本轮需引用上一轮")
   })
 })
 

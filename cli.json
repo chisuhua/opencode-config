@@ -3,12 +3,12 @@
     "wrap": "word"
   },
   "session": {
-    "sidebar": "auto",
+    "sidebar": "hide",
     "scrollbar": false,
     "thinking": "hide",
     "permissions": "autoaccept",
     "markdown": "rendered",
-    "verbosity": "low"
+    "verbosity": "medium"
   },
   "animations": true,
   "theme": {
