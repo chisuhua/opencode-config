@@ -43,6 +43,15 @@ const state: CompliantState = new Map()
 let callsSincePrune = 0
 const PRUNE_EVERY = 50
 
+/**
+ * L3 注入的一次性标记。
+ *
+ * 注入发生在**每个模型请求前**（session.hook("context")），逐次记日志会淹没日志文件；
+ * 但完全不记 ⇒ 线上无法判断"契约到底有没有注入进工具描述"（工具描述不进日志、不进 DB，
+ * 服务端也没有 tool 列表接口）⇒ 每进程只记第一条，既可观测又不刷屏。
+ */
+let l3InjectedLogged = false
+
 function loadConfig(): ContractConfig {
   try {
     return JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as ContractConfig
@@ -66,7 +75,12 @@ export default Plugin.define({
   async setup(ctx) {
     // ── L3：把契约注入 subagent 工具描述（生成前可见） ──────────────────────────
     await ctx.session.hook("context", (event: any) => {
-      applyContextInjection(event?.tools?.subagent, loadConfig())
+      const config = loadConfig()
+      const injected = applyContextInjection(event?.tools?.subagent, config)
+      if (injected && !l3InjectedLogged) {
+        l3InjectedLogged = true
+        log(config, { level: "info", gate: "L3", event: "injected", agent: "critic", mode: config.mode ?? "warn" })
+      }
     })
 
     // ── L1：执行前拦截（父模型刚采样出的 tool call） ───────────────────────────

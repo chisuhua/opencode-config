@@ -25,6 +25,8 @@
 > ④ **豁免五重收窄**：关键词（复审/第 N 轮/闭合证据）**+ 结构前置**（缺失小节 ≥ 4/7 才可能豁免）+ **任务陈述区窗口**（关键词只认 prompt 开头 400 字符）+ **状态继承**（继承"上一轮是复审模式"，不是"上一轮合规"；续接轮不清零）+ **继承需自证**（本轮自己也要引用上一轮）。前两条来自 critic 第 1 轮 SHOULD_FIX；后两条来自豁免误命中抽样（真实库 90 条豁免全量复核，误命中 12 条 = 13.3% > 10% 阈值 ⇒ 收紧；收紧后真豁免命中位置全在 47–231 字符，误命中全在 1194–5377）。
 > ⑤ **灰度**：默认 **warn**（只记录 + 审计），逐 agent 可切 `enforce`（配置每次重读 ⇒ 即时生效）。基线：真实库 331 次 critic 调用 / 110 违规 / 78 豁免（合规 143，43.2%；收紧前为 98 违规 / 90 豁免 —— 差的 12 条是抽样纠正的误豁免）。
 > ⑥ **live 证据**：warn 模式 L1+L2 各落一条日志；enforce 模式 `subagent` 调用被拒并返回可执行修正文案。
+> ⑥b **L3 可观测性**（2026-11-12 补）：契约注入进 `subagent` 工具描述这件事**不进日志、不进 DB、服务端也没有 tool 列表接口** ⇒ 线上完全无法判断"到底注没注入"。插件改为**每进程记一条**注入日志（`{"level":"info","gate":"L3","event":"injected"}`）—— 逐次记会刷屏（注入发生在每个模型请求前），完全不记则不可观测。
+> ⑥c **端到端测试**（2026-11-12 新增）：`rdd-workflow-e2e` 仓新增 `tests/integration/test_subagent_contract_runtime.bats` —— 真实运行时（真实模型 + 真实宿主）+ **hermetic HOME**（契约配置 / 日志 / 会话 DB 全部隔离，配置目录用符号链接农场指向真实安装态），11 个场景覆盖 L3 / L1 warn-vs-enforce / L2 检出 / 合规放行 / 豁免三条路径 / 逐 agent 覆盖 / off / 审计 CLI；默认 skip，`E2E_REAL_RUNTIME=1` 才执行。
 > ⑦ **配套**：`prompts/build.md` 补「被契约拒绝的调用不计入评审轮」；`scripts/check-upstream-anchors.sh` 加 A13/A13b（"只有 tool 域允许失败"）⇒ 23/23 命中；`tests/` 新增 52 例（core 40 + audit 8 + config-guards L4 4）⇒ 全量 **356 pass / 0 fail**。
 > ⑧ **豁免抽样报告**：`.rddf/reviews/subagent-contract-exemption-sampling.md`（方法 / 12 条误命中逐条证据 / 收紧方案 / 前后对比 / 残留边界）。
 > ⑨ **范围外残留**：`docs/MULTI-AGENT-DESIGN.md` 的模型归属表漂移 —— **已在 v2.12 订正**（explore / librarian / context-builder / title 的 model 与 Context）。

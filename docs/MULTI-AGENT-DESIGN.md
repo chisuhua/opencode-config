@@ -501,8 +501,11 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 - 默认 **warn**：只记录 + 审计，不拦任何调用。配置 `subagent-contract.json`：
   `{ "mode": "warn|enforce|off", "agents": { "critic": { "mode": "enforce" } } }`（**每次调用重读** ⇒ 即时生效）。
 - 观测：`~/.local/share/opencode/subagent-contract.log`（JSON 行，`gate`/`mode`/`violations`/`exempted`）。
+  `gate` 三档：**L3** = 契约已注入工具描述（**每进程只记第一条** —— 注入发生在每个模型请求前，逐次记会刷屏；工具描述不进日志、不进 DB、服务端也没有 tool 列表接口 ⇒ 不记就完全不可观测）、**L1** = 执行前门判定、**L2** = 子会话落库前兜底检出。
 - 审计：`bun scripts/audit-subagent-prompts.ts [--agent critic] [--strict] [--json]` —— 与运行时同一份规则逻辑，
   `--strict` 有违规 exit 1（可作 CI 断言）。
+- 端到端：`rdd-workflow-e2e` 仓的 `tests/integration/test_subagent_contract_runtime.bats`（真实运行时，11 个场景；
+  `E2E_REAL_RUNTIME=1` 才跑）⇒ 覆盖 L3 注入 / L1 warn-vs-enforce / L2 检出 / 合规放行 / 三条豁免路径 / 逐 agent 覆盖 / off / 审计 CLI。
 
 #### 文件与测试索引
 
