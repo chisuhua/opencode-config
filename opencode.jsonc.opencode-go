@@ -1229,8 +1229,7 @@
       "model": "commandcode/deepseek/deepseek-v4.1-flash",
       "temperature": 0.1,
       "mode": "subagent",
-      "hidden": true,
-      "description": "Read-only critic prompt 组装器。把 build agent 给的原始材料组装成 critic 的 7 字段上下文 prompt（含 review_profile）。不评审、不写代码、不联网、不委派。",
+      "description": "Read-only critic prompt 组装器（**只搬运，不推断**）：把调用方给的原始材料组装成 critic 的 7 字段上下文 prompt（含 review_profile）—— 产出 diff / 路径 / review_profile / context；focus 可推断但每条须标「推断：」；**intent 必须由调用方给**，缺失时返回首行 `ERROR: missing intent` 且不产出 prompt。适用面：大 diff 搬运（改动 ≥200 行 / 跨多文件）。不评审、不写代码、不联网、不委派。清单可见 ≠ 可调：只有 build 有推荐路径（front 执行期被权限拒绝）。",
       "permission": {
         "read": {
           "*": "allow",

@@ -222,18 +222,20 @@
   - APPROVE → 进入下一步（commit / PR）
   - 复审只提交「上一轮 BLOCKER 闭合证据 + 本轮新增 diff」，禁止全量重审
 
-#### `context-builder` —— critic prompt 组装器 ⭐v1.3 新增
-- **核心 prompt**：`prompts/context-builder.md`（8825 字节，180 行）
-- **职责**：把 build agent 给的原始材料（diff / intent / focus / 路径 / ADR）组装成 critic 能直接用的 **7 字段 prompt**
+#### `context-builder` —— critic prompt 组装器（**搬运工**，v2.18 收窄）⭐v1.3 新增
+- **核心 prompt**：`prompts/context-builder.md`
+- **职责**：把**调用方**给的原始材料组装成 critic 能直接用的 **7 字段 prompt** —— **只搬运，不推断**：`changes_summary` / `review_profile` / `diff_or_paths` / `context` / `expected_format` 由它产出；`focus` 可推断但每条标「推断：」；**`intent` 不可推断**（缺失 ⇒ 首行 `ERROR: missing intent` 且不产出 prompt）
 - **模型**：`commandcode/deepseek/deepseek-v4.1-flash`（纯机械组装，不需深度推理；轻量档足够）
 - **权限**：严格只读——`edit / webfetch / websearch / task / question` 全 deny；MCP 只读工具 allow、4 个写工具 deny；bash 只读子集；`.env` deny
 - **关键约束**：
   - **不评审**——只组装，不给结论（评审是 critic 的活）
   - **不写代码、不联网、不委派**
   - 输出的 prompt 必须**字段齐全**：`intent` 与 `focus` 不允许含混
+  - **`intent` 只能来自调用方**：缺失 ⇒ 首行 `ERROR: missing intent`、不产出 7 字段 prompt（可附机械字段 + "补 intent 后重发，可直接合并"）；**模糊**（有但含混）才允许追问式补全
 - **输出**：可直接喂给 critic 的 7 字段 prompt 文本（`changes_summary` / `intent` / `focus` / `review_profile` / `diff_or_paths` / `context` / `expected_format`）
-- **调用方式**：`/critic-review` slash command（`commands/critic-review.md`）默认走它；脚本 `scripts/build_critic_prompt.sh` 只做骨架预填
-- **`hidden: true`（v1.4）**：它只该被 build 用 `/critic-review` 或显式 `subagent` 调用，不该出现在用户手选的 agent 列表里混淆选择
+- **调用方式**：**窄条件** —— 只在「**diff 很大**（>200 行 / 跨多文件）**且调用方已想清楚 `intent`**」时用（`prompts/build.md` §三种组装方式 方式 A）；其余走手填 / `scripts/build_critic_prompt.sh` 骨架。`/critic-review` 命令走**脚本骨架**，不是它
+- **不再 `hidden`（v2.18）**：v1.4 设 hidden 是为"不让它出现在用户手选的 agent 列表里"；但它同时被从**父模型的「Available subagents」清单**里滤掉了（`subagent.ts:289-303` 的 `!agent.hidden`）⇒ 实测采纳率仅 12%（310 个 critic prompt 中仅 22 个真的用了它的输出）。v2.18 移除 hidden ⇒ 回到选择面
+- **可见 ≠ 可调**：它在所有持有 `subagent` 工具的 agent 清单里可见（build / plan / front），但 **front 执行期被权限拒绝**（白名单不含它）；**流程上只有 build 有推荐路径**（plan 无 critic 下游，见 §2.2 `plan` 卡片）
 
 #### `title` —— 会话标题/摘要生成 ⭐v1.4 新增
 - **职责**：opencode 内部为会话生成标题/摘要，调用频率高、单次很短
@@ -543,9 +545,10 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
                         |
                       general (subagent, 独立分支，不能被任何 agent 调，也不能调别人)
 
-                    context-builder (subagent，只被 build 调；不委派任何人)
+                    context-builder (subagent，流程上只被 build 调；不委派任何人)
                             ↑
-                            └── 只在 build 需要组装 critic 7 字段上下文时调用
+                            └── 只在 build 需要**搬运大 diff** 的 critic 7 字段上下文时调用
+                                （权限拓扑上 build/plan 均可调 —— 可达 ≠ 有消费者）
 ```
 
 > **v1.2 变更**：critic 是 build 的直接下游，与 explore/librarian/oracle/metis 平级；不接 plan（plan agent 不需要审稿——它本来就在规划阶段）；不接 librarian/oracle/metis（这些是"先于 build 调"的 agent，自身不应被 critic 审）。
@@ -566,7 +569,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 | **front** | ❌ | ❌（经 `delegate` 插件工具，非 agent 委派） | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
 
 > build → critic 是"条件 ✅"：仅在 §3.2 "何时调 critic" 5 个条件命中时调用；其它情况不调。critic 自己不调任何 agent（task deny）。
-> **context-builder** 只能被 build 调，且不委派任何 agent——它只做上下文组装。
+> **context-builder** **流程上只由 build 调用**（大 diff 搬运），且不委派任何 agent——它只做上下文组装。**权限拓扑上 build/plan 均可调**（`ADR-front-knowledge-capability` D2/D4 备案）⇒ **可达 ≠ 有消费者**：plan 没有 critic 下游（`:551`「plan agent 不需要审稿」、矩阵 plan→critic = ❌），故 `prompts/plan.md` 不再列出该路径。
 > **front 的 "→ build" 不是 agent 委派**：front 不调 subagent 工具，而是调 `delegate` 插件工具，由插件在进程内建立并驱动一个 agent=build 的工程 session（跨目录）。详见 `docs/dual-session-delegation.md`。
 > **front → 五个只读 agent（v2.5）**：front 可直接调用 `explore` / `librarian` / `oracle` / `metis` / `critic`，产物仅"回答"，不产生文件变更；发现需要变更必须改判实施性走 `delegate`。依据：`docs/adr/ADR-front-knowledge-capability.md`（前置条件是这五个 agent 的 shell 已按三段式加固）。
 > **本矩阵只回答「允许调谁」；「哪个角色产出必须过谁」见 §2.7 审查配对**（architect → oracle + critic / planner → metis / builder → verifier）。允许 ≠ 必须：矩阵是权限上限，配对是流程下限。 `prompts/build.md` 的**角色列表表**同理只列**自由裁量**可用的工具，**固定审查者是流程义务、不受该列限制**（`no-role` 除外）—— 角色表与配对表是流程下限的两个刻度，不是互相限制的两道闸。（此处指角色列表表；**本节 agent 矩阵的 ❌ 不在豁免范围**。）
@@ -582,7 +585,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 | "这个项目怎么 build 起来" | `general` | 跨领域多步 |
 | 改动 ≥3 文件 / 跨 API / 跨模块 / 开 PR 前 | `critic` | 对抗式审稿（4 段式） |
 | 用户说"过 critic"/"审一下"/"找问题" | `critic` | 显式触发 |
-| 复杂改动的 critic 上下文（7 字段）| `context-builder`（优先，改动 ≥3 文件 / 跨 ≥2 模块时必用）| 手填容易漏 intent/focus |
+| **大 diff**（>200 行 / 跨多文件）的 critic 上下文（7 字段）| `context-builder`（**窄条件**：diff 很大 **且已给出 intent**）| 它只搬运 diff / 路径 / review_profile / context；`intent` 不可推断 |
 
 | 场景 | plan 委派给 | rationale |
 |---|---|---|
@@ -597,7 +600,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 | 场景 | build 委派给 | rationale |
 |---|---|---|
-| 复杂改动要过 critic，但上下文不好手填 | `context-builder` | 组装 7 字段 critic prompt |
+| 大 diff 要过 critic，手填搬运量太大 | `context-builder`（先给 intent） | 搬运 7 字段 critic prompt 的机械部分 |
 
 > **调研型（`explore` / `librarian`）的委派前判断要素**（何时必须委托 / 何时不必委托 / 一次一问 + 给清范围与期望输出 / 权限不扩权 / 材料不触发审查）见 `prompts/build.md` 的「调研委派协议」—— 上表是**场景对照**（人类可读），执行口径以 build.md 为准。
 

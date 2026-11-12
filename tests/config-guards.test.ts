@@ -234,6 +234,53 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     expect(matrixRow as string, "build.md 的 planner 行缺边界句").toContain("委托实施 ≠ 自己实施")
   })
 
+  test("context-builder 收窄为搬运工：未 hidden / 只搬运不推断 intent / 示例与模板同为 7 字段", () => {
+    const cb = config.agent["context-builder"] as any
+    // ① 不再 hidden（否则被过滤出父模型的「Available subagents」清单）
+    expect(cb.hidden, "context-builder 不应再 hidden（实测采纳率仅 12%）").toBeFalsy()
+
+    // ② description：声明「只搬运 / 不推断 intent」，且调用方中性
+    const desc = String(cb.description ?? "")
+    expect(desc, "description 未声明只搬运").toContain("只搬运")
+    expect(desc, "description 未声明不推断 intent").toContain("不推断")
+    expect(desc, "description 仍把调用方写死为 build agent").not.toContain("build agent")
+
+    const cbMd = readFileSync(path.join(ROOT, "prompts", "context-builder.md"), "utf8")
+    // ③ 缺 intent 的唯一行为 = ERROR 停下；模板内的「intent 可推断」授权必须消失
+    expect(cbMd, "prompt 缺 ERROR: missing intent 规则").toContain("ERROR: missing intent")
+    expect(cbMd, "模板内仍授权推断 intent").not.toContain("这里写你的推断")
+    expect(cbMd, "仍把 focus 说成不是你的责任").not.toContain("focus 字段是 build agent 的责任")
+    // 调用方中性（不应把 build agent 当唯一调用方）
+    expect(cbMd, "输入段仍写死 build agent").not.toContain("你的输入（build agent 会给你什么）")
+
+    // ④ 模板段与示例段的小节数都为 7（含 review_profile）
+    const countHeadings = (text: string) => [...text.matchAll(/^## ([a-z_]+)/gm)].length
+    const templateStart = cbMd.indexOf("## 输出格式")
+    const templateEnd = cbMd.indexOf("## 7 字段填法详解")
+    expect(templateStart, "找不到模板段").toBeGreaterThan(-1)
+    expect(templateEnd, "找不到填法详解段").toBeGreaterThan(-1)
+    expect(countHeadings(cbMd.slice(templateStart, templateEnd))).toBe(7)
+
+    const exampleStart = cbMd.indexOf("**你返回**")
+    expect(exampleStart, "找不到示例段").toBeGreaterThan(-1)
+    const example = cbMd.slice(exampleStart, cbMd.indexOf("## 与 critic 的边界", exampleStart))
+    expect(countHeadings(example)).toBe(7)
+    expect(example, "示例缺 review_profile").toContain("## review_profile")
+  })
+
+  test("context-builder 的调用口径三处一致：build 专用 + 先给 intent + 可达≠有消费者", () => {
+    const buildMd = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+    expect(buildMd, "build.md 未写明 context-builder 需要先给 intent").toContain("ERROR: missing intent")
+    expect(buildMd, "build.md 未写明窄条件（大 diff）").toContain("大 diff")
+
+    const planMd = readFileSync(path.join(ROOT, "prompts", "plan.md"), "utf8")
+    expect(planMd, "plan.md 仍列出 context-builder 路径（plan 无 critic 下游）").not.toContain("context-builder")
+
+    const designMd = readFileSync(path.join(ROOT, "docs", "MULTI-AGENT-DESIGN.md"), "utf8")
+    expect(designMd, "MULTI-AGENT-DESIGN.md 未记录「可达 ≠ 有消费者」").toContain("可达 ≠ 有消费者")
+    expect(designMd, "MULTI-AGENT-DESIGN.md 未记录移除 hidden 的理由").toContain("不再 `hidden`")
+  })
+
   test("判定词表单一真源：只在 prompts/oracle.md 定义，build.md / MULTI-AGENT-DESIGN.md 只指向它", () => {
     const oracleMd = readFileSync(path.join(ROOT, "prompts", "oracle.md"), "utf8")
     expect(oracleMd).toContain("治理面判定: PASS | BLOCK | PASS-WITH-NOTES")

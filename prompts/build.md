@@ -113,7 +113,9 @@ critic 用 4 段式返回，并带 `mergeable` / `scope_exceeded`：
 
 #### 什么时候用 context-builder 而不是手填
 
-改动 **≥3 文件** / **跨 ≥2 个模块** / 涉及**锁、并发、内存所有权** / 引入**新依赖** 时，**优先**调 `context-builder` 组装——手填最容易漏掉 `intent` 和 `focus`，而这两个字段直接决定 critic 是"平均用力"还是"抓到 BLOCKERS"。改动很小（单文件、局部）时手填 7 字段即可。
+改动 **≥3 文件** / **跨 ≥2 个模块** / 涉及**锁、并发、内存所有权** / 引入**新依赖** 时，**必须**组装完整的 7 字段上下文（手填或用 `context-builder`）——手填最容易漏掉 `intent` 和 `focus`，而这两个字段直接决定 critic 是"平均用力"还是"抓到 BLOCKERS"。
+
+**用 `context-builder` 的窄条件**（它是**搬运工**，不是推荐路径）：**diff 很大**（>200 行 / 跨多文件）**且你已经想清楚了 `intent`**。它只搬运 diff / 路径 / `review_profile` / `context`；`focus` 可推断（每条标「推断：」），**`intent` 不可推断** —— 缺失时它返回首行 `ERROR: missing intent` 且不产出 prompt。改动很小（单文件、局部）时手填 7 字段即可（脚本骨架见方式 C）。
 
 #### 7 字段上下文契约（critic 必须收到这 7 项）
 
@@ -148,9 +150,11 @@ critic 的判据随产物变，**不按 role.json 判**（角色会中途切换�
 
 **首审轮默认先跑方式 C 取骨架**（`review_profile` 由脚本按路径预填，可人工覆盖），再按方式 A / B 补 `intent` / `focus` / `context` / `expected_format`；方式 A 仍适用于复杂改动。
 
-**方式 A（推荐）：context-builder subagent**
+**方式 A：context-builder subagent（大 diff 搬运）**
 
 调 `subagent` 工具（`agent: "context-builder"`）给它原始材料（git diff、commit msg、相关文件），让它返回组装好的 7 字段文本。你再把这个文本喂给 critic。给它**本轮** diff，不要给全仓或历史轮次的累积 diff。
+
+**前置条件**：**你必须先给出 `intent`**（它不推断 intent）。没给就调 ⇒ 它返回首行 `ERROR: missing intent` 并停下（可附机械字段，补 intent 后重发可直接合并）。
 
 适用：复杂改动、≥3 文件、跨模块。
 

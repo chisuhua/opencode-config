@@ -10,6 +10,14 @@
 
 ---
 
+> **v2.18 变更摘要（2026-11-13，context-builder 收窄为「机械搬运工」）**：
+> ① **问题（实测）**：310 个 critic prompt 中只有 **22 个（12%）**真正用了 context-builder 的输出；`hidden: true` 使它被 `!agent.hidden` 过滤出父模型的「Available subagents」清单（`subagent.ts:289-303`）；prompt 内 **6 处**对"缺 intent/focus 怎么办"给出互斥指令；「你返回」示例只有 6 字段（缺 `review_profile`）；文档口径互相矛盾（谁能调 / 何时调）。
+> ② **收窄**：职责限定为**只搬运**（`changes_summary` / `review_profile` / `diff_or_paths` / `context` / `expected_format`）；`focus` 可推断但每条标「推断：」；**`intent` 不可推断** —— 缺失时**首行 `ERROR: missing intent`**、不产出 7 字段 prompt（可附机械字段 + "补 intent 后重发，可直接合并"）。**移除 `hidden`** ⇒ 回到选择面；description 改写为「只搬运、不推断、调用方中性」并保留「critic 的 7 字段 prompt」功能锚点。
+> ③ **一致性**：prompt 内 6 处漂移源统一（`:27` / `:50` / `:89` / `:90` / `:110` / `:141` / `:197`）+ 调用方中性化（`:3` / `:15-25` / `:89` 等）；示例补 `## review_profile`（补齐到 7 字段）；`build.md` 窄条件（**大 diff >200 行 / 跨多文件 且已给 intent**）；**撤回 `plan.md:38`**（plan 无 critic 下游 —— `MULTI-AGENT-DESIGN.md:551`「plan agent 不需要审稿」、矩阵 plan→critic = ❌ ⇒ 组装出的 prompt 无消费者），并修 `:41` 的悬空引用；文档补「**可见 ≠ 可调**（front 清单可见但执行期 deny）/ 可达 ≠ 有消费者」。
+> ④ **审查**：oracle `PASS-WITH-NOTES`（8 条 finding：漏 `:50`/`:197` 两处漂移源、description 未列、plan 投递环断裂、ERROR 形态细化等）→ 规格 v2 → critic `APPROVE_WITH_CONDITIONS / mergeable: yes`（3 条措辞级 SHOULD_FIX 已并入）。规格：`.rddf/reviews/context-builder-narrowing-spec.md`。
+> ⑤ **验证**：`bun test tests/` **385 pass**（config-guards +2 护栏）；anchors 23/23；`opencode debug agents` 确认 context-builder 可见且 `hidden=False`。
+> ⑥ **残留**：采纳率是否回升只能上线后观察（`ERROR: missing intent` 出现频率是"调用方不给 intent"的先行指标）；「plan → critic 条件配对」登记为 backlog。
+
 > **v2.17 变更摘要（2026-11-13，plan 获得 delegate 派发主体 + ADR 签批）**：
 > ① **问题**：plan（planner 角色）只有 `subagent`（全量 allow），**没有任何工程行动出口** —— 计划与实施之间没有可编程的交接面。
 > ② **ADR**：`docs/adr/ADR-plan-delegate-engineering-session.md`（**Accepted**）—— 只扩展"谁可以派发"，不改单槽 / 归属门控 / 停机证据 / 写隔离 / grants 白名单。关键决策：D1 plan 与 front 并列放行同一 delegate 通道（顶层仍全 deny）+ plan 计划产出口径收敛到 `.rddf/plans/`；D2 派可写实施须带 **`plan_ref`**（accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`；**可写 ≠ 可引用**；存在性校验是强制函数、非相关性证明）；D3 `sessions` 按 **owner 过滤**（过滤只发生在 sessions 的 execute 内，`countActiveBackends` / dispatch 超限诊断保持 owner 无关）；D4 槽位仍按 `workRoot` 全局单槽；D5 `owner_agent` 落 pair/ledger（缺失按 front 解释）；D6 关闭范围。
