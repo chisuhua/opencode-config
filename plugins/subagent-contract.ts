@@ -112,7 +112,8 @@ export default Plugin.define({
       if (!result.shouldLog) return
 
       log(config, {
-        level: "violation",
+        // 豁免（复审轮）也记，但用不同 level：线上要能区分"放行因为豁免"与"放行因为合规"
+        level: result.evaluation.exempted ? "exempted" : "violation",
         gate: "L1",
         mode: result.mode,
         agent,
@@ -167,7 +168,7 @@ export default Plugin.define({
       if (!result.shouldLog) return
 
       log(config, {
-        level: "violation",
+        level: result.evaluation.exempted ? "exempted" : "violation",
         gate: "L2",
         mode: result.mode,
         enforceable: false, // session 域钩子不能失败 → 本路径只能检出，不能拦

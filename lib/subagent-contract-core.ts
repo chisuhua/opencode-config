@@ -558,7 +558,9 @@ export function gate(input: GateInput, config: ContractConfig, state: CompliantS
   }
 
   if (evaluation.ok) {
-    return { blocked: false, shouldLog: false, evaluation, mode }
+    // 豁免也要落日志：否则"这条为什么放行"在线上不可观测（而且 exempted / exemption
+    // 两个字段会永远为 false，等于白留）。level 由调用方按 exempted 区分。
+    return { blocked: false, shouldLog: evaluation.exempted, evaluation, mode }
   }
   return {
     blocked: mode === "enforce",

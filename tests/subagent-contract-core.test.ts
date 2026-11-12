@@ -444,6 +444,24 @@ describe("L1 / L2 门：warn 只记录、enforce 才拦", () => {
     expect(s4.evaluation.exemption).toBe("prior-review-round")
   })
 
+  test("豁免 → shouldLog=true（豁免也要可观测）、blocked=false", () => {
+    const state: CompliantState = new Map()
+    const r = gate(
+      {
+        agent: "critic",
+        prompt: "这是复审（第 2 轮），只判定上一轮 BLOCK 是否闭合。" + "x".repeat(220),
+        isResume: false,
+        parentSessionID: "p-ex",
+      },
+      { mode: "enforce" },
+      state,
+    )
+    expect(r.blocked).toBe(false)
+    expect(r.evaluation.exempted).toBe(true)
+    expect(r.shouldLog).toBe(true)
+    expect(state.get("p-ex::critic")?.reviewRound).toBe(true)
+  })
+
   test("off → 完全不管", () => {
     const state: CompliantState = new Map()
     const r = gate(
