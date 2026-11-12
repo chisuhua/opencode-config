@@ -10,6 +10,14 @@
 
 ---
 
+> **v2.12 变更摘要（2026-11-12，修复 explore/librarian/title 全不可用 + 订正模型归属表）**：
+> ① **症状**：explore / librarian / title 切到 `opencode-go` 后**每次调用都失败** —— `Error: Variant unavailable for opencode-go/deepseek-v4.1-flash: low`（HTTP 请求发不出去，请求根本没到 provider）。
+> ② **根因**：变体由 `Variant.resolve()`（上游 `packages/core/src/variant.ts` 的 `PROTOCOLS`）按 **package** 查协议生成；models.dev 对该模型没有 variants，而自定义 provider 的 package 不在协议表里 ⇒ 变体表为空。配置里声明 `capabilities.reasoning` 会让运行时走"按能力重建变体"分支，但同样查不到协议 ⇒ 仍为空。
+> ③ **修复**：`providers.opencode-go.models.deepseek-v4.1-flash` 显式声明 `variants`（`low/medium/high` → `settings.reasoningEffort`），写法照抄 kimi-code 的既有声明。**package 名保持 `@ai-sdk/openai-compatible` 不动** —— 单独把 package 改成 V2 名**不解决问题**（已实测）。
+> ④ **验证**：独立进程 `opencode run --standalone --agent explore|librarian|title "只回答：OK"` 三者全部成功；本会话内 `subagent` 调 explore / librarian 也成功（能读文件、能查外部文档）。
+> ⑤ **连带订正**：`docs/MULTI-AGENT-DESIGN.md` 的模型归属表此前仍写 `opencode/deepseek-v4.1-flash-free`（配置 2026-11-12 已切到 `opencode-go`）⇒ 已按 `opencode debug agents` + 配置解析双重核对订正 §2.1 / §2.3 / §5.1 / §5.2 / §5.3；Context 由 200,000† 改为 **524,288**（配置声明值）；`opencode`（内建免费）provider 当前无 agent 声明。
+> ⑥ **残留**：`openstarry` / `minimax-cn` 仍用 V1 包名，但它们的模型没有 agent 声明变体 ⇒ 不受影响（**未改**）；免费档 HTTP 426 的限制随本次切走已不再阻塞 explore / librarian。
+
 > **v2.11 变更摘要（2026-11-11，新增 subagent 输入契约门）**：把 `prompts/build.md` 里「7 字段上下文契约」从**散文**变成**可判定的门**。
 > ① **问题**：`subagent` 工具的 `prompt` 声明为 `string` —— 无 schema、无模板、无校验 ⇒ 父模型写什么子 agent 就收到什么；实测同一个 critic 子会话的输入有编号版 / 加粗版 / 复审版三种形态，7 字段契约只靠模型自觉。
 > ② **新增**：`lib/subagent-contract-core.ts`（纯逻辑内核：规则表 `CONTRACTS` + 小节识别 5 种实测写法 + 豁免语义 + 三钩子处理函数）、`plugins/subagent-contract.ts`（宿主接线）、`scripts/audit-subagent-prompts.ts`（审计 CLI）。
@@ -19,7 +27,7 @@
 > ⑥ **live 证据**：warn 模式 L1+L2 各落一条日志；enforce 模式 `subagent` 调用被拒并返回可执行修正文案。
 > ⑦ **配套**：`prompts/build.md` 补「被契约拒绝的调用不计入评审轮」；`scripts/check-upstream-anchors.sh` 加 A13/A13b（"只有 tool 域允许失败"）⇒ 23/23 命中；`tests/` 新增 52 例（core 40 + audit 8 + config-guards L4 4）⇒ 全量 **356 pass / 0 fail**。
 > ⑧ **豁免抽样报告**：`.rddf/reviews/subagent-contract-exemption-sampling.md`（方法 / 12 条误命中逐条证据 / 收紧方案 / 前后对比 / 残留边界）。
-> ⑨ **范围外残留**：explore/librarian 因 provider 免费档（HTTP 426）当前不可用；`docs/MULTI-AGENT-DESIGN.md` 的模型归属表漂移 —— 两条另立 change。
+> ⑨ **范围外残留**：`docs/MULTI-AGENT-DESIGN.md` 的模型归属表漂移 —— **已在 v2.12 订正**（explore / librarian / context-builder / title 的 model 与 Context）。
 
 > **v2.10 变更摘要（2026-11-11，本地构建改为双分支 + 锁定官方版本）**：本地构建的源码来源从「`dev` 分支」改为「`local/build` 构建分支」。
 > ① **分支模型**：`dev` = **纯上游镜像**（跟踪 `upstream/dev`，只做 fast-forward）；`local/build` = `dev` + 尚未被上游合并的本地改动（`git merge feat/xxx`）。脚本每次构建前先更新 `dev`，再 merge 进 `local/build` ⇒ 既能跟踪上游，又能带着本地未合入的修复跑；`dev` 不被本地提交污染，永远能 `pull --ff-only`。

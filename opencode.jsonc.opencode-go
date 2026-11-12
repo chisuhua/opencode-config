@@ -1339,7 +1339,12 @@
         "deepseek-v4.1-flash": {
           "name": "DeepSeek V4.1 Flash",
           "limit": { "context": 524288 },
-          "capabilities": {"tools":true,"temperature":true,"reasoning":{"supported":true}}
+          "capabilities": {"tools":true,"temperature":true,"reasoning":{"supported":true}},
+          "variants": [
+            { "id": "low",    "settings": { "reasoningEffort": "low" } },
+            { "id": "medium", "settings": { "reasoningEffort": "medium" } },
+            { "id": "high",   "settings": { "reasoningEffort": "high" } }
+          ]
         }
       }
     }, 
