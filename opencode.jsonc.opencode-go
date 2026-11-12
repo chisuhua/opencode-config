@@ -377,8 +377,7 @@
       "prompt": "{file:./prompts/front.md}"
     },
     "explore": {
-      "model": "opencode-go/deepseek-v4.1-flash",
-      "variant": "low",
+      "model": "commandcode/deepseek/deepseek-v4.1-flash",
       "temperature": 0.1,
       "mode": "subagent",
       "hidden": false,
@@ -522,8 +521,7 @@
       "prompt": "{file:./prompts/explore.md}"
     },
     "librarian": {
-      "model": "opencode-go/deepseek-v4.1-flash",
-      "variant": "low",
+      "model": "commandcode/deepseek/deepseek-v4.1-flash",
       "temperature": 0.1,
       "mode": "subagent",
       "hidden": false,
@@ -1216,14 +1214,13 @@
       "prompt": "{file:./prompts/critic.md}"
     },
     "title": {
-      "model": "opencode-go/deepseek-v4.1-flash",
-      "variant": "low",
+      "model": "commandcode/deepseek/deepseek-v4.1-flash",
       "mode": "primary",
       "hidden": true,
       "description": "会话标题/摘要生成。用实测不思考的模型（glm-5.3-flash，reasoning_tokens=0），省 token。"
     },
     "context-builder": {
-      "model": "opencode-go/deepseek-v4.1-flash",
+      "model": "commandcode/deepseek/deepseek-v4.1-flash",
       "temperature": 0.1,
       "mode": "subagent",
       "hidden": true,
@@ -1349,7 +1346,7 @@
       }
     }, 
     "openstarry": {
-      "package": "@ai-sdk/openai-compatible",
+      "package": "@opencode/ai/providers/openai-compatible",
       "name": "OpenStarry",
       "settings": {
         "baseURL": "https://api.openstarry.com/v1",
@@ -1394,7 +1391,7 @@
       }
     },
     "minimax-cn": {
-      "package": "@ai-sdk/anthropic",
+      "package": "@opencode/ai/providers/anthropic",
       "settings": {
         "baseURL": "https://api.minimaxi.com/anthropic/v1",
         "apiKey": "{env:MINIMAX_API_KEY}"

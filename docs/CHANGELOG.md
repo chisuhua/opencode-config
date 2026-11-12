@@ -15,9 +15,9 @@
 > ② **根因**：变体由 `Variant.resolve()`（上游 `packages/core/src/variant.ts` 的 `PROTOCOLS`）按 **package** 查协议生成；models.dev 对该模型没有 variants，而自定义 provider 的 package 不在协议表里 ⇒ 变体表为空。配置里声明 `capabilities.reasoning` 会让运行时走"按能力重建变体"分支，但同样查不到协议 ⇒ 仍为空。
 > ③ **修复**：`providers.opencode-go.models.deepseek-v4.1-flash` 显式声明 `variants`（`low/medium/high` → `settings.reasoningEffort`），写法照抄 kimi-code 的既有声明。**package 名保持 `@ai-sdk/openai-compatible` 不动** —— 单独把 package 改成 V2 名**不解决问题**（已实测）。
 > ④ **验证**：独立进程 `opencode run --standalone --agent explore|librarian|title "只回答：OK"` 三者全部成功；本会话内 `subagent` 调 explore / librarian 也成功（能读文件、能查外部文档）。
-> ⑤ **连带订正**：`docs/MULTI-AGENT-DESIGN.md` 的模型归属表此前仍写 `opencode/deepseek-v4.1-flash-free`（配置 2026-11-12 已切到 `opencode-go`）⇒ 已按 `opencode debug agents` + 配置解析双重核对订正 §2.1 / §2.3 / §5.1 / §5.2 / §5.3；Context 由 200,000† 改为 **524,288**（配置声明值）；`opencode`（内建免费）provider 当前无 agent 声明。
+> ⑤ **连带订正**：`docs/MULTI-AGENT-DESIGN.md` 的模型归属表此前仍写 `opencode/deepseek-v4.1-flash-free` ⇒ 已按 `opencode debug agents` + 配置解析 + 实跑三重核对订正 §2.1 / §2.3 / §5.1 / §5.2 / §5.3。**轻量链路（explore / librarian / context-builder / title）最终落到 `commandcode/deepseek/deepseek-v4.1-flash`**（Context 1,000,000†，models.dev 值）；`opencode`（内建免费）与 `opencode-go` 当前**均无 agent 声明**（后者仍是降级链候选）。
 > ⑥ **残留**：`openstarry` / `minimax-cn` 仍用 V1 包名，但它们的模型没有 agent 声明变体 ⇒ 不受影响（**未改**）；免费档 HTTP 426 的限制随本次切走已不再阻塞 explore / librarian。
-
+> ⑦ **包名统一（追加）**：`minimax-cn` 的 `@ai-sdk/anthropic` → `@opencode/ai/providers/anthropic`；`openstarry` 的 `@ai-sdk/openai-compatible` → `@opencode/ai/providers/openai-compatible`。理由：当前运行时的 provider 内置表只含 **V2** 包名（`packages/core/src/provider.ts` 的 `builtins`，61 个键全是 `@opencode/ai/providers/*`），V1 名是遗留拼写；变体协议表 `PROTOCOLS` 同样只认 V2 名。实测：minimax-cn 正常（含**工具调用**：读文件并回答）；openstarry 仍是**订阅额度不足**（403，切换前就如此，与包名无关）。**残留**：`opencode-go` 仍用 V1 名（它已显式声明 `variants`，不受影响），要统一只差一行。
 > **v2.11 变更摘要（2026-11-11，新增 subagent 输入契约门）**：把 `prompts/build.md` 里「7 字段上下文契约」从**散文**变成**可判定的门**。
 > ① **问题**：`subagent` 工具的 `prompt` 声明为 `string` —— 无 schema、无模板、无校验 ⇒ 父模型写什么子 agent 就收到什么；实测同一个 critic 子会话的输入有编号版 / 加粗版 / 复审版三种形态，7 字段契约只靠模型自觉。
 > ② **新增**：`lib/subagent-contract-core.ts`（纯逻辑内核：规则表 `CONTRACTS` + 小节识别 5 种实测写法 + 豁免语义 + 三钩子处理函数）、`plugins/subagent-contract.ts`（宿主接线）、`scripts/audit-subagent-prompts.ts`（审计 CLI）。
