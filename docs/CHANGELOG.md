@@ -10,6 +10,27 @@
 
 ---
 
+> **v2.15 变更摘要（2026-11-12，critic 的「评审对象边界」）**：
+> ① **问题**：critic 的判据轴是**产物档位**（arch / plan / build / archive），但"评审对象必须是可签批产物、建议类产出只作上下文"这条边界只存在于设计文档与口头共识 —— critic 自己的 prompt 里没有。父模型若把 oracle 四节结论 / metis 六节 gap 分析塞进 `diff_or_paths`，critic 会拿只对决策文档成立的判据（如 arch 档「决策缺备选方案」）去评一份**结论**，产出无法落地的 BLOCKER；而 `build.md:85` 规定「只有 BLOCKER 触发返工」⇒ 白触发一轮返工并消耗「同一 change 最多 2 轮 critic」预算。
+> ② **改动**：`prompts/critic.md` 新增「评审对象边界」小节 —— 评审对象须**证据自足、可签批**（ADR / proposal / 代码 / 归档增量 / 治理面规则文件等）；建议类产出只作上下文（写进 `context` 或作为 `intent` 来源）；复核建议要审**它指向的产物**、按该产物路径对应的档位；建议将被采纳则**先落成产物**再审；整份输入都是建议类 ⇒ 走**无评审对象出口**（`profile: none` + 理由，不产出任何 finding、不给 `mergeable`）。档位推断段加先后约束：推断前先过对象边界。
+> ③ **审查**：oracle `PASS-WITH-NOTES`（3 条 note 全部并入：示例补"治理面规则文件等"、"全建议输入"出口、"按该产物路径对应的档位"、`:87` 先后句）→ critic `APPROVE_WITH_CONDITIONS / mergeable: yes`（2 条 SHOULD_FIX 并入：新出口同时禁 SHOULD_FIX/NITS + 定义输出形状 `profile: none`；另 1 条 NIT 标记 `scope_exceeded: true` 记 backlog —— 四档"审什么"列未接住治理面配置类对象，属既有缝隙非本轮引入）。
+> ④ **验证**：`tests/` **360 pass**；anchors 23/23。**自指限制**：改的是 `prompts/critic.md` 自身，"新边界是否真会让 critic 拒绝/接受某类输入"不能由本轮审稿独立证明 —— 需后续非自指会话投喂"只含 oracle 报告、无产物"的合成输入验证。
+> ⑤ **另立**：critic 档位显式率不足（首审轮 55% / 复审轮 33%，n=182）→ 改进方案见 `.rddf/reviews/review-profile-improvement-plan.md`（推荐 A+C+D，待用户定组合）。
+
+> **v2.14 变更摘要（2026-11-12，metis 检查：stale 引用订正 + 6 节契约守卫）**：
+> ① **检查结论**：metis 的"意图—能力—输出"基本自洽（6 节契约写在 `prompts/metis.md` 自己手里；89 个有文本输出的真实会话里 **85% 完整给出 6 节**；92% 的调用方自带产物路径）⇒ **不存在 oracle 那种"判定规则放错文件"的结构缺陷**。仅 3 处小问题：M1 严重度分级只写在 Rules 未进 Output 契约（实测 96% 输出自带某种分级，但三档词在全仓**零消费方**）；M2 stale 引用；M3 三处契约零守卫。
+> ② **改动**：M2 `prompts/metis.md:7` 把幽灵 agent 名 `Prometheus` 订正为 `planner`（全仓 grep `Prometheus` 零匹配；planner 是 metis 的固定审查调用方，见 `build.md:419`，build 直调路径保留）；M3 `tests/config-guards.test.ts` 新增守卫：metis 的 6 节输出契约在 `metis.md`（真源）/ `build.md` 返回结构行 / `MULTI-AGENT-DESIGN.md` 卡片三处**有序全等**；M1 最终以**改措辞**关闭 —— `metis.md:31` 的三档词（`blocker / quality / nice-to-have`）改为「按优先级排序：说明哪些必须先解决、哪些可以后置」，与 Output 末节的「按优先级排序」收敛为同一判据（理由：三档零消费方、73% 会话本就用替代分级、`blocker` 与 critic 的闸门词跨界）。
+> ③ **审查**：oracle `PASS-WITH-NOTES`（4 条 finding）。其中 finding 2 指出守卫是"单向包含 + 未钉顺序"，存在真实假阴性 ⇒ **当场补强**为有序全等 + 名单提取（不再逐项 `toContain`）+ 卡片搜索域收敛到 `#### metis` 段。
+> ④ **验证**：`tests/` **360 pass**；anchors 23/23；三条变异（节名改动 / 节序对调 / 消费者行残留旧节名）均被守卫捕获并报出准确信息。
+> ⑤ **残留**：`MULTI-AGENT-DESIGN.md:917` 文件树注释「（Markdown 六节输出）」是同一契约的散文投影，未纳入守卫（低影响，备查）；`metis.md:31` 与 Output 末节属同义复述，无守卫能抓两处分叉（叙述性文字的已知限制）。
+
+> **v2.13 变更摘要（2026-11-12，oracle 的审查身份与判定行下沉）**：
+> ① **问题**：治理面 oracle 审查 23 个样本里 **6 个（26%）没有要求判定行** ⇒ 审完了拿不到机读结论，且无机制发现。根因是判定要求写在**调用方**文档（`build.md`），执行体（oracle）不知道；同时 oracle 的 description 只写 consultant，而 critic 的 description 把"目标场景失败模式"揽走 —— 与 `build.md` 审查配对表的分工相反。另：210 个 oracle 子会话里 **75% 的调用方自己在 prompt 里重述审查框架**（措辞各异）⇒ 选择面没把能力说清。
+> ② **改动**：① 两条 description 改为「oracle 先行失败模式 / critic 主审冲突（oracle 未前置时兼审）」，并限定 critic 的"architect 流程第二审"作用域；② `prompts/oracle.md` 新增「模式」段：**默认审查档**（输入带产物/判据即审查）+ 纯问答才降级咨询 + **拿不准按审查** + 判定行两种词表（治理面 / 通用）+ **BLOCK 必须有证据**（反判定通胀）；③ 判定词表**降格为单一真源**（只在 `oracle.md`，`build.md` 与 `MULTI-AGENT-DESIGN.md` 改为指针）。
+> ③ **审查**：oracle `PASS-WITH-NOTES`（8 条 finding 逐条处置，5 条改变补丁形态）→ critic `REJECT`（1 BLOCKER：`MULTI-AGENT-DESIGN.md` 持有第三份词表）→ 修 → 复审 `APPROVE / mergeable: yes`。
+> ④ **验证**：`tests/` **359 pass**（新增 2 条守卫：description 分工非 orphan、判定词表单一真源）；anchors 23/23；`opencode debug agents` 可见新描述。
+> ⑤ **残留**：AC6「部署后审计」（复测原 6 个漏判定会话）待做 —— 它是"默认审查档是否对症"的唯一独立证据；oracle 的输入契约仍属 tasks 7.4（前置未到）。
+
 > **v2.12 变更摘要（2026-11-12，修复 explore/librarian/title 全不可用 + 订正模型归属表）**：
 > ① **症状**：explore / librarian / title 切到 `opencode-go` 后**每次调用都失败** —— `Error: Variant unavailable for opencode-go/deepseek-v4.1-flash: low`（HTTP 请求发不出去，请求根本没到 provider）。
 > ② **根因**：变体由 `Variant.resolve()`（上游 `packages/core/src/variant.ts` 的 `PROTOCOLS`）按 **package** 查协议生成；models.dev 对该模型没有 variants，而自定义 provider 的 package 不在协议表里 ⇒ 变体表为空。配置里声明 `capabilities.reasoning` 会让运行时走"按能力重建变体"分支，但同样查不到协议 ⇒ 仍为空。

@@ -674,7 +674,7 @@
       "variant": "max",
       "mode": "subagent",
       "hidden": false,
-      "description": "Read-only architecture consultant. Advises on architecture decisions and complex debugging without modifying files.",
+      "description": "Read-only architecture consultant + reviewer. 对抗式审查时先行（会怎么坏 / 边界 / 被否掉的替代方案是否真的更差），之后由 critic 审与既有 ADR/契约的冲突（见 build.md §审查配对）。咨询：给架构决策与复杂调试建议。不写代码、不跑测试、不委派。",
       "permission": {
         "read": {
           "*": "allow",
@@ -1064,7 +1064,7 @@
       "temperature": 0.1,
       "mode": "subagent",
       "hidden": false,
-      "description": "架构与决策审稿 subagent。只审 ADR 一致性 / 关键取舍 / 目标场景失败模式；BLOCKER 严格三选一，结论带 mergeable / scope_exceeded。不写代码、不跑测试、不联网、不委派。",
+      "description": "架构与决策审稿 subagent。architect 流程里是第二审（oracle 先行）；其他角色直调时独立生效（不要求 oracle 前置）。主审与既有 ADR/契约/已签批决策的冲突与关键取舍一致性；oracle 未前置时兼审目标场景失败模式（prompts/critic.md 正文的三问题无条件生效，description 只决定主次，不缩小覆盖面）。BLOCKER 严格三选一，结论带 mergeable / scope_exceeded。不写代码、不跑测试、不联网、不委派。",
       "permission": {
         "read": {
           "*": "allow",

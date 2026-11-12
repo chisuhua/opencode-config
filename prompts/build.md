@@ -36,7 +36,7 @@
 
 - 需要搜索代码库 → `subagent` 工具，`agent: "explore"`（**简单定位除外** —— 路径已知、一次 `grep` 能答就自己来，见下方「调研委派协议」的「不必委托」）
 - 需要查外部文档/库源码 → `subagent` 工具，`agent: "librarian"`
-- 需要架构咨询/复杂调试 → `subagent` 工具，`agent: "oracle"`
+- 需要架构咨询/复杂调试 → `subagent` 工具，`agent: "oracle"`（**咨询** = 给问题要建议；**审查** = 给产物 + 判据 —— 两种模式的输出形态见 `prompts/oracle.md` 的「模式」段）
 - 计划前的差距分析 → `subagent` 工具，`agent: "metis"`
 - 需要组装 critic 上下文 → `subagent` 工具，`agent: "context-builder"`
 - 需要对抗式审稿（架构方向 / 关键决策）→ `subagent` 工具，`agent: "critic"`
@@ -434,9 +434,8 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 
 > **必须带 `~/.config/opencode/` 前缀**：裸文件名 `docs/MULTI-AGENT-DESIGN.md` 在项目 cwd 里**解析不到**（项目仓库没有这个文件），按字面执行会判「不属于治理面」→ 永不触发。
 
-**治理面判定（verdict）**：oracle 输出只有 4 节建议、**没有 pass/fail 机读信号**，所以「调用过」≠「通过」。治理面审查额外要求：
+**治理面判定（verdict）**：oracle 输出只有 4 节建议、**没有 pass/fail 机读信号**，所以「调用过」≠「通过」。判定行的**词表与触发条件**以 `prompts/oracle.md` 的「模式」段为**单一真源**；本节只保留流程约束：
 
-- oracle 的「建议」段**首行**给出 `治理面判定: PASS | BLOCK | PASS-WITH-NOTES`；
 - **每条 finding 必须逐条应答**：修掉（写明改了什么），或写明不修的理由。**不得**只列不改、也不得把「列出来」当成「已处置」；
 - 判定为 `BLOCK` 或存在未应答 finding → **不得声称该改动完成**。
 

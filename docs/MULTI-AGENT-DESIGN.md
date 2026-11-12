@@ -312,7 +312,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 - **算**：`~/.config/opencode/prompts/**`、`~/.config/opencode/AGENTS.md`（注入所有 agent，影响力最大）、`~/.config/opencode/docs/{MULTI-AGENT-DESIGN,CHANGELOG}.md`、`~/.config/opencode/opencode.json(c)` 的 agent / permission / provider 段、`~/.config/opencode/commands/**`（slash command = agent 行为指令，与 prompt 同级）、`~/.config/opencode/scripts/**` 中**被治理面规则行为依赖**的脚本（如 `arch-docs-init.sh` —— 规则指示 agent 运行它、或规则语义依赖其输出 / 退出码；改其退出码 / 报错文案 / 落盘行为时）。
 - **不算**：错字 / 链接 / 日期 / 表格对齐 / 纯格式；项目仓库里的 `openspec/**`、`.rddf/**`、`docs/adr/**`（后者属 ADR 行）；`scripts/**` 中不改变退出码 / 报错文案 / 落盘行为的改动，仅被历史记述性提及的脚本，以及未被规则行为依赖的脚本。
 
-**治理面 verdict（oracle 无 pass/fail 信号 → 「调用过」≠「通过」）**：oracle 的「建议」段首行须给 `治理面判定: PASS | BLOCK | PASS-WITH-NOTES`；**每条 finding 必须逐条应答**（修掉写明改了什么 / 写明不修理由），不得只列不改；`BLOCK` 或存在未应答 finding → 不得声称完成。
+**治理面 verdict（oracle 无 pass/fail 信号 → 「调用过」≠「通过」）**：判定行的**词表与触发条件**以 `prompts/oracle.md` 的「模式」段为**单一真源**（本文件不重复定义词表）；**每条 finding 必须逐条应答**（修掉写明改了什么 / 写明不修理由），不得只列不改；`BLOCK` 或存在未应答 finding → 不得声称完成。
 
 **自指审查**：改 `prompts/oracle.md` / `prompts/critic.md` / §2.7 本身时，审查实例跑的是**旧版契约**，只能记为「自指审查，不构成独立证据」。
 

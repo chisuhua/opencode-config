@@ -153,6 +153,58 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     }
   })
 
+  test("oracle / critic 的 description 声明审查分工（防 orphan 描述回退）", () => {
+    const oracle = (config.agent.oracle as { description?: string }).description ?? ""
+    const critic = (config.agent.critic as { description?: string }).description ?? ""
+    // oracle 必须在**选择面**上暴露"审查者"身份 —— 只写 consultant 会让父模型跳过 oracle 先行
+    expect(/审查|review/i.test(oracle), "oracle description 未声明审查身份").toBe(true)
+    // 分工与顺序：两边都要能看出对方的存在
+    expect(oracle, "oracle description 未提及 critic（协同关系）").toContain("critic")
+    expect(critic, "critic description 未提及 oracle（顺序/兜底）").toContain("oracle")
+    expect(critic, "critic description 未声明主审范围（冲突/一致性）").toMatch(/冲突/)
+    // description 只决定主次，不得缩小 critic.md 正文的覆盖面
+    expect(critic).toMatch(/主审|不缩小覆盖面/)
+  })
+
+  test("metis 的 6 节输出契约在 metis.md / build.md / MULTI-AGENT-DESIGN.md 三处**有序全等**", () => {
+    const splitList = (raw: string) => raw.split("/").map((x) => x.trim()).filter(Boolean)
+
+    // 真源：metis.md 的 Output 段（截到下一个 `## `，避免把后续章节的 ### 也算进来）
+    const metisMd = readFileSync(path.join(ROOT, "prompts", "metis.md"), "utf8")
+    const outputSection = ((metisMd.split(/^## Output\s*$/m)[1] ?? "").split(/^## /m)[0] ?? "")
+    const headings = [...outputSection.matchAll(/^### (.+)$/gm)].map((m) => (m[1] as string).trim())
+    expect(headings.length, `metis.md 的 Output 段应有 6 节，实为 ${headings.length}`).toBe(6)
+
+    // 消费者：build.md 的 metis 返回结构行里 "Markdown 6 节：" 之后、" |" 之前的名单
+    const buildMd = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+    const metisRow = buildMd.split("\n").find((l) => l.startsWith("| `metis` |"))
+    expect(metisRow, "build.md 的 subagent 返回结构表里找不到 metis 行").toBeTruthy()
+    const rowList = /Markdown 6 节：([^|]+)/.exec(metisRow as string)
+    expect(rowList, "build.md 的 metis 行里找不到「Markdown 6 节：…」名单").toBeTruthy()
+    expect(splitList(rowList![1] as string), "build.md 的 metis 名单与 metis.md 不一致（含顺序）").toEqual(headings)
+
+    // 投影：MULTI-AGENT-DESIGN.md 的 `#### metis` 卡片里的 "Markdown 六节（…）"
+    const designMd = readFileSync(path.join(ROOT, "docs", "MULTI-AGENT-DESIGN.md"), "utf8")
+    const cardSection = ((designMd.split(/^#### `metis`.*$/m)[1] ?? "").split(/^#### /m)[0] ?? "")
+    const cardList = /Markdown 六节（([^）]+)）/.exec(cardSection)
+    expect(cardList, "MULTI-AGENT-DESIGN.md 的 metis 卡片里找不到「Markdown 六节（…）」").toBeTruthy()
+    expect(splitList(cardList![1] as string), "MULTI-AGENT-DESIGN.md 的 metis 卡片与 metis.md 不一致（含顺序）").toEqual(headings)
+  })
+
+  test("判定词表单一真源：只在 prompts/oracle.md 定义，build.md / MULTI-AGENT-DESIGN.md 只指向它", () => {
+    const oracleMd = readFileSync(path.join(ROOT, "prompts", "oracle.md"), "utf8")
+    expect(oracleMd).toContain("治理面判定: PASS | BLOCK | PASS-WITH-NOTES")
+
+    for (const rel of ["prompts/build.md", "docs/MULTI-AGENT-DESIGN.md"]) {
+      const text = readFileSync(path.join(ROOT, rel), "utf8")
+      expect(
+        text.includes("治理面判定: PASS | BLOCK | PASS-WITH-NOTES"),
+        `${rel} 仍在定义判定词表（应改为指向 prompts/oracle.md）`,
+      ).toBe(false)
+      expect(text, `${rel} 未指向 prompts/oracle.md`).toContain("prompts/oracle.md")
+    }
+  })
+
   test("每个 agent 的 prompt 指向的 prompts/<id>.md 存在，且首行含 agent id", () => {
     for (const [id, agent] of Object.entries(config.agent)) {
       // title 是 opencode 内部的会话标题 agent，无系统提示（无 prompt 字段）

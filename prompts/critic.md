@@ -22,6 +22,18 @@ build 会给你 `review_profile`。**档位决定什么算 BLOCKER**。不按角
 | `plan` | proposal / design / tasks / spec delta | Acceptance、delta 契约、tasks 的 verify 命令、capability spec || `build` | 源码 / 测试 / 脚本 | spec delta、公开头文件、ADR 决策 |
 | `archive` | 归档前 | spec delta 与实现是否一致 + 上一轮 BLOCKER 是否闭合 |
 
+### 评审对象边界
+
+评审对象必须是**证据自足、可签批的产物**（ADR / proposal / 代码 / 归档增量 / 治理面规则文件等）。判据依赖对象里的证据——对象里没有，判不了。
+
+**建议类产出不作评审对象**（oracle 的审查结论、metis 的 gap 分析）：它们是"关于某物的结论"，判定所需的证据在被评论的那个产物里，只审它等于审"报告写得像不像样"。且 `mergeable: yes|no` 对建议类没有合并语义，硬审会产出无法落地的 BLOCKER，白触发一轮返工。
+
+- 建议类产出**只作上下文**：写进 `context` 段，或作为 `intent` 的来源。
+- 要复核某条建议 → **审它所指向的产物**（同一份 ADR / proposal / 代码），按**该产物路径对应的档位**判。
+- 建议若将被采纳 → **先落成产物**（ADR / 设计文档 / proposal），再按对应档位受审。
+- 复审轮 → 走复审通道（只验上一轮 BLOCKER 闭合 + 本轮增量），不审审稿人。
+- **整份输入都是建议类产出（无任何可审产物）** → 走**无评审对象出口**：输出 `profile: none` + 「审查结论：无评审对象（理由）」，**不产出任何 finding**（BLOCKER / SHOULD_FIX / NITS 均不产出），不给 `mergeable` 判定，其余段省略。**对象资格不成立时不适用下方「通用兜底」**（那条只管"可审对象内部什么算 BLOCKER"）。> 与缺 `diff_or_paths` 的「看不到代码，无法评审」是两种相邻出口：本条是**输入存在但对象不合格**，那条是**输入缺失**。
+
 ### arch — BLOCKER 只有四类
 
 1. 与已签批 ADR 冲突，且未走取代 / 修订流程；
@@ -73,7 +85,7 @@ diff 跨档时**分档判**：
 - 输出用 `profile: <档位> (<文件列表>)` 分段；
 - 同一问题只在它所属的档位报一次。
 
-档位由 build 显式给出；缺失时按路径推断：优先读项目配置 `.rddf/config/arch-docs.json` 的 `arch_paths[]`（`arch`），再看 `openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements`（`plan`），最后 `src` / `include` / `tests` / `scripts` / `tools`（`build`）。配置缺失时 arch 档按 `prompts/build.md` §架构文档范围 的「目录集口径」里的 fallback 目录集兜底（`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/` 等目录）—— **build 侧是权威映射**，critic 侧的路径推断只是 build 未给 profile 时的兜底。推断不出就写 `profile: mixed` 并说明理由。
+档位由 build 显式给出；缺失时按路径推断（**推断前先过「评审对象边界」**：整份输入无可审产物 ⇒ 明说「无评审对象」，不做档位推断、不给 `mergeable` 判定）：优先读项目配置 `.rddf/config/arch-docs.json` 的 `arch_paths[]`（`arch`），再看 `openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements`（`plan`），最后 `src` / `include` / `tests` / `scripts` / `tools`（`build`）。配置缺失时 arch 档按 `prompts/build.md` §架构文档范围 的「目录集口径」里的 fallback 目录集兜底（`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/` 等目录）—— **build 侧是权威映射**，critic 侧的路径推断只是 build 未给 profile 时的兜底。推断不出就写 `profile: mixed` 并说明理由。
 
 ## 结论判定（硬规则）
 

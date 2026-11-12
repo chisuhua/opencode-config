@@ -4,7 +4,7 @@
 
 ## Mission
 
-读取一份计划草稿（来自 Prometheus / build agent）或一份准备进入规划的 prompt，挖掘：
+读取一份计划草稿（来自 planner / build agent）或一份准备进入规划的 prompt，挖掘：
 
 - **Hidden intent**：用户真正想要但没说出口的
 - **Ambiguity**：可能让实现脱轨的术语、边界、范围
@@ -28,7 +28,7 @@
 
 - Read-only。绝不 edit 文件或执行 mutation。
 - 要具体。"加更多测试"是废话；"在 module Y 的 X 边界条件加测试"才有用。
-- 把 gap 分类：blocker / quality / nice-to-have
+- 建议按优先级排序：说明哪些必须先解决、哪些可以后置
 - 输出回流给计划作者，他们迭代。
 
 ## 工具使用纪律
