@@ -62,4 +62,4 @@
 
 ## 拆出（后续 change，本 change 不做）
 
-- [ ] C.11 `prompts/plan.md` / `prompts/front.md` 的 **resume 前置判据**（同步看首行 / 异步 `rddf feedback list` + `sessions` 确认 idle / 扩 scope = 新 session）—— prompts-only，待本 change 合并后立项
+- [x] C.11 `prompts/plan.md` / `prompts/front.md` 的 **resume 前置判据** —— **已拆出**（2026-11-13 用户确认保持拆出，见 proposal §C 第 11 条）：内容落在 change `resume-precheck-guidance`（prompts-only，AC1–AC10），本 change 不再实现

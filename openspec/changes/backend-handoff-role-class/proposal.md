@@ -86,37 +86,37 @@
 
 > 判据正文以本文件「验收标准」表为准；本段只提供可勾选清单（供 `rdd-verifier` skill 读取）。**逐条证据见对应表行**。
 
-- [ ] AC1 `role_class` 缺省 builder；非法 / `null` / `""` 抛
-- [ ] AC2 `kind=knowledge` + `role_class` 抛
-- [ ] AC3 class×scope 相容（正反例）
-- [ ] AC4 edit 权限**净效果**（allow / deny 各一）
-- [ ] AC5 subagent 白名单净效果 + 排除 `general` / `context-builder`
-- [ ] AC6 `role.json` 独立 `role_class`，`current_role` 仍 `builder`
-- [ ] AC7 `pair.json` 持久化 + resume 比对 + 简报取持久化值
-- [ ] AC8 同步轮次后 `pair.state === "idle"`
-- [ ] AC9 简报含 5 项模板与正确命令（CI）+ 实际落点（手工）
-- [ ] AC10 scope 三种写法一致
-- [ ] AC11 无 `set_class` 类工具
-- [ ] AC12 全量回归绿 + anchors 23/23
-- [ ] AC13 （手工）builder 越类写 ADR ⇒ 零变更 + feedback + idle
-- [ ] AC14 （手工）`subagent` 被拒 ⇒ `HANDOFF: blocked`，不自审自批
-- [ ] AC15 `archRoots` 四态 + 全无 ⇒ 派发被拒
-- [ ] AC16 `buildBrief` 输出断言
-- [ ] AC17 存量条目缺 `role_class` ⇒ `builder`
-- [ ] AC18 symlink 语义越界 ⇒ 拒
-- [ ] AC19 `vanished` 重建沿用 class
-- [ ] AC20 `sessions` items 回显 `role_class`
-- [ ] AC21 HANDOFF fallback（`rddf` 不可用 / 额度耗尽）
-- [ ] AC22 简报含 HANDOFF 首行优先级句
-- [ ] AC23 无新增 `SlotState` / outcome 值
-- [ ] AC24（D3 修订）builder + scope 落 arch ⇒ 派发被拒
-- [ ] AC25（D3 修订）宽 scope 的 arch deny 净效果（含 `docs/adr2` 负向）
-- [ ] AC26（D3 修订）write/patch 同 action；grants 不能抵消
-- [ ] AC27（D3 修订）symlink 两方向
-- [ ] AC28（D3 修订）archRoots 空集退化
-- [ ] AC29（D3 修订）worktree 同根
-- [ ] AC30（D3 修订）fallback 闭合清单与 build.md 目录集一致
-- [ ] AC31（D3 修订）简报回显不可写目录
+- [x] AC1 `role_class` 缺省 builder；非法 / `null` / `""` 抛
+- [x] AC2 `kind=knowledge` + `role_class` 抛
+- [x] AC3 class×scope 相容（正反例）
+- [x] AC4 edit 权限**净效果**（allow / deny 各一）
+- [x] AC5 subagent 白名单净效果 + 排除 `general` / `context-builder`
+- [x] AC6 `role.json` 独立 `role_class`，`current_role` 仍 `builder`
+- [x] AC7 `pair.json` 持久化 + resume 比对 + 简报取持久化值
+- [x] AC8 同步轮次后 `pair.state === "idle"`
+- [x] AC9 简报含 5 项模板与正确命令（CI）+ 实际落点（手工）
+- [x] AC10 scope 三种写法一致
+- [x] AC11 无 `set_class` 类工具
+- [x] AC12 全量回归绿 + anchors 23/23
+- [x] AC13 （手工）builder 越类写 ADR ⇒ 零变更 + feedback + idle
+- [x] AC14 （手工）`subagent` 被拒 ⇒ `HANDOFF: blocked`，不自审自批
+- [x] AC15 `archRoots` 四态 + 全无 ⇒ 派发被拒
+- [x] AC16 `buildBrief` 输出断言
+- [x] AC17 存量条目缺 `role_class` ⇒ `builder`
+- [x] AC18 symlink 语义越界 ⇒ 拒
+- [x] AC19 `vanished` 重建沿用 class
+- [x] AC20 `sessions` items 回显 `role_class`
+- [x] AC21 HANDOFF fallback（`rddf` 不可用 / 额度耗尽）
+- [x] AC22 简报含 HANDOFF 首行优先级句
+- [x] AC23 无新增 `SlotState` / outcome 值
+- [x] AC24（D3 修订）builder + scope 落 arch ⇒ 派发被拒
+- [x] AC25（D3 修订）宽 scope 的 arch deny 净效果（含 `docs/adr2` 负向）
+- [x] AC26（D3 修订）write/patch 同 action；grants 不能抵消
+- [x] AC27（D3 修订）symlink 两方向
+- [x] AC28（D3 修订）archRoots 空集退化
+- [x] AC29（D3 修订）worktree 同根
+- [x] AC30（D3 修订）fallback 闭合清单与 build.md 目录集一致
+- [x] AC31（D3 修订）简报回显不可写目录
 
 ## 非目标
 

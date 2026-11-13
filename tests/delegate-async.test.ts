@@ -1650,6 +1650,42 @@ describe("已删后端的处置矩阵（ADR D12 / AC13）", () => {
     expect(ledger).toContain(a.session_id)
   })
 
+  test("AC19：vanished 重建沿用原 role_class（不回落 builder）", async () => {
+    const dir = repo("van-class")
+    mkdirSync(path.join(dir, "docs", "adr"), { recursive: true })
+    const { ctx } = createFakeCtx()
+    // 首次派发用 architect 类（scope 落在 docs/adr）
+    const a = await run(dispatchToolDefinition(ctx), {
+      ...baseInput(dir, "goal-a"),
+      scope: ["docs/adr/x.md"],
+      role_class: "architect",
+    })
+    expect(readPairs(dir)[a.session_id].role_class).toBe("architect")
+
+    // 后端被外部删除（pair 条目仍在，session 查不到）
+    const originalGet = ctx.session.get
+    ctx.session.get = async (input: any) => {
+      if (input.sessionID === a.session_id) {
+        const e: any = new Error("Session.NotFoundError: session not found")
+        e._tag = "Session.NotFoundError"
+        throw e
+      }
+      return originalGet(input)
+    }
+
+    // resume 命中已删 ⇒ 按同一 goal_key 新建；**不传 role_class** ⇒ 登记值权威
+    const r = await run(dispatchToolDefinition(ctx), {
+      ...baseInput(dir, "goal-a"),
+      scope: ["docs/adr/x.md"],
+      resume_session: a.session_id,
+    })
+    expect(r.session_id).not.toBe(a.session_id)
+    expect(readPairs(dir)[r.session_id].role_class).toBe("architect") // 不是 builder
+    // sessions 名册同样回显原 class
+    const list = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
+    expect(list.items.find((i: any) => i.session_id === r.session_id).role_class).toBe("architect")
+  })
+
   test("② 关键回归：resume 已删后，同一 workRoot 可再次派发（不再被死条目占死）", async () => {
     const dir = repo("van-noslot")
     const { ctx, a } = await setupVanished(dir)

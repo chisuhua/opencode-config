@@ -847,31 +847,35 @@ describe("archRoots：配置三态（D3）", () => {
     expect(archRoots(repo)).toEqual(["docs/adr"])
   })
 
-  test("态 2：配置缺失 ⇒ 回退 docs/adr（存在才用）", () => {
+  test("态 2：配置缺失 ⇒ 回退 fallback 目录集（本 fixture 只建了 docs/adr）", () => {
     const repo = archRepo("arch-missing", { archPaths: null })
     expect(archRoots(repo)).toEqual(["docs/adr"])
   })
 
-  test("态 2：配置 arch_paths 为空 ⇒ 回退 docs/adr", () => {
+  test("态 2：配置 arch_paths 为空 ⇒ 回退 fallback 目录集", () => {
     const repo = archRepo("arch-empty", { archPaths: [] })
     expect(archRoots(repo)).toEqual(["docs/adr"])
   })
 
-  test("态 2：配置损坏 ⇒ 回退 docs/adr（不抛）", () => {
+  test("态 2：配置损坏 ⇒ 回退 fallback 目录集（不抛）", () => {
     const repo = archRepo("arch-corrupt", { corrupt: true })
     expect(archRoots(repo)).toEqual(["docs/adr"])
   })
 
-  test("态 3：配置路径全部失效 ⇒ 回退 docs/adr", () => {
+  test("态 3：配置路径全部失效 ⇒ 回退 fallback 目录集", () => {
     const repo = archRepo("arch-stale", { archPaths: ["docs/gone"] })
     expect(archRoots(repo)).toEqual(["docs/adr"])
   })
 
-  test("态 3：连 docs/adr 都没有 ⇒ 空集（architect 派发须被拒）", () => {
+  test("态 3：fallback 目录集一项都不存在 ⇒ 空集（architect 派发须被拒）", () => {
     const repo = gitRepo("arch-none")
     expect(archRoots(repo)).toEqual([])
     expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["docs/adr/x.md"] }, repo)).toThrow(
       /没有可写的架构文档目录/,
+    )
+    // AC15：报错必须指向初始化脚本（否则用户不知道下一步做什么）
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["docs/adr/x.md"] }, repo)).toThrow(
+      /scripts\/arch-docs-init\.sh/,
     )
   })
 })
@@ -1006,6 +1010,26 @@ describe("简报：运行身份与按 class 分支的执行要求（D5）", () =
     // 不含别类的专属句
     expect(text).not.toContain("只出证据与判决")
     expect(text).not.toContain("按 ADR 完成标志自查")
+  })
+
+  test("AC9 / AC21：简报含 HANDOFF 5 项模板 + rddf feedback add 命令 + 不可用时的文本兜底", () => {
+    const text = buildBrief(validateBrief({ ...VALID_INPUT }), TMP)
+    // AC9：命令形态正确（--from / --kind 值域 / --body）
+    expect(text).toContain(
+      "rddf feedback add <proposal> --from rdd-builder --kind <needs-revision|ac-fail|blocked> --body",
+    )
+    // AC9：5 项模板齐全且带占位说明
+    expect(text).toContain("① kind")
+    expect(text).toContain("② 阻塞点")
+    expect(text).toContain("③ 需要什么决策")
+    expect(text).toContain("④ 已完成/未完成")
+    expect(text).toContain("⑤ 建议的下一步指令草案")
+    // AC9：先落凭据 → 再标首行 → 然后结束的顺序三要素
+    expect(text).toContain("先落凭据")
+    expect(text).toContain("本回合首行")
+    expect(text).toContain("HANDOFF: <kind>")
+    // AC21：rddf 写不进时仍输出首行 + 完整 5 项正文（不新造落点）
+    expect(text).toContain("仍输出首行 + 完整 5 项正文")
   })
 
   test("architect：含 ADR 完成标志自查，不含 builder / verifier 专属句", () => {
