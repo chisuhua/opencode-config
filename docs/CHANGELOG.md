@@ -10,6 +10,15 @@
 
 ---
 
+> **v2.22 变更摘要（2026-11-14，架构类文档的落点与治理归属收口）**：
+> ① **问题**：① `docs/adr/ADR-backend-handoff-role-class.md` 的 D5「识别」条目写着「异步路径在**完成通知**后…」，而工具契约里**没有推送通道**（`dispatch` 返回 ≠ 完成）——按字面等待一个不存在的通知 = **卡死**；② `prompts/plan.md` 为此加过一句临时消歧（ADR 措辞修正后其前提消失）；③ §治理面作用域表未裁定**本仓**（既是配置根又是项目仓）的 `docs/adr/**` 归属 ⇒ 「改 ADR 要不要走 critic」每次都要重新判；④ 「Accepted ADR 的**描述性措辞**修订走哪条审查」无成文判例 ⇒ 同类措辞漂移会复发。
+> ② **修正**（change `adr-d5-async-completion-wording`，已立项 / 实施完成，归档状态见归档记录）：① D5 识别条目改为**纯观测式**表述：「异步路径**没有完成通知** —— 由用户回来、或主会话下次读 `sessions` 观测到 `running=false` 后，再读 `rddf feedback list`（记录为唯一权威）」，并补**逃逸口径**（槽位释放是 reconcile-on-read 惰性、自然完成后 `state` 可能仍为 `active` ⇒ **不必等 `state=idle`**，`running=false` + `outcome=succeeded` 即足以继续）；**决策内容 / 选项对比 / 后果章 / Verification 章 / Status 行一律不动**，修订可追落条目行尾；② 删 `prompts/plan.md` 的临时消歧句；③ `.rddf/reviews/backend-handoff-protocol-spec.md` 保留原文 + 行尾 `v4 修订` 注 + 自定口径段补 `v4 = v3 + …`（保住 v3 审计痕迹）；④ `prompts/build.md` §治理面作用域表新增「**本仓特例裁定**」（本仓 `docs/adr/**` 属 **ADR 行**、不属治理面）与「**判例（Accepted ADR 的描述性措辞修订）**」（改措辞 ⇒ 只 oracle；同时改守卫断言 ⇒ 治理面 ⇒ oracle → critic 必审；Status 行不动）。
+> ③ **审查**：oracle 1 轮 **`BLOCK`**（CHANGELOG 在审查发生前预断言了未发生的审查结论 / 归档状态 / 审稿记录路径 ⇒ 治理文件失真）→ 闭合（改为「待进行」，审稿记录落盘后回填本行）；同轮 4 条 finding（D5 的 `state=idle` 前置条件在惰性 reconcile 下可能永不满足 ⇒ 需逃逸口径 / plan.md 单字段口径与 ADR 不一致 / 判例边界不可数 + 非豁免修订无默认归槽 / 守卫三处缺口）全处置；critic 1 轮 **`APPROVE_WITH_CONDITIONS`**（`mergeable: yes`，无 BLOCKER；2 SHOULD_FIX = CHANGELOG 引文与实际文本不符、proposal bullet 自相矛盾，均已闭合；1 NIT 已闭合）。审稿记录：`.rddf/reviews/adr-d5-async-completion-wording-prompt-review.md`。
+> ④ **验证**：`bun test tests/` 全绿（新增守卫：ADR D5 识别条目切片 + 「完成通知后」负向 + plan.md 消歧句已删 + 作用域裁定行 + 判例）；anchors 23/23；`openspec validate adr-d5-async-completion-wording` 通过。
+> ⑤ **残留**：类写集对齐（`verifier` 类写 `.rddf/state/verifier/*` 越类 / `builder` 类能否落 `.rddf/reviews/**`）属**权限面 + 产品侧 skill**，不是措辞问题 ⇒ 另立（需 architect 先出 ADR）。
+
+---
+
 > **v2.21 变更摘要（2026-11-13，派发能力类 `role_class` + 凭据化 HANDOFF）**：
 > ① **问题**：派发契约只有 `plan_ref` / `scope` / `acceptance`，**没有「本次允许做哪一类工作」**——写 ADR 的后端拿到代码 `scope`、跑验收的后端能改实现，边界只靠简报里的自然语言；且后端遇计划决策时的停下义务只在 prompt 里，主会话没有可观察凭据区分「交接」与「失败」。
 > ② **决策**：`docs/adr/ADR-backend-handoff-role-class.md`（**Accepted** 2026-11-13，oracle 1 轮 + metis 1 轮 + critic 1 轮 `APPROVE_WITH_CONDITIONS` 无 BLOCKER）—— 一次派发只做一个角色类的工作（`builder` / `architect` / `verifier`），class 落在 `role.json` 分区 + `pair.json` 登记（**与治理身份 `current_role` 分开**），**同一 session 内不允许换类**（换类 = handoff 后重新派发）。

@@ -78,10 +78,10 @@
 
 ### D5 handoff = 自然结束，凭据唯一权威
 
-后端交回时：① 先用 `rddf feedback add` 落凭据（single writer，`revision_count` 上限即断路器）；② 回复首行 `HANDOFF: <kind>`；③ 结束回合（槽自动释放）。
+后端交回时：① 先用 `rddf feedback add` 落凭据（single writer，`revision_count` 上限即断路器）；② 回复首行 `HANDOFF: <kind>`；③ 结束回合（槽自动释放 —— **状态投影惰性**，识别判据见下行的「识别」条）。
 
 - **不新增** `handoff_pending` / `SlotState` / delivery 判态 / session metadata 字段。`no_work_evidence` 只认「角色开场白 / model_switched」，HANDOFF 文本不触发，`outcome` 保持 `succeeded`。
-- 识别：同步路径看 `summary.last_assistant_text` 首行（**triage 提示，不作门禁**）；异步路径在完成通知后 `rddf feedback list`（权威）+ `sessions` 确认 `idle`。
+- 识别：同步路径看 `summary.last_assistant_text` 首行（**triage 提示，不作门禁**）；异步路径**没有完成通知** —— 由用户回来、或主会话下次读 `sessions` 观测到 `running=false` 后，再读 `rddf feedback list`（记录为唯一权威）。⚠ **不必等 `state=idle`**：槽位释放是 **reconcile-on-read**（惰性），自然完成后 `state` 可能仍为 `active`；此时 `running=false` + `outcome=succeeded` 即足以继续，**不得因 `state` 未翻转而等待**。（D5 措辞修订 2026-11-14：澄清「完成」= 轮询观测，无决策变更）
 - kind 复用既有三类，禁止第三套标签；验收阶段映射 `implementation_gap → ac-fail`、`proposal_drift → needs-revision`；纯换类不需改计划 ⇒ `blocked`（不复用 `revision_count`：它衡量的「同一 change 被修订几轮」，纯换类不改变计划内容，计入会把额度耗在与修订无关的交接上）。
 
 ### D6 resume 的 scope 与 class 都不可漂移

@@ -3,6 +3,7 @@
 > 输入：用户想法（2026-11-13 两轮）→ metis 差距分析 ×2 → oracle 裁定 ×2
 > 状态：**已落 docs + ADR（Accepted 2026-11-13）+ 立项**（`openspec/changes/backend-handoff-role-class/`）；逐条验收以该 change 的 proposal 为准。
 > v3 = v2 + oracle（8 条唯一裁定）与 metis（6 条 P0）的合并结果。**下一节「裁定表」是唯一口径**，正文与旧表格冲突时以裁定表为准。
+> v4 = v3 + 本文第 4 条行尾的 v4 修订注（异步面无推送通道；口径见 R-11）。**历史条目保留原文**，仅行尾标注修订。
 
 ---
 
@@ -42,7 +43,7 @@
 1. 后端执行；遇到「需要 planner 决策」或「需要别的类」⇒ 停在动手前
 2. 后端先落凭据：rddf feedback add <proposal> --from rdd-builder --kind <kind> --body "<5 项模板>"
 3. 后端回复首行 `HANDOFF: <kind>`，然后结束 ⇒ 同步收尾自翻转 idle，槽释放
-4. 主会话：同步看 summary.last_assistant_text 首行；异步在完成通知后 `rddf feedback list` + `sessions` 确认 idle
+4. 主会话：同步看 summary.last_assistant_text 首行；异步在完成通知后 `rddf feedback list` + `sessions` 确认 idle（v4 修订 2026-11-14：异步面无推送通道，删「完成通知」表述；口径见 R-11）
    → 切角色写 role.json + 开场报告 → 改 plan / proposal
 5. 主会话 resume：scope ⊆ 原 scope ⇒ delegate(resume_session=…, task=建议下一步)
    scope 需扩大 ⇒ 新建 session（resume 不改 permissions，上下文不继承）

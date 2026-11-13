@@ -442,6 +442,10 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 
 > **必须带 `~/.config/opencode/` 前缀**：裸文件名 `docs/MULTI-AGENT-DESIGN.md` 在项目 cwd 里**解析不到**（项目仓库没有这个文件），按字面执行会判「不属于治理面」→ 永不触发。
 
+> **本仓特例裁定（2026-11-14）**：本仓 `~/.config/opencode/` **既是配置根、也是项目仓** ⇒ 其 `docs/adr/**` 按上表右列读作 **ADR 行**（**不属治理面**）：改 ADR 正文走 §审查配对 的 **ADR 行**（只同步主题文档 / 改措辞 ⇒ **只 oracle**）；但**改守卫断言**（`tests/config-guards.test.ts`）仍属治理面 ⇒ **oracle → critic 必审**。
+
+**判例（Accepted ADR 的描述性措辞修订）**：改 ADR 正文的**描述性措辞** ⇒ 走 §审查配对 ADR 行的豁免路径（**只 oracle**）。豁免条件（**可数**）：只改**同一条 bullet 的表述** —— **不增删 bullet、不改表格行、不动章节标题 / 决策条目 / 选项对比表 / 后果章 / Verification 章 / Status 行**。若同一 patch **还改了守卫断言** ⇒ 治理面 ⇒ **oracle → critic 必审**。**不满足豁免条件的 ADR 正文修订 ⇒ 默认按「决策相关」处理 ⇒ oracle → critic**（举证责任在修订者）。修订可追落**对应条目行尾**（日期 + 「无决策变更」）+ `docs/CHANGELOG.md` 一条；**Status 行不动**（避免「元数据头膨胀」这条既有 SHOULD_FIX）。
+
 **治理面判定（verdict）**：oracle 输出只有 4 节建议、**没有 pass/fail 机读信号**，所以「调用过」≠「通过」。判定行的**词表与触发条件**以 `prompts/oracle.md` 的「模式」段为**单一真源**；本节只保留流程约束：
 
 - **每条 finding 必须逐条应答**：修掉（写明改了什么），或写明不修的理由。**不得**只列不改、也不得把「列出来」当成「已处置」；

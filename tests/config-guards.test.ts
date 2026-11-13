@@ -992,3 +992,126 @@ describe("能力面判据对齐（role-class-rubric-alignment 投影守卫）", 
     }
   })
 })
+
+describe("Accepted ADR 措辞修订 + 治理面归属守卫（adr-d5-async-completion-wording）", () => {
+  const ADR = readFileSync(
+    path.join(import.meta.dir, "..", "docs", "adr", "ADR-backend-handoff-role-class.md"),
+    "utf8",
+  )
+  const SPEC = readFileSync(
+    path.join(import.meta.dir, "..", ".rddf", "reviews", "backend-handoff-protocol-spec.md"),
+    "utf8",
+  )
+  const PLAN_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
+  const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
+
+  /** D5 段里以 `- 识别：` 开头的那一行（不扫整段、不依赖行号） */
+  const d5Identify = (() => {
+    const d5 = ADR.split(/^### D5 /m)[1]?.split(/^### D6 /m)[0] ?? ""
+    return d5.split("\n").find((l) => l.trimStart().startsWith("- 识别：")) ?? ""
+  })()
+
+  test("AC1：ADR D5 的识别条目含两个观测条件，且不含「完成通知后」的等待语义", () => {
+    expect(d5Identify).not.toBe("")
+    expect(d5Identify).toMatch(/running=false/)
+    expect(d5Identify).toMatch(/state=idle/)
+    // 只禁「在…后」的等待语义，允许正确的「没有完成通知」表述
+    expect(d5Identify).not.toMatch(/完成通知后/)
+    expect(d5Identify).toContain("没有完成通知")
+    // 槽位释放是 reconcile-on-read（惰性）⇒ `state=idle` 不是必要条件（否则字面等待 = 卡死）
+    expect(d5Identify).toContain("不必等")
+    expect(d5Identify).toContain("reconcile-on-read")
+    expect(d5Identify).toContain("outcome=succeeded")
+  })
+
+  test("AC4：spec 保留原文 + 行尾 v4 修订注 + 自定口径段含 v4", () => {
+    expect(SPEC).toContain("v4 修订 2026-11-14")
+    expect(SPEC).toContain("异步面无推送通道")
+    expect(SPEC).toContain("v4 = v3 +")
+    // 历史原文保留（不抹掉 v3 审计痕迹）
+    expect(SPEC).toContain("异步在完成通知后")
+  })
+
+  test("AC12：plan.md 的临时消歧句已删；异步面 bullet 的正向内容仍在", () => {
+    expect(PLAN_MD).not.toContain("没有推送通道")
+    expect(PLAN_MD).not.toContain("ADR D5 所述的「完成」")
+    expect(PLAN_MD).toContain("完成信号")
+    expect(PLAN_MD).toContain("没有**完成信号")
+    expect(PLAN_MD).toContain("running=false")
+    // 与 ADR D5 同一口径：触发点 = running=false；完成判据以 feedback 为准；state=idle 非必要
+    expect(PLAN_MD).toContain("完成判据以 `rddf feedback list` 为准")
+    expect(PLAN_MD).toContain("不必等 `state=idle`")
+  })
+
+  test("AC13：build.md 作用域表有「本仓特例裁定」行（本仓 docs/adr/** 属 ADR 行）", () => {
+    expect(BUILD_MD).toContain("本仓特例裁定")
+    const line = BUILD_MD.split("\n").find((l) => l.includes("本仓特例裁定"))!
+    expect(line).toContain("ADR 行")
+    expect(line).toContain("不属治理面")
+    expect(line).toContain("只 oracle")
+    // 双重身份读法 + 守卫断言仍属治理面
+    expect(line).toContain("配置根")
+    expect(line).toContain("项目仓")
+    expect(line).toContain("oracle → critic 必审")
+  })
+
+  test("AC14：build.md 有「Accepted ADR 描述性措辞修订」判例（含豁免路径 + 守卫必审 + Status 不动）", () => {
+    const line = BUILD_MD.split("\n").find((l) => l.includes("判例（Accepted ADR 的描述性措辞修订）"))!
+    expect(line).toContain("只 oracle")
+    expect(line).toContain("oracle → critic 必审")
+    expect(line).toContain("Status 行不动")
+    expect(line).toContain("描述性措辞")
+    // 可数的豁免边界：只改同一条 bullet 的表述
+    expect(line).toContain("不增删 bullet")
+    expect(line).toContain("不改表格行")
+    // 排除清单四要素（删掉任一项 ⇒ 边界被架空 ⇒ 必须红）
+    for (const excluded of ["选项对比表", "后果章", "Verification 章", "决策条目"]) {
+      expect(line).toContain(excluded)
+    }
+    // 非豁免修订的默认归槽
+    expect(line).toContain("默认按「决策相关」处理")
+  })
+
+  test("AC8：CHANGELOG 有本 change 的条目（判例要求的可追性）", () => {
+    const CHANGELOG = readFileSync(path.join(import.meta.dir, "..", "docs", "CHANGELOG.md"), "utf8")
+    expect(CHANGELOG).toContain("adr-d5-async-completion-wording")
+    // 取 v2.22 这一**块**（含 ② 修正 / ③ 审查 / ④ 验证各行），不是只取含 change 名的那一行
+    const changelogLines = CHANGELOG.split("\n")
+    const blockStart = changelogLines.findIndex((l) => l.includes("v2.22 变更摘要"))
+    expect(blockStart).toBeGreaterThan(-1)
+    const blockRest = changelogLines.slice(blockStart + 1)
+    const blockEnd = blockRest.findIndex((l) => l.trim() === "---")
+    const entry = blockRest.slice(0, blockEnd < 0 ? blockRest.length : blockEnd).join("\n")
+    expect(entry).toContain("adr-d5-async-completion-wording")
+    // ⚠ 规则：**结论只有在审稿记录落盘后才可写进 CHANGELOG**（防「预先断言未发生的审查结论」）。
+    //    这条判据是机械的：审稿记录文件存在 ⇒ 结论可写；不存在 ⇒ 只能是「待进行」。
+    const verdictMarkers = ["APPROVE", "BLOCK", "无 BLOCKER", "mergeable"]
+    const statesVerdict = verdictMarkers.some((m) => entry.includes(m))
+    const recordPath = path.join(
+      import.meta.dir, "..", ".rddf", "reviews", "adr-d5-async-completion-wording-prompt-review.md",
+    )
+    if (statesVerdict) {
+      expect(existsSync(recordPath)).toBe(true) // 结论必须可追
+    } else {
+      expect(entry).toContain("待进行")
+    }
+  })
+
+  test("未新增：SLOT_STATES 不变；新增文本未引入新标识符", () => {
+    expect([...SLOT_STATES]).toEqual(["dispatching", "active", "idle", "suspended", "tombstone"])
+    const known = new Set([
+      "adr", "docs", "prompt", "prompts", "build", "md", "rddf", "reviews", "spec",
+      "oracle", "critic", "tests", "config", "guards", "test", "ts", "running", "state",
+      "idle", "role_class", "session", "sessions", "HANDOFF", "summary", "last_assistant_text",
+      "feedback", "list", "true", "false", "as", "and", "or", "CHANGELOG", "ADR", "D5",
+      "active", "read", "on", "reconcile", "idle", "outcome", "succeeded", "summary",
+    ])
+    const tokens = [d5Identify, ...BUILD_MD.split("\n").filter((l) => l.includes("判例（Accepted ADR"))]
+      .flatMap((l) => [...l.matchAll(/`([^`]+)`/g)].map((m) => m[1]))
+      .flatMap((t) => t.split(/[^A-Za-z0-9_]+/))
+      .filter((t) => /^[A-Za-z][A-Za-z0-9_]*$/.test(t))
+    for (const token of new Set(tokens)) {
+      expect(known).toContain(token)
+    }
+  })
+})

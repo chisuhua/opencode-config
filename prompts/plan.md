@@ -120,7 +120,7 @@
 **证据优先级（有序，不得并列）**：`rddf feedback` 新增条目 **>** `last_assistant_text` 首行 **>** `outcome` / `state`。
 
 - **`outcome=succeeded` + `state=idle` 不等于完成** —— `idle` 只证明回合结束、槽已释放。
-- 异步面**没有**完成信号：触发点是「用户回来」或「你下次读 `sessions` 看到 `running=false`」（ADR D5 所述的「完成」以轮询观测为准，**没有推送通道**）。
+- 异步面**没有**完成信号：触发点是「用户回来」或「你下次读 `sessions` 看到 `running=false`）—— 完成判据以 `rddf feedback list` 为准；**不必等 `state=idle`**（槽位释放是惰性 reconcile，见 ADR D5）。
 - **增量记账**：派发时记 `last_feedback_id`（`rddf feedback list <proposal>` 的输出里带该字段），收尾只认 `created_at` 晚于派发时刻的条目；**新增为空且首行为 `HANDOFF:` ⇒ 以文本 5 项正文为准**（`rddf` 写不进时的兜底，不是异常）。
   - ⚠ **派发时刻 / 记账缺失**（历史派发、上下文丢失、并发多后端）⇒ **退到优先级链 ②**（首行 + 文本 5 项正文），**不得凭猜测取条目**、不得把上一轮的记录当本轮的。
 - **5 项模板**（缺一即无效）：① `kind`；② 阻塞点；③ 需要什么决策；④ 已完成 / 未完成；⑤ 建议的下一步指令草案。
