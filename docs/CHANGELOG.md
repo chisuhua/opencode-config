@@ -18,11 +18,21 @@
 > ⑤ **验证**：`bun test tests/` **385 pass**（config-guards +2 护栏）；anchors 23/23；`opencode debug agents` 确认 context-builder 可见且 `hidden=False`。
 > ⑥ **残留**：采纳率是否回升只能上线后观察（`ERROR: missing intent` 出现频率是"调用方不给 intent"的先行指标）；「plan → critic 条件配对」登记为 backlog。
 
+> **v2.20 变更摘要（2026-11-13，收敛「两份表述漂移」并把投影纳入机械校验）**：
+> ① **问题**：同一规则在两处各写一份 ⇒ 改一处、另一处静默过期。本轮实体的三例：判定词表曾有三份拷贝；`review_profile` 路径映射有**四份**（build.md 权威 + context-builder + critic 兜底 + MULTI-AGENT-DESIGN 自称权威）；`accepted roots` 在 4 处投影且**运行时真读** `PLAN_REF_ROOTS` —— 投影多写一个根，agent 会照它行动而运行时拒绝。
+> ② **归属收敛**：`prompts/context-builder.md` 的路径映射表头声明**权威在 `prompts/build.md` 的「档位选择」**（自己只作兜底副本）；`docs/MULTI-AGENT-DESIGN.md` 的「本表是权威映射」改为指针 —— 现在只有 build.md 保留「权威映射」自称。
+> ③ **投影收敛**：`docs/SUBAGENT-ORCHESTRATION.md` 判定词表改指针、删掉全部**编号式章节引用**（`§5.2` 等 → 改用小节标题名）、agent 表模型列写全（消除「同上」）。
+> ④ **守卫**（`tests/config-guards.test.ts`，新增 9 条）：review_profile 映射**逐档比对**（**含 critic.md 那份兜底链** —— 它是消费方本尊的兜底副本，此前是漏网的第四份）且接受「指针 / 清单」两种合法形态：段内必须出现该档路径 token、映射区域内必须出现 fallback 目录集、build 档额外做**反向闭集**（副本不得多列真源没有的目录）；accepted roots 与 `PLAN_REF_ROOTS` **双向**校验（根是闭集）；`priority_blocked` 字段清单**提升为 `lib/delegate-core.ts` 的导出常量**（守卫不再手抄第二份）；agent 模型清单按**模型表表头作用域 + 表格行**定位比对；**审查链与预算**三处按「预算」列数字集合**跨文档相等**（基准 = build.md）；context-builder 的 7 字段模板字段名集 == `CONTRACTS.requiredSections`；汇总文档禁编号式章节引用；既有 metis 六节与判定词表守卫**扩展到汇总文档**。
+> ⑤ **治理面作用域表**（`prompts/build.md`）扩两项：`docs/SUBAGENT-ORCHESTRATION.md`（复述各真源判据，漂移即误导）与 `tests/config-guards.test.ts` 的**断言增删 / 放宽 / 字段清单变更**（守卫即「什么算漂移」的判据本身）。
+> ⑥ **顺带闭环**：`docs/MULTI-AGENT-DESIGN.md` 的「10 个独立 agent」订正为 **11 个**（补 `front`）；该文档两处**派生推论**（预算分层 / 窗口 4 条）标注真源出处。
+> ⑦ **验证**：`bun test tests/` **404 pass / 0 fail**；anchors 23/23；**八条变异**均被捕获（删 context-builder 映射 token / 删 **critic.md 兜底链 token** / design 多列一个目录 `bin` / 改单行模型 / 引入编号 § / 改预算 1→2 / 文档多列一个 accepted root / 把 critic.md 的散文形态改成半角括号）。映射守卫另加**非空断言**（解析不出档位即失败）—— 否则映射形态被改坏时 token 校验会被静默跳过，守卫「已覆盖」的声明随之失真（同一根因，本轮已闭环）。
+> ⑧ **审查链**：oracle `PASS-WITH-NOTES`（6 条 finding 全并入）→ critic `REJECT`（1 BLOCKER：critic.md 兜底链未真进守卫而 CHANGELOG 已声称覆盖 = 伪决策）→ 改写闭合 → critic 复审 `APPROVE_WITH_CONDITIONS / mergeable: yes`（1 条 SHOULD_FIX 非空断言已并入）。
+
 > **v2.19 变更摘要（2026-11-13，沉淀 `docs/SUBAGENT-ORCHESTRATION.md`）**：
 > ① **目的**：把本轮（oracle 判定行单一真源 + critic 评审对象边界 + metis 措辞收敛 + review_profile A/C/D + context-builder 收窄 + plan 派发主体 + D7 优先级）的**当前态**沉淀成一篇常驻文档，避免知识只散在 ADR 与 `.rddf/reviews/` 里。
 > ② **文档**：`docs/SUBAGENT-ORCHESTRATION.md` —— agent 清单与模型档位 / 委派拓扑与门控（subagent 清单过滤、delegate 五工具与权限项）/ 审查链与 `review_profile` 档位（含继承式档位）/ 输入契约 L1–L5 与日志事件 / critic 的评审对象边界 / oracle 双模式与判定行 / metis 与 context-builder 定位 / delegate 通道（plan_ref / owner_agent / 单槽 / D7 优先级）/ 已知限制与残留 8 条 / 索引（8 篇 ADR + 8 份审稿记录 + 守卫清单）。
 > ③ **定位声明**：该文是**汇总 + 索引**，**不是规则真源** —— 真源仍是 `prompts/*.md`、`docs/adr/*.md`、`opencode.jsonc.opencode-go`、`lib/*.ts`；若冲突以真源为准。
-> ④ **验证**：`bun test tests/` 396 pass；anchors 23/23（本文不含断言，未改真源）。
+> ④ **验证**：`bun test tests/` 396 pass（该 commit 时点）；anchors 23/23（本文不含断言，未改真源）。
 
 > **v2.18 变更摘要（2026-11-13，D7 派发优先级：plan 优先、但不抢占）**：
 > ① **诉求**：「plan 活跃的情况下，front 不能调用 build 的后端 session」。已确认边界：作用域**保持按工作树**、**只报错不抢占**。

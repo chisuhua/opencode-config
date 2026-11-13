@@ -99,6 +99,8 @@ context-builder：请为以下改动组装 critic prompt。
 
 ### review_profile 路径映射
 
+> **权威映射在 `prompts/build.md` 的「档位选择」一节**；下表是**兜底副本**（本 agent 只负责搬运 `review_profile`），两者不一致时**以 build 侧为准**。
+
 | 改动路径 | profile |
 |---|---|
 | `.rddf/config/arch-docs.json` 的 `arch_paths[]` ∪ **fallback 目录集**（口径见 `prompts/build.md` §架构文档范围 的「目录集口径」：5 个 `docs/` 子目录 ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/` 等目录） | `arch` |

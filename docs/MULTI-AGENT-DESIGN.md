@@ -198,7 +198,7 @@
   | `build` | 源码 / 测试 / 脚本 | 与 spec/公开契约不一致；目标场景失败；未经 ADR 改架构决策 |
   | `archive` | 归档前 | 只判上轮 BLOCKER 闭合 + delta 与实现一致 |
 
-  路径映射：`.rddf/config/arch-docs.json` 的 `arch_paths[]` ∪ **fallback 目录集**（`docs/adr|docs/architecture|docs/architecture/adr|docs/designs|docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/|rfc/|specs/` 等目录）→ `arch`；`openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements` → `plan`；`src|include|tests|scripts|tools` → `build`。**本表是权威映射** —— build 按它显式给 `review_profile`，`prompts/critic.md` 的路径推断只在 build 未给时兜底。
+  路径映射：`.rddf/config/arch-docs.json` 的 `arch_paths[]` ∪ **fallback 目录集**（`docs/adr|docs/architecture|docs/architecture/adr|docs/designs|docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/|rfc/|specs/` 等目录）→ `arch`；`openspec/changes/*/{proposal,design,tasks,specs}`、`.rddf/roadmap`、`.rddf/improvements` → `plan`；`src|include|tests|scripts|tools` → `build`。**权威映射见 `prompts/build.md` 的「档位选择」一节**（本行是投影；build 按权威映射显式给 `review_profile`，`prompts/critic.md` 与 `prompts/context-builder.md` 的路径推断都只在 build 未给时兜底）。
 - **`arch` 档的聚焦判据（v1.8 新增）**：BLOCKER 仍是上表四类；另设一组 **SHOULD_FIX** 判据专治「决策文档写成了设计规格 / 流程台账」——决策陈述被稀释（正文超长且决策+后果+备选不足一半）、过程日志混入（审稿轮次与 BLOCKER 清单、台账 Entry / KPI 计数、逐版修订史）、缺独立「后果 / 代价」章、Verification 只写实测日志而无前瞻判据、Status 单行承载整条版本史、一篇 ADR 承载多个独立决策点。**边界**：计数漂移 / 悬空引用 / 索引缺项属 L1 一致性脚本（`docs/review-automation-backlog.md` §1），不进 critic。完整判据见 `prompts/critic.md` 的「arch — SHOULD_FIX 的聚焦判据」。
 - **结论判定（v1.5）**：有 BLOCKER → REJECT（`mergeable: no`）；只有 SHOULD_FIX → `APPROVE_WITH_CONDITIONS`；都没有 → `APPROVE`。**禁止用 NITS 凑 REJECT**
 - **输出格式（强制）**：
@@ -334,7 +334,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 三条设计约束：
 
 - **顺序不可颠倒**：`architect` 必须 oracle 先于 critic。oracle 找「会怎么坏」，critic 判「是否越界 / 冲突」；反过来会让 critic 在方案本身还站不住时先审一致性，白烧一轮预算。
-- **预算按粒度分层，不是按 change 数量相乘**：ADR 级（architect）与 improvement 级（planner）的轮次发生在**文档**粒度，一个 ADR / 一条 improvement 常覆盖多个 change；只有 builder 的 critic 2 轮 + verifier 3 轮是逐 change 的。所以**单条 change 的审查上限 = critic 2 + verifier 3**。
+- **预算按粒度分层，不是按 change 数量相乘**（数字真源 = `prompts/build.md` 的「审查配对」表；本条是派生说明，不是独立定义）：ADR 级（architect）与 improvement 级（planner）的轮次发生在**文档**粒度，一个 ADR / 一条 improvement 常覆盖多个 change；只有 builder 的 critic 2 轮 + verifier 3 轮是逐 change 的。所以**单条 change 的审查上限 = critic 2 + verifier 3**。
 - **审查者不可用必须降级，不得静默跳过**：subagent 可能因额度 / 网络 / 权限失败。此时执行该角色的内置自检清单，并在**当回合响应正文首行**注明 `⚠️ 未启用 <reviewer> 审查（原因）—— 已用内置自检清单代替`（`edit` 类改动没有「结论」文件）；**不得**把「不可用」当成「通过」。
   > 2026-11-04 实测：本机 subagent 因 Token Plan 用量上限全部调用失败。降级是常态需求。
 
@@ -348,7 +348,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 
 | 轴 | 是什么 | 本文位置 |
 |---|---|---|
-| agent 轴 | 10 个独立 agent（build / plan / explore / librarian / oracle / metis / critic / context-builder / general / title） | §2.1–§2.3、§3 委派拓扑 |
+| agent 轴 | 11 个独立 agent（build / plan / front / explore / librarian / oracle / metis / critic / context-builder / general / title） | §2.1–§2.3、§3 委派拓扑 |
 | **角色轴（persona）** | build agent 内部的权限视角：`architect` / `planner` / `builder` / `verifier` / `no-role` / `general` | **本节** |
 | tool 权限轴 | OpenCode 三层 permission（read / edit / bash / MCP…） | §4 权限模型 |
 
@@ -417,7 +417,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 }
 ```
 
-**窗口内自动切换必须同时满足（权威源列 4 条，此处完整投影）**：① 目标角色在 `window.roles` 内（**窗口外一律停下问用户**）；② `window.used < window.max_rounds`；③ 有明确触发条件，不是「感觉该切了」；④ 每次自动切换写 `updated_by: "auto"`，`history` 追加 `{role, at, by: "auto", reason}`。
+**窗口内自动切换必须同时满足（权威源列 4 条，此处完整投影 —— 权威源 = `prompts/build.md` 的「授权窗口」节）**：① 目标角色在 `window.roles` 内（**窗口外一律停下问用户**）；② `window.used < window.max_rounds`；③ 有明确触发条件，不是「感觉该切了」；④ 每次自动切换写 `updated_by: "auto"`，`history` 追加 `{role, at, by: "auto", reason}`。
 
 | 触发 | 条件 |
 |---|---|

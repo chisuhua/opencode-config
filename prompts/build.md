@@ -433,7 +433,8 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 |---|---|
 | `~/.config/opencode/prompts/**`（agent 行为规则，**含 `build.md` 本身**） | 错字 / 链接 / 日期 / 表格对齐 / 纯格式 |
 | `~/.config/opencode/AGENTS.md`（注入**所有** agent 上下文，影响力最大，此前完全漏在作用域外） | 项目仓库里的 `openspec/**`、`.rddf/**`（实施工件，不属治理面） |
-| `~/.config/opencode/docs/MULTI-AGENT-DESIGN.md`、`~/.config/opencode/docs/CHANGELOG.md` | 项目仓库里的 `docs/adr/**`（那属 ADR 行）+ 任何项目 `docs/**` |
+| `~/.config/opencode/docs/MULTI-AGENT-DESIGN.md`、`~/.config/opencode/docs/CHANGELOG.md`、`~/.config/opencode/docs/SUBAGENT-ORCHESTRATION.md`（编排与委托通道的**汇总索引** —— 它复述了各真源的判据，漂移即误导） | 项目仓库里的 `docs/adr/**`（那属 ADR 行）+ 任何项目 `docs/**` |
+| `~/.config/opencode/tests/config-guards.test.ts` 的**断言增删 / 放宽 / 字段清单变更**（守卫即「什么算漂移」的判据本身 —— 改守卫等于改判据，须同规格审查） | 该测试的**纯实现细节**（变量改名、注释、断言顺序），不改判据口径 |
 | `~/.config/opencode/opencode.json(c)` 的 agent / permission / provider 段 | 模型 ID 换版本号、JSON 注释错字 |
 | `~/.config/opencode/commands/**`（slash command = agent 行为指令，与 prompt 同级） | commands 内**不改指令语义**的纯错字 / 链接 / 格式微调 |
 | `~/.config/opencode/scripts/**` 中**被治理面规则行为依赖**的脚本（如 `arch-docs-init.sh`）—— 规则指示 agent 运行它、或规则语义依赖其输出 / 退出码时；改其**退出码 / 报错文案 / 落盘行为**时按治理面审 | 仅被治理面文档**历史记述性**提及的脚本；未被规则行为依赖的脚本；只改内部实现、不改可观测行为的改动 |

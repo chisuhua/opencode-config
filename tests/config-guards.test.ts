@@ -22,6 +22,7 @@ import {
 } from "../scripts/agent-guard-rules.ts"
 import { applyRules } from "../scripts/agent-guard-gen.ts"
 import { CONTRACTS } from "../lib/subagent-contract-core.ts"
+import { PLAN_REF_ROOTS, PRIORITY_BLOCKED_FIELDS } from "../lib/delegate-core.ts"
 
 const CONFIG_PATH = path.join(import.meta.dir, "..", "opencode.jsonc")
 const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8"))
@@ -189,6 +190,12 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     const cardList = /Markdown 六节（([^）]+)）/.exec(cardSection)
     expect(cardList, "MULTI-AGENT-DESIGN.md 的 metis 卡片里找不到「Markdown 六节（…）」").toBeTruthy()
     expect(splitList(cardList![1] as string), "MULTI-AGENT-DESIGN.md 的 metis 卡片与 metis.md 不一致（含顺序）").toEqual(headings)
+
+    // 汇总文档（投影）也必须与真源一致 —— 少一处就成第二份定义
+    const orchMd = readFileSync(path.join(ROOT, "docs", "SUBAGENT-ORCHESTRATION.md"), "utf8")
+    for (const h of headings) {
+      expect(orchMd, `SUBAGENT-ORCHESTRATION.md 的 metis 段缺少「${h}」`).toContain(h)
+    }
   })
 
   test("delegate 通道的放行主体：顶层全 deny + front / plan 各自放行五项（ADR-plan-delegate-engineering-session D1）", () => {
@@ -281,6 +288,259 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     expect(designMd, "MULTI-AGENT-DESIGN.md 未记录移除 hidden 的理由").toContain("不再 `hidden`")
   })
 
+  test("review_profile 路径映射：build.md（真源）与三份副本逐档一致（含 critic.md 兜底链）", () => {
+    // 解析「档位 → 路径文本」：表格形态（`| <路径> | `profile` |`）与散文形态（`<路径> → `profile``）都支持。
+    const mappingPairs = (text: string): Map<string, string> => {
+      const out = new Map<string, string>()
+      for (const line of text.split("\n")) {
+        // 表格行：最后一格是档位
+        const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim())
+        if (cells.length >= 2 && /^`?(arch|plan|build|archive)`?$/.test(cells[cells.length - 1] as string)) {
+          const p = (cells[cells.length - 1] as string).replace(/`/g, "")
+          if (!out.has(p)) out.set(p, cells.slice(0, -1).join(" | "))
+        }
+        // 散文形态：`<路径> → `profile``（design.md）或 `<路径>（`profile`）`（critic.md）
+        for (const m of line.matchAll(/([^；;]+?)(?:→|（)\s*`(arch|plan|build|archive)`/g)) {
+          const p = m[2] as string
+          if (!out.has(p)) out.set(p, (m[1] as string).trim())
+        }
+      }
+      return out
+    }
+    const readCopyArea = (rel: string): string => {
+      const text = readFileSync(path.join(ROOT, rel), "utf8")
+      const head = text.indexOf("改动路径 | profile")
+      const sect = text.indexOf("review_profile 路径映射")
+      const from = head >= 0 ? head : sect
+      return from >= 0 ? text.slice(from).split(/\n\n/)[0] ?? "" : text
+    }
+    const readCopy = (rel: string): Map<string, string> => {
+      const text = readFileSync(path.join(ROOT, rel), "utf8")
+      const head = text.indexOf("改动路径 | profile")
+      const sect = text.indexOf("review_profile 路径映射")
+      const from = head >= 0 ? head : sect
+      const scoped = from >= 0 ? text.slice(from).split(/\n\n/)[0] ?? "" : text
+      return mappingPairs(scoped)
+    }
+    const truth = readCopy("prompts/build.md")
+    expect(truth.get("build"), "build.md 的档位表应能解析出 build 档").toBeTruthy()
+    const truthTokens = (s: string): string[] => [
+      ...new Set(
+        [...s.matchAll(/`([^`]+)`/g)]
+          .map((m) => m[1] as string)
+          .flatMap((x) => x.split("|"))
+          .map((x) => x.replace(/\/\*\*$/, "").trim())
+          .filter((x) => /^[a-z][a-z0-9_-]*$/.test(x)),
+      ),
+    ]
+    // 分两层：**段内**必须出现的 token（该档自己的路径集）与 **区域内**必须出现的 token
+    // （散文形态下 fallback 目录集可能写在同段的另一句里）
+    const TOKENS_IN_SEGMENT: Record<string, string[]> = {
+      arch: ["arch_paths[]"],
+      plan: ["openspec/changes", ".rddf/roadmap", ".rddf/improvements"],
+      build: ["src", "include", "tests", "scripts", "tools"],
+      archive: [],
+    }
+    const TOKENS_IN_AREA: Record<string, string[]> = {
+      arch: ["docs/adr", "docs/architecture", "docs/designs", "docs/design"],
+      plan: [],
+      build: [],
+      archive: ["delta"],
+    }
+    const isPointer = (text: string): boolean =>
+      text.includes("prompts/build.md") && (text.includes("档位选择") || text.includes("目录集口径"))
+    const COPY_LIST = ["prompts/context-builder.md", "docs/MULTI-AGENT-DESIGN.md", "prompts/critic.md"]
+    for (const rel of COPY_LIST) {
+      const copy = readCopy(rel)
+      const area = readCopyArea(rel)
+      // ⚠️ 非空断言：解析不出任何档位 ⇒ 说明该副本的映射形态被改坏了（例如把
+      // critic.md 的「（`arch`）」改成半角括号）⇒ 后续 token 校验会被 `continue` 静默跳过，
+      // 守卫「覆盖了它」的声明随之失真。此处必须失败而不是跳过。
+      expect(copy.size, `${rel} 解析不出任何 review_profile 档位（映射形态被改坏？）`).toBeGreaterThan(0)
+      for (const p of ["arch", "plan", "build"]) {
+        expect(copy.get(p), `${rel} 解析不出 ${p} 档（映射形态被改坏？）`).toBeTruthy()
+      }
+      for (const p of Object.keys(TOKENS_IN_SEGMENT)) {
+        const text = copy.get(p)
+        if (!text) continue // 该副本未单列此档
+        if (isPointer(text)) continue // 指针形态：集合由真源推导 ⇒ 等价
+        for (const t of TOKENS_IN_SEGMENT[p] as string[]) {
+          expect(text, `${rel} 的 ${p} 档映射缺少路径 token「${t}」`).toContain(t)
+        }
+        for (const t of TOKENS_IN_AREA[p] as string[]) {
+          expect(area, `${rel} 的映射区域缺少 ${p} 档的路径 token「${t}」`).toContain(t)
+        }
+      }
+      // 反向（仅 build 档：词表封闭可枚举）—— 副本不得多列真源没有的目录
+      const copyBuild = copy.get("build")
+      if (copyBuild) {
+        const extra = truthTokens(copyBuild).filter((t) => !truthTokens(truth.get("build") as string).includes(t))
+        expect(extra, `${rel} 的 build 档多列了真源没有的目录：${extra.join(", ")}`).toEqual([])
+      }
+      // 归属：副本不得自称权威映射
+      const raw = readFileSync(path.join(ROOT, rel), "utf8")
+      expect(raw, `${rel} 不应自称权威映射（应指向 build.md）`).not.toContain("本表是权威映射")
+    }
+    // 权威归属：只有 build.md 可以自称权威映射
+    const buildRaw = readFileSync(path.join(ROOT, "prompts/build.md"), "utf8")
+    expect(buildRaw, "build.md 应自称权威映射").toContain("本表是权威映射")
+    for (const rel of COPY_LIST) {
+      const raw = readFileSync(path.join(ROOT, rel), "utf8")
+      expect(raw, `${rel} 应指向 prompts/build.md 的权威映射`).toContain("prompts/build.md")
+      expect(
+        raw.includes("档位选择") || raw.includes("目录集口径"),
+        `${rel} 应指向 prompts/build.md 的「档位选择」或「目录集口径」`,
+      ).toBe(true)
+    }
+  })
+
+  test("accepted roots：真源（delegate-core.ts 的 PLAN_REF_ROOTS）与三份投影一致（双向）", () => {
+    const roots = PLAN_REF_ROOTS.map((r) => r.label)
+    expect(roots.length, "真源应声明 4 个 accepted root").toBe(4)
+    for (const rel of ["prompts/plan.md", "docs/MULTI-AGENT-DESIGN.md", "docs/SUBAGENT-ORCHESTRATION.md"]) {
+      const text = readFileSync(path.join(ROOT, rel), "utf8")
+      // 正向：真源的根都要在投影里
+      for (const r of roots) {
+        expect(text, `${rel} 的 accepted roots 缺少「${r}」`).toContain(r)
+      }
+      // 反向：根是**闭集** —— 投影多写一个根 ⇒ agent 会照它行动而运行时拒绝
+      // 只取「accepted roots：」之后的**第一句**（允许 markdown 强调夹在中间，如 `accepted roots**：`）
+      const seg = (text.split(/accepted roots[*`]*[：:]/)[1] ?? "").split(/[。\n]/)[0]
+      expect(seg.length, `${rel} 里找不到「accepted roots：」清单段（反向校验形同虚设）`).toBeGreaterThan(0)
+      // 只把 **glob 形态**（含 `*`）的 token 当作「根」—— 普通文件路径（如 ADR 引用）不算
+      const listed = [...seg.matchAll(/`([^`]+)`/g)]
+        .map((m) => m[1] as string)
+        .filter((t) => t.includes("*"))
+        .slice(0, 8)
+      for (const l of listed) {
+        expect(roots, `${rel} 列了真源没有的 accepted root「${l}」`).toContain(l)
+      }
+    }
+  })
+
+  test("priority_blocked 字段：真源（delegate-core.ts）与 ADR / 汇总文档一致", () => {
+    const core = readFileSync(path.join(ROOT, "lib", "delegate-core.ts"), "utf8")
+    const fields = [...PRIORITY_BLOCKED_FIELDS]
+    expect(fields.length, "字段清单应有 6 项").toBe(6)
+    for (const f of fields) {
+      expect(core, `真源应写入字段「${f}」`).toContain(f)
+    }
+    for (const rel of [
+      "docs/adr/ADR-plan-delegate-engineering-session.md",
+      "docs/SUBAGENT-ORCHESTRATION.md",
+    ]) {
+      const text = readFileSync(path.join(ROOT, rel), "utf8")
+      for (const f of fields) {
+        expect(text, `${rel} 的 priority_blocked 字段清单缺少「${f}」`).toContain(f)
+      }
+    }
+  })
+
+  test("agent 模型清单：配置（真源）与两份文档一致", () => {
+    const designMd = readFileSync(path.join(ROOT, "docs", "MULTI-AGENT-DESIGN.md"), "utf8")
+    const orchMd = readFileSync(path.join(ROOT, "docs", "SUBAGENT-ORCHESTRATION.md"), "utf8")
+    for (const [id, agent] of Object.entries(config.agent)) {
+      const model = (agent as { model?: string }).model
+      if (!model) continue
+      // 按**该 agent 所在行**定位（整篇 contains 会漏检「只改了其中一行」）
+      for (const [label, text] of [
+        ["MULTI-AGENT-DESIGN.md", designMd],
+        ["SUBAGENT-ORCHESTRATION.md", orchMd],
+      ] as const) {
+        // 必须落在**模型表**的行上（正文里提到 agent 名的行不算；表头之前也不行）
+        const lines = text.split("\n")
+        const headerIdx = lines.findIndex(
+          (l) => l.trim().startsWith("|") && /agent/i.test(l) && /(model|模型)/i.test(l),
+        )
+        expect(headerIdx, `${label} 找不到含「模型」的表头`).toBeGreaterThan(-1)
+        const row = lines
+          .slice(headerIdx)
+          .find((l) => l.trim().startsWith("|") && (l.includes("`" + id + "`") || l.includes("**" + id + "**")))
+        expect(row, `${label} 找不到 ${id} 所在的行`).toBeTruthy()
+        expect(row as string, `${label} 的 ${id} 行未写模型「${model}」`).toContain(model)
+      }
+    }
+  })
+
+  test("汇总文档不得用编号式章节引用（§x.y 会随真源演进而漂）", () => {
+    const orchMd = readFileSync(path.join(ROOT, "docs", "SUBAGENT-ORCHESTRATION.md"), "utf8")
+    const numbered = [...orchMd.matchAll(/§\s*\d+(\.\d+)*/g)].map((m) => m[0] as string)
+    expect(numbered, `汇总文档出现编号式章节引用（应改用标题名）：${numbered.join(", ")}`).toEqual([])
+  })
+
+  test("审查链与预算：build.md（真源）与两份投影的「角色 → 审查者 → 预算」一致", () => {
+    // 投影有两种合法形态：critic 预算可以单列在「builder（架构面）」行（build.md / design.md），
+    // 也可以并进 builder 行（汇总文档）—— 两种都必须给出同一组数字。
+    const pick = (rel: string) => {
+      const lines = readFileSync(path.join(ROOT, rel), "utf8").split("\n")
+      const hi = lines.findIndex((l) => l.trim().startsWith("|") && l.includes("产出角色") && l.includes("审查者"))
+      expect(hi, `${rel} 找不到「审查配对」表头`).toBeGreaterThan(-1)
+      // 去首尾的 `|` 后再切，表头与数据行的列下标才对得上
+      const header = lines[hi]!
+        .trim()
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map((c) => c.trim())
+      const budgetIdx = header.findIndex((c) => c.includes("预算"))
+      expect(budgetIdx, `${rel} 的审查配对表缺「预算」列`).toBeGreaterThan(-1)
+      const rows: Array<{ role: string; reviewers: string; budget: string }> = []
+      for (const l of lines.slice(hi + 2)) {
+        if (!l.trim().startsWith("|")) break
+        const cells = l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim())
+        rows.push({
+          role: (cells[0] ?? "").replace(/`/g, ""),
+          reviewers: (cells[1] ?? "").replace(/[*`]/g, ""),
+          budget: (cells[budgetIdx] ?? "").replace(/[*`]/g, ""),
+        })
+      }
+      return rows
+    }
+    // ⚠️ 数组**首位必须是真源**（build.md）—— 基准数字由它写入，其余两份与它比对
+    const canonical: Record<string, string[]> = {}
+    for (const rel of ["prompts/build.md", "docs/MULTI-AGENT-DESIGN.md", "docs/SUBAGENT-ORCHESTRATION.md"]) {
+      const rows = pick(rel)
+      const architect = rows.find((r) => r.role.startsWith("architect") && !r.role.includes("治理面"))
+      const planner = rows.find((r) => r.role.startsWith("planner"))
+      const builders = rows.filter((r) => r.role.startsWith("builder"))
+      expect(architect, `${rel} 缺 architect 行`).toBeTruthy()
+      expect(planner, `${rel} 缺 planner 行`).toBeTruthy()
+      expect(builders.length, `${rel} 缺 builder 行`).toBeGreaterThan(0)
+      // architect：oracle + critic
+      expect((architect as any).reviewers, `${rel} 的 architect 行应含 oracle 与 critic`).toMatch(/oracle/)
+      expect((architect as any).reviewers, `${rel} 的 architect 行应含 oracle 与 critic`).toMatch(/critic/)
+      // planner：metis
+      expect((planner as any).reviewers, `${rel} 的 planner 行应含 metis`).toMatch(/metis/)
+      // builder：verifier（critic 预算可单列在「builder（架构面）」行，也可并入 builder 行）
+      const builderText = builders.map((b) => `${b.reviewers} ${b.budget}`).join(" | ")
+      expect(builderText, `${rel} 的 builder 行应含 verifier`).toMatch(/verifier/)
+      // **预算数字跨文档一致**（只比「预算」列，不被触发条件里的数字干扰）
+      const digitsOf = (s: string): string[] => [...new Set((s.match(/\d+/g) ?? []).sort())]
+      const perRole = {
+        architect: digitsOf((architect as any).budget),
+        planner: digitsOf((planner as any).budget),
+        builder: digitsOf(builders.map((b) => b.budget).join(" ")),
+      }
+      for (const [role, digits] of Object.entries(perRole)) {
+        expect(digits.length, `${rel} 的 ${role} 预算列应有数字`).toBeGreaterThan(0)
+        if (!canonical[role]) canonical[role] = digits
+        else {
+          expect(digits, `${rel} 的 ${role} 预算与其它文档不一致`).toEqual(canonical[role])
+        }
+      }
+    }
+  })
+
+  test("context-builder 的 7 字段模板 == CONTRACTS.requiredSections（字段名集合）", () => {
+    const cbMd = readFileSync(path.join(ROOT, "prompts", "context-builder.md"), "utf8")
+    const template = cbMd.split(/^## 7 字段填法详解$/m)[0] ?? ""
+    // 标题可能带尾部说明（如 `## focus（评审重点，请优先看）`）⇒ 只取标识符
+    const headings = [...template.matchAll(/^## ([a-z_]+)/gm)].map((m) => m[1] as string)
+    expect(new Set(headings), "context-builder 的模板字段集应等于契约字段集").toEqual(
+      new Set(CONTRACTS.find((c) => c.agent === "critic")?.requiredSections ?? []),
+    )
+  })
+
   test("SUBAGENT-ORCHESTRATION.md 引用的仓库内路径都存在（索引防漂移）", () => {
     const doc = readFileSync(path.join(ROOT, "docs", "SUBAGENT-ORCHESTRATION.md"), "utf8")
     const tokens = [...doc.matchAll(/`([^`]+)`/g)].map((m) => m[1] as string)
@@ -308,7 +568,7 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     const oracleMd = readFileSync(path.join(ROOT, "prompts", "oracle.md"), "utf8")
     expect(oracleMd).toContain("治理面判定: PASS | BLOCK | PASS-WITH-NOTES")
 
-    for (const rel of ["prompts/build.md", "docs/MULTI-AGENT-DESIGN.md"]) {
+    for (const rel of ["prompts/build.md", "docs/MULTI-AGENT-DESIGN.md", "docs/SUBAGENT-ORCHESTRATION.md"]) {
       const text = readFileSync(path.join(ROOT, rel), "utf8")
       expect(
         text.includes("治理面判定: PASS | BLOCK | PASS-WITH-NOTES"),

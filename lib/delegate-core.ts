@@ -296,6 +296,21 @@ export function describeHolderByOwner(
   )
 }
 
+/**
+ * `priority_blocked` ledger 事件的**字段清单（单点定义）**。
+ *
+ * 守卫（`tests/config-guards.test.ts`）与文档（ADR / 汇总）都从这里取 ——
+ * 文档侧是投影、守卫不得再手抄一份（否则守卫自己就是第二份清单）。
+ */
+export const PRIORITY_BLOCKED_FIELDS = [
+  "caller_kind",
+  "holder_kind",
+  "holder_state",
+  "holder_session_id",
+  "work_root",
+  "path",
+] as const
+
 /** 落 D7 的可观测事件（拒绝点追加，不依赖收尾写）。 */
 export function appendPriorityBlocked(
   stateRoot: string,

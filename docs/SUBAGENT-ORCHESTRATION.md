@@ -1,5 +1,9 @@
 # 子代理编排与委托通道：当前态汇总（2026-11-13）
 
+> **两条复述口径（写给后续维护者）**：
+> 1. **人读语义**（判定词表这类「三档含义」）→ **只能指针**，不复述成员（复述即第二份定义；`tests/config-guards.test.ts` 已按此守卫）。
+> 2. **机器消费的值**（`accepted roots` 这类被实现直接读的清单）→ **可以写清单**，但必须与真源**逐项一致且不多不少**（闭集，正反双向校验）。
+>
 > **文档定位**：**汇总 + 索引**，不是规则真源。
 > 规则以 `prompts/*.md`（agent 行为）、`docs/adr/*.md`（架构决策）、`opencode.jsonc.opencode-go`（权限矩阵）、`lib/*.ts`（实现）为准；本文只把它们的**当前态**汇到一处，并给出指针。
 > **若本文与真源冲突，以真源为准**（本文不改判据，只描述现状）。要改规则，先改真源，再回填本文。
@@ -11,18 +15,18 @@
 | agent | 类型 | 模型 | 定位 | prompt |
 |---|---|---|---|---|
 | `build` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 实施者（写代码） | `prompts/build.md` |
-| `plan` | primary | 同上 | 设计者 / 规划者（**只读**，可**委托**工程 session 实施） | `prompts/plan.md` |
-| `front` | primary | 同上 | 用户交互内核（只读，工程行动经 delegate） | `prompts/front.md` |
+| `plan` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 设计者 / 规划者（**只读**，可**委托**工程 session 实施） | `prompts/plan.md` |
+| `front` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 用户交互内核（只读，工程行动经 delegate） | `prompts/front.md` |
 | `explore` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 代码库定位 | `prompts/explore.md` |
-| `librarian` | subagent | 同上 | 外部文档 / 上游源码 | `prompts/librarian.md` |
-| `metis` | subagent | 同上 | 计划前 gap 分析（六节） | `prompts/metis.md` |
-| `general` | subagent | 同上 | 杂活兜底（不可再委派） | `prompts/general.md` |
-| `context-builder` | subagent | 同上 | **critic prompt 机械搬运工**（见 §7） | `prompts/context-builder.md` |
+| `librarian` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 外部文档 / 上游源码 | `prompts/librarian.md` |
+| `metis` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 计划前 gap 分析（六节） | `prompts/metis.md` |
+| `general` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 杂活兜底（不可再委派） | `prompts/general.md` |
+| `context-builder` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | **critic prompt 机械搬运工**（见「metis 与 context-builder」一节） | `prompts/context-builder.md` |
 | `oracle` | subagent | `kimi-code/kimi-for-coding`（`variant: max`） | 顾问 + 对抗式审查（会怎么坏） | `prompts/oracle.md` |
-| `critic` | subagent | 同上 | 第二审（与既有 ADR / 契约的冲突） | `prompts/critic.md` |
+| `critic` | subagent | `kimi-code/kimi-for-coding` | 第二审（与既有 ADR / 契约的冲突） | `prompts/critic.md` |
 | `title` | primary(hidden) | `commandcode/deepseek/deepseek-v4.1-flash` | 会话标题生成 | — |
 
-**模型选型原则**（`docs/MULTI-AGENT-DESIGN.md` §5.2 模型选择、§5.3 链路分档）：轻量链路（检索 / 机械搬运）用 `commandcode` 档；审查链路（oracle / critic）用推理档。`hidden` 只保留给 `title`（不出现在用户手选列表）；**`context-builder` 的 `hidden` 已移除** —— 隐藏会把它从父模型的「Available subagents」清单里过滤掉（`packages/core/src/tool/plugin/subagent.ts` 按 `!agent.hidden` 过滤），可见性直接决定采纳率。
+**模型选型原则**（`docs/MULTI-AGENT-DESIGN.md` 的「模型选择」「链路分档」两节 —— **按标题引用，不按编号**：编号会随文档演进而漂）：轻量链路（检索 / 机械搬运）用 `commandcode` 档；审查链路（oracle / critic）用推理档。`hidden` 只保留给 `title`（不出现在用户手选列表）；**`context-builder` 的 `hidden` 已移除** —— 隐藏会把它从父模型的「Available subagents」清单里过滤掉（`packages/core/src/tool/plugin/subagent.ts` 按 `!agent.hidden` 过滤），可见性直接决定采纳率。
 
 ## 2. 委派拓扑与门控
 
@@ -41,7 +45,7 @@
 |---|---|---|
 | `delegate` | `delegate` | 同步：建/复用 → 投递 → 等 → 返回 |
 | `dispatch` | `delegate_dispatch` | 异步：投递即返回（**≠ 任务完成**） |
-| `sessions` | `delegate_sessions` | 只读名册（**按 owner 过滤**，见 §8） |
+| `sessions` | `delegate_sessions` | 只读名册（**按 owner 过滤**，见「delegate 工程通道的当前态」） |
 | `suspend` | `delegate_suspend` | 暂停（保留上下文，之后可 resume） |
 | `cancel` | `delegate_cancel` | 终止（**先确认真的停了**才墓碑） |
 
@@ -88,7 +92,7 @@
 ## 6. oracle 的双模式与判定行
 
 - **模式**：审查模式（默认，输入带产物 / 判据即成立）/ 咨询模式（只有问题、没有产物与判据）。**拿不准 ⇒ 按审查模式**（漏判代价远高于多一行）。
-- **判定行**（审查模式写在「建议」段首行）：治理面 → `治理面判定: PASS | BLOCK | PASS-WITH-NOTES`；其他 → `判定: APPROVE | REJECT`（暂无硬消费方）。`BLOCK` 必须带证据，否则 `PASS-WITH-NOTES` + 列出未覆盖的判据面（反判定通胀）。
+- **判定行**（审查模式写在「建议」段首行）：**词表与触发条件只在 `prompts/oracle.md` 的「模式」一节定义**（本文不重复），分「治理面」与「其他审查」两套；`BLOCK` 必须带证据，否则降级并列出未覆盖的判据面（反判定通胀）。
 - **判定词表的单一真源 = `prompts/oracle.md` §模式**；`build.md` 与 `docs/MULTI-AGENT-DESIGN.md` 只指向它（`grep "治理面判定: PASS|PASS-WITH-NOTES"` 只应命中 oracle.md）。
 - 职责切分：oracle **主审**失败模式（会怎么坏）；critic **主审**与既有 ADR / 契约的冲突。critic description 写明「description 只决定主次，不缩小 critic.md 正文的覆盖面」。
 
