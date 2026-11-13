@@ -22,7 +22,7 @@ import {
 } from "../scripts/agent-guard-rules.ts"
 import { applyRules } from "../scripts/agent-guard-gen.ts"
 import { CONTRACTS } from "../lib/subagent-contract-core.ts"
-import { PLAN_REF_ROOTS, PRIORITY_BLOCKED_FIELDS } from "../lib/delegate-core.ts"
+import { ARCH_FALLBACK_DIRS, PLAN_REF_ROOTS, PRIORITY_BLOCKED_FIELDS } from "../lib/delegate-core.ts"
 
 const CONFIG_PATH = path.join(import.meta.dir, "..", "opencode.jsonc")
 const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8"))
@@ -591,5 +591,22 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
       const first = readFileSync(abs, "utf8").split("\n")[0] ?? ""
       expect(first, `${file![1]} 首行未含 agent id「${id}」`).toContain(id)
     }
+  })
+})
+
+describe("role_class 投影守卫（ADR-backend-handoff-role-class D3 修订）", () => {
+  const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
+
+  test("ARCH_FALLBACK_DIRS == prompts/build.md 的 fallback 目录集（逐项 + 顺序）", () => {
+    const line = BUILD_MD.split("\n").find((item) => item.includes("fallback 目录集") && item.includes("`docs/adr`"))
+    expect(line).toBeTruthy()
+    // 只取「fallback 目录集（…）」这一段里的反引号 token；过滤脚本名、去尾斜杠
+    const start = line!.indexOf("fallback 目录集")
+    const segment = line!.slice(start, line!.indexOf("）", start))
+    const documented = [...segment.matchAll(/`([^`]+)`/g)]
+      .map((m) => m[1].replace(/\/+$/, ""))
+      .filter((token) => /^[a-z][a-z0-9/_-]*$/.test(token))
+      .filter((token) => !token.includes("."))
+    expect(documented).toEqual([...ARCH_FALLBACK_DIRS]) // 顺序即口径：取"实际存在"的第一个优先级也依赖它
   })
 })

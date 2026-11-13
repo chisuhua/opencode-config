@@ -223,7 +223,7 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 
 - **配置文件**：`<cwd>/.rddf/config/arch-docs.json`
 - **字段**：`arch_paths[]`（架构决策类文档目录，前缀匹配）、`exclude_paths[]`（排除目录）；键顺序以脚本生成器输出为准（`arch_paths` 在前），手写配置勿在 `arch_paths` 之前的字符串值里嵌入 `"arch_paths": [` 字面量（解析器按第一个键名匹配）
-- **目录集口径（唯一一套，不要另立）**：架构文档目录 = §档位选择 的 `arch` 档路径集 —— 配置里的 `arch_paths[]` ∪ **fallback 目录集**（`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/` 等目录）∪ **用户明确指定的目录**；一律取**实际存在**的那些。
+- **目录集口径（唯一一套，不要另立）**：架构文档目录 = §档位选择 的 `arch` 档路径集 —— 配置里的 `arch_paths[]` ∪ **fallback 目录集**（`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/`）∪ **用户明确指定的目录**；一律取**实际存在**的那些。⚠ **受管前提**：被派发 session 侧的架构目录判定用**闭合清单**（即上面这 8 项）；survey 发现的**其他**目录必须先固化进 `arch_paths` 才受管辖 —— 否则「主会话可写范围」会大于「派发侧 deny 范围」，留下一个 builder 可写架构文档的后门。
 - **判定三态**：
   1. **配置存在、`arch_paths` 非空、且其中至少一条路径实际存在** → 可写范围 = `arch_paths[]`；**部分路径失效时仍属本态**（可写范围不变），`--check` 报 `STALE`、同样以 `/arch-docs-init --refresh` 收敛；**路径全部失效时**：可写范围按第 2 态落到 fallback 目录集，**同时属于配置漂移**（`--check` 报 `STALE`、exit 2）→ 提示用 `/arch-docs-init --refresh` 修复；
   2. **配置缺失 / `arch_paths` 为空 / JSON 损坏** → 可写范围 = **fallback 目录集**（取法：跑一次 `/arch-docs-init --dry-run`，不写盘，读它输出的 `arch_paths`；或直接 stat 上述目录名）中实际存在的那些；JSON 损坏时提示修复；
@@ -407,7 +407,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 |------|------|-------|--------------|
 | `architect` | 读代码；web 调研；调 `explore` / `oracle` / `librarian` / `metis` 调研；起草、编辑 `.rddf/config/arch-docs.json` 中 `arch_paths` 命中的架构文档（受上方「architect 产出形态契约」约束）；**编辑治理面文件 `~/.config/opencode/**`（按 §审查配对 治理面归属行授权，与项目级 `arch_paths` 无关）**；讨论方案 | edit `src/**`；创建 openspec change；起草 `.rddf/plans/**`；`git commit`（实施类）；edit `arch_paths` 之外的**项目内**文档（治理面文件除外） | `【角色: architect \| source: <state-file\|user>】我可调研与讨论架构；不会写实施代码或实施计划。` |
 | `planner` | 起草、讨论 `.rddf/roadmap/**`、`.rddf/improvements/**`；读一切；调 `metis` 做 gap 分析；**调 `explore` / `librarian` 做只读调研**（代码现状 / 外部事实；**先自读** —— 「读一切」已覆盖，**仅入口不明的关系类问题 / 外部事实才委托**；架构取舍仍归 architect —— 遇需架构决策的点**停下请用户切 architect**，**不得凭调研结果自行拍板**；本轮不改 improvement，待 architect 决策后再续）；创建 change 目录并起草 `proposal.md`（**增强层路径下不手写**，由 `rdd-builder` P0 生成——见工件归属规则）；**可委托工程 session 实施**（`delegate` / `dispatch`，见 `prompts/plan.md` 的委派实施章节）—— **委托实施 ≠ 自己实施**：写动作只发生在被派发的后端 session 内 | edit `src/**`；写 `design.md` / `tasks.md`（builder 的活）；`git commit`（实施类）—— 注：被派发的**后端 session** 可以 commit，那不违反本行 | `【角色: planner \| source: <...>】我可起草路线图与实施讨论；不直接写代码。` |
-| `builder` | 全部：创建 openspec change（`proposal.md` / `design.md` / `tasks.md`——**增强层路径下由 `rdd-builder` 写**，见工件归属规则）；edit；shell；commit（默认先确认） | 单方面改**已签批 ADR 的决策内容**（编辑 ADR 文字可以；变更决策需切 `architect` —— 发现需变更时按「实施阶段的新发现」的 `design_drift` 处置：findings + 停下 + 交用户，或窗口内切 architect） | `【角色: builder \| change: <名或无>】我可实施代码修改。` |
+| `builder` | 全部：创建 openspec change（`proposal.md` / `design.md` / `tasks.md`——**增强层路径下由 `rdd-builder` 写**，见工件归属规则）；edit；shell；commit（默认先确认） | 单方面改**已签批 ADR 的决策内容**（**主会话** builder 编辑 ADR 文字可以；变更决策需切 `architect` —— 按「实施阶段的新发现」的 `design_drift` 处置）。⚠ **被派发的 builder 类后端**连 ADR 写盘都不允许（见「被派发后端的运行身份与交回契约」的硬边界） | `【角色: builder \| change: <名或无>】我可实施代码修改。` |
 | `verifier` | 读；运行任意 shell（验证用）；**调 `explore` 做只读定位**（AC 指向的实现 / 测试在哪 —— 关系类问题）；调 `critic`（同样受每 change 2 轮评审预算约束）；满足分流三条件时调 `rdd-verifier` skill；写验收报告到 `.rddf/reviews/` | edit `src/**`（验收时改实现 = 角色污染）；重构；实施类 commit；写 `.rddf/state/verifier/*`（那是 rdd-verifier skill 的 owns） | `【角色: verifier \| source: <...>】我负责验收：可运行测试与检查，不修改实现代码。` |
 | `no-role` | 读；**询问用户角色**；轻量讨论；**调 `explore` / `librarian` 做只读调研**（不改仓库状态） | 一切 edit；会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等）；创建 openspec change；调写类 subagent | `【角色: 未设定】未读取到角色且用户未指定。请告诉我本次以什么角色工作：architect / planner / builder / verifier。` |
 | `general` | **全部**：edit、shell、commit、subagent、openspec change、skill | 无额外禁止 | `【角色: general \| source: <...>】build agent 处于通用模式。如需限制请说"切换到 X"。` |
@@ -524,11 +524,12 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 
 | `role_class` | 允许写（结构性） | 可拉 subagent | 产出 |
 |---|---|---|---|
-| `builder`（缺省） | 简报的 `scope` | explore / librarian / oracle / metis / critic | 代码 / 测试 |
+| `builder`（缺省） | 简报的 `scope` **减去架构文档目录**（窄目标派发被拒；宽 scope 下写 arch 路径被拒） | explore / librarian / oracle / metis / critic | 代码 / 测试 |
 | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` | 同上 | ADR / 架构文档 / 审稿报告（可自己跑 oracle→critic 收口） |
 | `verifier` | 仅 `.rddf/reviews/**` | 同上 | 验收报告（只出证据与判决，**不改实现**） |
 
 - **越类的判据是「写目标」，不是「读什么」**：读任何路径都不算越类；跑测试在 `builder`（acceptance 自查）与 `verifier`（独立取证）两类都合法。**要写的东西不在本类允许集内 ⇒ 停在动手前**，按下面的 HANDOFF 契约交回主会话。
+- **架构文档目录属 `architect` 类**（按 §架构文档范围 的**目录集口径**判定 —— 配置的 `arch_paths` ∪ fallback 目录集；被派发 session 侧用**闭合清单**实现，见 ADR D3）：`builder` 类把它们显式写进 scope 会被**直接拒绝派发**；宽 scope（如 `.` / `docs`）允许派发，但你写 arch 路径会收到 `Permission denied` —— 那不是故障，是类边界 ⇒ 按 HANDOFF 交回，不要换写法绕过。
 - **发现实际任务与本类不符 ⇒ 停下 `HANDOFF: blocked`**，不得硬做、不得自行切换类（**没有 session 内换类入口**：权限在创建时定型，`resume` 不重设）。
 - **换类 = 新派发**：新 session 的**模型上下文不继承**（延续的只有文件、凭据与登记）⇒ 主会话须把计划要点重贴。
 - **不要用窗口内自动切换**：被派发后端的 `auto_switch_window` 恒为 `null`（登记时写死），下方「授权窗口」的自动回环**只对主会话生效**；后端发现问题一律走 HANDOFF 交回主会话。

@@ -4,13 +4,13 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Accepted（2026-11-13 用户签批） |
+| Status | Accepted（2026-11-13 用户签批）；**同日 D3 修订**（用户选 **J**：builder 上限改为 `scope − archRoots` 的两级规则，依据 `feedback-20261113-001`） |
 | Date | 2026-11-13 |
 | Author | architect（主会话） |
 | Parent | `ADR-plan-delegate-engineering-session`（D1–D7）、`ADR-front-stop-ownership`（归属门控） |
 | 关联 change | `openspec/changes/backend-handoff-role-class/`（已立项，2026-11-13） |
 | 配套设计 | `docs/backend-handoff-role-class.md` |
-| AC 映射 | 本文 V1–V14 ↔ change 的 AC1–AC14；change 追加 AC15–AC23（实施级判据）。**逐条口径以 change 的 proposal 为准** |
+| AC 映射 | 本文 V1–V14 ↔ change 的 AC1–AC14；**D3 修订**的 V15–V21 ↔ change 的 AC24–AC31（V16 拆两条：AC25 / AC26）；change 追加 AC15–AC23 为实施级判据。**逐条口径以 change 的 proposal 为准** |
 | 工作规格 | `.rddf/reviews/backend-handoff-protocol-spec.md`（v3） |
 
 ## 背景与问题
@@ -45,11 +45,28 @@
 
 | class | 边界 |
 |---|---|
-| `builder` | `scope` |
-| `architect` | `archRoots(projectDir)` ∪ `.rddf/reviews/**` ∪ `.rddf/config/arch-docs.json` |
+| `builder` | `scope` **减去** `archRoots(workRoot)`（两级规则见下） |
+| `architect` | `archRoots(workRoot)` ∪ `.rddf/reviews/**` ∪ `.rddf/config/arch-docs.json` |
 | `verifier` | 仅 `.rddf/reviews/**` |
 
-`archRoots` 按 `.rddf/config/arch-docs.json` 三态解析（配置可用 → `arch_paths`；缺失/为空/损坏 → fallback 目录集中实际存在者；全无 → 空集），不硬编码目录名。`.rddf/reviews/**` 必须在内：ADR 完成的标志第 5 条要求审稿报告由 architect 收口时誊写到该目录。
+`archRoots` 按 `.rddf/config/arch-docs.json` 三态解析，**与 `prompts/build.md` §架构文档范围 的目录集口径同一套**（不另立第二答案）：
+
+- 态 1（配置可读、`arch_paths` 非空、其中至少一条存在）→ `arch_paths`；
+- 态 2/3（缺失 / 为空 / 损坏 / 全部失效）→ **fallback 目录集**中实际存在者 —— 代码侧用**闭合清单**：`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design`、`adr`、`rfc`、`specs`（顺序固定；不实现 `scripts/arch-docs-init.sh` 的 maxdepth/名字启发式 —— 那是"发现待建目录"的工具口径，跑一次 `--refresh` 后它们就进 `arch_paths` 了）；
+- 仍无 → 空集 ⇒ architect 派发被拒（V18：类边界不存在，减法退化为空集）。
+
+**解析根 = `workRoot`**（与 scope 解析、权限资源同根 —— 否则就是「A 树校验、B 树写盘」）。闭合清单与 `prompts/build.md` 的目录集必须一致，由 `tests/config-guards.test.ts` 钉住（防两份定义漂移）。`.rddf/reviews/**` 必须在内：ADR 完成的标志第 5 条要求审稿报告由 architect 收口时誊写到该目录。
+
+**builder 的两级规则（D3 修订，2026-11-13）**：`builder` 的上限不能只写 `scope` —— 那是恒真式（scope 含 `docs/adr` 时写 ADR 完全合法），「只做 builder 类任务」这一诉求会落空（实测见 `feedback-20261113-001`：后端照改了 ADR，`changed_files=["docs/adr/ADR-demo.md","src/app.ts"]`）。
+
+1. **窄目标 ⇒ 派发被拒**：任一 scope 项**落在**某个 arch root 之内（等于该 root，或以 `root/` 开头）⇒ 拒绝派发，错误信息明说「架构文档属 `architect` 类」。判据：调用方把 arch 目录显式写进 scope = 明确要做架构写作 ⇒ **类选错了**，fail fast 比让后端跑一轮更省。
+2. **宽目标 ⇒ 减掉 arch 路径**：scope 是 arch root 的**祖先**（`.` / `docs` / 绝对路径前缀）⇒ 允许派发，但在 session 权限**数组末尾**（`classSubagentRules()` 之后）追加 arch root 的 `edit deny` —— 位置必须在所有 allow 之后（`evaluate` 取 findLast），且末尾是唯一对未来组装变更免疫的位置。资源形态钉 **`<root>` + `<root>/*`**（本仓 `Wildcard.match` 的 `*` 跨 `/` ⇒ 一条覆盖深路径），**不用 `<root>*`**（会误伤 `docs/adr2` 这类兄弟目录）；`write` / `patch` 与 `edit` 同一权限 action ⇒ 一条 deny 覆盖全部写工具；`grants` 的 `GRANT_FORBIDDEN` 含 `edit`/`write` ⇒ 调用方无法抵消。后端写 arch 路径时被权限拒绝 ⇒ 按 HANDOFF 契约交回主会话。
+
+**realpath 三作用点**（软链不得绕过）：① **派发判定**（窄/宽分级的输入）；② `archRoots` 计算（arch root 自身是软链时用解析后的真实路径）；③ 目标不存在时解析**最近存在的祖先**。方向 1（arch root 是软链）与方向 2（scope 项软链进 arch 树）都要按解析后的路径判。
+
+**archRoots 为空时**（无配置、无 `docs/adr`）：类边界不存在 ⇒ 减法退化为空集、不追加 deny、行为回到「builder 按 scope 写」；此时窄目标拒绝也不触发（没有可指名的 `architect` 目标 ⇒ 错误文案回退为「本工程没有架构文档目录」）。
+
+**为什么不是单条规则**：纯拒绝会让 `scope: ["."]` 这种宽派发在**任何有 `docs/adr` 的仓库**上直接失败（可用性悬崖，且调用方往往只是没意识到 refactor 会碰到 arch 目录）；纯减法则让「明确派去做架构写作」的调用静默跑一轮才在写盘时失败。两级规则各自覆盖一种意图，代价是多一条判定分支 + 一条权限追加。
 
 ### D4 `subagent` 三类统一白名单
 
@@ -79,7 +96,7 @@
 
 ### D8 校验分两层，硬拒早于建 session
 
-① 值域 / knowledge 互斥 → `validateBrief`（纯函数，`lib/delegate-core.ts`）；② class×scope 路径相容性 + resume 与 `pair.json` 一致性 → `assertRoleClassCompatible(brief, workRoot)`，在 `session.create` 与 `registerSession` 之前，同步与异步两条链路各调用一次（权限组装同样抽 `classPermissions` 单一实现，防两链路漂移）。
+① 值域 / knowledge 互斥 → `validateBrief`（纯函数，`lib/delegate-core.ts`）；② class×scope 路径相容性 + resume 与 `pair.json` 一致性 → `assertRoleClassCompatible(brief, workRoot)`，在 `session.create` 与 `registerSession` 之前，同步与异步两条链路各调用一次（权限组装同样抽 `classPermissions` 单一实现，防两链路漂移）。**不变量：class 规则（含 builder 的 arch deny）恒为 `permissions` 数组末尾** —— 否则未来任何在其后追加的 `allow` 会经 `findLast` 翻盘。
 
 ### D9 单槽不豁免，不做并行
 
@@ -96,6 +113,9 @@
 | E. 新增 `handoff_pending` 状态 + 新工具 | 否 | 伪造「占槽等 resume」骗不过活体判定（`stillRunning`）；新增状态/工具 = 第二套生命周期 |
 | F. 三类 subagent 全 deny | 否 | 结构性废掉 `prompts/build.md` 的固定审查链（builder→critic、verifier→explore/critic） |
 | G. per-class `shell` allowlist | 否（本次） | 要硬隔离需另一套沙箱与绕过面评估，成本远超收益；接受「edit 硬、shell 软」，用收回后 `git status` 复核兜底 |
+| H. builder 上限 = `scope`（原 D3） | 否（2026-11-13 修订） | **恒真式**：scope 含 `docs/adr` 时写 ADR 合法 ⇒ 类约束对 builder 真空，用户「只做 builder 类任务」的诉求落空（`feedback-20261113-001` 实测） |
+| I. builder 上限 = 纯拒绝（scope 撞 arch 即拒） | 否 | 对 `scope: ["."]` 的宽派发是可用性悬崖（任何有 `docs/adr` 的仓库都派不出 builder），而调用方往往只是没料到 refactor 会碰 arch 目录 |
+| J. builder 上限 = `scope − archRoots`（**采纳**，两级） | **采纳** | 窄目标 fail fast（类选错当场暴露）；宽目标减权限（写盘被拒 ⇒ 交回），两种意图各得其所；两条判定都在既有层（派发校验 + 权限组装），无新状态 |
 
 ## 后果 / 代价
 
@@ -110,6 +130,7 @@
 - `shell` 不在结构约束内：后端仍可用 `> file` 写到 scope 外。这是与现状等价的既有弱点，只是现在写进了契约（不再假装不存在）。
 - 三类共用 `revision_count`（默认 3）：频繁换类会消耗额度；纯换类走 `blocked` 以避开计数，但语义略松。
 - 串行：三类都受单槽约束，plan 想「同时派三类」在同一工作树必然排队。
+- **被派发的 builder 写不了架构文档**（D3 修订；主会话 builder 的编辑面不受影响 —— 见 `prompts/build.md` 角色矩阵的主体限定）：想在实施中顺手补一条 ADR 笔记，必须显式改用 `architect` 类（或由主会话做）；宽 scope 的派发不会因此失败，但写 arch 路径会拿到 permission denied ⇒ 触发一次 HANDOFF（多一轮往返，换来的是"越类不可能静默发生"）。为让它可解释，简报的「运行身份」段在 builder 类且存在 arch 目录时**回显不可写目录**（`架构文档目录（不可写，属 architect 类）: docs/adr`）。
 
 **风险**
 
@@ -129,6 +150,14 @@
 - [ ] V1 `role_class` 缺省 `builder`；非法值 ⇒ 派发抛错
 - [ ] V2 `kind=knowledge` + `role_class` ⇒ 抛错
 - [ ] V3 `role_class=architect` 且 scope 含 `src/**` ⇒ 拒；含 `docs/adr/**` / `.rddf/reviews/**` / `.rddf/config/arch-docs.json` ⇒ 放行
+- [ ] V15 `role_class=builder` 且 scope **落在** arch root 内（`docs/adr` / `docs/adr/x.md` / `docs/adr/../adr` / `./docs/adr/` / 绝对路径形式）⇒ **派发被拒**，错误信息指名 `architect` 类；**混合 scope**（`["src","docs/adr"]`）同样拒（「任一」语义）；归一化与 V10 同源
+- [ ] V16 `role_class=builder` 且 scope 是 arch root 的**祖先**（`.` / `docs`）⇒ 派发放行，但权限净效果：`edit docs/adr/x.md` ⇒ **deny**、`edit src/a.ts` ⇒ **allow**、`edit docs/adr2/x.md` ⇒ **allow**（负向判据，锁 deny 形态）；绝对路径写形式同样 deny；`write` / `patch` 工具同样 deny（同一 action）；注入 `grants:[{edit,...}]` 仍 deny
+- [ ] V17a arch root 自身是软链（`docs/adr` → `src` 或仓库外）⇒ 派发按窄目标拒；若解析后落在工程根外，视为无 arch 边界（按 V18 处理）
+- [ ] V17b scope 项是软链、解析后落在 arch 树内（`docs/x` → `docs/adr`）⇒ 派发被拒；目标不存在时按最近存在的祖先解析
+- [ ] V18 archRoots 为空（无配置且 fallback 目录集**一项都不存在**）⇒ 减法退化为空集、不追加 deny、builder 按 scope 写；错误文案回退为「本工程没有架构文档目录」
+- [ ] V19 worktree 下 `archRoots` 与权限资源**同根**（`workRoot`）解析：`git worktree` 中的派发，deny 规则命中的是 worktree 内路径
+- [ ] V20 `archRoots` 的 fallback **闭合清单**与 `prompts/build.md` §架构文档范围 的目录集**逐项一致**（守卫测试；防两份定义漂移）
+- [ ] V21 `builder` 类且存在 arch 目录 ⇒ 简报「运行身份」段回显不可写目录（让 `Permission denied` 可解释）
 - [ ] V4 `role_class=verifier` 的 session 权限**净效果**：`edit .rddf/reviews/x.md` ⇒ allow、`edit src/a.ts` ⇒ deny（`edit:* deny` 在**前**、按类 allow 在后；`evaluate` 取 findLast ⇒ 顺序反了会让 verifier 连 `.rddf/reviews/**` 都写不了）
 - [ ] V5 三类 session 权限均含 `subagent: * deny` + `{explore, librarian, oracle, metis, critic} allow`，且不含 `general` / `context-builder`
 - [ ] V6 `role.json` 分区出现独立 `role_class` 字段，`current_role` 仍为 `builder`

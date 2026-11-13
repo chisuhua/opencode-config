@@ -1,3 +1,10 @@
+---
+revision_count: 1
+last_feedback_id: feedback-20261113-001
+last_feedback_at: '2026-11-13T09:59:41+00:00'
+feedback_status: needs-revision
+---
+
 # backend-handoff-role-class — 派发契约显式化：`role_class` + 凭据化 handoff
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
@@ -43,3 +50,25 @@ AC1–AC23 ↔ `openspec/changes/backend-handoff-role-class/proposal.md`（同�
 - **代价**：三类共享 `revision_count`（纯换类走 `blocked`、不计数）；单槽不豁免 ⇒ 同一工作树上三类串行。
 - **风险**：`shell` 仍可经重定向越界（与现状等价）；跨 worktree 同 `plan_ref` 并发共享额度、`discovery.md` 可能互相覆盖（已知缺口，另立 ADR）；architect 类被 `cancel` 会留半成品 ADR（主会话复核后补完或 `git restore`）。
 - **外部依赖**：HANDOFF 凭据押在 `rddf feedback` 通道上，而该通道在产品侧有已知读/写不一致（`docs/rdd-workflow-product-issues.md` Issue A/B）⇒ 本 change 必须带文本 fallback（AC22），不得让交回流程依赖 CLI 可用性。
+
+## Feedback
+
+### feedback-20261113-001
+
+- **source**: rdd-builder
+- **kind**: ac-fail
+- **created_at**: 2026-11-13T09:59:41+00:00
+- **resolution**: open
+
+#### Body
+
+**阻塞点**：ADR D3 的 builder 上限 = scope（恒真）⇒ 类约束对 builder 真空。当 `docs/adr/**` 落在 builder 的 scope 内时，写 ADR 是合法写盘 ⇒ AC13 不成立。Tier-2 真实派发实证：后端改了 `docs/adr/ADR-demo.md`，`changed_files=["docs/adr/ADR-demo.md","src/app.ts"]`，无 `HANDOFF:`、无 feedback 记录；后端自己的推理是「Draft ADR 可以改，只有已签批 ADR 的决策变更才须交回」——这与现有 prompt 一致，说明缺口在**类上限的定义**，不是模型没读契约。
+
+**需要什么决策**：是否把 builder 的类上限改为「scope 减去 archRoots」⇒ `builder + scope 含 docs/adr` 变成**派发被拒**（结构性），而不是靠 prompt 判断「这是 architect 类工作」。这要改已签批 ADR 的 D3，需 architect 出 ADR 修订 + 用户签批。备选：维持现状并删改 AC13（承认类约束只对 architect / verifier 有实义）——但那样「只允许做 builder 类任务」这句用户诉求落空。
+
+**已完成**：lib 全链路实现（448 pass / anchors 23/23 / openspec validate 通过）；Tier-1（简报直注）与 Tier-2（真实 delegate 派发）e2e 载体已建在 `/tmp/opencode/e2e-role-class/`。
+
+**未完成**：AC13（实测不成立）；AC14（撞 Token Plan 429 用量上限，未验证、按纪律未重试）；AC21（未跑，受同一限额阻塞）。
+
+**建议的下一步指令草案**：切 architect，按「builder 上限 = scope − archRoots」修订 `ADR-backend-handoff-role-class` 的 D3 与 AC13，并同步 `prompts/build.md` 的越类判据（改为「写目标落在架构文档目录 ⇒ 属 architect 类」）；然后切 builder 补 `classAllowRoots("builder")` 的 archRoots 排除、派发拒绝路径与测试。
+

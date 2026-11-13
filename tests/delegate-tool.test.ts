@@ -867,6 +867,45 @@ describe("role_class：同步派发面（AC4 / AC5 / AC8 / AC11 / resume 一致�
   })
 })
 
+
+describe("D3 修订：builder 上限 = scope − archRoots（工具层）", () => {
+  const withArch = () => {
+    const project = fixtureProject()
+    mkdirSync(path.join(project, "docs", "adr"), { recursive: true })
+    writeFileSync(path.join(project, "docs", "adr", "ADR-x.md"), "# ADR-x\n\nStatus: Draft\n")
+    return project
+  }
+
+  test("builder + scope 落在 docs/adr ⇒ 派发被拒（不建 session）", async () => {
+    const project = withArch()
+    const { ctx, calls } = createFakeCtx()
+    await expect(
+      runDelegate(ctx, { ...BASE, project_dir: project, scope: ["docs/adr"], role_class: "builder" }),
+    ).rejects.toThrow(/架构文档目录内/)
+    expect(calls.create).toBe(0)
+  })
+
+  test("builder + scope '.' ⇒ 派发放行，但权限末尾有 arch deny（宽目标减法）", async () => {
+    const project = withArch()
+    const { ctx, sessions } = createFakeCtx()
+    await runDelegate(ctx, { ...BASE, project_dir: project, scope: ["."], role_class: "builder" })
+    const session = [...sessions.values()][0]
+    const tail = session.permissions[session.permissions.length - 1]
+    expect(tail).toEqual({ action: "edit", resource: "docs/adr/*", effect: "deny" })
+    const deniesDocs = session.permissions.filter((p) => p.action === "edit" && p.resource === "docs/adr")
+    expect(deniesDocs.every((p) => p.effect === "deny")).toBe(true)
+  })
+
+  test("architect + scope docs/adr ⇒ 放行（不被 builder 的 arch deny 波及）", async () => {
+    const project = withArch()
+    const { ctx, sessions } = createFakeCtx()
+    await runDelegate(ctx, { ...BASE, project_dir: project, scope: ["docs/adr"], role_class: "architect" })
+    const session = [...sessions.values()][0]
+    expect(session.permissions.some((p) => p.action === "edit" && p.resource === "docs/adr" && p.effect === "deny")).toBe(
+      false,
+    )
+  })
+})
 afterAll(() => {
   try {
     rmSync(TMP, { recursive: true, force: true })

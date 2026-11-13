@@ -29,6 +29,8 @@ import {
   GRANT_FORBIDDEN,
   READONLY_AGENTS,
   appendLedger,
+  ARCH_FALLBACK_DIRS,
+  archDenyRules,
   archRoots,
   assertResumeRoleClass,
   assertRoleClassCompatible,
@@ -36,6 +38,8 @@ import {
   classAllowRoots,
   classPermissions,
   classSubagentRules,
+  isPathWithin,
+  realRelative,
   canonicalRoot,
   changedSince,
   extractBlocked,
@@ -896,7 +900,7 @@ describe("class × scope 相容性（D8 ②层）", () => {
     expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: [".rddf/reviews"] }, repo)).not.toThrow()
   })
 
-  test("builder：scope 自身即边界（不额外校验）", () => {
+  test("builder：非 arch 路径的 scope 照常放行", () => {
     const repo = archRepo("builder-scope", { archPaths: ["docs/adr"] })
     expect(() => assertRoleClassCompatible({ role_class: "builder", scope: ["src/**"] }, repo)).not.toThrow()
   })
@@ -1078,6 +1082,213 @@ describe("登记：role.json 分区与 pair 持久化（D2 / D6）", () => {
 describe("AC23：未新增 SlotState / outcome 值", () => {
   test("SlotState 枚举保持五个值", () => {
     expect([...SLOT_STATES]).toEqual(["dispatching", "active", "idle", "suspended", "tombstone"])
+  })
+})
+
+
+// ───────── D3 修订：builder 上限 = scope − archRoots（两级规则，AC24–AC31） ─────────
+
+describe("AC24：builder 的窄目标 ⇒ 派发被拒", () => {
+  let seq = 0
+  const case1 = (label: string, scope: string[]) =>
+    test(label, () => {
+      const repo = archRepo(`b-narrow-${++seq}`, { archPaths: ["docs/adr"] })
+      expect(() => assertRoleClassCompatible({ role_class: "builder", scope }, repo)).toThrow(/架构文档目录内/)
+    })
+
+  case1("scope = docs/adr（目录本身）", ["docs/adr"])
+  case1("scope = docs/adr/x.md（子树）", ["docs/adr/x.md"])
+  case1("scope = docs/adr/../adr（穿越）", ["docs/adr/../adr"])
+  case1("scope = ./docs/adr/（点斜杠 + 尾斜杠）", ["./docs/adr/"])
+  case1("混合 scope（任一命中即拒）", ["src", "docs/adr"])
+  test("绝对路径形式同样拒", () => {
+    const repo = archRepo("b-narrow-abs", { archPaths: ["docs/adr"] })
+    expect(() =>
+      assertRoleClassCompatible({ role_class: "builder", scope: [path.join(repo, "docs/adr")] }, repo),
+    ).toThrow(/架构文档目录内/)
+  })
+  test("错误信息指名 architect 类（可据此改派）", () => {
+    const repo = archRepo("b-narrow-msg", { archPaths: ["docs/adr"] })
+    try {
+      assertRoleClassCompatible({ role_class: "builder", scope: ["docs/adr"] }, repo)
+      throw new Error("应当抛错")
+    } catch (e: any) {
+      expect(String(e.message)).toContain("architect")
+    }
+  })
+})
+
+describe("AC25 / AC26：builder 的宽目标 ⇒ arch 路径被 deny（净效果）", () => {
+  const perms = (repo: string, scope: string[]) =>
+    classPermissions({ roleClass: "builder", workRoot: repo, scope, kind: "engineering", grants: [] })
+
+  test("scope = ['.']：arch 路径 deny、scope 内其它路径 allow、兄弟目录 docs/adr2 allow", () => {
+    const repo = archRepo("b-wide", { archPaths: ["docs/adr"] })
+    const rules = perms(repo, ["."])
+    expect(evaluateEffect(rules, "edit", "docs/adr/x.md")).toBe("deny")
+    expect(evaluateEffect(rules, "edit", "docs/adr")).toBe("deny")
+    expect(evaluateEffect(rules, "edit", "src/a.ts")).toBe("allow")
+    expect(evaluateEffect(rules, "edit", "docs/adr2/x.md")).toBe("allow") // 负向：形态不得误伤兄弟目录
+  })
+
+  test("scope = ['docs']：同样吃到 arch deny", () => {
+    const repo = archRepo("b-wide-docs", { archPaths: ["docs/adr"] })
+    const rules = perms(repo, ["docs"])
+    expect(evaluateEffect(rules, "edit", "docs/adr/x.md")).toBe("deny")
+    expect(evaluateEffect(rules, "edit", "docs/other.md")).toBe("allow")
+  })
+
+  test("write / patch 与 edit 同一权限 action（一条 deny 覆盖全部写工具）", () => {
+    const repo = archRepo("b-wide-action", { archPaths: ["docs/adr"] })
+    const rules = perms(repo, ["."])
+    const denies = rules.filter((r) => r.effect === "deny" && r.resource === "docs/adr")
+    // 上游 `write.ts` / `patch.ts` 的 permission action 均为 "edit" ⇒ 不需要单独的 write/patch 规则
+    expect(denies.every((r) => r.action === "edit")).toBe(true)
+    expect(rules.some((r) => r.action === "write" || r.action === "patch")).toBe(false)
+  })
+
+  test("grants 无法抵消（edit 不可 grant）", () => {
+    expect(() => validateGrants([{ action: "edit", resource: "docs/adr/*" }])).toThrow(/永不可 grant/)
+  })
+
+  test("arch deny **恒在数组末尾**（其后追加 allow 会经 findLast 翻盘）", () => {
+    const repo = archRepo("b-wide-tail", { archPaths: ["docs/adr"] })
+    const rules = perms(repo, ["."])
+    const last = rules[rules.length - 1]
+    expect(last.action).toBe("edit")
+    expect(last.effect).toBe("deny")
+  })
+
+  test("知识 session 不追加 arch deny（只读语义无 class）", () => {
+    const repo = archRepo("b-knowledge", { archPaths: ["docs/adr"] })
+    const rules = classPermissions({ roleClass: "builder", workRoot: repo, scope: [], kind: "knowledge", grants: [] })
+    expect(rules.some((r) => r.resource === "docs/adr")).toBe(false)
+  })
+})
+
+describe("AC27：symlink 两方向", () => {
+  test("(a) arch root 自身是软链 → src：scope 指向该目标 ⇒ 拒", () => {
+    const repo = gitRepo("b-sym-arch")
+    mkdirSync(path.join(repo, "src"), { recursive: true })
+    mkdirSync(path.join(repo, "docs"), { recursive: true })
+    symlinkSync(path.join(repo, "src"), path.join(repo, "docs", "adr"), "dir")
+    mkdirSync(path.join(repo, ".rddf", "config"), { recursive: true })
+    writeFileSync(
+      path.join(repo, ".rddf", "config", "arch-docs.json"),
+      JSON.stringify({ arch_paths: ["docs/adr"], exclude_paths: [] }),
+    )
+    expect(() => assertRoleClassCompatible({ role_class: "builder", scope: ["src"] }, repo)).toThrow(/架构文档目录内/)
+  })
+
+  test("(a) arch root 软链到工程根外 ⇒ 不构成类边界（不拒派发）", () => {
+    const repo = gitRepo("b-sym-outside")
+    const outside = path.join(TMP, "outside-arch")
+    mkdirSync(outside, { recursive: true })
+    mkdirSync(path.join(repo, "docs"), { recursive: true })
+    symlinkSync(outside, path.join(repo, "docs", "adr"), "dir")
+    mkdirSync(path.join(repo, ".rddf", "config"), { recursive: true })
+    writeFileSync(
+      path.join(repo, ".rddf", "config", "arch-docs.json"),
+      JSON.stringify({ arch_paths: ["docs/adr"], exclude_paths: [] }),
+    )
+    expect(() => assertRoleClassCompatible({ role_class: "builder", scope: ["src"] }, repo)).not.toThrow()
+  })
+
+  test("(b) scope 项是软链、解析后落在 arch 树内 ⇒ 拒", () => {
+    const repo = archRepo("b-sym-scope", { archPaths: ["docs/adr"] })
+    mkdirSync(path.join(repo, "docs"), { recursive: true })
+    symlinkSync(path.join(repo, "docs", "adr"), path.join(repo, "docs", "alias"), "dir")
+    expect(() => assertRoleClassCompatible({ role_class: "builder", scope: ["docs/alias"] }, repo)).toThrow(
+      /架构文档目录内/,
+    )
+  })
+
+  test("目标文件尚不存在 ⇒ 按最近存在祖先解析（新文件写入仍能被判到 arch 树内）", () => {
+    const repo = archRepo("b-sym-newfile", { archPaths: ["docs/adr"] })
+    expect(realRelative(repo, "docs/adr/new-file.md")).toBe("docs/adr/new-file.md")
+    expect(realRelative(repo, "docs/adr/a/b/c.md")).toBe("docs/adr/a/b/c.md")
+  })
+
+  test("悬空软链不抛异常（无法解析时按字面值处理）", () => {
+    const repo = archRepo("b-sym-dangling", { archPaths: ["docs/adr"] })
+    symlinkSync(path.join(repo, "docs", "adr", "not-yet"), path.join(repo, "docs", "dangling"), "dir")
+    expect(realRelative(repo, "docs/dangling")).toBe("docs/dangling")
+  })
+})
+
+describe("AC28：archRoots 为空 ⇒ 类边界不存在（减法退化）", () => {
+  test("无架构目录：不拒派发、不追加 deny", () => {
+    const repo = gitRepo("b-no-arch")
+    expect(archRoots(repo)).toEqual([])
+    expect(() => assertRoleClassCompatible({ role_class: "builder", scope: ["docs/adr"] }, repo)).not.toThrow()
+    expect(archDenyRules(repo)).toEqual([])
+    const rules = classPermissions({
+      roleClass: "builder",
+      workRoot: repo,
+      scope: ["."],
+      kind: "engineering",
+      grants: [],
+    })
+    expect(evaluateEffect(rules, "edit", "docs/adr/x.md")).toBe("allow")
+  })
+})
+
+describe("AC29：worktree 下与权限资源同根（workRoot）", () => {
+  test("archRoots / archDenyRules 都按传入的 workRoot 解析", () => {
+    const repo = gitRepo("b-wt-main")
+    const wt = path.join(TMP, "b-wt-linked")
+    execFileSync("git", ["worktree", "add", "-q", wt, "-b", "wt-branch"], { cwd: repo, stdio: "ignore" })
+    mkdirSync(path.join(wt, "docs", "adr"), { recursive: true })
+    expect(archRoots(wt)).toEqual(["docs/adr"])
+    expect(archDenyRules(wt)).toEqual([
+      { action: "edit", resource: "docs/adr", effect: "deny" },
+      { action: "edit", resource: "docs/adr/*", effect: "deny" },
+    ])
+    // 主仓没有该目录 ⇒ 不构成边界（证明没有跨根串味）
+    expect(archRoots(repo)).toEqual([])
+  })
+})
+
+describe("AC31：builder 类简报回显不可写目录", () => {
+  test("存在 arch 目录 ⇒ 运行身份段写明不可写", () => {
+    const repo = archRepo("b-brief", { archPaths: ["docs/adr"] })
+    const text = buildBrief(validateBrief({ ...VALID_INPUT, project_dir: repo }), repo)
+    expect(text).toContain("架构文档目录（**不可写**，属 architect 类）: docs/adr")
+  })
+
+  test("architect / verifier 类不回显该行", () => {
+    const repo = archRepo("b-brief-arch", { archPaths: ["docs/adr"] })
+    const text = buildBrief(validateBrief({ ...VALID_INPUT, project_dir: repo, role_class: "architect" }), repo)
+    expect(text).not.toContain("不可写**，属 architect 类")
+  })
+})
+
+describe("fallback 目录集与路径判定工具", () => {
+  test("ARCH_FALLBACK_DIRS 是闭合清单（顺序固定）", () => {
+    expect([...ARCH_FALLBACK_DIRS]).toEqual([
+      "docs/adr",
+      "docs/architecture",
+      "docs/architecture/adr",
+      "docs/designs",
+      "docs/design",
+      "adr",
+      "rfc",
+      "specs",
+    ])
+  })
+
+  test("fallback 取实际存在的那些（docs/architecture 也算）", () => {
+    const repo = gitRepo("fb-multi")
+    mkdirSync(path.join(repo, "docs", "architecture"), { recursive: true })
+    mkdirSync(path.join(repo, "specs"), { recursive: true })
+    expect(archRoots(repo)).toEqual(["docs/architecture", "specs"])
+  })
+
+  test("isPathWithin 按路径段判边界（docs/adr2 不在 docs/adr 内）", () => {
+    expect(isPathWithin("docs/adr/x.md", "docs/adr")).toBe(true)
+    expect(isPathWithin("docs/adr", "docs/adr")).toBe(true)
+    expect(isPathWithin("docs/adr2/x.md", "docs/adr")).toBe(false)
+    expect(isPathWithin("docs", "docs/adr")).toBe(false)
   })
 })
 

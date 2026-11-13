@@ -16,9 +16,10 @@
 ### A. 校验与权限（`lib/delegate-core.ts`）
 
 1. `validateBrief`：`role_class` 值域与缺省（D1）；`kind=knowledge` 互斥（D1）。
-2. 新增 `archRoots(projectDir)`（D3）：态 1 读 `arch-docs.json` 的 `arch_paths`；**态 2/3 只回退 `docs/adr`**（`existsSync` 判定）；仍无 ⇒ 空集 ⇒ architect 派发硬拒 + 提示跑 `scripts/arch-docs-init.sh`。**不在 TS 里复刻 `scripts/arch-docs-init.sh` 的 survey 启发式**（避免第二份"架构目录"定义）。
+2. 新增 `archRoots(workRoot)`（D3）：态 1 读 `arch-docs.json` 的 `arch_paths`；**态 2/3 回退 fallback 目录集的闭合清单** `ARCH_FALLBACK_DIRS`（8 项，与 `prompts/build.md` 目录集逐项一致、守卫钉住；取实际存在者）；仍无 ⇒ 空集 ⇒ architect 派发硬拒 + 提示跑 `scripts/arch-docs-init.sh`。**不在 TS 里复刻 survey 启发式**；survey 发现的其他目录须先固化进 `arch_paths` 才受管辖。
 3. 新增 `assertRoleClassCompatible(brief, workRoot)`（D8）：`scope` 的**每一项**归一化后必须 ⊆ 该类 allow 集，**任一项越界即拒**（不是"有交集即放行"）；resume 与 `pair.json` 记录比对；落点在 `session.create` 与 `registerSession` 之前。
-4. 新增 `classPermissions(roleClass)`（D4）：edit 规则 + subagent 规则单一实现，同步 / 异步两链路共用。顺序为 `edit:* deny` **在前**、按类 allow **在后**（`evaluate` 取 findLast）。
+4. 新增 `classPermissions(roleClass)`（D4）：edit 规则 + subagent 规则单一实现，同步 / 异步两链路共用。顺序为 `edit:* deny` **在前**、按类 allow **在后**（`evaluate` 取 findLast）。**（D3 修订）**`builder` 类在数组**末尾**追加 arch root 的 `edit deny`（资源形态 `<root>` + `<root>/*`，含绝对路径形式；`write`/`patch` 同 action 一并覆盖），位置恒为末尾。
+5. **（D3 修订）**`assertRoleClassCompatible` 的 `builder` 分支：任一 scope 项**落在** arch root 内 ⇒ 拒派发（realpath 解析，含软链两方向）；scope 为 arch root 祖先 ⇒ 放行（减法在权限层）；archRoots 为空 ⇒ 不校验。`archRoots` 的 fallback 用**闭合清单**（与 `prompts/build.md` 目录集一致，守卫钉住）。
 5. `buildBrief()`（D5/D6）：新增「运行身份」段（含"发现实际任务不在本类 allowlist ⇒ 停手 `HANDOFF: blocked`"）+「执行要求」按 class 分支。
 6. `writeRoleSession` / `registerSession` / resume 分支（D2/D6）：写 `role_class`（`current_role` 保持 `builder`）、`pair.json` 持久化、resume **忽略**入参 class 并用持久化值生成简报（不一致即抛）；存量条目缺字段按 `builder`。
 7. `sessions` 工具 items（D6）：从 `pair.json` 回显 `role_class`（只读字段，零新状态）——否则主会话只能猜或手读状态文件。
@@ -71,6 +72,14 @@
 | AC21 | HANDOFF fallback：`rddf` 不可用或额度耗尽（写不进）⇒ 仍输出首行 + 完整 5 项正文，主会话可读 `last_assistant_text` 恢复 | `tests/delegate-tool.test.ts`（CLI 缺失 fixture）+ 手工 |
 | AC22 | `buildBrief` 文本含「HANDOFF 回合省略角色开场报告」的优先级句 | `tests/delegate-core.test.ts` |
 | AC23 | 不为 HANDOFF 文本新增解析器 / 状态 / outcome 值：`SlotState` 枚举与 outcome 值集合无新增项 | `tests/config-guards.test.ts` 断言枚举 |
+| AC24 | （D3 修订）`builder` + scope **落在** arch root 内（`docs/adr` / `docs/adr/x.md` / `docs/adr/../adr` / `./docs/adr/` / 绝对路径）⇒ **派发被拒**，错误信息指名 `architect` 类；混合 scope（`["src","docs/adr"]`）同样拒 | `tests/delegate-core.test.ts` + `delegate-tool.test.ts` |
+| AC25 | （D3 修订）`builder` + scope 是 arch root 的**祖先**（`.` / `docs`）⇒ 放行，权限**净效果**：`edit docs/adr/x.md` ⇒ deny、`edit src/a.ts` ⇒ allow、`edit docs/adr2/x.md` ⇒ **allow**（负向）、绝对路径写形式 ⇒ deny | `tests/delegate-core.test.ts` |
+| AC26 | （D3 修订）`write` / `patch` 工具与 `edit` **同一 action** ⇒ 同被 deny；`grants` 注入 `edit` 仍 deny（`GRANT_FORBIDDEN` 兜底） | 同上 |
+| AC27 | （D3 修订）symlink 两方向：(a) arch root 自身是软链 ⇒ 派发按窄目标拒（解析后落在工程根外 ⇒ 按 AC28 处理）；(b) scope 项软链进 arch 树（`docs/x` → `docs/adr`）⇒ 派发被拒 | 同上（`symlinkSync` fixture） |
+| AC28 | （D3 修订）`archRoots` 为空（无配置且 fallback 目录集**一项都不存在**）⇒ 减法退化为空集、不追加 deny、`builder` 按 scope 写；错误文案回退为「本工程没有架构文档目录」 | 同上 |
+| AC29 | （D3 修订）worktree 下 `archRoots` 与权限资源**同根**（`workRoot`）：`git worktree` 中的派发，deny 命中 worktree 内路径 | `tests/delegate-tool.test.ts` |
+| AC30 | （D3 修订）`archRoots` 的 fallback **闭合清单**（`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design`、`adr`、`rfc`、`specs`）与 `prompts/build.md` §架构文档范围 的目录集**逐项一致**（守卫测试，防两份定义漂移） | `tests/config-guards.test.ts` |
+| AC31 | （D3 修订）`builder` 类且存在 arch 目录 ⇒ 简报「运行身份」段回显不可写目录（`架构文档目录（不可写，属 architect 类）: …`） | `tests/delegate-core.test.ts` |
 
 
 ## Acceptance（勾选镜像）
@@ -100,6 +109,14 @@
 - [ ] AC21 HANDOFF fallback（`rddf` 不可用 / 额度耗尽）
 - [ ] AC22 简报含 HANDOFF 首行优先级句
 - [ ] AC23 无新增 `SlotState` / outcome 值
+- [ ] AC24（D3 修订）builder + scope 落 arch ⇒ 派发被拒
+- [ ] AC25（D3 修订）宽 scope 的 arch deny 净效果（含 `docs/adr2` 负向）
+- [ ] AC26（D3 修订）write/patch 同 action；grants 不能抵消
+- [ ] AC27（D3 修订）symlink 两方向
+- [ ] AC28（D3 修订）archRoots 空集退化
+- [ ] AC29（D3 修订）worktree 同根
+- [ ] AC30（D3 修订）fallback 闭合清单与 build.md 目录集一致
+- [ ] AC31（D3 修订）简报回显不可写目录
 
 ## 非目标
 

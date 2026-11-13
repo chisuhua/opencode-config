@@ -39,6 +39,15 @@
 - [x] D4 文档同步：`docs/MULTI-AGENT-DESIGN.md` 一句汇总 + `docs/CHANGELOG.md` v2.21 条目
 - [x] D5 遗留清扫：无 TODO / 半截实现 / 临时日志 / skip 测试 / 未替换 mock（已 grep 复核）
 
+## 块 F：D3 修订（builder 上限 = `scope − archRoots`，2026-11-13）
+
+- [x] F1 `ARCH_FALLBACK_DIRS` 闭合清单 + `archRoots` 回退改目录集（与 `prompts/build.md` 目录集由守卫钉住）→ AC30
+- [x] F2 `assertRoleClassCompatible` 的 builder 分支：窄目标（scope 落 arch 内 / 混合 / 穿越 / 绝对路径 / 软链两方向）⇒ **派发被拒** → AC24 / AC27
+- [x] F3 `assertRoleClassCompatible` 的 builder 分支：宽目标 ⇒ 放行；`archRoots` 为空 ⇒ 不校验（减法退化）→ AC25 / AC28
+- [x] F4 `classPermissions` 末尾追加 arch deny（`<root>` + `<root>/*`，字面值 + realpath；write/patch 同 action；grants 无法抵消）→ AC25 / AC26
+- [x] F5 `buildBrief`：builder 类且存在 arch 目录 ⇒ 运行身份段回显「不可写」目录 → AC31
+- [x] F6 `archRoots` / `archDenyRules` 按传入的 `workRoot` 解析（worktree 同根）→ AC29
+
 ## 手工 e2e（不进 CI，模型行为不确定）
 
 - [ ] AC13 给 `builder` 类后端一个 scope **含 `docs/adr`** 的「先改 ADR 再实现」任务 ⇒ `docs/adr/**` 零变更 + feedback 记录 + `idle`

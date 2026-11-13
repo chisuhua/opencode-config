@@ -592,17 +592,37 @@ export function parseRoleClass(raw: unknown): RoleClass {
 }
 
 /**
- * 架构文档目录（`archRoots`）—— 架构类派发的 edit 上限来源。
+ * 架构文档目录（`archRoots`）—— 架构类派发的 edit 上限来源，同时是 `builder` 的 deny 输入。
  *
- * 判定三态（与 `prompts/build.md` §架构文档范围 同口径，但**只回退 `docs/adr`**）：
+ * 判定三态，**与 `prompts/build.md` §架构文档范围 的目录集口径同一套**（见 `ARCH_FALLBACK_DIRS`）：
  * - 态 1：`.rddf/config/arch-docs.json` 可读、`arch_paths` 非空、且其中至少一条实际存在
  *   ⇒ 用 `arch_paths`；
- * - 态 2/3：配置缺失 / 为空 / 损坏 / 全部路径失效 ⇒ 回退 `docs/adr`（存在才用）；
- * - 仍无 ⇒ 空集 ⇒ architect 类派发被拒（错误信息指向 `scripts/arch-docs-init.sh`）。
+ * - 态 2/3：配置缺失 / 为空 / 损坏 / 全部路径失效 ⇒ `ARCH_FALLBACK_DIRS` 中**实际存在**的那些；
+ * - 仍无 ⇒ 空集 ⇒ architect 类派发被拒（错误信息指向 `scripts/arch-docs-init.sh`）；
+ *   对 `builder` 而言空集 = 类边界不存在（不追加 deny）。
  *
  * ⚠ **不复刻 `scripts/arch-docs-init.sh` 的 survey 启发式**（目录名 + maxdepth）：
- * 那是「发现待建目录」的工具口径；此处是「读已配置范围」，两套定义会漂移。
+ * 那是「发现待建目录」的工具口径；此处是「读已配置范围」。survey 发现的**其他**目录
+ * 必须先固化进 `arch_paths` 才受本处管辖（否则 survey 与派发侧各有一套范围）。
  */
+/**
+ * fallback 目录集（**闭合清单**，顺序固定）——与 `prompts/build.md` §架构文档范围 的目录集
+ * 逐项一致，由 `tests/config-guards.test.ts` 钉住（防两份定义漂移）。
+ *
+ * 只做 `existsSync` 判定，**不实现** `scripts/arch-docs-init.sh` 的 maxdepth/名字启发式：
+ * 那是「发现待建目录」的工具口径；跑一次 `--refresh` 后它们就进 `arch_paths` 了。
+ */
+export const ARCH_FALLBACK_DIRS = [
+  "docs/adr",
+  "docs/architecture",
+  "docs/architecture/adr",
+  "docs/designs",
+  "docs/design",
+  "adr",
+  "rfc",
+  "specs",
+] as const
+
 export function archRoots(projectRoot: string): string[] {
   const configPath = path.join(projectRoot, ".rddf", "config", "arch-docs.json")
   let configured: string[] = []
@@ -619,11 +639,84 @@ export function archRoots(projectRoot: string): string[] {
   }
   const existing = configured.filter((item) => existsSync(path.resolve(projectRoot, item)))
   if (existing.length > 0) return existing
-  const fallback = "docs/adr"
-  return existsSync(path.resolve(projectRoot, fallback)) ? [fallback] : []
+  // 态 2/3：fallback 目录集中**实际存在**的那些（闭合清单，不扫目录树）
+  return ARCH_FALLBACK_DIRS.filter((item) => existsSync(path.resolve(projectRoot, item)))
 }
 
-/** 某一类的 edit 上限（相对工程根的路径前缀）。`builder` 无额外上限（scope 自身即边界）。 */
+/** 解析到最近的**存在**祖先再 realpath（目标不存在时也要能判软链）。 */
+export function realpathNearest(absolute: string): string {
+  let current = absolute
+  const tail: string[] = []
+  while (!existsSync(current)) {
+    const parent = path.dirname(current)
+    if (parent === current) return absolute
+    tail.unshift(path.basename(current))
+    current = parent
+  }
+  try {
+    return path.join(realpathSync(current), ...tail)
+  } catch {
+    return absolute
+  }
+}
+
+/** 相对路径归一后再相对 `workRoot` 取 realpath（逃出工程根 ⇒ null）。 */
+export function realRelative(workRoot: string, normalized: string): string | null {
+  const resolved = realpathNearest(path.resolve(workRoot, normalized))
+  const rel = path.relative(workRoot, resolved)
+  if (rel.startsWith("..")) return null
+  return rel.split(path.sep).join("/")
+}
+
+/** `child` 是否等于 `parent` 或落在其下（路径段边界，不用字符串前缀 —— 避免 `docs/adr2` 误判）。 */
+export function isPathWithin(child: string, parent: string): boolean {
+  return child === parent || child.startsWith(parent + "/")
+}
+
+/**
+ * builder 的类边界（D3 修订）：arch roots 的**字面值**与**realpath**（解析后仍在 workRoot 内者）。
+ * 软链到工程根外 ⇒ 不构成类边界（与 V18 同处理）。
+ */
+function archBoundary(workRoot: string): Array<{ lit: string; real: string }> {
+  const out: Array<{ lit: string; real: string }> = []
+  for (const root of archRoots(workRoot)) {
+    const rel = realRelative(workRoot, root)
+    if (rel === null) continue
+    out.push({ lit: root, real: rel })
+  }
+  return out
+}
+
+/**
+ * builder 的 arch deny 规则（D3 修订宽目标分支）。
+ *
+ * - 资源形态 `<root>` + `<root>/*`：本仓 `Wildcard.match` 的 `*` 跨 `/` ⇒ 一条覆盖深路径；
+ *   **不用 `<root>*`**（会误伤 `docs/adr2` 这类兄弟目录）。
+ * - 字面值与 realpath **都** deny（arch root 是软链时，保守侧：请修软链，别指望软链绕过）。
+ * - 不含绝对形式：内部路径的权限资源是 **location-relative**（`packages/core/src/file-access.ts:99`），
+ *   绝对输入路径在上游被相对化 ⇒ 相对规则即可命中。
+ */
+export function archDenyRules(workRoot: string): Array<{ action: string; resource: string; effect: string }> {
+  const rules: Array<{ action: string; resource: string; effect: string }> = []
+  const seen = new Set<string>()
+  for (const b of archBoundary(workRoot)) {
+    for (const target of [b.lit, b.real]) {
+      for (const resource of [target, `${target}/*`]) {
+        if (seen.has(resource)) continue
+        seen.add(resource)
+        rules.push({ action: "edit", resource, effect: "deny" })
+      }
+    }
+  }
+  return rules
+}
+
+/**
+ * 某一类的 edit 上限（相对工程根的路径前缀）。
+ *
+ * `builder` 返回 `[]`：它的边界不是"另一个允许集"，而是 **`scope` 减去 arch roots**
+ * —— 窄目标在 `assertRoleClassCompatible` 拒派发、宽目标在 `classPermissions` 追加 arch deny。
+ */
 export function classAllowRoots(roleClass: RoleClass, projectRoot: string): string[] {
   if (roleClass === "builder") return []
   if (roleClass === "verifier") return [".rddf/reviews"]
@@ -654,13 +747,39 @@ export function assertRoleClassCompatible(
   brief: { role_class: RoleClass; scope: string[] },
   workRoot: string,
 ): void {
-  if (brief.role_class === "builder") return
+  if (brief.role_class === "builder") {
+    // D3 修订两级规则：
+    // ① 窄目标（scope 项**落在** arch root 内，按 realpath 判软链两方向）⇒ 派发被拒；
+    // ② 宽目标（scope 是 arch root 的祖先 / 整个工程）⇒ 放行，减法在 `classPermissions`
+    //    的 arch deny 层生效；archRoots 为空 ⇒ 类边界不存在（V18）。
+    const boundary = archBoundary(workRoot)
+    if (boundary.length === 0) return
+    for (const raw of brief.scope) {
+      const normalized = normalizeScopePath(workRoot, raw)
+      if (normalized === null) continue // 工程根外：scopeEditRules 本就不放行
+      if (normalized.length === 0) continue // "." = 整个工程 ⇒ 祖先 ⇒ 走减法
+      const real = realRelative(workRoot, normalized)
+      for (const b of boundary) {
+        const hit =
+          isPathWithin(normalized, b.lit) ||
+          (real !== null && (isPathWithin(real, b.lit) || isPathWithin(real, b.real)))
+        if (hit) {
+          throw fail(
+            `role_class=builder 的 scope 项落在架构文档目录内: ${raw}（${b.lit}）—— ` +
+              `架构文档属 architect 类：要写架构文档请改用 role_class=architect；` +
+              `若只是顺带改动，请把 scope 收窄到非架构路径`,
+          )
+        }
+      }
+    }
+    return
+  }
   // architect：架构文档目录为空 ⇒ 直接拒（而不是让 scope 撞成"越界"）——
   // 两者的修复动作不同：前者是"先初始化架构目录"，后者是"scope 写错了"。
   if (brief.role_class === "architect" && archRoots(workRoot).length === 0) {
     throw fail(
       `role_class=architect 但本工程没有可写的架构文档目录` +
-        `（.rddf/config/arch-docs.json 未配置或全部失效，且 docs/adr 不存在）：` +
+        `（.rddf/config/arch-docs.json 未配置或全部失效，且 fallback 目录集一项都不存在）：` +
         `请先运行 scripts/arch-docs-init.sh 初始化，或改派 builder 类`,
     )
   }
@@ -780,6 +899,9 @@ export function classPermissions(input: {
     // subagent 白名单**只对可写工程 session**（D4）：知识 session 原本就没有 subagent 能力
     // （只读 agent 的 `subagent: deny`），不得在这里顺带放开。
     ...(input.kind === "engineering" ? classSubagentRules() : []),
+    // D3 修订：`builder` 的 arch 路径 deny —— **恒在数组末尾**（`evaluate` 取 findLast ⇒
+    // 任何在其后追加的 allow 都会翻盘；本数组的末尾位置是不变量，见 ADR D8）。
+    ...(input.kind === "engineering" && input.roleClass === "builder" ? archDenyRules(input.workRoot) : []),
   ]
 }
 
@@ -1028,6 +1150,15 @@ export function buildBrief(brief: ReturnType<typeof validateBrief>, projectRoot:
     lines.push("## 运行身份")
     lines.push("")
     lines.push(`- 你是被派发的后端工程 session；本 session 的 role_class = ${brief.role_class}。`)
+    if (brief.role_class === "builder") {
+      const arch = archRoots(projectRoot)
+      if (arch.length > 0) {
+        lines.push(
+          `- 架构文档目录（**不可写**，属 architect 类）: ${arch.join(", ")}` +
+            ` —— 写这些路径会收到 Permission denied，那是类边界，不是故障。`,
+        )
+      }
+    }
     lines.push("- 只做本类任务：判断标准是「要写的东西在不在本类允许集内」——读任何路径都不算越类。")
     lines.push("- 需要别的类的工作 ⇒ 停在动手前，按下方 HANDOFF 契约交回主会话（不得自行切换类）。")
     lines.push("- 若已被 suspend / resume，上下文保留，role_class 不变（来自登记值，不接受改写）。")

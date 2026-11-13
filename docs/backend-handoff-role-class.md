@@ -50,11 +50,13 @@ plan 主会话：读 evidence → 切角色 → 改 plan/proposal → resume（�
 
 | class | edit | subagent | 产出物 | 收口归属 |
 |---|---|---|---|---|
-| `builder` | `scope` | 五个只读 agent | 代码 / 测试 | 主会话发起评审 |
+| `builder` | `scope` **减去 `archRoots`**（D3 修订：窄目标派发被拒；宽 scope 下 arch 路径写盘被拒） | 五个只读 agent | 代码 / 测试 | 主会话发起评审 |
 | `architect` | `archRoots ∪ .rddf/reviews ∪ arch-docs.json` | 同上 | ADR / 架构文档 / 审稿报告 | 可有条件转 Status；已签批 ADR 的决策变更必须 handoff |
 | `verifier` | 仅 `.rddf/reviews/**` | 同上 | 验收报告 | 判决由主会话消费，不改实现 |
 
-`archRoots(projectDir)` 按 `.rddf/config/arch-docs.json` 的三态解析（配置可用 → `arch_paths`；缺失/为空/损坏 → fallback 目录集中实际存在的目录；全无 → 空集，architect 类派发被拒），**不硬编码目录名**。
+`archRoots(workRoot)` 按 `.rddf/config/arch-docs.json` 的三态解析（配置可用 → `arch_paths`；缺失/为空/损坏/全部失效 → **fallback 目录集的闭合清单**：`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design`、`adr`、`rfc`、`specs`；全无 → 空集，architect 类派发被拒）。**主判定不硬编码目录清单**（配置优先）；fallback 用文档化的闭合清单，且与 `prompts/build.md` 的目录集由守卫测试钉住；解析根与 scope、权限资源同根（`workRoot`）。
+
+**builder 的两级规则**：① 任一 scope 项落在 arch root 内 ⇒ **派发被拒**（类选错了，fail fast）；② scope 是 arch root 的祖先（`.` / `docs`）⇒ 放行，但在权限数组末尾追加 `<root>` + `<root>/*` 的 `edit deny`（`findLast` ⇒ 压过 scope allow；`*` 跨 `/`，一条覆盖深路径；`write`/`patch` 同一 action 一并覆盖）⇒ 写 arch 路径被拒 ⇒ 后端 HANDOFF。archRoots 为空时类边界不存在（减法退化为空集）。
 
 ### 3.2 subagent 白名单
 
@@ -78,6 +80,7 @@ plan 主会话：读 evidence → 切角色 → 改 plan/proposal → resume（�
 | 失败模式 | 现状后果 | 对策 |
 |---|---|---|
 | 后端"顺手"改计划 | 计划与实施脱节，无人知情 | 写目标越类 ⇒ 停手 + feedback 记录；`revision_count` 断路器兜底 |
+| builder 顺手改 ADR（**实测发生过**：`feedback-20261113-001`） | 架构决策绕过 oracle→critic 与签批链 | D3 修订两级规则：窄目标派发被拒；宽 scope 下 arch 路径 `edit deny`（数组末尾）⇒ 写盘被拒 ⇒ HANDOFF |
 | 主会话忘了 resume | 槽已释放，通道不堵；只是后端悬挂 | `sessions` 列出 `idle` + feedback 待处理；`cancel` 收尾 |
 | resume 时 class 漂移 | 权限是 architect、简报说 builder，行为不可预测 | class 取自 `pair.json`，brief 不一致硬拒 |
 | 扩 scope 后用 resume | 新指令撞权限被拒，白跑一轮 | 校验层直接拒，提示「新建 session，上下文不继承」 |
@@ -101,4 +104,4 @@ plan 主会话：读 evidence → 切角色 → 改 plan/proposal → resume（�
 
 ## 8. 验收
 
-见 ADR「Verification」章（V1–V14 ↔ change 的 AC1–AC14；change 追加 AC15–AC23 为实施级判据）。结构性判据进单测/e2e；「模型是否真的不越类」属 prompt 判据，不进 CI。
+见 ADR「Verification」章（V1–V14 ↔ change 的 AC1–AC14；**D3 修订**的 V15–V21 ↔ change 的 AC24–AC31；change 追加 AC15–AC23 为实施级判据）。结构性判据进单测/e2e；「模型是否真的不越类」属 prompt 判据，不进 CI。
