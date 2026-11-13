@@ -50,9 +50,15 @@
 
 ## 手工 e2e（不进 CI，模型行为不确定）
 
-- [ ] AC13 给 `builder` 类后端一个 scope **含 `docs/adr`** 的「先改 ADR 再实现」任务 ⇒ `docs/adr/**` 零变更 + feedback 记录 + `idle`
-- [ ] AC14 用 fixture 构造 `subagent` 被 deny 的 architect session ⇒ `HANDOFF: blocked`、未自审自批
-- [ ] AC9（落点部分）/ AC21 `rddf feedback add` 实际落点 + `rddf` 不可用时的文本 fallback
+> 已迁入 `rdd-workflow-e2e` 仓的运行时用例（`E2E_REAL_RUNTIME=1` 门控，默认 skip）：
+> `tests/integration/test_role_class_runtime.bats`（`rdd-workflow-e2e` commit `5b37903`）。以下证据均为该文件实测。
+
+- [x] AC13 给 `builder` 类后端一个 scope **含 `docs/adr`** 的「先改 ADR 再实现」任务 ⇒ `docs/adr/**` 零变更 + feedback 记录 + `idle`
+      — D3 修订后按**两级规则**验证：窄目标（`scope=["docs/adr","src"]`）⇒ 派发被拒、不建 session（RC-1）；宽目标（`scope=["."]`）⇒ `docs/adr/**` 零变更 + `blocked_reason: Permission denied: edit` + feedback 落盘（RC-2）
+- [x] AC14 用 fixture 构造 `subagent` 被 deny 的 architect session ⇒ `HANDOFF: blocked`、未自审自批
+      — RC-4：`Status` 保持 `Draft`（YAML 与表格两种元数据形态都挡）、首行 `HANDOFF: blocked`、feedback 凭据落盘
+- [x] AC9（落点部分）/ AC21 `rddf feedback add` 实际落点 + `rddf` 不可用时的文本 fallback
+      — RC-2：凭据落在 `.rddf/improvements/demo-change.md`；RC-3（`rddf` 不可用）：**无** `## Feedback` 段（不新造落点）、ADR 仍不变、权限拒绝仍是结构化证据
 
 ## 拆出（后续 change，本 change 不做）
 
