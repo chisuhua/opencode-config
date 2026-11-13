@@ -1,12 +1,14 @@
 # backend-handoff-role-class — 执行计划（planner 产出）
 
 > 决策：`docs/adr/ADR-backend-handoff-role-class.md`（**Accepted** 2026-11-13）
-> 逐条验收口径：`openspec/changes/backend-handoff-role-class/proposal.md` 的「验收标准」表（AC1–AC23）
+> 逐条验收口径：`openspec/changes/archive/2026-11-13-backend-handoff-role-class/proposal.md` 的「验收标准」表（AC1–AC31；D3 修订追加 AC24–AC31）
 > 本文件是**builder 的输入**：canonical 的 `.rddf/plans/backend-handoff-role-class.md`（TDD 5 步）与 `openspec/changes/backend-handoff-role-class/tasks.md` 由 **builder** 生成（工件归属：`rdd-workflow-writing-plans` / `rdd-builder` owns）。本文件不替代它们，只给出可直接物化的任务分解与验收清单。
 
 ## 1. 实施分解
 
-**已落地**（2026-11-13，用户指令先落治理面文本）：块 E（prompt 侧 C.9 / C.10）+ ADR 状态与编号同步 + 文档。**剩余**：块 A–D（lib 侧）。
+**已落地并归档**（2026-11-13）：块 A–D（lib 侧）+ 块 E（prompt 侧）+ **D3 修订**（builder 上限 = `scope − archRoots` 两级规则，AC24–AC31）。
+> change 已归档为 `openspec/changes/archive/2026-11-13-backend-handoff-role-class/`；验收报告 `.rddf/reviews/backend-handoff-role-class-verify.md`（31/31 AC 有工具证据）。
+> **C.11 已拆出**并单独实施归档：`resume-precheck-guidance`（2026-11-13，prompts-only，AC1–AC10）。
 
 TDD 纪律：**每块先写测试（红）→ 再实现（绿）→ 跑该块测试**。每任务 2–5 分钟粒度。
 
@@ -14,8 +16,8 @@ TDD 纪律：**每块先写测试（红）→ 再实现（绿）→ 跑该块测
 |---|---|---|---|---|---|
 | A1 | 红 | `validateBrief` 的 `role_class` 值域 + 缺省 + `null`/`""` 非法 + `kind=knowledge` 互斥 | `tests/delegate-core.test.ts` 新 describe | AC1 / AC2 / AC20 | — |
 | A2 | 绿 | 实现值域归一与互斥校验（缺省只认 `undefined`） | `lib/delegate-core.ts` | A1 绿 | A1 |
-| A3 | 红 | `archRoots` 四态（配置可用 / 缺失 / 空 / 损坏）+ **全无 ⇒ architect 派发被拒** + 错误信息指向 `arch-docs-init.sh` | 同 A1 文件 | AC15 | A2 |
-| A4 | 绿 | 实现 `archRoots`（态 2/3 **只回退 `docs/adr`**，不复刻 `survey()` 启发式） | `lib/delegate-core.ts` | A3 绿 | A3 |
+| A3 | 红 | `archRoots` 三态（配置可用 / 缺失·空·损坏·路径全失效 / 全无）+ **全无 ⇒ architect 派发被拒** + 错误信息指向 `arch-docs-init.sh` | 同 A1 文件 | AC15 | A2 |
+| A4 | 绿 | 实现 `archRoots`（态 2/3 回退 **fallback 目录集闭合清单** `ARCH_FALLBACK_DIRS`（8 项，与 `prompts/build.md` 目录集逐项一致、由守卫钉住），不复刻 `survey()` 启发式；survey 发现的其他目录须先固化进 `arch_paths` 才受管辖） | `lib/delegate-core.ts` | A3 绿 | A3 |
 | A5 | 红 | class×scope 相容：`architect + ["src/**"]` 拒、`+ ["docs/adr/x.md"]` 放行、`+ ["."]` 拒、symlink 指向 `src` 拒、三种 scope 写法判定一致 | 同 A1 文件 | AC3 / AC10 / AC18 | A4 |
 | A6 | 绿 | 实现 `assertRoleClassCompatible(brief, workRoot)`：**每项** ⊆ 类 allow 集（不是"有交集"）；落点在 `session.create` / `registerSession` 之前 | `lib/delegate-core.ts` | A5 绿 | A5 |
 | A7 | 红 | `classPermissions` **净效果**断言（`evaluate` 结果，不按下标）：verifier 的 `edit .rddf/reviews/**` allow / `edit src/**` deny；三类 subagent 白名单 allow、`general`+`context-builder` deny | `tests/delegate-async.test.ts` + `tests/delegate-core.test.ts` | AC4 / AC5 | A6 |
@@ -103,5 +105,5 @@ TDD 纪律：**每块先写测试（红）→ 再实现（绿）→ 跑该块测
 ## 5. 待用户/后续决定
 
 1. **实施是否走派发**（用本机制自己派自己）还是直接切 builder 在主会话做 —— 后者更简单，前者是 dogfood。
-2. **C.11 已定拆出**（用户 2026-11-13 确认保持拆出）：prompts-only change，四条内容写在 proposal 的 What Changes C.11；**立项时机待定**（建议本 change 合并后）。
+2. ~~**C.11 已定拆出**（用户 2026-11-13 确认保持拆出）~~ ⇒ **已实施**：`openspec/changes/archive/2026-11-13-resume-precheck-guidance/`（prompts-only，`prompts/plan.md` 唯一真源 + `prompts/front.md` 只留引用 + 守卫）。
 3. **跨 worktree 同 `plan_ref` 并发**的缺口另立 ADR 的时机。
