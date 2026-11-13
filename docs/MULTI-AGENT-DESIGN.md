@@ -128,6 +128,10 @@
   6. 给用户选择题（不替用户拍板）
   7. 需要落地实施 ⇒ **委托**工程 session（`delegate` / `dispatch`），带 `plan_ref`（**委托实施 ≠ 自己实施**：写动作只发生在后端 session 内）
 
+### 2.2b 子代理编排与委托通道（当前态汇总）
+
+> **汇总文档**：`docs/SUBAGENT-ORCHESTRATION.md` —— 把 agent 清单、委派拓扑与门控、审查链与档位、输入契约（L1–L5）、critic 的评审对象边界、oracle 双模式与判定行、metis / context-builder 定位、delegate 通道（派发主体 / 槽位 / 归属 / D7 优先级）、已知残留汇到一处。**它是索引与现状描述，不是规则真源**（真源 = `prompts/*.md` + `docs/adr/*.md` + `opencode.jsonc.opencode-go` + `lib/*.ts`）。
+
 ### 2.3 Subagents（7 个，subagent 工具调用）
 
 #### `explore` —— 本地代码 grep

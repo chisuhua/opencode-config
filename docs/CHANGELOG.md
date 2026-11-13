@@ -18,6 +18,12 @@
 > ⑤ **验证**：`bun test tests/` **385 pass**（config-guards +2 护栏）；anchors 23/23；`opencode debug agents` 确认 context-builder 可见且 `hidden=False`。
 > ⑥ **残留**：采纳率是否回升只能上线后观察（`ERROR: missing intent` 出现频率是"调用方不给 intent"的先行指标）；「plan → critic 条件配对」登记为 backlog。
 
+> **v2.19 变更摘要（2026-11-13，沉淀 `docs/SUBAGENT-ORCHESTRATION.md`）**：
+> ① **目的**：把本轮（oracle 判定行单一真源 + critic 评审对象边界 + metis 措辞收敛 + review_profile A/C/D + context-builder 收窄 + plan 派发主体 + D7 优先级）的**当前态**沉淀成一篇常驻文档，避免知识只散在 ADR 与 `.rddf/reviews/` 里。
+> ② **文档**：`docs/SUBAGENT-ORCHESTRATION.md` —— agent 清单与模型档位 / 委派拓扑与门控（subagent 清单过滤、delegate 五工具与权限项）/ 审查链与 `review_profile` 档位（含继承式档位）/ 输入契约 L1–L5 与日志事件 / critic 的评审对象边界 / oracle 双模式与判定行 / metis 与 context-builder 定位 / delegate 通道（plan_ref / owner_agent / 单槽 / D7 优先级）/ 已知限制与残留 8 条 / 索引（8 篇 ADR + 8 份审稿记录 + 守卫清单）。
+> ③ **定位声明**：该文是**汇总 + 索引**，**不是规则真源** —— 真源仍是 `prompts/*.md`、`docs/adr/*.md`、`opencode.jsonc.opencode-go`、`lib/*.ts`；若冲突以真源为准。
+> ④ **验证**：`bun test tests/` 396 pass；anchors 23/23（本文不含断言，未改真源）。
+
 > **v2.18 变更摘要（2026-11-13，D7 派发优先级：plan 优先、但不抢占）**：
 > ① **诉求**：「plan 活跃的情况下，front 不能调用 build 的后端 session」。已确认边界：作用域**保持按工作树**、**只报错不抢占**。
 > ② **ADR 修订**：`docs/adr/ADR-plan-delegate-engineering-session.md` 新增 **D7**（D4 增补指向）。核心：① **D7.2** 冲突判定**富化既有占槽拒绝点**（不新建锁外预检，避免 TOCTOU 与两面活体口径漂移），holder 结构体扩 `owner_agent`；② **D7.3** 跨 owner-kind 的 **resume 硬拒**（判据用 owner-kind 而非 session id ⇒ 保住"隔天回来继续"；亡主例外复用 `frontAlive`）；③ **D7.4** 两种指名文案（被 plan 占 / 被 front 占）+ 可执行下一步；④ **D7.5** owner 亡主**不消解冲突**（只看后端活体；出口是既有亡主门控回收后再派）；⑤ **D7.6** 拒绝点落 ledger 事件 `priority_blocked`（caller_kind / holder_kind / holder_state / holder_session_id / work_root / path）；⑥ **D7.8** 跨 owner-kind 的 **cancel 硬拒**（补齐归属门控只在 suspend 路径的缺口，否则 front 可绕过优先级直接终止 plan 的活后端）。

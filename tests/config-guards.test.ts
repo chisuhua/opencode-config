@@ -281,6 +281,29 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     expect(designMd, "MULTI-AGENT-DESIGN.md 未记录移除 hidden 的理由").toContain("不再 `hidden`")
   })
 
+  test("SUBAGENT-ORCHESTRATION.md 引用的仓库内路径都存在（索引防漂移）", () => {
+    const doc = readFileSync(path.join(ROOT, "docs", "SUBAGENT-ORCHESTRATION.md"), "utf8")
+    const tokens = [...doc.matchAll(/`([^`]+)`/g)].map((m) => m[1] as string)
+    const candidates = tokens.filter(
+      (t) =>
+        t.includes("/") &&
+        !t.includes("*") &&
+        !t.includes(" ") &&
+        !t.includes("<") && // 占位符（如 .rddf/plans/<slug>.md）不是真实路径
+        !t.includes(">") &&
+        // `~`（home 目录运行时路径，如 ~/.local/share/opencode/subagent-contract.log）与
+        // `/`（外部仓绝对路径，如 e2e 套件）都不在本仓内，无法守卫 —— 排除是刻意的
+        !t.startsWith("~") &&
+        !t.startsWith("/") &&
+        !t.startsWith("packages/") && // 上游 opencode 仓的路径不在本仓
+        /\.(md|ts|sh|bats|jsonc|json)$/.test(t),
+    )
+    expect(candidates.length, "汇总文档应引用若干仓库内文件（守卫才有意义）").toBeGreaterThan(8)
+    for (const c of candidates) {
+      expect(existsSync(path.join(ROOT, c)), `汇总文档引用的路径不存在：${c}`).toBe(true)
+    }
+  })
+
   test("判定词表单一真源：只在 prompts/oracle.md 定义，build.md / MULTI-AGENT-DESIGN.md 只指向它", () => {
     const oracleMd = readFileSync(path.join(ROOT, "prompts", "oracle.md"), "utf8")
     expect(oracleMd).toContain("治理面判定: PASS | BLOCK | PASS-WITH-NOTES")
