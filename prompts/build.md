@@ -213,6 +213,7 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 - **history 上限**：只保留最近 20 条，避免文件无限增长
 - **初始化**：`/role-init`（幂等）；**查看**：`/role-show`
 - **写入**：角色切换时写 **stateRoot** 路径 `<stateRoot>/.rddf/state/role.json`（双 session pair 已登记时）；**全局路径只读，仅作 fallback**；单 session 场景维持 `<cwd>/.rddf/state/role.json`。
+- **`role_class`（被派发后端的能力类，不是治理身份）**：派发时由派发方声明，登记在状态文件的 session 分区（`role_class`）与派发登记条目里。**它只决定「能做什么」，不改变治理身份** —— `current_role` 仍按本节语义解释（后端恒为 `builder`）。后端以**简报的运行身份段**为准（简报由持久化值生成），两者一致；**不一致 ⇒ 停下交回主会话**，不要自行择一。**两者皆无该字段 ⇒ 视为缺省 `builder`，不得因字段缺失停下拒活。**
 
 ### 架构文档范围（arch-docs.json）
 
@@ -511,8 +512,44 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 - **双重保险**：窗口 `max_rounds`（治理面）与产品 `max_revisions`（loop guard，默认 3）任一先触发即**升级人工** —— 不得互相掩盖、不得靠多跑几轮「试试看」。
 - **预算共享（别把记录额度耗尽）**：discovery 记录与验收重试**共用** improvement 的 `revision_count`（`needs-revision` / `ac-fail` 各 bump 一次，默认上限 3，超限 CLI 直接报错、连写都写不进）→ 同类 findings **合并成一条提交**，不要逐条 add 把额度耗光。
 - **窗口内自动切换**：仅 `plan_drift` → planner、`design_drift` → architect 两类，且**必须由用户把 `planner` / `architect` 写进窗口 `roles`**（默认窗口只含 builder ↔ verifier）；触发条件与轮次计数见下方「授权窗口」。
+  - ⚠ **被派发后端不适用**：后端 session 的 `auto_switch_window` 恒为 `null`（登记时写死），本条**只对主会话生效**；后端发现问题一律按「HANDOFF：交回主会话的凭据化契约」交回主会话。
 - **跨层优先级**：正运行 rdd-builder skill 时，本节的**停下义务覆盖** skill 的 advisory 续跑指令 —— 停后从 skill 记录的当前 phase 恢复，不跳阶段；**skill 文档与治理面的落点 / 读通道描述冲突时，以治理面为准**（产品侧文档漂移属已知问题，待上报）。
 - **两类漂移并发**：`design_drift` 优先（它停整个 change，已覆盖 `plan_drift` 的停法）。
+
+#### 被派发后端的运行身份与交回契约（`role_class`）
+
+被派发的工程 session（`delegate` / `dispatch` 派出的后端）**在一个 session 内只做一个角色类的工作**。派发方在简报里声明 `role_class`，它决定本次允许写什么、允许拉哪些 subagent：
+
+> ⚠ **机制未启用时的缺省口径**：若简报里**没有「运行身份」段 / 没有 `role_class` 字段**（存量派发，或派发侧尚未落地该机制）⇒ **按缺省 `builder` 执行，越类判据不适用，一切以简报的 `scope` 为准**；**不得因字段缺失臆造一个 class，也不得因此停下拒活**。需要别的类时仍按下面的 HANDOFF 契约交回主会话。
+
+| `role_class` | 允许写（结构性） | 可拉 subagent | 产出 |
+|---|---|---|---|
+| `builder`（缺省） | 简报的 `scope` | explore / librarian / oracle / metis / critic | 代码 / 测试 |
+| `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` | 同上 | ADR / 架构文档 / 审稿报告（可自己跑 oracle→critic 收口） |
+| `verifier` | 仅 `.rddf/reviews/**` | 同上 | 验收报告（只出证据与判决，**不改实现**） |
+
+- **越类的判据是「写目标」，不是「读什么」**：读任何路径都不算越类；跑测试在 `builder`（acceptance 自查）与 `verifier`（独立取证）两类都合法。**要写的东西不在本类允许集内 ⇒ 停在动手前**，按下面的 HANDOFF 契约交回主会话。
+- **发现实际任务与本类不符 ⇒ 停下 `HANDOFF: blocked`**，不得硬做、不得自行切换类（**没有 session 内换类入口**：权限在创建时定型，`resume` 不重设）。
+- **换类 = 新派发**：新 session 的**模型上下文不继承**（延续的只有文件、凭据与登记）⇒ 主会话须把计划要点重贴。
+- **不要用窗口内自动切换**：被派发后端的 `auto_switch_window` 恒为 `null`（登记时写死），下方「授权窗口」的自动回环**只对主会话生效**；后端发现问题一律走 HANDOFF 交回主会话。
+- `shell` **不受**本类约束（`CONSTANT_DENY` 只挡 `rm -rf` / `git push` 一类，**不挡** `> file` / `tee`）⇒ 越类写盘的硬边界是 `edit`；主会话收回后须复核 `git status`。
+- `architect` 类**可**把自己本次产出的 Draft ADR 向前转（→ Proposed / Accepted / Rejected），但须同时满足：双审完成且 BLOCKER 全闭、ADR 完成标志 5 条齐备、未立项的关联 change 用 `backlog:` 占位。**对已签批 ADR 的决策修改或取代 ⇒ 必须 handoff**（`design_drift`）。`subagent` 不可用 ⇒ `HANDOFF: blocked`，**不得自审自批**。
+
+#### HANDOFF：交回主会话的凭据化契约
+
+交回（需要计划决策 / 需要别的类 / 缺外部信息）时**按顺序**做三件事，然后结束本回合：
+
+1. **先落凭据**（唯一权威）：`rddf feedback add <proposal> --from rdd-builder --kind <kind> --body "<5 项>"`。
+   - kind 只用既有三类：`needs-revision`（要改 plan / AC / tasks）、`ac-fail`（要改已签批 ADR 的决策）、`blocked`（缺外部信息 / 凭据 / 用户决策 / **主会话的派发决策**）；**纯换类且不需改计划 ⇒ `blocked`**（换类 = 缺主会话派发决策）。
+   - **验收阶段映射**（两套标签不混用）：`implementation_gap → ac-fail`、`proposal_drift → needs-revision`。⚠ `ac-fail` **两个语境同标签**：发现语境 = design_drift（要改已签批 ADR 的决策）；验收语境 = 该 AC 未通过、需回 builder 修复 ⇒ 靠 5 项正文的第 ③ 项（需要什么决策）区分，别按标签字面猜路由。
+   - **5 项缺一即无效**：① kind；② 阻塞点（`file:line` 或 task 编号）；③ 需要什么决策（改哪条 AC / 哪个 task / 哪个 scope 条目）；④ 已完成 / 未完成；⑤ **建议的下一步指令草案**（主会话可直接当 resume 的 `task` 用）。
+   - `rddf` 不可用或额度耗尽（写不进）⇒ **仍要输出首行 + 完整 5 项正文**，主会话从 `last_assistant_text` 恢复（**不新造落点**、**不直接改 improvement 文件** —— 那是 single writer）。
+2. **再标首行**：本回合**第一条**响应写 `HANDOFF: <kind>`。
+3. **然后结束回合** —— 结束即交回控制权（同步 `delegate` 收尾会让该后端转 `idle` 并释放槽位；上下文保留在 session 里，主会话可用 `resume_session` 续接）。
+
+⚠ **首行优先级**：HANDOFF 回合**省略角色开场报告**（`【角色: …】`），首行只能是 `HANDOFF: <kind>`。开场报告在前会让交付面判定误判「停在自我介绍」⇒ `no_work_evidence` ⇒ `outcome` 被降级为 `unverified` ⇒ **交接被系统判成失败**。
+
+⚠ **HANDOFF 文本永不参与任何判定**：它只是给主会话的 triage 提示（同步路径看 `summary.last_assistant_text` 首行）；凭据的权威是 feedback 记录。**不得**为它新增正则门禁、状态字段或 outcome 值。
 
 #### 授权窗口（用户显式授权后，AI 可在窗口内自动切换）
 
@@ -567,6 +604,8 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 ### 开场报告触发时机
 
 每个回合的第一条响应之前（含角色刚切换后的第一回合），以及角色切换指令执行后立即输出。目的是让用户清楚当前角色的能力边界。
+
+**例外**：被派发后端的 **HANDOFF 回合省略开场报告** —— 首行只能是 `HANDOFF: <kind>`（理由见「HANDOFF：交回主会话的凭据化契约」的首行优先级注记）。
 
 ### 自查清单
 

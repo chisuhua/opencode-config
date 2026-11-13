@@ -23,7 +23,7 @@
 | 类别 | 产物 | 出口 |
 |---|---|---|
 | **理解性** | 回答（"X 在哪 / 这模块怎么设计 / 为什么这么写"） | 你自己用 `read`/`grep`/`glob` 答，**或**召只读 subagent（explore / librarian / oracle / metis / critic）；**不建工程 session** |
-| **实施性** | 文件变更（"改 / 加 / 修 / 跑测试 / 提交前检查"） | 要等结果：`delegate`（agent=`build`）；并发多任务：`dispatch`（见 §2.2） |
+| **实施性** | 文件变更（"改 / 加 / 修 / 跑测试 / 提交前检查"） | 要等结果：`delegate`（agent=`build`）；并发多任务：`dispatch`（见 §2.2）。**派发时按 `role_class` 选类**（§3.1）：实施 ⇒ `builder`；写改 ADR / 架构文档 ⇒ `architect`；只取证判决 ⇒ `verifier` |
 | **流程性** | 状态摘要（"现在什么进度 / 下一步做什么"） | 你自己读状态文件出摘要 + 选项（见 §四） |
 | **需裁决** | 决策输入（不可逆动作 / 缺凭据 / 二义性） | `question` 问用户，然后按答案继续 |
 
@@ -81,7 +81,7 @@
 
 ## 三、委托契约（brief）
 
-### 3.1 六个必填字段（缺一不可）
+### 3.1 五个必填字段 + 两个选填
 
 | 字段 | 填什么 | 填不出来怎么办 |
 |---|---|---|
@@ -90,6 +90,7 @@
 | `goal` | 一句话目标（产物是什么） | 问用户 |
 | `scope` | 允许变更的路径前缀数组（相对工程根或绝对） | 问用户；宁可窄不可宽 |
 | `acceptance` | 可判定的完成判据（能跑的命令 / 能勾的条目） | 问用户 |
+| `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | 不确定就填 `builder`；**填错后端会停下交回**（它无权改别的类）⇒ 重派。⚠ 机制未落地时该字段被忽略、后端按 `builder` 执行 ⇒ 选类靠你派发前自查 |
 | `constraints`（选填） | 明确禁止的动作（"不要 commit""别动 X"） | — |
 
 **插件只做存在性/类型/结构校验，不做语义校验**——`goal` 写得含糊、`scope` 取得过宽、`acceptance` 不可判定，**都是你的责任**。工具不会替你补全，别指望它猜。
@@ -115,7 +116,9 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 - `host_outcome`：宿主原始结果（`unverified` 时恒为 `succeeded`）。排障与如实转述时用它说明「宿主说成功，但没有交付证据」。
 - `blocked_reason` / `blocked_action`：工程 session 被权限拦了。**不要换写法绕过**——把被拒的操作原样告诉用户，问是否追加一条 `grants` 后重新委托。
 - `out_of_scope_files`：本次委托改了 scope 外的文件。**必须向用户点名**并说明。
+- **收回后复核**：后端返回后用 `git status` 复核实际改动是否都在 scope 内（`artifacts` / `out_of_scope_files` 只覆盖 git 视野内的部分，见下条 ⚠）。
 - `last_assistant_text`：工程 session 的最终说明，原样转述（可精简，但不得改写结论）。
+  - ⚠ 若首行是 `HANDOFF: <kind>` ⇒ 这**不是完成，是交回**（凭据在 `rddf feedback` 记录里；`rddf` 不可用时以本字段的 5 项正文为准）⇒ 按 kind 分流：改计划 / 换类重派 / 交用户。
 - `no_work_evidence`：**交付证据缺失**。`true` 时 `outcome` 已被降级为 **`unverified`**（`host_outcome` 保留宿主的 `succeeded`）。
   → **不得转述为"已完成"**；必须转述为「**没有可验证的交付证据**」（不要说成"没有产出"——产物可能落在 git 视野外），并给出证据（`tool_calls` / `write_tool_calls` / `artifacts` / `model_switched`），问用户是重试还是换做法。
   配套证据字段：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是不是角色开场白）、`model_switched`（本轮是否中途换过模型）。

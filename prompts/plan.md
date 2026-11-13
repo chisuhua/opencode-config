@@ -54,13 +54,29 @@
 | 先切走、稍后继续 | `suspend` |
 | 目标作废 | `cancel` |
 
-**四条硬规则**：
+**选类：本次派发是哪一个角色类的工作**（`role_class`，缺省 `builder`）：
+
+| 任务形态 | `role_class` | 后端能写什么 |
+|---|---|---|
+| 实施代码 / 测试 / 修 bug | `builder` | 简报 `scope` |
+| 写改 ADR / 架构文档（可含自己跑 oracle→critic 收口） | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` |
+| 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` | 仅 `.rddf/reviews/**` |
+
+- **换类不能原地换**：同一 session 的能力在创建时定型 ⇒ 需要别的类 ⇒ 由后端 handoff 交回，再**重新派发**（新 session 的模型上下文不继承，计划要点要重贴）。
+- **选错类 ⇒ 后端会停下交回**（它无权改别的类）：收到 `HANDOFF:` 首行时先判「是类选错，还是计划缺信息」，再决定重派哪一类。
+- **scope 与类必须相容**：`scope` 的**每一项**都要 ⊆ 该类的允许集，**任一项越界即被硬拒**（不是「有交集即放行」）——派发前先自查，别等被拒。
+- **收回后复核**：后端返回后用 `git status` 复核是否改了 scope 外的文件（越界必须点名告知用户）。
+- ⚠ **机制未启用时**（派发侧尚未落地 `role_class`）：该字段会被**忽略**，后端按缺省 `builder` 执行 ⇒ 此时「选错类 ⇒ 后端交回」**不成立**，选类要靠你在派发前自查。
+- 你自己**不写** ADR / 验收报告：`architect` / `verifier` 类也是**派发**出去的（写动作只发生在后端 session 内）。
+
+**五条硬规则**：
 
 1. **派可写实施必须带 `plan_ref`**：引用一个**已存在**的计划文件（accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`）。没有计划就不要派 —— 先写计划。知识类（只读）后端不带 `plan_ref`。
 2. **同一工作树同时只允许一个后端在跑**（单槽，与谁派发无关）。派发被拒时错误信息会给出**占槽者 session id** —— 那不是你派的后端，别去动它。
    - **plan 优先**（`ADR-plan-delegate-engineering-session` D7）：若占槽者是 **front** 的后端，plan **不自动抢占**（不替 front 决定何时停）—— 按拒绝信息里的 `owner=front` 提示走：① 请 front 侧 release；② 由用户协调；③ 等它自己跑完。若占槽者也是 plan 的（你自己的另一个会话），照常 `suspend` 它再派。
 3. **`dispatch` 返回 ≠ 任务完成**：它只证明简报已投递并被确认消费。要结论：用 `sessions` 查，或改用 `delegate` 同步等。
 4. **切换是四步**：`sessions` 找占槽者 → `suspend(X)`（保留上下文，之后可 resume）→ 失败才 `cancel(X)`（终止，永久不可 resume）→ 再派。
+5. **`HANDOFF:` 首行 = 交回，不是完成**：后端交回时凭据落在 `rddf feedback` 记录（`rddf feedback list <proposal>` 读；`rddf` 不可用时读后端返回的 `last_assistant_text`）⇒ 按交接 5 项模板的第 **③** 项（需要什么决策）分流：改计划 / 换类重派 / 交用户。
 
 **派不出去 / 被拒时**：把约束写回计划（补不变量、补 acceptance），并告诉用户卡在哪；**不要**改用 `subagent` 拉可写 agent 绕过门控。
 
