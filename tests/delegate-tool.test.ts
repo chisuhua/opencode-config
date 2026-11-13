@@ -765,6 +765,108 @@ describe("交付面证据：静默失败检测（P0）", () => {
   })
 })
 
+
+// ───────────────── role_class（ADR-backend-handoff-role-class） ─────────────────
+
+describe("role_class：同步派发面（AC4 / AC5 / AC8 / AC11 / resume 一致性）", () => {
+  const glob = (pattern: string, value: string): boolean => {
+    if (pattern === "*") return true
+    if (!pattern.includes("*")) return pattern === value
+    const escaped = pattern
+      .split("*")
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*")
+    return new RegExp(`^${escaped}$`).test(value)
+  }
+  /** 与内核 `evaluate` 同语义：findLast。 */
+  const effect = (
+    rules: Array<{ action: string; resource: string; effect: string }>,
+    action: string,
+    resource: string,
+  ): string => {
+    const matched = rules.filter((r) => glob(r.action, action) && glob(r.resource, resource))
+    return matched[matched.length - 1]?.effect ?? "ask"
+  }
+
+  test("工程 session 权限含 subagent 白名单（净效果：只读 agent allow，其余 deny）", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    await runDelegate(ctx, { ...BASE, project_dir: project })
+    const session = [...sessions.values()][0]
+    for (const agent of ["explore", "librarian", "oracle", "metis", "critic"]) {
+      expect(effect(session.permissions, "subagent", agent)).toBe("allow")
+    }
+    for (const agent of ["general", "context-builder", "build"]) {
+      expect(effect(session.permissions, "subagent", agent)).toBe("deny")
+    }
+  })
+
+  test("verifier 类：.rddf/reviews 可写、tests/ 不可写（edit 净效果）", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    await runDelegate(ctx, {
+      ...BASE,
+      project_dir: project,
+      scope: [".rddf/reviews"],
+      role_class: "verifier",
+    })
+    const session = [...sessions.values()][0]
+    expect(effect(session.permissions, "edit", ".rddf/reviews/case.md")).toBe("allow")
+    expect(effect(session.permissions, "edit", "tests/case.py")).toBe("deny")
+  })
+
+  test("role_class 落 pair + role.json 分区；简报含运行身份段", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    await runDelegate(ctx, { ...BASE, project_dir: project, role_class: "builder" })
+    const session = [...sessions.values()][0]
+    const pair = JSON.parse(readFileSync(path.join(project, ".rddf/state/pair.json"), "utf8"))
+    expect(pair.pairs[session.id].role_class).toBe("builder")
+    const role = JSON.parse(readFileSync(path.join(project, ".rddf/state/role.json"), "utf8"))
+    expect(role.sessions[session.id].role_class).toBe("builder")
+    expect(role.sessions[session.id].current_role).toBe("builder")
+    const brief = session.prompts[0]
+    expect(brief).toContain("## 运行身份")
+    expect(brief).toContain("role_class = builder")
+  })
+
+  test("同步轮次结束后 pair.state === idle（AC8，槽已释放可再派）", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })
+    const pair = JSON.parse(readFileSync(path.join(project, ".rddf/state/pair.json"), "utf8"))
+    expect(pair.pairs[summary.session_id].state).toBe("idle")
+  })
+
+  test("resume：class 不一致 ⇒ 硬拒（同一 session 内不允许换类）", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    const first = await runDelegate(ctx, { ...BASE, project_dir: project })
+    await expect(
+      runDelegate(ctx, {
+        ...BASE,
+        project_dir: project,
+        resume_session: first.session_id,
+        role_class: "verifier",
+        scope: [".rddf/reviews"],
+      }),
+    ).rejects.toThrow(/不匹配|越界/)
+  })
+
+  test("AC11：无换类工具入口（注册面只有五个委托工具，无 set_class 一类）", async () => {
+    const source = readFileSync(path.join(import.meta.dir, "..", "plugins", "delegate.ts"), "utf8")
+    const registered = [...source.matchAll(/editor\.add\((\w+)\(/g)].map((m) => m[1])
+    expect(registered.sort()).toEqual([
+      "cancelToolDefinition",
+      "delegateToolDefinition",
+      "dispatchToolDefinition",
+      "sessionsToolDefinition",
+      "suspendToolDefinition",
+    ])
+    expect(registered.some((name) => /class/i.test(name))).toBe(false)
+  })
+})
+
 afterAll(() => {
   try {
     rmSync(TMP, { recursive: true, force: true })

@@ -351,6 +351,86 @@ describe("plan 派发主体 + owner 归属（ADR-plan-delegate-engineering-sessi
   })
 })
 
+
+// ───────────────── role_class（ADR-backend-handoff-role-class） ─────────────────
+
+describe("role_class：派发面（AC19 / AC20 / class×scope / resume 一致性）", () => {
+  const archRepo = (name: string) => {
+    const dir = repo(name)
+    mkdirSync(path.join(dir, "docs", "adr"), { recursive: true })
+    mkdirSync(path.join(dir, ".rddf", "config"), { recursive: true })
+    writeFileSync(
+      path.join(dir, ".rddf", "config", "arch-docs.json"),
+      JSON.stringify({ arch_paths: ["docs/adr"], exclude_paths: [] }),
+    )
+    return dir
+  }
+
+  test("role_class 落 pair 登记 + sessions 回显（AC20）", async () => {
+    const dir = repo("rc-echo")
+    const { ctx } = createFakeCtx()
+    const r = await run(dispatchToolDefinition(ctx), { ...baseInput(dir), role_class: "builder" })
+    expect(readPairs(dir)[r.session_id].role_class).toBe("builder")
+    const list = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
+    const item = list.items.find((i: any) => i.session_id === r.session_id)
+    expect(item.role_class).toBe("builder")
+  })
+
+  test("未声明 role_class ⇒ 登记缺省 builder；sessions 回显 builder", async () => {
+    const dir = repo("rc-legacy")
+    const { ctx } = createFakeCtx()
+    const r = await run(dispatchToolDefinition(ctx), baseInput(dir))
+    // 新派发**总是**登记 class（缺省 builder）⇒ resume 时有权威值可校
+    expect(readPairs(dir)[r.session_id].role_class).toBe("builder")
+    const list = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
+    const item = list.items.find((i: any) => i.session_id === r.session_id)
+    expect(item.role_class).toBe("builder")
+  })
+
+  test("verifier 类：scope 越出 .rddf/reviews ⇒ 派发被拒（硬拒早于建 session）", async () => {
+    const dir = repo("rc-verifier-reject")
+    const { ctx } = createFakeCtx()
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir), role_class: "verifier" }),
+    ).rejects.toThrow(/越界/)
+  })
+
+  test("architect 类：scope 落在 docs/adr ⇒ 放行并登记 class", async () => {
+    const dir = archRepo("rc-architect-ok")
+    const { ctx } = createFakeCtx()
+    const r = await run(
+      dispatchToolDefinition(ctx),
+      { ...baseInput(dir), scope: ["docs/adr"], role_class: "architect" },
+    )
+    expect(readPairs(dir)[r.session_id].role_class).toBe("architect")
+  })
+
+  test("architect 类：scope 含 src ⇒ 派发被拒", async () => {
+    const dir = archRepo("rc-architect-reject")
+    const { ctx } = createFakeCtx()
+    await expect(
+      run(dispatchToolDefinition(ctx), { ...baseInput(dir), scope: ["a.txt"], role_class: "architect" }),
+    ).rejects.toThrow(/越界/)
+  })
+
+  test("resume：class 不一致 ⇒ 硬拒（同一 session 内不允许换类）", async () => {
+    const dir = repo("rc-resume-mismatch")
+    const { ctx } = createFakeCtx()
+    const a = await run(dispatchToolDefinition(ctx), baseInput(dir))
+    // 换类必须被拒。**不钉死错误文案**：dispatch 的简报可能尚未被消费（另一条既有拒绝理由），
+    // 断言的是**结果**：登记 class 不变、且不产生新的后端。
+    await expect(
+      run(
+        dispatchToolDefinition(ctx),
+        { ...baseInput(dir), resume_session: a.session_id, role_class: "verifier" },
+      ),
+    ).rejects.toThrow()
+    expect(readPairs(dir)[a.session_id].role_class).toBe("builder")
+    const list = await run(sessionsToolDefinition(ctx), {}, "ses_front_test")
+    expect(list.items.filter((i: any) => i.session_id === a.session_id).length).toBe(1)
+  })
+})
+
 describe("D7：派发优先级（plan 优先、不抢占）", () => {
   const registerCaller = (sessions: Map<string, any>, id: string, agent: string, dir: string) => {
     sessions.set(id, {

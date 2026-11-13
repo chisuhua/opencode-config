@@ -25,7 +25,6 @@ import {
   backfillPairEntry,
   buildBrief,
   canonicalRoot,
-  CONSTANT_DENY,
   contextMessageIds,
   describeHolder,
   fail,
@@ -34,7 +33,7 @@ import {
   lastMessageID,
   lookupPair,
   readPairs,
-  scopeEditRules,
+  classPermissions,
   slotOccupants,
   detectForeignInstances,
   ensureInstanceStamp,
@@ -48,6 +47,9 @@ import {
   describeHolderByOwner,
   frontAlive,
   ownerAgentOf,
+  assertRoleClassCompatible,
+  assertResumeRoleClass,
+  ROLE_CLASS_DEFAULT,
   planRefRootLabels,
   resolveCallerAgent,
   validatePlanRef,
@@ -593,6 +595,8 @@ export function claimSlot(input: {
   kind: string
   goalKey?: GoalKey
   register?: boolean
+  /** role_class（能力画像）：与治理身份分开；resume 时以登记值为准（D6）。 */
+  roleClass?: string
 }): SlotClaim {
   const { stateRoot, workRoot, busyOf, sessionID } = input
   mkdirSync(stateDirOf(stateRoot), { recursive: true })
@@ -643,11 +647,20 @@ export function claimSlot(input: {
         last_used_at: new Date().toISOString(),
         work_root: workRoot,
         state: "dispatching" as SlotState,
+        // role_class：登记值是 resume 的权威（未传入时沿用已有值；存量条目保持缺失）。
+        ...(input.roleClass !== undefined ? { role_class: input.roleClass } : {}),
         ...(input.goalKey ? { goal_key: input.goalKey } : {}),
       }
       writePairs(stateRoot, pairs)
       // role.json 的 session 分区：**同一临界区**写入（工程 session 开局要读自己的角色）
-      if (input.kind === "engineering") writeRoleSession(stateRoot, sessionID, input.agent)
+      if (input.kind === "engineering") {
+        writeRoleSession(
+          stateRoot,
+          sessionID,
+          input.agent,
+          (input.roleClass as any) ?? undefined,
+        )
+      }
     } else if (released.length > 0) {
       writePairs(stateRoot, pairs)
     }
@@ -1120,6 +1133,14 @@ export function dispatchToolDefinition(ctx: any): any {
             "计划文件引用（绝对路径，或相对 project_dir 的相对路径）。**plan 派发可写实施（agent=build）时必填**；" +
             `accepted roots: ${planRefRootLabels()}。可写 ≠ 可引用：不在清单内的路径会被拒`,
         },
+        role_class: {
+          type: "string",
+          enum: ["builder", "architect", "verifier"],
+          description:
+            "本次派发允许后端做哪一类工作（缺省 builder）。builder=按 scope 实施；" +
+            "architect=写改 ADR/架构文档；verifier=只取证与判决。scope 越出该类上限 ⇒ 派发被拒；" +
+            "同一 session 内不允许换类（换类请新建 session）。",
+        },
       },
       required: ["project_dir", "task", "goal", "goal_key", "scope", "acceptance"],
       additionalProperties: false,
@@ -1131,6 +1152,8 @@ export function dispatchToolDefinition(ctx: any): any {
         throw fail("goal_key 必填（工程 dispatch）：{intent: <kebab-slug>}")
       }
       const { stateRoot, workRoot } = canonicalRoot(brief.project_dir)
+      // 本轮**有效** role_class（resume 时以登记值为准；新派发 = 请求值）。
+      let effectiveRoleClass = brief.role_class
       const frontSessionID = toolContext?.sessionID
       // 派发方身份（`ADR-plan-delegate-engineering-session` D1/D2/D5）
       const callerAgent = await resolveCallerAgent(ctx, toolContext?.sessionID)
@@ -1172,6 +1195,14 @@ export function dispatchToolDefinition(ctx: any): any {
         if (typeof prevIntent === "string" && prevIntent.length > 0 && prevIntent !== goalKey.intent) {
           throw fail(`resume_session 的 goal_key 不一致（${prevIntent} ≠ ${goalKey.intent}）：不同目标须新建 session`)
         }
+        // role_class 一致性（D6）：登记值是权威（存量条目无登记值 ⇒ 按缺省 builder 解释，AC17）。
+        // 不一致 ⇒ 硬拒（同一 session 内不允许换类；vanished 重建沿用原 class，AC19）。
+        effectiveRoleClass = assertResumeRoleClass(
+          existing,
+          brief.role_class,
+          brief.resume_session,
+          brief.role_class_provided,
+        )
         // 跨 owner-kind 的 resume ⇒ 硬拒（ADR D7.3）；owner 会话已亡 ⇒ 放行（亡主例外）。
         // ⚠️ 必须落在 vanished 墓碑处置**之前**，保住既有「拒绝零副作用」原则。
         const existingOwnerKind = existing.owner_agent === "plan" ? "plan" : "front"
@@ -1251,15 +1282,16 @@ export function dispatchToolDefinition(ctx: any): any {
       }
 
       // —— create / 复用 ——
-      const editRules =
-        brief.kind === "engineering"
-          ? scopeEditRules(workRoot, brief.scope)
-          : [{ action: "edit", resource: "*", effect: "deny" }]
-      const permissions = [
-        ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: "deny" as const })),
-        ...editRules,
-        ...brief.grants,
-      ]
+      // role_class × scope 相容性（D8 ②层）：用**有效 class**判定，硬拒早于 create / claimSlot。
+      assertRoleClassCompatible({ role_class: effectiveRoleClass, scope: brief.scope }, workRoot)
+      // 权限组装（单一实现，D8）：与同步 `delegate` 共用 classPermissions，避免两链路漂移。
+      const permissions = classPermissions({
+        roleClass: effectiveRoleClass,
+        workRoot,
+        scope: brief.scope,
+        kind: brief.kind,
+        grants: brief.grants,
+      })
       let sessionID = brief.resume_session as string | undefined
       let created = false
       if (!sessionID || resumedVanished) {
@@ -1289,6 +1321,7 @@ export function dispatchToolDefinition(ctx: any): any {
         agent: brief.agent,
         kind: brief.kind,
         goalKey,
+        roleClass: effectiveRoleClass,
       })
       if (!claim.ok) {
         // 停机守卫（锁内重验命中）⇒ 专用文案（不得退化成「先 suspend 它」）
@@ -1368,7 +1401,7 @@ export function dispatchToolDefinition(ctx: any): any {
       }
 
       // —— 投递简报（显式 delivery:"queue"，AC6）——
-      const briefText = buildBrief(brief, workRoot)
+      const briefText = buildBrief({ ...brief, role_class: effectiveRoleClass }, workRoot)
       try {
         await ctx.session.prompt({ sessionID, text: briefText, delivery: "queue", id: messageID })
       } catch (e: any) {
@@ -1547,6 +1580,8 @@ export function sessionsToolDefinition(ctx: any): any {
           last_activity_at: lastActivity,
           kind: entry?.kind ?? md.kind ?? null,
           front_session_id: entry?.front_session_id ?? md.front_session_id ?? null,
+          // role_class（能力画像）：从 pair 登记回显（只读；存量条目缺字段 ⇒ 缺省 builder）。
+          role_class: entry?.role_class ?? ROLE_CLASS_DEFAULT,
           evidence: { message_count: Array.isArray(messages) ? messages.length : 0, missing },
           slot: {
             key: entry?.work_root ?? workRoot ?? null,

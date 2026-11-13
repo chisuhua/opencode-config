@@ -8,7 +8,16 @@
  * 运行：bun test tests/
  */
 import { afterAll, describe, expect, test } from "bun:test"
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, utimesSync } from "node:fs"
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+  utimesSync,
+  symlinkSync,
+} from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -20,7 +29,13 @@ import {
   GRANT_FORBIDDEN,
   READONLY_AGENTS,
   appendLedger,
+  archRoots,
+  assertResumeRoleClass,
+  assertRoleClassCompatible,
   buildBrief,
+  classAllowRoots,
+  classPermissions,
+  classSubagentRules,
   canonicalRoot,
   changedSince,
   extractBlocked,
@@ -35,6 +50,7 @@ import {
   redactAndTruncate,
   registerSession,
   scopeEditRules,
+  SLOT_STATES,
   sliceRoundMessages,
   summarizeDelivery,
   ownerAgentOf,
@@ -752,6 +768,316 @@ describe("D2：plan_ref 校验（ADR-plan-delegate-engineering-session D2）", (
     expect(ownerAgentOf("front")).toBe("front")
     expect(ownerAgentOf(undefined)).toBe("front")
     expect(ownerAgentOf("build")).toBe("front")
+  })
+})
+
+
+// ───────────────── role_class（ADR-backend-handoff-role-class） ─────────────────
+
+/** 与内核 `evaluate` 同语义：findLast（后写覆盖先写）+ glob 匹配。 */
+function evaluateEffect(
+  rules: Array<{ action: string; resource: string; effect: string }>,
+  action: string,
+  resource: string,
+): string {
+  const glob = (pattern: string, value: string): boolean => {
+    if (pattern === "*") return true
+    if (!pattern.includes("*")) return pattern === value
+    const escaped = pattern
+      .split("*")
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*")
+    return new RegExp(`^${escaped}$`).test(value)
+  }
+  const matched = rules.filter((rule) => glob(rule.action, action) && glob(rule.resource, resource))
+  return matched[matched.length - 1]?.effect ?? "ask"
+}
+
+function archRepo(name: string, opts?: { archPaths?: string[] | null; corrupt?: boolean }): string {
+  const repo = gitRepo(name)
+  mkdirSync(path.join(repo, "docs", "adr"), { recursive: true })
+  mkdirSync(path.join(repo, "src"), { recursive: true })
+  if (opts?.corrupt) {
+    mkdirSync(path.join(repo, ".rddf", "config"), { recursive: true })
+    writeFileSync(path.join(repo, ".rddf", "config", "arch-docs.json"), "{ broken json")
+    return repo
+  }
+  if (opts?.archPaths !== null && opts?.archPaths !== undefined) {
+    mkdirSync(path.join(repo, ".rddf", "config"), { recursive: true })
+    writeFileSync(
+      path.join(repo, ".rddf", "config", "arch-docs.json"),
+      JSON.stringify({ arch_paths: opts.archPaths, exclude_paths: [] }),
+    )
+  }
+  return repo
+}
+
+describe("role_class：值域与缺省（D1）", () => {
+  test("缺省 = builder（缺省只认 undefined）", () => {
+    expect(validateBrief({ ...VALID_INPUT }).role_class).toBe("builder")
+    expect(validateBrief({ ...VALID_INPUT, role_class: undefined }).role_class).toBe("builder")
+  })
+
+  test("非法值 / null / 空串 ⇒ 抛（不是“没填”）", () => {
+    for (const bad of ["Architect", "architect ", "general", null, "", 0]) {
+      expect(() => validateBrief({ ...VALID_INPUT, role_class: bad as any })).toThrow(/role_class/)
+    }
+  })
+
+  test("三类合法值被接受", () => {
+    for (const rc of ["builder", "architect", "verifier"]) {
+      expect(validateBrief({ ...VALID_INPUT, role_class: rc }).role_class).toBe(rc)
+    }
+  })
+
+  test("知识 session 与 role_class 互斥", () => {
+    expect(() =>
+      validateBrief({ ...VALID_INPUT, agent: "explore", scope: [], role_class: "verifier" }),
+    ).toThrow(/不接受 role_class/)
+  })
+})
+
+describe("archRoots：配置三态（D3）", () => {
+  test("态 1：配置可用且路径存在 ⇒ 用 arch_paths", () => {
+    const repo = archRepo("arch-ok", { archPaths: ["docs/adr"] })
+    expect(archRoots(repo)).toEqual(["docs/adr"])
+  })
+
+  test("态 2：配置缺失 ⇒ 回退 docs/adr（存在才用）", () => {
+    const repo = archRepo("arch-missing", { archPaths: null })
+    expect(archRoots(repo)).toEqual(["docs/adr"])
+  })
+
+  test("态 2：配置 arch_paths 为空 ⇒ 回退 docs/adr", () => {
+    const repo = archRepo("arch-empty", { archPaths: [] })
+    expect(archRoots(repo)).toEqual(["docs/adr"])
+  })
+
+  test("态 2：配置损坏 ⇒ 回退 docs/adr（不抛）", () => {
+    const repo = archRepo("arch-corrupt", { corrupt: true })
+    expect(archRoots(repo)).toEqual(["docs/adr"])
+  })
+
+  test("态 3：配置路径全部失效 ⇒ 回退 docs/adr", () => {
+    const repo = archRepo("arch-stale", { archPaths: ["docs/gone"] })
+    expect(archRoots(repo)).toEqual(["docs/adr"])
+  })
+
+  test("态 3：连 docs/adr 都没有 ⇒ 空集（architect 派发须被拒）", () => {
+    const repo = gitRepo("arch-none")
+    expect(archRoots(repo)).toEqual([])
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["docs/adr/x.md"] }, repo)).toThrow(
+      /没有可写的架构文档目录/,
+    )
+  })
+})
+
+describe("class × scope 相容性（D8 ②层）", () => {
+  test("architect：scope 必须落在类上限内（docs/adr / .rddf/reviews / arch-docs.json）", () => {
+    const repo = archRepo("arch-scope", { archPaths: ["docs/adr"] })
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["src/**"] }, repo)).toThrow(/越界/)
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["docs/adr/x.md"] }, repo)).not.toThrow()
+    expect(() =>
+      assertRoleClassCompatible({ role_class: "architect", scope: [".rddf/reviews/x.md"] }, repo),
+    ).not.toThrow()
+    expect(() =>
+      assertRoleClassCompatible({ role_class: "architect", scope: [".rddf/config/arch-docs.json"] }, repo),
+    ).not.toThrow()
+  })
+
+  test("architect：scope 覆盖整个工程 ⇒ 拒", () => {
+    const repo = archRepo("arch-dot", { archPaths: ["docs/adr"] })
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["."] }, repo)).toThrow(/整个工程/)
+  })
+
+  test("verifier：scope 只能落在 .rddf/reviews", () => {
+    const repo = archRepo("verifier-scope", { archPaths: ["docs/adr"] })
+    expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: ["src/a.ts"] }, repo)).toThrow(/越界/)
+    expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: [".rddf/reviews"] }, repo)).not.toThrow()
+  })
+
+  test("builder：scope 自身即边界（不额外校验）", () => {
+    const repo = archRepo("builder-scope", { archPaths: ["docs/adr"] })
+    expect(() => assertRoleClassCompatible({ role_class: "builder", scope: ["src/**"] }, repo)).not.toThrow()
+  })
+
+  test("scope 三种写法判定一致（归一化单一实现）", () => {
+    const repo = archRepo("scope-forms", { archPaths: ["docs/adr"] })
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["docs/adr/x.md"] }, repo)).not.toThrow()
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["src/../docs/adr/x.md"] }, repo)).not.toThrow()
+    expect(() =>
+      assertRoleClassCompatible(
+        { role_class: "architect", scope: [path.join(repo, "docs/adr/x.md")] },
+        repo,
+      ),
+    ).not.toThrow()
+    // 三种写法对**越界**项的判定也一致
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["src/a.ts"] }, repo)).toThrow(/越界/)
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["src/../src/a.ts"] }, repo)).toThrow(/越界/)
+    expect(() =>
+      assertRoleClassCompatible({ role_class: "architect", scope: [path.join(repo, "src/a.ts")] }, repo),
+    ).toThrow(/越界/)
+  })
+
+  test("symlink 指向 scope 外 ⇒ 拒（语义越界，不只语法归一化）", () => {
+    const repo = archRepo("arch-symlink", { archPaths: ["docs/adr"] })
+    symlinkSync(path.join(repo, "src"), path.join(repo, "docs", "adr", "link"), "dir")
+    expect(() => assertRoleClassCompatible({ role_class: "architect", scope: ["docs/adr/link"] }, repo)).toThrow(
+      /越界/,
+    )
+  })
+})
+
+describe("权限组装：edit 与 subagent 净效果（D3 / D4）", () => {
+  test("verifier：.rddf/reviews 可写、src 不可写", () => {
+    const repo = archRepo("perm-verifier", { archPaths: ["docs/adr"] })
+    const perms = classPermissions({
+      roleClass: "verifier",
+      workRoot: repo,
+      scope: [".rddf/reviews"],
+      kind: "engineering",
+      grants: [],
+    })
+    expect(evaluateEffect(perms, "edit", ".rddf/reviews/x.md")).toBe("allow")
+    expect(evaluateEffect(perms, "edit", "src/a.ts")).toBe("deny")
+  })
+
+  test("三类 subagent 白名单一致：只读 agent allow；general / context-builder / build deny", () => {
+    const repo = archRepo("perm-subagent", { archPaths: ["docs/adr"] })
+    for (const rc of ["builder", "architect", "verifier"] as const) {
+      const perms = classPermissions({
+        roleClass: rc,
+        workRoot: repo,
+        scope: ["docs"],
+        kind: "engineering",
+        grants: [],
+      })
+      for (const agent of ["explore", "librarian", "oracle", "metis", "critic"]) {
+        expect(evaluateEffect(perms, "subagent", agent)).toBe("allow")
+      }
+      for (const agent of ["general", "context-builder", "build"]) {
+        expect(evaluateEffect(perms, "subagent", agent)).toBe("deny")
+      }
+    }
+  })
+
+  test("知识 session 不获得 subagent 白名单（只读语义不被顺带放开）", () => {
+    const repo = archRepo("perm-knowledge", { archPaths: ["docs/adr"] })
+    const perms = classPermissions({
+      roleClass: "builder",
+      workRoot: repo,
+      scope: [],
+      kind: "knowledge",
+      grants: [],
+    })
+    expect(perms.some((r) => r.action === "subagent" && r.effect === "allow")).toBe(false)
+  })
+
+  test("subagent 规则顺序：deny 在前、allow 在后（findLast 语义）", () => {
+    const rules = classSubagentRules()
+    expect(rules[0]).toEqual({ action: "subagent", resource: "*", effect: "deny" })
+    expect(rules[1].effect).toBe("allow")
+  })
+
+  test("classAllowRoots：builder 无上限 / verifier 只 reviews / architect 三元并集", () => {
+    const repo = archRepo("allow-roots", { archPaths: ["docs/adr"] })
+    expect(classAllowRoots("builder", repo)).toEqual([])
+    expect(classAllowRoots("verifier", repo)).toEqual([".rddf/reviews"])
+    expect(classAllowRoots("architect", repo)).toEqual([
+      "docs/adr",
+      ".rddf/reviews",
+      ".rddf/config/arch-docs.json",
+    ])
+  })
+})
+
+describe("简报：运行身份与按 class 分支的执行要求（D5）", () => {
+  test("builder：含运行身份段 + acceptance 自验 + HANDOFF 契约", () => {
+    const text = buildBrief(validateBrief({ ...VALID_INPUT }), TMP)
+    expect(text).toContain("## 运行身份")
+    expect(text).toContain("role_class = builder")
+    expect(text).toContain("按 acceptance 自行验证")
+    expect(text).toContain("HANDOFF")
+    expect(text).toContain("省略角色开场报告")
+    // 不含别类的专属句
+    expect(text).not.toContain("只出证据与判决")
+    expect(text).not.toContain("按 ADR 完成标志自查")
+  })
+
+  test("architect：含 ADR 完成标志自查，不含 builder / verifier 专属句", () => {
+    const text = buildBrief(validateBrief({ ...VALID_INPUT, role_class: "architect" }), TMP)
+    expect(text).toContain("role_class = architect")
+    expect(text).toContain("按 ADR 完成标志自查")
+    expect(text).not.toContain("按 acceptance 自行验证")
+    expect(text).not.toContain("只出证据与判决")
+  })
+
+  test("verifier：含只出证据句，不含 builder / architect 专属句", () => {
+    const text = buildBrief(validateBrief({ ...VALID_INPUT, role_class: "verifier" }), TMP)
+    expect(text).toContain("role_class = verifier")
+    expect(text).toContain("只出证据与判决")
+    expect(text).not.toContain("按 acceptance 自行验证")
+    expect(text).not.toContain("按 ADR 完成标志自查")
+  })
+
+  test("知识 session：不含运行身份段", () => {
+    const text = buildBrief(validateBrief({ ...VALID_INPUT, agent: "explore", scope: [] }), TMP)
+    expect(text).not.toContain("## 运行身份")
+  })
+})
+
+describe("resume 的 class 一致性（D6）", () => {
+  test("登记值与请求不一致 ⇒ 硬拒", () => {
+    expect(() => assertResumeRoleClass({ role_class: "architect" }, "verifier", "ses_x")).toThrow(/不匹配/)
+  })
+
+  test("存量条目（无登记值）+ builder ⇒ 按 builder 解释（不抛）", () => {
+    expect(assertResumeRoleClass({}, "builder", "ses_x")).toBe("builder")
+  })
+
+  test("存量条目 + architect ⇒ 拒（不能凭声明换类）", () => {
+    expect(() => assertResumeRoleClass({}, "architect", "ses_x")).toThrow(/存量/)
+  })
+
+  test("登记值非法 ⇒ 拒", () => {
+    expect(() => assertResumeRoleClass({ role_class: "nope" }, "builder", "ses_x")).toThrow(/非法/)
+  })
+})
+
+describe("登记：role.json 分区与 pair 持久化（D2 / D6）", () => {
+  test("role.json 出现独立 role_class，current_role 仍 builder；pair 同步落盘", () => {
+    const repo = gitRepo("role-partition")
+    registerSession(
+      repo,
+      "ses_a",
+      "ses_front",
+      "build",
+      "engineering",
+      undefined,
+      { role_class: "architect" },
+      undefined,
+      { work_root: repo, state: "active" },
+    )
+    const role = readJson(path.join(repo, ".rddf/state/role.json"))
+    expect(role.sessions["ses_a"].role_class).toBe("architect")
+    expect(role.sessions["ses_a"].current_role).toBe("builder")
+    const pair = readJson(path.join(repo, ".rddf/state/pair.json"))
+    expect(pair.pairs["ses_a"].role_class).toBe("architect")
+  })
+
+  test("未传 role_class ⇒ 存量条目不写该字段（resume 时按缺省解释）", () => {
+    const repo = gitRepo("role-legacy")
+    registerSession(repo, "ses_b", "ses_front", "build", "engineering")
+    const pair = readJson(path.join(repo, ".rddf/state/pair.json"))
+    expect(pair.pairs["ses_b"].role_class).toBeUndefined()
+    const role = readJson(path.join(repo, ".rddf/state/role.json"))
+    expect(role.sessions["ses_b"].role_class).toBe("builder")
+  })
+})
+
+describe("AC23：未新增 SlotState / outcome 值", () => {
+  test("SlotState 枚举保持五个值", () => {
+    expect([...SLOT_STATES]).toEqual(["dispatching", "active", "idle", "suspended", "tombstone"])
   })
 })
 

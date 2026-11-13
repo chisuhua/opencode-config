@@ -9,6 +9,7 @@ import {
   writeFileSync,
   appendFileSync,
   readdirSync,
+  realpathSync,
   utimesSync,
 } from "node:fs"
 import os from "node:os"
@@ -548,26 +549,238 @@ export function scopeEditRules(projectRoot: string, scope: string[]): Array<{ ac
     { action: "edit", resource: "*", effect: "deny" },
   ]
   for (const raw of scope) {
-    const trimmed = raw.trim().replace(/^\.\//, "").replace(/\/+$/, "")
-    // "" / "." / "./" 三者等价于「整个工程」：先 deny 再 allow，净效果放行全部 edit。
-    if (trimmed.length === 0 || trimmed === ".") {
-      rules.push({ action: "edit", resource: "*", effect: "allow" })
-      continue
-    }
-    const absolute = isAbsolute(trimmed) ? path.resolve(trimmed) : path.resolve(projectRoot, trimmed)
-    const relative = path.relative(projectRoot, absolute)
-    if (relative.startsWith("..")) continue
-    const normalized = relative.split(path.sep).join("/")
-    // scope 可能是目录（"src"）也可能是文件（"answer.txt"）：
-    // 文件型 scope 必须同时放行文件本身与其子路径，否则 "x/*" 匹配不到 "x"。
+    // 归一化**单一实现**（`normalizeScopePath`）：class 相容性校验共用同一套，
+    // 禁止各写一份（否则 "src/../docs/adr" 之类写法两处判定会漂移）。
+    const normalized = normalizeScopePath(projectRoot, raw)
+    if (normalized === null) continue // 工程根之外：不放行
+    // "" = 整个工程（"" / "." / "./" 三者等价）：先 deny 再 allow，净效果放行全部 edit。
     if (normalized.length === 0) {
       rules.push({ action: "edit", resource: "*", effect: "allow" })
       continue
     }
+    // scope 可能是目录（"src"）也可能是文件（"answer.txt"）：
+    // 文件型 scope 必须同时放行文件本身与其子路径，否则 "x/*" 匹配不到 "x"。
     rules.push({ action: "edit", resource: normalized, effect: "allow" })
     rules.push({ action: "edit", resource: `${normalized}/*`, effect: "allow" })
   }
   return rules
+}
+
+// ===== role_class（`ADR-backend-handoff-role-class` D1–D8）=====
+
+/** 派发时声明的能力类：一次派发只做一个角色类的工作。 */
+export const ROLE_CLASSES = ["builder", "architect", "verifier"] as const
+export type RoleClass = (typeof ROLE_CLASSES)[number]
+
+/** 缺省值：**只有 `undefined` 走缺省**（`null` / `""` 是非法值，不是「没填」）。 */
+export const ROLE_CLASS_DEFAULT: RoleClass = "builder"
+
+export function isRoleClass(value: unknown): value is RoleClass {
+  return typeof value === "string" && (ROLE_CLASSES as readonly string[]).includes(value)
+}
+
+/** 解析 role_class：`undefined` ⇒ 缺省 builder；其它任何值（含 `null` / `""`）⇒ 抛。 */
+export function parseRoleClass(raw: unknown): RoleClass {
+  if (raw === undefined) return ROLE_CLASS_DEFAULT
+  if (!isRoleClass(raw)) {
+    throw fail(
+      `role_class 不合法: ${JSON.stringify(raw ?? null)}（允许：${ROLE_CLASSES.join(", ")}；` +
+        `缺省 ${ROLE_CLASS_DEFAULT}；缺省只认 undefined —— null / "" 是非法值，不是「没填」）`,
+    )
+  }
+  return raw
+}
+
+/**
+ * 架构文档目录（`archRoots`）—— 架构类派发的 edit 上限来源。
+ *
+ * 判定三态（与 `prompts/build.md` §架构文档范围 同口径，但**只回退 `docs/adr`**）：
+ * - 态 1：`.rddf/config/arch-docs.json` 可读、`arch_paths` 非空、且其中至少一条实际存在
+ *   ⇒ 用 `arch_paths`；
+ * - 态 2/3：配置缺失 / 为空 / 损坏 / 全部路径失效 ⇒ 回退 `docs/adr`（存在才用）；
+ * - 仍无 ⇒ 空集 ⇒ architect 类派发被拒（错误信息指向 `scripts/arch-docs-init.sh`）。
+ *
+ * ⚠ **不复刻 `scripts/arch-docs-init.sh` 的 survey 启发式**（目录名 + maxdepth）：
+ * 那是「发现待建目录」的工具口径；此处是「读已配置范围」，两套定义会漂移。
+ */
+export function archRoots(projectRoot: string): string[] {
+  const configPath = path.join(projectRoot, ".rddf", "config", "arch-docs.json")
+  let configured: string[] = []
+  try {
+    const raw = readJson(configPath)
+    const paths = raw && typeof raw === "object" ? (raw as any).arch_paths : undefined
+    if (Array.isArray(paths)) {
+      configured = paths
+        .map((item) => String(item ?? "").trim().replace(/^\.\//, "").replace(/\/+$/, ""))
+        .filter((item) => item.length > 0)
+    }
+  } catch {
+    configured = [] // 配置损坏 ⇒ 落回态 2
+  }
+  const existing = configured.filter((item) => existsSync(path.resolve(projectRoot, item)))
+  if (existing.length > 0) return existing
+  const fallback = "docs/adr"
+  return existsSync(path.resolve(projectRoot, fallback)) ? [fallback] : []
+}
+
+/** 某一类的 edit 上限（相对工程根的路径前缀）。`builder` 无额外上限（scope 自身即边界）。 */
+export function classAllowRoots(roleClass: RoleClass, projectRoot: string): string[] {
+  if (roleClass === "builder") return []
+  if (roleClass === "verifier") return [".rddf/reviews"]
+  return [...archRoots(projectRoot), ".rddf/reviews", ".rddf/config/arch-docs.json"]
+}
+
+/**
+ * scope 项归一化（**单一实现**，`scopeEditRules` 与 class 相容性校验共用）。
+ * 返回：相对工程根的路径；`""` = 整个工程；`null` = 工程根之外。
+ */
+export function normalizeScopePath(projectRoot: string, raw: string): string | null {
+  const trimmed = String(raw ?? "").trim().replace(/^\.\//, "").replace(/\/+$/, "")
+  if (trimmed.length === 0 || trimmed === ".") return ""
+  const absolute = isAbsolute(trimmed) ? path.resolve(trimmed) : path.resolve(projectRoot, trimmed)
+  const relative = path.relative(projectRoot, absolute)
+  if (relative.startsWith("..")) return null
+  return relative.split(path.sep).join("/")
+}
+
+/**
+ * class × scope 相容性校验（D8 ②层，硬拒发生在 `session.create` 之前）。
+ *
+ * - `builder`：scope 自身即边界，不额外校验；
+ * - `architect` / `verifier`：**每一项**都必须落在该类允许集内（不是「有交集即放行」）；
+ * - symlink：解析 realpath 后再判（`docs/adr` → `src` 的软链不得放行）。
+ */
+export function assertRoleClassCompatible(
+  brief: { role_class: RoleClass; scope: string[] },
+  workRoot: string,
+): void {
+  if (brief.role_class === "builder") return
+  // architect：架构文档目录为空 ⇒ 直接拒（而不是让 scope 撞成"越界"）——
+  // 两者的修复动作不同：前者是"先初始化架构目录"，后者是"scope 写错了"。
+  if (brief.role_class === "architect" && archRoots(workRoot).length === 0) {
+    throw fail(
+      `role_class=architect 但本工程没有可写的架构文档目录` +
+        `（.rddf/config/arch-docs.json 未配置或全部失效，且 docs/adr 不存在）：` +
+        `请先运行 scripts/arch-docs-init.sh 初始化，或改派 builder 类`,
+    )
+  }
+  const allow = classAllowRoots(brief.role_class, workRoot)
+  if (allow.length === 0) {
+    throw fail(
+      `role_class=${brief.role_class} 没有可写的允许集：改派 builder 类或补齐 scope`,
+    )
+  }
+  for (const raw of brief.scope) {
+    const normalized = normalizeScopePath(workRoot, raw)
+    if (normalized === null) {
+      throw fail(`role_class=${brief.role_class} 的 scope 项越界: ${raw}（不在工程根 ${workRoot} 内）`)
+    }
+    if (normalized.length === 0) {
+      throw fail(
+        `role_class=${brief.role_class} 不允许 scope 覆盖整个工程（${raw}）：只能落在 ${allow.join(", ")} 内`,
+      )
+    }
+    // symlink 语义：realpath 逃出允许集 ⇒ 拒（`docs/adr` 软链到 `src` 的情形）
+    const absolute = path.resolve(workRoot, normalized)
+    const real = existsSync(absolute) ? realpathSync(absolute) : absolute
+    const realRel = path.relative(workRoot, real).split(path.sep).join("/")
+    if (realRel.startsWith("..") || realRel.length === 0) {
+      throw fail(
+        `role_class=${brief.role_class} 的 scope 项越界（symlink 解析后）: ${raw} → ${realRel || real}`,
+      )
+    }
+    const allowed = allow.some((root) => realRel === root || realRel.startsWith(root + "/"))
+    if (!allowed) {
+      throw fail(`role_class=${brief.role_class} 的 scope 项越界: ${raw}（允许：${allow.join(", ")}）`)
+    }
+  }
+}
+
+/**
+ * resume 的 class 一致性（D6 / D10）：**登记值是权威**。
+ * - 登记有值且与请求不同 ⇒ 硬拒（同一 session 内不允许换类）；
+ * - 存量条目（无登记值）⇒ 按缺省 builder 解释（AC17）；
+ * - 返回值 = 该 session 的**有效 class**（简报文本据此生成）。
+ */
+export function assertResumeRoleClass(
+  existing: any,
+  requested: RoleClass,
+  sessionID: string,
+  requestedProvided = true,
+): RoleClass {
+  const stored = existing?.role_class
+  if (stored === undefined || stored === null) {
+    // 存量条目（机制落地前登记）：按缺省 builder 解释（AC17）。
+    // 显式声明了别的类 ⇒ 拒（不能凭声明把一个存量 builder 变成 architect）。
+    if (requestedProvided && requested !== ROLE_CLASS_DEFAULT) {
+      throw fail(
+        `resume_session ${sessionID} 是存量条目（无 role_class 登记，按 ${ROLE_CLASS_DEFAULT} 解释）：` +
+          `不能用 role_class=${requested} 续接（同一 session 内不允许换类）`,
+      )
+    }
+    return ROLE_CLASS_DEFAULT
+  }
+  if (!isRoleClass(stored)) {
+    throw fail(`resume_session ${sessionID} 的登记 role_class 非法: ${String(stored)}`)
+  }
+  // **登记值是权威**：显式声明了不同的类 ⇒ 硬拒；没声明 ⇒ 沿用登记值
+  // （简报文本由它生成 ⇒ 权限与声明永远一致）。
+  if (requestedProvided && stored !== requested) {
+    throw fail(
+      `resume_session ${sessionID} 的 role_class 不匹配：登记 ${stored} ≠ 请求 ${requested}` +
+        `（同一 session 内不允许换类；换类请新建 session）`,
+    )
+  }
+  return stored
+}
+
+/**
+ * subagent 白名单（D4）：三类统一。
+ *
+ * - `deny *` 在前、逐条 `allow` 在后（`evaluate` 取 findLast ⇒ 后写覆盖先写）；
+ * - 只放行**只读** agent：`general` / `context-builder` 的 `shell: {"*":"allow"}`
+ *   可经 `> file` 绕过 edit 边界 ⇒ 排除；
+ * - `build` 是 primary agent，内核直接拒它作为 subagent（拉不起可写后端）。
+ */
+export const ROLE_CLASS_SUBAGENTS = ["explore", "librarian", "oracle", "metis", "critic"] as const
+
+export function classSubagentRules(): Array<{ action: string; resource: string; effect: string }> {
+  return [
+    { action: "subagent", resource: "*", effect: "deny" },
+    ...ROLE_CLASS_SUBAGENTS.map((agent) => ({ action: "subagent", resource: agent, effect: "allow" })),
+  ]
+}
+
+/**
+ * 权限组装（**单一实现**，同步 `delegate` 与异步 `dispatch` 共用 —— D8）。
+ *
+ * 顺序即策略（`evaluate` 取 findLast）：
+ * 1. `CONSTANT_DENY`（危险命令）→ 2. edit 规则（`edit:* deny` 在前、按 scope allow 在后）
+ * 3. grants（用户预批）→ 4. subagent 白名单（`deny *` 在前、只读 agent allow 在后）。
+ *
+ * ⚠ **不得在此处按 class 分叉**：class 的 edit 上限由**派发时的相容性校验**把关
+ * （`assertRoleClassCompatible`：scope 越出类上限 ⇒ 派发被拒），
+ * 而非靠这里再叠一层 deny —— 否则"派发被拒"与"派发成功但写不了"两种失败不可区分。
+ */
+export function classPermissions(input: {
+  roleClass: RoleClass
+  workRoot: string
+  scope: string[]
+  kind: DelegateKind
+  grants: Array<{ action: string; resource: string; effect: string }>
+}): Array<{ action: string; resource: string; effect: string }> {
+  const editRules =
+    input.kind === "engineering"
+      ? scopeEditRules(input.workRoot, input.scope)
+      : [{ action: "edit", resource: "*", effect: "deny" }]
+  return [
+    ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: "deny" as const })),
+    ...editRules,
+    ...input.grants,
+    // subagent 白名单**只对可写工程 session**（D4）：知识 session 原本就没有 subagent 能力
+    // （只读 agent 的 `subagent: deny`），不得在这里顺带放开。
+    ...(input.kind === "engineering" ? classSubagentRules() : []),
+  ]
 }
 
 export function validateGrants(grants: any): Array<{ action: string; resource: string; effect: string }> {
@@ -694,6 +907,9 @@ export function validateBrief(input: any): {
   remove: boolean
   goal_key?: GoalKey
   plan_ref?: string
+  role_class: RoleClass
+  /** 是否**显式**声明了 role_class（`undefined` = 没填 ⇒ 缺省 builder）。 */
+  role_class_provided: boolean
 } {
   const projectDir = String(input.project_dir ?? "")
   if (projectDir.length === 0) throw fail("project_dir 必填")
@@ -720,6 +936,14 @@ export function validateBrief(input: any): {
     throw fail(`agent 不在白名单内: ${agent}（允许：${[...ALLOWED_AGENTS].join(", ")}）`)
   }
   const kind = kindOfAgent(agent)
+
+  // role_class（ADR D1）：**缺省只认 `undefined`**（`null` / `""` 是非法值）。
+  // 知识 session 与之互斥：它不写 role.json，class 无处落（D1）。
+  const roleClass = parseRoleClass(input.role_class)
+  const roleClassProvided = input.role_class !== undefined
+  if (kind === "knowledge" && roleClassProvided) {
+    throw fail("知识 session 不接受 role_class（只读语义无能力类；见 ADR-backend-handoff-role-class D1）")
+  }
 
   // scope：工程 session 必填非空；知识 session 可省略或为空（不参与权限组装）。
   const scope = input.scope
@@ -772,6 +996,8 @@ export function validateBrief(input: any): {
     remove,
     goal_key,
     plan_ref,
+    role_class: roleClass,
+    role_class_provided: roleClassProvided,
   }
 }
 
@@ -796,6 +1022,17 @@ export function buildBrief(brief: ReturnType<typeof validateBrief>, projectRoot:
     lines.push(`- 用户已预批的操作（grants）: ${brief.grants.map((g) => `${g.action}:${g.resource}`).join(", ")}`)
   }
   lines.push("")
+  if (brief.kind === "engineering") {
+    // 运行身份（role_class）—— 简报是**唯一**按 session 注入的身份通道
+    // （session metadata 不进模型上下文）。
+    lines.push("## 运行身份")
+    lines.push("")
+    lines.push(`- 你是被派发的后端工程 session；本 session 的 role_class = ${brief.role_class}。`)
+    lines.push("- 只做本类任务：判断标准是「要写的东西在不在本类允许集内」——读任何路径都不算越类。")
+    lines.push("- 需要别的类的工作 ⇒ 停在动手前，按下方 HANDOFF 契约交回主会话（不得自行切换类）。")
+    lines.push("- 若已被 suspend / resume，上下文保留，role_class 不变（来自登记值，不接受改写）。")
+    lines.push("")
+  }
   lines.push("## 任务原话（task）")
   lines.push("")
   lines.push(brief.task)
@@ -804,9 +1041,28 @@ export function buildBrief(brief: ReturnType<typeof validateBrief>, projectRoot:
   lines.push("")
   if (brief.kind === "engineering") {
     lines.push("1. 只在 scope 内改动；scope 外的文件不得写入。")
-    lines.push("2. 按 acceptance 自行验证，报告实际执行的命令与结果。")
+    if (brief.role_class === "architect") {
+      lines.push(
+        "2. 按 ADR 完成标志自查（四要素 + oracle→critic 双审 + BLOCKER 闭合 + 复审验闭合），报告实际执行的命令与结果。",
+      )
+    } else if (brief.role_class === "verifier") {
+      lines.push(
+        "2. 只出证据与判决：按判据来源逐条取证（每条至少 1 条工具证据），报告实际执行的命令与结果；不改实现、不改 tasks.md。",
+      )
+    } else {
+      lines.push("2. 按 acceptance 自行验证，报告实际执行的命令与结果。")
+    }
     lines.push("3. 不要 git commit / git push —— 提交由用户确认后另行发起。")
     lines.push("4. 遇到权限被拒（Permission denied）不要换写法绕过，直接说明被拒的操作并停下。")
+    lines.push("5. 交回（HANDOFF）：需要改 plan / AC / tasks、改已签批 ADR、换类、或缺外部信息 ⇒")
+    lines.push(
+      "   ① 先落凭据：`rddf feedback add <proposal> --from rdd-builder --kind <needs-revision|ac-fail|blocked> --body \"<5 项>\"`",
+    )
+    lines.push(
+      "      （5 项 = ① kind ② 阻塞点(file:line 或 task 编号) ③ 需要什么决策 ④ 已完成/未完成 ⑤ 建议的下一步指令草案；缺一即无效）；",
+    )
+    lines.push("   ② 再把**本回合首行**写成 `HANDOFF: <kind>`（该回合省略角色开场报告，首行只能是它）；")
+    lines.push("   ③ 然后结束回合。`rddf` 不可用或额度耗尽（写不进）时，仍输出首行 + 完整 5 项正文。")
   } else {
     lines.push("1. 这是只读的知识/调研任务：**不要修改任何文件**，不要 commit。")
     lines.push("2. 给出结论时标注证据（`file:line` / URL）；不确定的地方明确说不确定。")
@@ -874,13 +1130,16 @@ export function writeJsonAtomic(file: string, value: any): void {
  * 与 `registerSession` 的关系：`registerSession` = 取锁 + 写 pair + 写 role；
  * 本函数 = 只写 role（供「槽位检查 + 登记 + role 分区」必须同处一个临界区的场景）。
  */
-export function writeRoleSession(root: string, sessionID: string, agent: string): void {
+export function writeRoleSession(root: string, sessionID: string, agent: string, roleClass?: RoleClass): void {
   const stateDir = path.join(root, ".rddf", "state")
   const roleFile = path.join(stateDir, "role.json")
   const role = readJson(roleFile) ?? {}
   const sessions = role.sessions && typeof role.sessions === "object" ? role.sessions : {}
   sessions[sessionID] = {
     current_role: agent === "build" ? "builder" : agent,
+    // role_class = **能力画像**（D2）：与治理身份 `current_role` 分开 ——
+    // 后端恒为 builder，但本次派发允许它做哪一类工作由 role_class 声明。
+    role_class: roleClass ?? ROLE_CLASS_DEFAULT,
     auto_switch_window: null,
     auto_answer: null,
     updated_at: new Date().toISOString(),
@@ -950,7 +1209,13 @@ export function registerSession(
   agent: string,
   kind: DelegateKind = kindOfAgent(agent),
   ledgerRow?: any,
-  extra?: { work_root?: string; state?: SlotState; goal_key?: GoalKey; owner_agent?: "front" | "plan" },
+  extra?: {
+    work_root?: string
+    state?: SlotState
+    goal_key?: GoalKey
+    owner_agent?: "front" | "plan"
+    role_class?: RoleClass
+  },
   /**
    * `bumpClaim=true` ⇒ 本次登记**认领**了槽位（归属变更 ⇒ `claim_gen` +1）；
    * 默认（收尾写 outcome 等字段）⇒ **良性写** ⇒ 不 bump，但**必须保留**既有的
@@ -988,10 +1253,13 @@ export function registerSession(
     if (extra?.work_root !== undefined) pairs[sessionID].work_root = extra.work_root
     if (extra?.state !== undefined) pairs[sessionID].state = extra.state
     if (extra?.goal_key !== undefined) pairs[sessionID].goal_key = extra.goal_key
+    // role_class（D6）：**登记值是 resume 的权威**（brief 不一致 ⇒ 硬拒）。
+    // 未传入时沿用已有值；存量条目保持缺失（resume 时按缺省 builder 解释，AC17）。
+    if (extra?.role_class !== undefined) pairs[sessionID].role_class = extra.role_class
     writeJsonAtomic(pairFile, { version: "pair-v2", pairs })
 
     if (kind === "engineering") {
-      writeRoleSession(root, sessionID, agent)
+      writeRoleSession(root, sessionID, agent, extra?.role_class)
     }
 
     if (ledgerRow) appendLedgerLine(root, ledgerRow)
@@ -1372,6 +1640,15 @@ export function delegateToolDefinition(ctx: any): any {
                 "计划文件引用（绝对路径，或相对 project_dir 的相对路径）。**plan 派发可写实施（agent=build）时必填**；" +
                 `accepted roots: ${planRefRootLabels()}。可写 ≠ 可引用：不在清单内的路径会被拒`,
             },
+            role_class: {
+              type: "string",
+              enum: ["builder", "architect", "verifier"],
+              description:
+                "本次派发允许后端做哪一类工作（缺省 builder；缺省只认缺省值，null/空串非法）。" +
+                "builder=按 scope 实施；architect=写改 ADR/架构文档（edit 上限=架构文档目录 + .rddf/reviews + arch-docs.json）；" +
+                "verifier=只取证与判决（edit 上限=.rddf/reviews）。**scope 越出该类上限 ⇒ 派发被拒**；" +
+                "同一 session 内不允许换类（换类请新建 session）。",
+            },
           },
           required: ["project_dir", "task", "goal", "scope", "acceptance"],
           additionalProperties: false,
@@ -1381,6 +1658,8 @@ export function delegateToolDefinition(ctx: any): any {
           const brief = validateBrief(input)
           // AC6 逐点绑定（ADR D2）：状态落盘用 stateRoot，变更检测/scope 解析用 workRoot。
           const { stateRoot, workRoot, vcs } = canonicalRoot(brief.project_dir)
+          // 本轮**有效** role_class（resume 时以登记值为准；新派发 = 请求值）。
+          let effectiveRoleClass: RoleClass = brief.role_class
           const frontSessionID = toolContext?.sessionID
           // 派发方身份（`ADR-plan-delegate-engineering-session` D1/D2/D5）：
           // owner = 调用方会话；plan 派发**可写实施**时强制携带 plan_ref。
@@ -1461,6 +1740,14 @@ export function delegateToolDefinition(ctx: any): any {
             if (brief.agentProvided && brief.agent !== existingAgent) {
               throw fail(`resume_session 的 agent 不匹配: ${brief.agent} != ${existingAgent}`)
             }
+            // role_class 一致性（D6）：**登记值是权威**（存量条目无登记值 ⇒ 按缺省 builder 解释）。
+            // 不一致 ⇒ 硬拒（同一 session 内不允许换类；换类请新建 session）。
+            effectiveRoleClass = assertResumeRoleClass(
+              existing,
+              brief.role_class,
+              brief.resume_session,
+              brief.role_class_provided,
+            )
             effectiveAgent = existingAgent
             kind = kindOfAgent(effectiveAgent)
             resumedByOtherFront = Boolean(
@@ -1491,19 +1778,19 @@ export function delegateToolDefinition(ctx: any): any {
             }
           }
 
+          // role_class × scope 相容性（D8 ②层）：硬拒发生在 create / registerSession **之前**。
+          // 用**有效 class**（resume 时 = 登记值）判定，避免"权限是 architect、声明是 builder"的错配。
+          assertRoleClassCompatible({ role_class: effectiveRoleClass, scope: brief.scope }, workRoot)
+          // 权限组装（单一实现，D8）：scope 解析基准 = workRoot；
           // 只读 session 恒注入单条 edit deny，绝不注入 scope 派生 allow
           // （session 规则排在 agent 规则之后、last-match-wins，会覆盖只读 agent 自身的 edit: deny）。
-          // scope 解析基准 = workRoot（scope 描述的是"要改哪个工作区的哪个路径"）。
-          const editRules =
-            kind === "engineering"
-              ? scopeEditRules(workRoot, brief.scope)
-              : [{ action: "edit", resource: "*", effect: "deny" }]
-
-          const permissions = [
-            ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: "deny" })),
-            ...editRules,
-            ...brief.grants,
-          ]
+          const permissions = classPermissions({
+            roleClass: effectiveRoleClass,
+            workRoot,
+            scope: brief.scope,
+            kind,
+            grants: brief.grants,
+          })
 
           let sessionID = brief.resume_session
           if (!sessionID) {
@@ -1526,7 +1813,7 @@ export function delegateToolDefinition(ctx: any): any {
             effectiveAgent,
             kind,
             undefined,
-            { owner_agent: ownerAgent },
+            { owner_agent: ownerAgent, role_class: effectiveRoleClass },
             undefined,
             { work_root: workRoot, state: "active" },
             { bumpClaim: true }, // 认领 ⇒ 归属变更 ⇒ claim_gen +1
@@ -1578,7 +1865,7 @@ export function delegateToolDefinition(ctx: any): any {
             }
           }
 
-          const promptText = buildBrief(brief, workRoot)
+          const promptText = buildBrief({ ...brief, role_class: effectiveRoleClass }, workRoot)
           await ctx.session.prompt({ sessionID, text: promptText })
 
           // 超时上限：默认 30 分钟；测试可用 DELEGATE_WAIT_TIMEOUT_MS 缩短。
@@ -1662,6 +1949,8 @@ export function delegateToolDefinition(ctx: any): any {
             work_root: workRoot,
             state: "idle",
             owner_agent: ownerAgent,
+            // role_class：**收尾登记不得重置**它（否则 role.json 分区会被写回缺省 builder）。
+            role_class: effectiveRoleClass,
           })
 
           if (brief.remove) {

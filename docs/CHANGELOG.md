@@ -10,6 +10,17 @@
 
 ---
 
+> **v2.21 变更摘要（2026-11-13，派发能力类 `role_class` + 凭据化 HANDOFF）**：
+> ① **问题**：派发契约只有 `plan_ref` / `scope` / `acceptance`，**没有「本次允许做哪一类工作」**——写 ADR 的后端拿到代码 `scope`、跑验收的后端能改实现，边界只靠简报里的自然语言；且后端遇计划决策时的停下义务只在 prompt 里，主会话没有可观察凭据区分「交接」与「失败」。
+> ② **决策**：`docs/adr/ADR-backend-handoff-role-class.md`（**Accepted** 2026-11-13，oracle 1 轮 + metis 1 轮 + critic 1 轮 `APPROVE_WITH_CONDITIONS` 无 BLOCKER）—— 一次派发只做一个角色类的工作（`builder` / `architect` / `verifier`），class 落在 `role.json` 分区 + `pair.json` 登记（**与治理身份 `current_role` 分开**），**同一 session 内不允许换类**（换类 = handoff 后重新派发）。
+> ③ **实现**：`lib/delegate-core.ts` 新增 `parseRoleClass` / `archRoots` / `classAllowRoots` / `normalizeScopePath`（归一化**单一实现**，`scopeEditRules` 改为复用）/ `assertRoleClassCompatible` / `assertResumeRoleClass` / `classPermissions`（**同步与异步两条链路共用**）；`buildBrief()` 增「运行身份」段与**按 class 分支**的执行要求（含 HANDOFF 契约与首行优先级）；`delegate` / `dispatch` 入参接受 `role_class`；`sessions` 回显 `role_class`。subagent 走**统一白名单**（五个只读 agent；`general` / `context-builder` 的 `shell:* allow` 可绕 edit 边界 ⇒ 排除）。
+> ④ **治理面**（`prompts/build.md` / `plan.md` / `front.md`）：HANDOFF 契约（先落 `rddf feedback` 凭据 → 首行 `HANDOFF: <kind>` → 结束回合）、**HANDOFF 回合省略角色开场报告**（否则 `final_is_role_opening` ⇒ `no_work_evidence` ⇒ `unverified` ⇒ 交接被系统判成失败）、派发方选类表、**机制未启用时的降级口径**（三份 prompt 都有）。
+> ⑤ **审查**：oracle 1 轮 **BLOCK**（prompt 引用了 lib 尚未生成的字段 ⇒ 后端会臆造 class / 拒活）→ 加两侧降级口径闭合；critic 1 轮 `APPROVE_WITH_CONDITIONS`（4 条 SHOULD_FIX + 2 条 NITS 全闭合）。审稿记录：`.rddf/reviews/backend-handoff-role-class-prompt-review.md`。
+> ⑥ **验证**：`bun test tests/` **447 pass / 0 fail**（新增 43 项：值域 / 三态 / 相容性 / symlink 越界 / 权限净效果 / 简报分支 / 登记与 resume 一致性 / sessions 回显）；anchors 23/23；`openspec validate backend-handoff-role-class` 通过。
+> ⑦ **残留**：`shell` 不受 class 约束（与现状等价，靠主会话收回后 `git status` 复核）；跨 worktree 同 `plan_ref` 并发共享额度与 `discovery.md` 覆盖（已知缺口，另立 ADR）；`plan.md` / `front.md` 的 resume 前置判据拆为后续 prompts-only change。
+
+---
+
 > **v2.18 变更摘要（2026-11-13，context-builder 收窄为「机械搬运工」）**：
 > ① **问题（实测）**：310 个 critic prompt 中只有 **22 个（12%）**真正用了 context-builder 的输出；`hidden: true` 使它被 `!agent.hidden` 过滤出父模型的「Available subagents」清单（`subagent.ts:289-303`）；prompt 内 **6 处**对"缺 intent/focus 怎么办"给出互斥指令；「你返回」示例只有 6 字段（缺 `review_profile`）；文档口径互相矛盾（谁能调 / 何时调）。
 > ② **收窄**：职责限定为**只搬运**（`changes_summary` / `review_profile` / `diff_or_paths` / `context` / `expected_format`）；`focus` 可推断但每条标「推断：」；**`intent` 不可推断** —— 缺失时**首行 `ERROR: missing intent`**、不产出 7 字段 prompt（可附机械字段 + "补 intent 后重发，可直接合并"）。**移除 `hidden`** ⇒ 回到选择面；description 改写为「只搬运、不推断、调用方中性」并保留「critic 的 7 字段 prompt」功能锚点。
