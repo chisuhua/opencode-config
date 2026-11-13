@@ -22,7 +22,7 @@ import {
 } from "../scripts/agent-guard-rules.ts"
 import { applyRules } from "../scripts/agent-guard-gen.ts"
 import { CONTRACTS } from "../lib/subagent-contract-core.ts"
-import { ARCH_FALLBACK_DIRS, PLAN_REF_ROOTS, PRIORITY_BLOCKED_FIELDS } from "../lib/delegate-core.ts"
+import { ARCH_FALLBACK_DIRS, PLAN_REF_ROOTS, PRIORITY_BLOCKED_FIELDS, SLOT_STATES } from "../lib/delegate-core.ts"
 
 const CONFIG_PATH = path.join(import.meta.dir, "..", "opencode.jsonc")
 const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8"))
@@ -641,5 +641,155 @@ describe("被派发后端的审查降级例外守卫（live e2e AC14 实证的 p
     const line = lines.find((item) => item.includes("是否执行了内置自检清单"))
     expect(line).toBeTruthy()
     expect(line!).toContain("主会话")
+  })
+})
+
+describe("交回后的收尾三问（resume-precheck-guidance 投影守卫）", () => {
+  const PLAN_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
+  const FRONT_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "front.md"), "utf8")
+  const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
+
+  /** 去掉围栏代码块后的标题（模板里的 `### 选项 A` 不是真标题） */
+  const headings = (md: string) => {
+    const out: string[] = []
+    let inFence = false
+    for (const line of md.split("\n")) {
+      if (line.trimStart().startsWith("```")) { inFence = !inFence; continue }
+      if (!inFence && line.startsWith("### ")) out.push(line.slice(4).trim())
+    }
+    return out
+  }
+
+  /** A 小节：标题行到下一个标题（围栏外）为止 */
+  const sectionOf = (md: string, title: string) => {
+    const lines = md.split("\n")
+    const start = lines.findIndex((l) => l === `### ${title}`)
+    if (start < 0) return { body: "", rows: [] as string[] }
+    const rest = lines.slice(start + 1)
+    let inFence = false
+    let end = rest.length
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i].trimStart().startsWith("```")) { inFence = !inFence; continue }
+      if (!inFence && /^#{2,3} /.test(rest[i])) { end = i; break }
+    }
+    const body = rest.slice(0, end)
+    return { body: body.join("\n"), rows: body.filter((l) => l.trimStart().startsWith("|")) }
+  }
+
+  // 小节标题**从 plan.md 动态抽取**（plan.md 围栏外只有这一个 `###` 标题 ⇒ 它就是契约名）
+  const PLAN_HEADINGS = headings(PLAN_MD)
+  const TITLE = PLAN_HEADINGS[0] ?? ""
+  const { body: aSection, rows: tableRows } = sectionOf(PLAN_MD, TITLE)
+
+  const norm = (text: string) => text.replace(/\s+/g, "").replace(/[*`]/g, "")
+
+  test("AC1：A 小节存在且是表格；**表内** feedback → last_assistant_text → outcome 下标递增", () => {
+    expect(PLAN_HEADINGS).toHaveLength(1) // 围栏外唯一标题 ⇒ front.md 可按标题名引用
+    expect(aSection).not.toBe("")
+    // 表格：有表头 + 分隔行
+    expect(tableRows.length).toBeGreaterThanOrEqual(4)
+    expect(tableRows[1]).toMatch(/^\|[\s:|-]+\|$/)
+    // 下标只在**表行**内计算（判据说的是「表内按序」）
+    const table = tableRows.join("\n")
+    const iFeedback = table.indexOf("feedback")
+    const iLast = table.indexOf("last_assistant_text")
+    const iOutcome = table.indexOf("outcome")
+    expect(iFeedback).toBeGreaterThan(-1)
+    expect(iLast).toBeGreaterThan(iFeedback)
+    expect(iOutcome).toBeGreaterThan(iLast)
+  })
+
+  test("AC2：含「outcome=succeeded + state=idle 不等于完成」断言句", () => {
+    expect(aSection).toContain("outcome=succeeded")
+    expect(aSection).toContain("state=idle")
+    expect(aSection).toContain("不等于完成")
+  })
+
+  test("AC3：三条 resume 禁令齐全（扩 scope / 改 role_class / 存量条目重派）+ 可续接的正向条件", () => {
+    expect(aSection).toContain("不得用 resume 扩")
+    expect(aSection).toContain("不得显式声明不同的")
+    expect(aSection).toContain("role_class")
+    expect(aSection).toContain("一律重派、不复用")
+    // 正向条件（与「切换是四步」区分开）
+    expect(aSection).toContain("可续接的正向条件")
+    expect(aSection).toContain("不需要也不应先")
+  })
+
+  test("AC4：增量记账（last_feedback_id / created_at）+ rddf 写不进时的文本兜底 + 记账缺失时的降级", () => {
+    expect(aSection).toContain("last_feedback_id")
+    expect(aSection).toContain("created_at")
+    expect(aSection).toContain("写不进")
+    expect(aSection).toContain("文本 5 项正文")
+    // 派发时刻/记账缺失 ⇒ 退到 ②，不得凭猜测取条目
+    expect(aSection).toContain("不得凭猜测取条目")
+  })
+
+  test("AC5：front.md 按**标题名**引用；plan.md 硬规则 #5 与 front.md §3.3 的旧正文已消失", () => {
+    expect(FRONT_MD).toContain(TITLE)
+    const refLine = FRONT_MD.split("\n").find((l) => l.includes(TITLE))!
+    expect(refLine).not.toMatch(/§\d/)
+    // 旧重复正文已消失
+    expect(PLAN_MD).not.toContain("按交接 5 项模板的第 **③** 项（需要什么决策）分流")
+    expect(FRONT_MD).not.toContain("按 kind 分流：改计划 / 换类重派 / 交用户")
+    // plan.md 硬规则 #5 已改为引用
+    expect(PLAN_MD).toContain(`走下方「${TITLE}」小节`)
+  })
+
+  test("AC6：5 项模板字段名与 prompts/build.md 的 ①–⑤ 动态对照，且**顺序一致**", () => {
+    const line = BUILD_MD.split("\n").find((l) => l.includes("5 项缺一即无效"))!
+    expect(line).toBeTruthy()
+    // 恰好 5 项（build.md 扩到 ⑥ 时必须变红，不能被 slice 截断吞掉）
+    expect([...line.matchAll(/[①②③④⑤⑥⑦]/g)].map((m) => m[0])).toEqual(["①", "②", "③", "④", "⑤"])
+    const labels = (text: string) =>
+      text
+        .split(/[①②③④⑤]/)
+        .slice(1, 6)
+        .map((part) => norm(part.split(/[（(；;：:]/)[0]).replace(/[。、,，]+$/, ""))
+    const fromBuild = labels(line)
+    expect(fromBuild).toHaveLength(5)
+    for (const label of fromBuild) {
+      expect(label.length).toBeGreaterThan(0)
+      expect(norm(aSection)).toContain(norm(label))
+    }
+    // plan.md 自己的 ①–⑤ 顺序必须与 build.md 一致（编号有语义：③ = 需要什么决策）
+    const planLine = aSection.split("\n").find((l) => l.includes("缺一即无效"))!
+    expect(labels(planLine)).toEqual(fromBuild)
+  })
+
+  test("AC7：负向 —— 无 handoff_pending / set_class / 正则 / 门禁 / 通知；无新标识符（含大写）", () => {
+    for (const forbidden of ["handoff_pending", "set_class", "正则", "门禁", "通知"]) {
+      expect(aSection).not.toContain(forbidden)
+    }
+    // 反引号里的标识符必须都在已知集合内（新增工具名 / 状态名会在这里被挡）。
+    // ⚠ 边界：本守卫只覆盖**反引号 token** + 上面 5 个明文禁用项；写成纯文本的新标识符不在覆盖范围内。
+    const known = new Set([
+      "delegate", "dispatch", "sessions", "suspend", "cancel", // 五个委托工具
+      "rddf", "feedback", "list", // 只读通道
+      "kind", "scope", "role_class", "resume", "resume_session", "session",
+      "last_assistant_text", "last_feedback_id", "created_at", "outcome", "state",
+      "idle", "running", "succeeded", "slot", "pair", "json", "file", "line",
+      "task", "plan", "ac", "tasks", "proposal",
+      "true", "false", // 布尔字面量（非标识符）
+      "subagent", // 既有概念（不是新工具）
+      "HANDOFF", // 既有契约标记
+    ])
+    const tokens = [...aSection.matchAll(/`([^`]+)`/g)]
+      .flatMap((m) => m[1].split(/[^A-Za-z0-9_]+/))
+      .filter((t) => /^[A-Za-z][A-Za-z0-9_]*$/.test(t))
+    for (const token of new Set(tokens)) {
+      expect(known).toContain(token)
+    }
+  })
+
+  test("AC8：未新增状态字段 / outcome 值（SLOT_STATES 与 front.md 记录的 outcome 集合不变）", () => {
+    expect([...SLOT_STATES]).toEqual(["dispatching", "active", "idle", "suspended", "tombstone"])
+    // outcome 值集合从 front.md §3.3 的说明行**动态抽取**
+    const outcomeLine = FRONT_MD.split("\n").find((l) => l.trimStart().startsWith("- `outcome`"))!
+    const knownOutcomes = new Set([...outcomeLine.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]))
+    expect(knownOutcomes.size).toBeGreaterThan(0)
+    const used = [...aSection.matchAll(/(?:outcome|state)\s*=\s*`?([a-z_]+)/g)].map((m) => m[1])
+    for (const value of used) {
+      expect([...knownOutcomes, ...SLOT_STATES]).toContain(value)
+    }
   })
 })

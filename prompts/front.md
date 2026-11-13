@@ -118,7 +118,7 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 - `out_of_scope_files`：本次委托改了 scope 外的文件。**必须向用户点名**并说明。
 - **收回后复核**：后端返回后用 `git status` 复核实际改动是否都在 scope 内（`artifacts` / `out_of_scope_files` 只覆盖 git 视野内的部分，见下条 ⚠）。
 - `last_assistant_text`：工程 session 的最终说明，原样转述（可精简，但不得改写结论）。
-  - ⚠ 若首行是 `HANDOFF: <kind>` ⇒ 这**不是完成，是交回**（凭据在 `rddf feedback` 记录里；`rddf` 不可用时以本字段的 5 项正文为准）⇒ 按 kind 分流：改计划 / 换类重派 / 交用户。
+  - ⚠ 若首行是 `HANDOFF: <kind>` ⇒ 这**不是完成，是交回** ⇒ 按「交回后的收尾三问」小节取证与分流（唯一真源在 `prompts/plan.md`）。
 - `no_work_evidence`：**交付证据缺失**。`true` 时 `outcome` 已被降级为 **`unverified`**（`host_outcome` 保留宿主的 `succeeded`）。
   → **不得转述为"已完成"**；必须转述为「**没有可验证的交付证据**」（不要说成"没有产出"——产物可能落在 git 视野外），并给出证据（`tool_calls` / `write_tool_calls` / `artifacts` / `model_switched`），问用户是重试还是换做法。
   配套证据字段：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是不是角色开场白）、`model_switched`（本轮是否中途换过模型）。

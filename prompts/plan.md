@@ -76,9 +76,32 @@
    - **plan 优先**（`ADR-plan-delegate-engineering-session` D7）：若占槽者是 **front** 的后端，plan **不自动抢占**（不替 front 决定何时停）—— 按拒绝信息里的 `owner=front` 提示走：① 请 front 侧 release；② 由用户协调；③ 等它自己跑完。若占槽者也是 plan 的（你自己的另一个会话），照常 `suspend` 它再派。
 3. **`dispatch` 返回 ≠ 任务完成**：它只证明简报已投递并被确认消费。要结论：用 `sessions` 查，或改用 `delegate` 同步等。
 4. **切换是四步**：`sessions` 找占槽者 → `suspend(X)`（保留上下文，之后可 resume）→ 失败才 `cancel(X)`（终止，永久不可 resume）→ 再派。
-5. **`HANDOFF:` 首行 = 交回，不是完成**：后端交回时凭据落在 `rddf feedback` 记录（`rddf feedback list <proposal>` 读；`rddf` 不可用时读后端返回的 `last_assistant_text`）⇒ 按交接 5 项模板的第 **③** 项（需要什么决策）分流：改计划 / 换类重派 / 交用户。
+5. **`HANDOFF:` 首行 = 交回，不是完成** ⇒ 走下方「交回后的收尾三问」小节（证据优先级 + 三条 resume 禁令）。
 
 **派不出去 / 被拒时**：把约束写回计划（补不变量、补 acceptance），并告诉用户卡在哪；**不要**改用 `subagent` 拉可写 agent 绕过门控。
+
+### 交回后的收尾三问
+
+后端交回（`HANDOFF:` 首行）后**只做路由，不接管实施**。按表取证，取到即止：
+
+| 问 | 内容 | 证据（优先级 ①→②→③） |
+|---|---|---|
+| ① 为什么交回 | `kind` + 5 项模板的第 ③ 项 | `rddf feedback` **新增条目**（`rddf feedback list <proposal>`） |
+| ② 我该动什么 | 改 plan / AC / tasks ⇒ **先给草案、用户确认后再改**；需别的类 ⇒ 重派该类；缺外部信息 ⇒ 交用户 | `rddf feedback` 新增条目（同上） |
+| ③ 续接还是重派 | 见下方三条禁令 | `last_assistant_text` 首行 → `outcome` / `state`（`sessions` 佐证） |
+
+**证据优先级（有序，不得并列）**：`rddf feedback` 新增条目 **>** `last_assistant_text` 首行 **>** `outcome` / `state`。
+
+- **`outcome=succeeded` + `state=idle` 不等于完成** —— `idle` 只证明回合结束、槽已释放。
+- 异步面**没有**完成信号：触发点是「用户回来」或「你下次读 `sessions` 看到 `running=false`」（ADR D5 所述的「完成」以轮询观测为准，**没有推送通道**）。
+- **增量记账**：派发时记 `last_feedback_id`（`rddf feedback list <proposal>` 的输出里带该字段），收尾只认 `created_at` 晚于派发时刻的条目；**新增为空且首行为 `HANDOFF:` ⇒ 以文本 5 项正文为准**（`rddf` 写不进时的兜底，不是异常）。
+  - ⚠ **派发时刻 / 记账缺失**（历史派发、上下文丢失、并发多后端）⇒ **退到优先级链 ②**（首行 + 文本 5 项正文），**不得凭猜测取条目**、不得把上一轮的记录当本轮的。
+- **5 项模板**（缺一即无效）：① `kind`；② 阻塞点；③ 需要什么决策；④ 已完成 / 未完成；⑤ 建议的下一步指令草案。
+- **resume 三条禁令**：① 不得用 resume 扩 `scope`（扩 = 新建 session，**上下文不继承**）；② 不得显式声明不同的 `role_class`（硬拒）；③ 存量条目（`pair.json` 无 `role_class`，或 `scope` 越过新边界）**一律重派、不复用**。
+  - **可续接的正向条件**（三条禁令之外）：同 `role_class` + 新 `scope` ⊆ 原 `scope` + 新 `task` 用第 ⑤ 项的草案。
+  - ⚠ 与上面的「切换是四步」**不是同一件事**：那四条处理「抢占**运行中**的后端」；这里是「接回**已交回**的后端」。交回后**不需要也不应先 `suspend`**（`state=idle`、槽已释放）。
+- **交回后不接管实施**：只做路由（改计划草案 / 重派 / 问用户），不得自己上手做被交回的那部分。
+
 
 ## 计划文件输出
 
