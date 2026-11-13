@@ -55,3 +55,56 @@
 ## 结论
 
 无 BLOCKER 残留（oracle 的 BLOCK 已闭合、critic 无 BLOCKER）⇒ 本次治理面改动可合入；`lib` 侧 A/B 落地前，三份 prompt 的降级口径共同承担"机制未启用"窗口。
+
+---
+
+# 追加审稿：被派发后端不适用「审查者不可用降级」（2026-11-13，live e2e AC14 驱动）
+
+## 触发动机
+
+真实 `delegate` 派发（`role_class=architect`，scope = `["docs/adr", ".rddf/reviews"]`），用 `OPENCODE_CONFIG`
+把 oracle / critic 降为 `mode: primary` 使其不可作为 subagent：
+
+| 步 | 观测 |
+|---|---|
+| 1 | 后端调 `subagent(agent="oracle")` / `subagent(agent="critic")` 各 1 次 → `Agent <name> cannot run as a subagent`（未重试，符合「审查调用失败不重试」） |
+| 2 | 后端**按 §审查配对 的降级规则**改用「architect 内置自检清单」，把 ADR 写成 `Status: Accepted` |
+| 3 | 审稿报告诚实声明「本报告的结论来自自检，不是独立对抗式审查……应视为未经独立签批」——诚实声明不改变「未经独立审查即已签批」的事实 ⇒ **自审自批** |
+
+根因：降级规则默认「有人值守的主会话」（⚠️ 声明用户能看见），对无人值守的后端等于**授权自审自批**。
+
+## 改动（3 处文本 + 1 组守卫）
+
+| # | 落点 | 改动 |
+|---|---|---|
+| 1 | `prompts/build.md:482` | 新增例外段：被派发后端不适用本降级 ⇒ 必须 `HANDOFF: blocked`；受阻时**不得完成任何收口动作**（不转 Status / 不落审稿报告 / 不登记关联 change），即使保持 `Draft` 也不例外；本节第 1–3 条只适用于**主会话** |
+| 2 | `prompts/build.md:539` | `architect` 类 Status 转换条尾句：`subagent` 不可用 ⇒ `HANDOFF: blocked`（**本条优先于**降级规则），不得自审自批 |
+| 3 | `prompts/build.md:628` | 自查清单该条加主会话限定（否则后端收到两条相反指令） |
+| 4 | `tests/config-guards.test.ts` | 新增 describe 钉三组 token（例外段限定 + 优先句 + 清单限定），含反向断言「降级第 1 条仍在」 |
+
+## oracle（1 轮，`PASS-WITH-NOTES`）
+
+| # | finding | 处置 |
+|---|---|---|
+| 1 | 自查清单 628 行未随例外段对齐（同文件两套口径） | 已修（改动 3） |
+| 2 | 只堵「自检代替审查」，未堵「受阻时落收口产物」（写审稿报告 + 转 Status）；e2e 首轮失败正是这条路径 | 已修（改动 1 的「不得完成任何收口动作」句） |
+| 3 | 「标 `Proposed` 绕过签批字面」已被既有条款堵住（Proposed/Accepted/Rejected 均属已决） | 无需改 |
+| 4 | `verifier` 类后端「无法取证」无交回分支（同构缺口，确实存在）；`builder` 类无此缺口（`blocked` 行覆盖、自查走 shell） | **本次不做**，单独立项（见下「待立项」） |
+| 5 | 可用 `config-guards` 钉三组 token | 已采纳（改动 4） |
+
+## critic（1 轮，`APPROVE` / `mergeable: yes` / `scope_exceeded: false`）
+
+- BLOCKER：无。SHOULD_FIX：无。
+- NIT 1：482 是**全类**断言但只写 `architect` 的后果，`builder`/`verifier` 遇审查者不可用未声明 ⇒ 立项时把全类断言与各类后果写齐。**处置**：记入待立项条目。
+- NIT 2：守卫只断言例外段存在，未反向断言降级规则仍在。**处置**：已补反向断言（改动 4）。
+- 已核实的两个 focus：① 例外是对既有规则**划界**而非另立判据（`prompts/build.md:517` 的不对称先例支撑）；② 残留自审路径（伪造审稿报告、`Proposed` 绕字面）均已被文本封堵，剩余只有「后端谎称未受阻」，属 prompt 文本不可防面。
+
+## 验证
+
+- `bun test tests/` = **480 pass / 0 fail**（8 files，2060 expect）
+- `scripts/check-upstream-anchors.sh` = **23/23** OK
+- live e2e 对照（同一 harness，修复前 → 修复后）：`Status: Accepted`（自审自批）→ `Status: Draft` + 首行 `HANDOFF: blocked` + 「未把 Status 写成 Accepted，也未伪造双审结论」
+
+## 待立项（本次不做）
+
+`verifier` 类后端在「无法取证」（环境缺依赖 / 测试跑不起来）时无交回分支，而同位置它允许写 `.rddf/reviews/**` ⇒ 无人值守 + 无法取证 = 可伪造 pass 证据，与本次修的 architect 场景同构。立项时一并写齐 `prompts/build.md:482` 的全类断言与各类后果（回应 critic NIT 1）。归属 planner（improvement）。

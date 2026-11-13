@@ -610,3 +610,36 @@ describe("role_class 投影守卫（ADR-backend-handoff-role-class D3 修订）"
     expect(documented).toEqual([...ARCH_FALLBACK_DIRS]) // 顺序即口径：取"实际存在"的第一个优先级也依赖它
   })
 })
+
+describe("被派发后端的审查降级例外守卫（live e2e AC14 实证的 prompt 冲突）", () => {
+  const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
+  const lines = BUILD_MD.split("\n")
+
+  test("例外段存在且限定为「只适用于主会话」", () => {
+    const start = lines.findIndex((item) => item.includes("审查者不可用时（必须降级，不得静默跳过）"))
+    const end = lines.findIndex((item) => item.includes("实测：2026-11-04"))
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const section = lines.slice(start, end).join("\n")
+    expect(section).toContain("例外：被派发的后端不适用本降级")
+    expect(section).toContain("HANDOFF: blocked")
+    // 带 ** 匹配：裸「主会话」在正文多处出现，会让守卫失真
+    expect(section).toContain("只适用于**主会话**")
+    expect(section).toContain("不得完成任何收口动作")
+    // 反向断言：降级规则第 1 条仍在（防止未来「升级例外」变成删掉主会话降级路径）
+    expect(section).toContain("执行该角色的**内置自检清单**")
+  })
+
+  test("architect 类 Status 转换条保留「本条优先于」+ HANDOFF: blocked", () => {
+    const line = lines.find((item) => item.includes("把自己本次产出的 Draft ADR 向前转"))
+    expect(line).toBeTruthy()
+    expect(line!).toContain("**本条优先于**")
+    expect(line!).toContain("HANDOFF: blocked")
+  })
+
+  test("自查清单条目带主会话限定（不与例外段相反）", () => {
+    const line = lines.find((item) => item.includes("是否执行了内置自检清单"))
+    expect(line).toBeTruthy()
+    expect(line!).toContain("主会话")
+  })
+})

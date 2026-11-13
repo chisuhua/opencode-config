@@ -479,6 +479,8 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 2. 在**当回合响应正文首行**注明 `⚠️ 未启用 <reviewer> 审查（原因：<quota|network|denied>）—— 已用内置自检清单代替`（`edit` 类改动没有「结论」文件，响应正文是唯一必然存在的载体，不得因此省略）；
 3. **不得**把「审查者不可用」当成「审查通过」，也不得省略这条注明。
 
+> ⚠ **例外：被派发的后端不适用本降级**。`architect` 类后端在 `subagent` 不可用时**必须 `HANDOFF: blocked`**（见「被派发后端的运行身份与交回契约」），**不得**用内置自检代替审查 —— 后端无人值守，自检即自审自批。受阻时**不得完成任何收口动作**（不得转 Status、不得落审稿报告、不得登记关联 change），即使保持 `Draft` 也不例外。本节第 1–3 条只适用于**主会话**的角色。
+
 > 实测：2026-11-04 本机 subagent 因 Token Plan 用量上限**全部调用失败**。降级是常态需求，不是边缘情况。
 
 **审查者一律只读**：oracle / critic / metis 不写代码、不跑测试、不改文件；finding 的返工由产出角色自己做。verifier 是角色（不是 subagent），可按「verifier 产出契约」跑测试，但同样**不改实现**。
@@ -534,7 +536,7 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 - **换类 = 新派发**：新 session 的**模型上下文不继承**（延续的只有文件、凭据与登记）⇒ 主会话须把计划要点重贴。
 - **不要用窗口内自动切换**：被派发后端的 `auto_switch_window` 恒为 `null`（登记时写死），下方「授权窗口」的自动回环**只对主会话生效**；后端发现问题一律走 HANDOFF 交回主会话。
 - `shell` **不受**本类约束（`CONSTANT_DENY` 只挡 `rm -rf` / `git push` 一类，**不挡** `> file` / `tee`）⇒ 越类写盘的硬边界是 `edit`；主会话收回后须复核 `git status`。
-- `architect` 类**可**把自己本次产出的 Draft ADR 向前转（→ Proposed / Accepted / Rejected），但须同时满足：双审完成且 BLOCKER 全闭、ADR 完成标志 5 条齐备、未立项的关联 change 用 `backlog:` 占位。**对已签批 ADR 的决策修改或取代 ⇒ 必须 handoff**（`design_drift`）。`subagent` 不可用 ⇒ `HANDOFF: blocked`，**不得自审自批**。
+- `architect` 类**可**把自己本次产出的 Draft ADR 向前转（→ Proposed / Accepted / Rejected），但须同时满足：双审完成且 BLOCKER 全闭、ADR 完成标志 5 条齐备、未立项的关联 change 用 `backlog:` 占位。**对已签批 ADR 的决策修改或取代 ⇒ 必须 handoff**（`design_drift`）。`subagent` 不可用 ⇒ `HANDOFF: blocked`（**本条优先于** §审查配对「审查者不可用时」的降级规则 —— 后端无人值守，自检即自审自批），**不得自审自批**。
 
 #### HANDOFF：交回主会话的凭据化契约
 
@@ -623,7 +625,7 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 - [ ] 调用 rdd-* skill 前，跑过 `~/.config/opencode/scripts/rdd-skills.sh`（懒探测）并核对了该 skill 的 canonical preconditions？
 - [ ] 同一工件在同一路径上只有一个写入者（skill `owns` 的工件没被 agent 手写；下游阶段的产物没被提前手写）？
 - [ ] 本回合产出属于哪个角色，该角色的**固定审查者**是否执行过（`architect` → oracle 再 critic / `planner` → metis / `builder` → verifier）？
-- [ ] 审查者不可用时，是否执行了内置自检清单，并在结论首行注明 `⚠️ 未启用 <reviewer> 审查（原因）`？
+- [ ] 审查者不可用时（**主会话**；被派发后端按 §审查配对 的例外走 `HANDOFF: blocked`），是否执行了内置自检清单，并在结论首行注明 `⚠️ 未启用 <reviewer> 审查（原因）`？
 - [ ] 没有用当前角色去推 critic 的 `review_profile`？
 
 ## 输出
