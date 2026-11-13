@@ -33,3 +33,7 @@ skills.disable/
 /~
 # 双 session 运行时状态（pair 登记表：活的 session id，非版本化）
 .rddf/state/pair.json
+
+# rddf CLI 运行时状态（计数器 / 目录锁），不入库
+.rddf/improvements/.feedback-counters.json
+.rddf/**/*.lock
