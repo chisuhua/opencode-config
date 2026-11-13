@@ -3,7 +3,7 @@
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
 > 决策依据：`docs/adr/ADR-backend-handoff-role-class.md`（D5 handoff 形态）+ `.rddf/reviews/backend-handoff-role-class-prompt-review.md` 的「待立项」条目
 > 来源：oracle（`backend-handoff-role-class` 的 prompt 评审第 4 条 finding）+ critic NIT 1
-> 关联 change：**尚未立项**（本文件即立项草稿；实施时由 planner 建 `openspec/changes/<name>/`）
+> 关联 change：`openspec/changes/delegated-verifier-evidence-gap/`（**已立项** 2026-11-13；逐条判据以该 change 的 proposal AC 表为唯一真源）
 > planner 审查：metis 1 轮（`.rddf/reviews/delegated-verifier-evidence-gap-planner-review.md`）
 > ⚠ 本项**改 `prompts/build.md` §审查配对 本节自身** ⇒ 按 `prompts/build.md` §审查配对 的自指审查口径，oracle / critic 的结论只能记为**自指审查，不构成独立证据**，须在当回合响应正文声明。
 
@@ -42,7 +42,7 @@
 
 ## Acceptance
 
-判据待立项时写入 `openspec/changes/<name>/proposal.md` 的 AC 表；本段给出**可判口径**：
+逐条判据已写入 `openspec/changes/delegated-verifier-evidence-gap/proposal.md` 的 AC 表（AC1–AC7）；本段是它的**可判口径来源**：
 
 | 判据 | 类型 |
 |---|---|

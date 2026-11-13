@@ -8,7 +8,7 @@
     "thinking": "hide",
     "permissions": "autoaccept",
     "markdown": "rendered",
-    "verbosity": "medium"
+    "verbosity": "low"
   },
   "animations": true,
   "theme": {

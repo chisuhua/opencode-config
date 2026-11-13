@@ -3,7 +3,7 @@
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
 > 决策依据：`openspec/changes/archive/2026-11-11-subagent-input-contract/`（原 change，已实施）+ `.rddf/reviews/subagent-contract-exemption-sampling.md` §1 的复核口径
 > 来源：`subagent-input-contract` 的 tasks.md 遗留项 **7.1（灰度观察）** 与 **7.4（契约推广）**（两者前置均未到，故未随该 change 归档）
-> 关联 change：**尚未立项**（本文件即立项草稿）
+> 关联 change：`openspec/changes/subagent-contract-critic-enforce/`（**已立项** 2026-11-13；逐条判据以该 change 的 proposal AC 表为唯一真源）
 > planner 审查：metis 1 轮（`.rddf/reviews/subagent-contract-critic-enforce-planner-review.md`）
 
 ## Why
