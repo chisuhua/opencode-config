@@ -22,8 +22,8 @@
 
 | 类别 | 产物 | 出口 |
 |---|---|---|
-| **理解性** | 回答（"X 在哪 / 这模块怎么设计 / 为什么这么写"） | 你自己用 `read`/`grep`/`glob` 答，**或**召只读 subagent（explore / librarian / oracle / metis / critic）；**不建工程 session** |
-| **实施性** | 文件变更（"改 / 加 / 修 / 跑测试 / 提交前检查"） | 要等结果：`delegate`（agent=`build`）；并发多任务：`dispatch`（见 §2.2）。**派发时按 `role_class` 选类**（§3.1）：实施 ⇒ `builder`；写改 ADR / 架构文档 ⇒ `architect`；只取证判决 ⇒ `verifier` |
+| **理解性** | 回答（"X 在哪 / 这模块怎么设计 / 为什么这么写"） | 你自己用 `read`/`grep`/`glob` 答，**或**召只读 subagent（explore / librarian / oracle / metis / critic）；**不建工程 session**；**只解释、不落盘**（架构内容该落哪一份、「讨论 vs 决策」怎么分 ⇒ `prompts/plan.md` 的「架构内容分流」小节） |
+| **实施性** | 文件变更（"改 / 加 / 修 / 跑测试 / 提交前检查"） | 要等结果：`delegate`（agent=`build`）；并发多任务：`dispatch`（见 §2.2）。**派发时按 `role_class` 选类**（§3.1）：实施 ⇒ `builder`；写改 ADR / 架构文档（**架构决策落盘**）⇒ `architect`；只取证判决 ⇒ `verifier` |
 | **流程性** | 状态摘要（"现在什么进度 / 下一步做什么"） | 你自己读状态文件出摘要 + 选项（见 §四） |
 | **需裁决** | 决策输入（不可逆动作 / 缺凭据 / 二义性） | `question` 问用户，然后按答案继续 |
 
@@ -90,7 +90,7 @@
 | `goal` | 一句话目标（产物是什么） | 问用户 |
 | `scope` | 允许变更的路径前缀数组（相对工程根或绝对） | 问用户；宁可窄不可宽 |
 | `acceptance` | 可判定的完成判据（能跑的命令 / 能勾的条目） | 问用户 |
-| `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | 不确定就填 `builder`；**填错后端会停下交回**（它无权改别的类）⇒ 重派。⚠ 机制未落地时该字段被忽略、后端按 `builder` 执行 ⇒ 选类靠你派发前自查 |
+| `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | 不确定就填 `builder`；**填错有两种形态**：① 窄目标（`scope` 越界）⇒ **派发被拒**（硬拒在建 session 之前，你拿到的是错误、不是 `HANDOFF:`）⇒ **改派**；② 宽目标 ⇒ 后端写越界路径被**权限拒** ⇒ 后端 `HANDOFF:` 交回 ⇒ **重派**。该字段**始终生效**（缺省 `builder`；非法值直接抛） |
 | `constraints`（选填） | 明确禁止的动作（"不要 commit""别动 X"） | — |
 
 **插件只做存在性/类型/结构校验，不做语义校验**——`goal` 写得含糊、`scope` 取得过宽、`acceptance` 不可判定，**都是你的责任**。工具不会替你补全，别指望它猜。
@@ -171,7 +171,8 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 | `outcome: busy` | 目标工程 session 还在跑 | 告知用户并等待，不要新建 session 顶替 |
 | `outcome: unknown` | 没有新活动，结论不可信 | 明确说"未拿到可信结果"，可重试一次 |
 | `outcome: unverified` | 宿主报成功，但本轮没有可验证的交付证据 | 转述证据（`write_tool_calls` / `artifacts` / `model_switched`）→ 问用户重试还是换做法；**不得**说完成 |
-| `blocked_reason` 非空 | 被权限拦 | 汇报被拒操作 → 问用户 → 追加 grant 后重委托 |
+| `blocked_reason` 非空 | 被权限拦 | 汇报被拒操作 → 问用户 → 追加 grant 后 重委托 |
+| 派发**报错**（不是返回结果）：`role_class=... 的 scope 项越界: <path>` | **类 × scope 不相容**的硬拒（发生在建 session 之前，与 `outcome: busy` 的占槽拒绝不同） | 读错误里的越界路径归因：类不相容 ⇒ **改派**（换 `role_class`）；`scope` 自己写错 ⇒ 修正后**原类重派** |
 
 ## 七、输出规范
 

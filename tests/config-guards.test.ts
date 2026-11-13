@@ -793,3 +793,202 @@ describe("交回后的收尾三问（resume-precheck-guidance 投影守卫）", 
     }
   })
 })
+
+describe("能力面判据对齐（role-class-rubric-alignment 投影守卫）", () => {
+  // ⚠ 覆盖边界（必须与 proposal 的风险行一致，不得宣称完备）：
+  //   ① 本守卫钉的是**结构**（表行数 / 关键 token / 出现次数 / 段落结构），**不是路径全集** ——
+  //      `archRoots` 是运行期按工程根算的（`lib/delegate-core.ts::archRoots`），prompt 只能写
+  //      抽象名「架构文档目录」⇒ 路径级一致性由 lib 侧单测负责（`tests/delegate-core.test.ts`）。
+  //   ② 反引号标识符白名单只覆盖**带反引号的** token + 显式禁用词；纯文本写出的新标识符不在覆盖内。
+  //   ③ 关键词断言不是语义断言：文本改写后若仍含同样的 token，守卫不会红（结构类断言已尽量避开这一点）。
+
+  const PLAN_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
+  const FRONT_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "front.md"), "utf8")
+  const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
+
+  /** 锚点之后的表格行（到第一个非表格行为止） */
+  const tableAfter = (md: string, anchor: string) => {
+    const lines = md.split("\n")
+    const start = lines.findIndex((l) => l.includes(anchor))
+    if (start < 0) return [] as string[]
+    const rows: string[] = []
+    for (const line of lines.slice(start + 1)) {
+      // 锚点与表格之间可能有空行或引用块（build.md 的运行身份表前有一段提示）
+      if (line.trim() === "" || line.trimStart().startsWith(">")) continue
+      if (!line.trimStart().startsWith("|")) break
+      rows.push(line)
+    }
+    return rows
+  }
+
+  /** 某标题（`####` 级）之后的小节正文 */
+  const sectionAfter = (md: string, heading: string) => {
+    const lines = md.split("\n")
+    const start = lines.findIndex((l) => l.trimStart().startsWith(heading))
+    if (start < 0) return ""
+    const rest = lines.slice(start + 1)
+    let inFence = false
+    let end = rest.length
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i].trimStart().startsWith("```")) { inFence = !inFence; continue }
+      if (!inFence && /^#{1,4} /.test(rest[i])) { end = i; break }
+    }
+    return rest.slice(0, end).join("\n")
+  }
+
+  const PLAN_TABLE = tableAfter(PLAN_MD, "选类：本次派发是哪一个角色类的工作")
+  const BUILD_TABLE = tableAfter(BUILD_MD, "它决定本次允许写什么")
+  const FLOW_SECTION = sectionAfter(PLAN_MD, "#### 架构内容分流")
+
+  test("AC1：两份完整表的 builder 行一致（都含「减去架构文档目录」）且三行齐", () => {
+    for (const rows of [PLAN_TABLE, BUILD_TABLE]) {
+      expect(rows.length).toBeGreaterThanOrEqual(3)
+      const builder = rows.find((l) => l.includes("`builder`"))!
+      const architect = rows.find((l) => l.includes("`architect`"))!
+      const verifier = rows.find((l) => l.includes("`verifier`"))!
+      expect(builder).toBeTruthy()
+      expect(architect).toBeTruthy()
+      expect(verifier).toBeTruthy()
+      expect(builder).toContain("减去架构文档目录")
+    }
+  })
+
+  test("AC2：两份表的 architect / verifier 行一致；front.md 出现三个类名与 architect 落点", () => {
+    for (const rows of [PLAN_TABLE, BUILD_TABLE]) {
+      const architect = rows.find((l) => l.includes("`architect`"))!
+      const verifier = rows.find((l) => l.includes("`verifier`"))!
+      expect(architect).toContain(".rddf/reviews")
+      expect(architect).toContain("arch-docs.json")
+      expect(verifier).toContain("仅")
+      expect(verifier).toContain(".rddf/reviews")
+    }
+    for (const cls of ["`builder`", "`architect`", "`verifier`"]) {
+      expect(FRONT_MD).toContain(cls)
+    }
+    expect(FRONT_MD).toContain("架构文档")
+  })
+
+  test("AC3：「选错类」的两种失败形态在 plan.md 与 front.md 都写到（结构锚定，非词频）", () => {
+    // plan.md：定位「选错类有两种失败形态」后的两条子 bullet
+    const planLines = PLAN_MD.split("\n")
+    const anchor = planLines.findIndex((l) => l.includes("选错类有两种失败形态"))
+    expect(anchor).toBeGreaterThan(-1)
+    const narrowIdx = planLines.findIndex((l, i) => i > anchor && l.includes("① **窄目标**"))
+    const wideIdx = planLines.findIndex((l, i) => i > anchor && l.includes("② **宽目标**"))
+    expect(narrowIdx).toBeGreaterThan(-1)
+    expect(wideIdx).toBeGreaterThan(narrowIdx)
+    const narrow = planLines.slice(narrowIdx, wideIdx).join("\n") // 含续行
+    const wide = planLines[wideIdx]
+    expect(narrow).toContain("派发被拒")
+    expect(narrow).toContain("改派")
+    // 归因句：三种成因都要写到（类不相容 / scope 写错 / archRoots 为空 ⇒ 先初始化）
+    expect(narrow).toContain("类 × scope 不相容")
+    expect(narrow).toContain("原类重派")
+    expect(narrow).toContain("arch-docs-init.sh")
+    expect(wide).toContain("交回")
+    expect(wide).toContain("重派")
+    // front.md：role_class 字段说明行内两种形态齐
+    const frontRow = FRONT_MD.split("\n").find((l) => l.includes("填错有两种形态"))!
+    expect(frontRow).toContain("窄目标")
+    expect(frontRow).toContain("派发被拒")
+    expect(frontRow).toContain("改派")
+    expect(frontRow).toContain("宽目标")
+    expect(frontRow).toContain("交回")
+    expect(frontRow).toContain("重派")
+  })
+
+  // ⚠ 边界：**字段值语义**（`null` / 空串 到底算不算「非法」）由 lib 侧单测负责（`tests/delegate-core.test.ts`
+  //    的 validateBrief describe），本守卫只钉**文档口径**（plan/front 都写「始终生效」、plan 写 `kind=knowledge` 互斥）。
+  test("AC3b：「始终生效」与 `kind=knowledge` 互斥被钉住（文档口径；字段值语义由 lib 侧负责）", () => {
+    expect(PLAN_MD).toContain("始终生效")
+    expect(FRONT_MD).toContain("始终生效")
+    expect(PLAN_MD).toContain("kind=knowledge")
+    expect(PLAN_MD).toContain("互斥")
+  })
+
+  test("AC3c：front.md 排障表有「类 × scope 不相容」的硬拒行（与占槽拒绝区分）", () => {
+    const row = FRONT_MD.split("\n").find((l) => l.includes("类 × scope 不相容"))!
+    expect(row).toContain("越界路径")
+    expect(row).toContain("改派") // 或原类重派
+    expect(row).toContain("重派")
+  })
+
+  test("AC4：过期降级句已删（plan/front）；存量派发兜底句仍在（build.md）", () => {
+    expect(PLAN_MD).not.toContain("机制未启用")
+    expect(FRONT_MD).not.toContain("机制未落地")
+    expect(FRONT_MD).not.toContain("机制未启用")
+    // build.md 的「存量派发 / 字段缺失 ⇒ 按缺省 builder」兜底仍然有效
+    expect(BUILD_MD).toContain("机制未启用时的缺省口径")
+    expect(BUILD_MD).toContain("不得因字段缺失臆造一个 class")
+  })
+
+  test("AC5：front.md 可见「架构决策落盘 ⇒ architect」且与 plan.md 分流判据同源", () => {
+    expect(FRONT_MD).toContain("只解释、不落盘")
+    expect(FRONT_MD).toContain("架构决策落盘")
+    expect(FRONT_MD).toContain("架构内容分流") // 按标题名引用 plan.md
+    // 同一组关键词（讨论 / 决策 / 落盘 / 架构文档）
+    for (const kw of ["讨论", "决策", "落盘", "架构文档"]) {
+      expect(FRONT_MD).toContain(kw)
+      expect(PLAN_MD).toContain(kw)
+    }
+  })
+
+  test("AC6：plan.md 的「架构内容分流」小节含三路 + 三个触发问题 + brief 必带候选集", () => {
+    expect(FLOW_SECTION).not.toBe("")
+    // 三路
+    expect(FLOW_SECTION).toContain("① 讨论")
+    expect(FLOW_SECTION).toContain("② 决策")
+    expect(FLOW_SECTION).toContain("③ 实现")
+    // 三个触发问题
+    expect(FLOW_SECTION).toContain("候选收敛了吗")
+    expect(FLOW_SECTION).toContain("要跨会话生效吗")
+    expect(FLOW_SECTION).toContain("取舍")
+    expect(FLOW_SECTION).toContain("怎么做")
+    // brief 必带候选集 + 派 architect + 不重新发明备选（防两边各写一套）
+    expect(FLOW_SECTION).toContain("brief 必带候选集")
+    expect(FLOW_SECTION).toContain("role_class=architect")
+    expect(FLOW_SECTION).toContain("不重新发明备选")
+  })
+
+  test("AC7：落点路由正文只出现一次（在 build.md）；plan.md / front.md 只引用", () => {
+    const body = "决策与取舍 → ADR"
+    const count = [PLAN_MD, FRONT_MD, BUILD_MD].filter((md) => md.includes(body)).length
+    expect(count).toBe(1)
+    expect(BUILD_MD).toContain(body)
+    // plan.md 按「段名 + 条目名」引用，不复制正文
+    expect(PLAN_MD).toContain("architect 产出形态契约")
+    expect(PLAN_MD).toContain("落点路由")
+    expect(PLAN_MD).not.toContain(body)
+    // 同理：「只回答三件事」的**枚举正文**也不得被复制成第二份（critic SHOULD_FIX 1）
+    const triad = "定什么、为什么这么定、代价是什么"
+    expect([PLAN_MD, FRONT_MD, BUILD_MD].filter((md) => md.includes(triad)).length).toBe(1)
+    expect(BUILD_MD).toContain(triad)
+    // plan.md 只留条目名
+    expect(PLAN_MD).toContain("决策文档只回答三件事")
+    expect(PLAN_MD).not.toContain(triad)
+  })
+
+  test("AC8：未新增 —— token allowlist / SLOT_STATES / outcome 集合不变", () => {
+    const known = new Set([
+      "delegate", "dispatch", "sessions", "suspend", "cancel",
+      "rddf", "feedback", "list", "kind", "scope", "role_class", "resume", "resume_session", "session",
+      "last_assistant_text", "last_feedback_id", "created_at", "outcome", "state",
+      "idle", "running", "succeeded", "slot", "pair", "json", "file", "line",
+      "task", "plan", "ac", "tasks", "proposal", "true", "false", "subagent", "HANDOFF",
+      "oracle", "prompts", "build", "md", "design", "open", "specs", "changes",
+      "builder", "architect", "verifier", // 三个能力类
+    ])
+    const tokens = [...FLOW_SECTION.matchAll(/`([^`]+)`/g)]
+      .flatMap((m) => m[1].split(/[^A-Za-z0-9_]+/))
+      .filter((t) => /^[A-Za-z][A-Za-z0-9_]*$/.test(t))
+    for (const token of new Set(tokens)) {
+      expect(known).toContain(token)
+    }
+    expect([...SLOT_STATES]).toEqual(["dispatching", "active", "idle", "suspended", "tombstone"])
+    // 新小节不引入新的 outcome / state 取值
+    const used = [...FLOW_SECTION.matchAll(/(?:outcome|state)\s*=\s*`?([a-z_]+)/g)].map((m) => m[1])
+    for (const value of used) {
+      expect([...SLOT_STATES]).toContain(value)
+    }
+  })
+})
