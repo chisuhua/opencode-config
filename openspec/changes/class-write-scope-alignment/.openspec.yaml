@@ -1,0 +1,7 @@
+# 本 change 不产生 openspec 的 spec delta。
+#
+# 理由：本仓**不使用** openspec 的 spec registry（仓库内没有 openspec/specs/ 目录），
+# 行为契约以 `proposal.md` 的 AC 表 + `docs/adr/ADR-class-write-scope-alignment.md` 为准。
+schema: spec-driven
+created: 2026-11-14
+skip_specs: true

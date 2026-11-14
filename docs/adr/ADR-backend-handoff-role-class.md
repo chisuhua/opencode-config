@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Accepted（2026-11-13 用户签批）；**同日 D3 修订**（用户选 **J**：builder 上限改为 `scope − archRoots` 的两级规则，依据 `feedback-20261113-001`） |
+| Status | Accepted（2026-11-13 用户签批）；**同日 D3 修订**（用户选 **J**：builder 上限改为 `scope − archRoots` 的两级规则，依据 `feedback-20261113-001`）；**2026-11-14：`ADR-class-write-scope-alignment` 修订 D3 的 verifier 写集行（方向已签批，实施时与代码同批落改 —— 本行当前描述的是现行实现）** |
 | Date | 2026-11-13 |
 | Author | architect（主会话） |
 | Parent | `ADR-plan-delegate-engineering-session`（D1–D7）、`ADR-front-stop-ownership`（归属门控） |
