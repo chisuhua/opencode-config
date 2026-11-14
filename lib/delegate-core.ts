@@ -736,6 +736,29 @@ export function verifierAllowRootLabels(): string {
 }
 
 /**
+ * `verifier` 类写集的**规范机读块**（`role-class-write-set:verifier`）。
+ *
+ * 用途：把「写集」从**散文措辞**降为**机读投影** —— 三份 prompt（`build.md` / `plan.md` /
+ * `front.md`）各嵌入本块的**逐字副本**，守卫按**精确比对**校验（多一个路径、少一个路径、
+ * 改一个字符 ⇒ 红）。
+ *
+ * ⚠ 为什么必须是「逐字块」而不是「解析散文里的路径」：
+ *   散文是**开集**的（换一种说法就绕过判据）；机读块是**闭集**的（只能等于渲染结果）。
+ *   这取代了「枚举式词表」判据（见 `.rddf/improvements/rdd-verifier-state-consolidation.md`
+ *   的演进项：结构比对替代散文正则）。
+ *
+ * ⚠ 块**只放写集事实**，不放义务措辞（scope 义务、退役标记等仍由各自的守卫按句判）。
+ */
+export function verifierWriteSetBlock(): string {
+  return [
+    "<!-- role-class-write-set:verifier",
+    `allow: ${VERIFIER_ALLOW_ROOTS.join(", ")}`,
+    `owns: ${VERIFIER_OWNS_PATHS.join(", ")}`,
+    "-->",
+  ].join("\n")
+}
+
+/**
  * `rdd-verifier` skill 的**状态文件全量**（**单点常量**）。
  *
  * **2026-11-14 起：6 项全部在 `.rddf/state/verifier/` 命名空间内** —— 产品侧

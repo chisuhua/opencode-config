@@ -62,6 +62,16 @@
 | 写改 ADR / 架构文档（可含自己跑 oracle→critic 收口） | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` |
 | 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（记账落点；**派发时 `scope` 必须同时包含这两个目录** —— 上限 ≠ 授权）。另：取证命令要判「环境信号 vs 判据信号」时需要基线 ⇒ **简报必须声明可解析的 `<base>`**（如 `HEAD~1` 或 commit sha）；不声明 ⇒ 后端一律 `blocked` |
 
+<!-- 机读投影：下面这块是 `lib/delegate-core.ts::VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` 的**逐字副本** ——
+     守卫按**精确比对**校验（多一个路径 / 少一个路径 / 改一个字符 ⇒ 红）。
+     散文措辞不再承担「写集对不对」的判据（措辞是开集的，换个说法就能绕过）。
+     图例：`allow:` 是**前缀根**（语义 = 散文的 `X/**`）；`owns:` 是**文件名模式**（`<name>` / `*` 为占位符）。
+     需要对齐时：bun -e 'import {verifierWriteSetBlock} from "./lib/delegate-core.ts"; console.log(verifierWriteSetBlock())' 打印后整块替换。 -->
+<!-- role-class-write-set:verifier
+allow: .rddf/reviews, .rddf/state/verifier
+owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl, .rddf/state/verifier/.ac-verdict-*.json, .rddf/state/verifier/.ac-verification.jsonl, .rddf/state/verifier/.ac-verifier-blocked.jsonl, .rddf/state/verifier/rdd-verify-context-<change>.json
+-->
+
 - **换类不能原地换**：同一 session 的能力在创建时定型 ⇒ 需要别的类 ⇒ 由后端 handoff 交回，再**重新派发**（新 session 的模型上下文不继承，计划要点要重贴）。
 - **选错类有两种失败形态**（它无权改别的类）：
   - ① **窄目标**（`scope` 越界，如 `architect + src/**`、`builder + docs/adr`）⇒ **派发被拒**（硬拒发生在建 session 之前，你拿到的是错误、**不是** `HANDOFF:`）。

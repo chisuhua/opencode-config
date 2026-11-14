@@ -23,7 +23,13 @@ import {
 } from "../scripts/agent-guard-rules.ts"
 import { applyRules } from "../scripts/agent-guard-gen.ts"
 import { CONTRACTS } from "../lib/subagent-contract-core.ts"
-import { ARCH_FALLBACK_DIRS, PLAN_REF_ROOTS, PRIORITY_BLOCKED_FIELDS, SLOT_STATES } from "../lib/delegate-core.ts"
+import {
+  ARCH_FALLBACK_DIRS,
+  PLAN_REF_ROOTS,
+  PRIORITY_BLOCKED_FIELDS,
+  SLOT_STATES,
+  verifierWriteSetBlock,
+} from "../lib/delegate-core.ts"
 
 const CONFIG_PATH = path.join(import.meta.dir, "..", "opencode.jsonc")
 const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8"))
@@ -1273,6 +1279,154 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     import.meta.dir, "..", ".rddf", "improvements", "rdd-verifier-state-consolidation.md",
   )
 
+  test("AC19（结构比对）：三份 prompt 的 verifier 写集**机读块** == lib 渲染的规范块（逐字 + 唯一）", () => {
+    // 真源 = `lib/delegate-core.ts::VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS`；
+    // 投影 = build.md / plan.md / front.md 各嵌一块**逐字副本**。
+    // 判据是**精确字符串比对**（不是散文解析）⇒ 多一个路径 / 少一个路径 / 改一个字符 ⇒ 红。
+    const canonical = verifierWriteSetBlock()
+    for (const rel of ["prompts/build.md", "prompts/plan.md", "prompts/front.md"]) {
+      const text = readFileSync(path.join(import.meta.dir, "..", rel), "utf8")
+      expect(text.includes(canonical), `${rel} 缺少或偏离规范机读块`).toBe(true)
+      // ① 规范块**逐字**出现且恰好 1 处（多一份副本 / 少一份 ⇒ 红）
+      expect(text.split(canonical).length - 1, `${rel} 的规范块应恰好出现 1 次`).toBe(1)
+      // ② 起始标记**独占一行**且仅 1 处（陈旧副本的标记也会被抓；正文里「提及」不算）
+      const markers = text.split("\n").filter((l) => l.trim() === "<!-- role-class-write-set:verifier").length
+      expect(markers, `${rel} 的机读块起始标记应恰好出现 1 行（陈旧副本 ⇒ 红）`).toBe(1)
+    }
+  })
+
+  test("AC20（路径闭集）：根下旧路径只许出现在历史语境；块内具体文件必须落在 owns 模式内", () => {
+    // 取代「散文措辞词表」：**按路径判**，不按词判 ⇒ 换措辞绕不过。
+    // ① 根下旧路径（`.rddf/state/.ac-*` / `.rddf/state/rdd-verify-context*`）—— 它们在 allow 根**之外**
+    //    ⇒ 出现在现行语境就是**错的**（后端写不进去）⇒ 只允许出现在历史标注行；
+    // ② 块内具体文件（`.rddf/state/verifier/<file>`）必须落在 **owns 模式**内
+    //    （allow 根是目录根、覆盖其下一切 ⇒ 用它判**恒真、无判别力** ⇒ 不用）。
+    // ⚠ 判据面就这两条 —— 不要以为它还能判别的（宁可少判，不要假信心）。
+    const canonical = verifierWriteSetBlock()
+    const allow = canonical
+      .split("\n")
+      .find((l) => l.startsWith("allow: "))!
+      .slice("allow: ".length)
+      .split(", ")
+      .map((s) => s.trim())
+    const owns = canonical
+      .split("\n")
+      .find((l) => l.startsWith("owns: "))!
+      .slice("owns: ".length)
+      .split(", ")
+      .map((s) => s.trim())
+    const norm = (p: string) => p.replace(/<[^>]+>/g, "*").replace(/\/+$/, "")
+    // ⚠ **只用 owns 集合判「块内路径」**，**不用 allow 根**：
+    //   allow 根是**目录根** ⇒ 其下任意路径都被它覆盖 ⇒ 拿它当判据**恒真、没有判别力**
+    //   （oracle 建议的「allow 前缀覆盖」修法会让这一支变成活代码但仍恒真 ⇒ 假信心）。
+    //   有判别力的问法是「这个**文件**是 skill owns 的吗」⇒ 只看 owns 的模式。
+    const ownedPatterns = owns.map(norm)
+    const owned = (token: string) =>
+      ownedPatterns.some((k) => {
+        if (k.includes("*")) {
+          const re = new RegExp("^" + k.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*") + "$")
+          return re.test(token)
+        }
+        // 非 glob 项：相等，或**目录前缀**（为「owns 未来出现目录项」预留；当前 3 个字面 owns 项走不到这里）
+        return token === k || token.startsWith(k + "/")
+      })
+    // allow 根**作为目录引用**（token 是该目录本身，或其 `/**` 形态）⇒ 合法；
+    // ⚠ 不能用「startsWith(根 + "/")」—— 那是**目录前缀**，会把根下一切文件都放行（同 allow 根恒真问题）。
+    const allowRoots = allow.map(norm)
+    const isAllowRootDir = (token: string) => {
+      // 目录/目录通配形态（`.rddf/state/verifier` / `/**` / `/*`）⇒ 都归到该目录本身
+      const dirRef = token.replace(/\/\*.*$/, "")
+      return allowRoots.some((k) => dirRef === k)
+    }
+
+    // ⚠ **历史标记刻意不含裸「旧」**（单字太宽：「仍旧」「照旧」都会命中 ⇒ 豁免变后门）。
+    //   只收**成词**的表述。
+    // ⚠ **本仓还剩两处枚举式词表，并列登记（不要把其中一处写成「唯一」——会少记一面）**：
+    //   ① 本处 HIST —— AC20 内部的**行级豁免闸门**（历史语境白名单）；
+    //   ② AC14 的 stale 正则 —— 「写集被描述得**更窄**」的判据（原型证明无可替代的结构化写法）。
+    //   其余判据（AC19 逐字块 / AC20 路径闭集）均**按路径或逐字内容判** ⇒ 换措辞绕不过。
+    // ⚠ 已知残留（**故意不闭合**）：HIST 是**逐行**豁免 ⇒ 「活错误陈述 + 同行塞一个历史词」可同框洗白。
+    //    收紧到「引用/标注语境」会误伤真实的退役注记 ⇒ 登记为已知面，不在此闭合。
+    const HIST = /历史|退役|作废|legacy|pre-consolidation|旧路径|旧形态|旧版|收拢前|已收拢/
+    // ⚠ **已关闭 improvement 的判定**：必须带**完成/归档**语义；`已立项` 只有在**同行**给出
+    //   归档指针时才算已关闭（本仓惯例：`已立项 → openspec/changes/archive/…`）。
+    //   且只认**头部区**（前 15 行）—— 正文中部引用一句他人状态行不得翻转整文件豁免。
+    // 关闭判定 = **状态行**说了算：`已完成|已关闭|已归档` ⇒ 关闭；
+    // `已立项` 只有在**头部块内**给出归档指针（`openspec/changes/archive/…`，可在下一行）时才算关闭。
+    const isClosedImprovement = (head: string): boolean => {
+      const line = head.split("\n").find((l) => /^\s*>\s*\*\*(实施状态|状态)\*\*/.test(l)) ?? ""
+      if (/已完成|已关闭|已归档/.test(line)) return true
+      return /已立项/.test(line) && head.includes("openspec/changes/archive/")
+    }
+    // ⚠ **覆盖面与 AC14 同一口径**（未覆盖面：`.rddf/plans/**`、未归档 open change 的 proposal.md）。
+    // TOKEN 必须三向：块内**新形态**路径（`verifier/…`）也要抽出来 —— 否则「块外新路径」这一面是死代码。
+    // ⚠ 排除字符集必须含 `,` 与 `、`（机读块里 owns 是**逗号分隔**的一行 ⇒ 否则 token 会带上尾逗号）。
+    //   另：闭集含 `.ac-*` / `rdd-verify-context*` / `.verifier-*` 三族 verifier 状态路径；
+    //   `.verifier-*`（如曾悬空的 `.rddf/state/.verifier-report.json`）一并纳入，避免漏族。
+    // ⚠ 已知边界（fail-safe 方向）：排除集**不含** ASCII `.` 与 `]` ⇒ 英文句点收尾的路径会带尾缀 ⇒ 误红。
+    const TOKEN = /\.rddf\/state\/(verifier\/[^\s`）)，。；;,"'、]*|\.ac-[^\s`）)，。；;,"'、]*|rdd-verify-context[^\s`）)，。；;,"'、]*|\.verifier-[^\s`）)，。；;,"'、]*)/g
+    const scanRoots = ["prompts", "docs", "commands", ".rddf/improvements", ".rddf/roadmap"]
+    // ⚠ `docs/CHANGELOG.md` **必须排除**：它开头自述「**本文档不描述现状**，只记录『什么时候改了什么、
+    //   为什么』」⇒ 是**历史记录**，不是现行指引；而它天然会**引用判据的字面形态**
+    //   （如逐字引 AC14 的正则）⇒ 引用即命中判据本身 ⇒ 扫它必然假红。
+    const excluded = ["docs/adr", "docs/CHANGELOG.md"]
+    const hits: string[] = []
+    const walk = (rel: string) => {
+      if (excluded.some((e) => rel === e || rel.startsWith(e + "/"))) return
+      const abs = path.join(import.meta.dir, "..", rel)
+      for (const entry of readdirSync(abs, { withFileTypes: true })) {
+        const next = rel ? `${rel}/${entry.name}` : entry.name
+        if (entry.isDirectory()) walk(next)
+        else if (entry.name.endsWith(".md")) {
+          // 文件级排除（`excluded` 里既可能有**目录**（docs/adr）也可能有**单文件**（docs/CHANGELOG.md））
+          if (excluded.some((e) => next === e)) continue
+          const text = readFileSync(path.join(abs, entry.name), "utf8")
+          // 已关闭的 improvement 是**历史记录**（记的是当时的路径）⇒ 不参与现行判据
+          // （只看**头部区**前 15 行 —— 正文中部引用别人的状态行不得翻转整文件豁免）
+          // ⚠ 已知残留（**故意不闭合**）：改状态行即可翻转整文件豁免；「伪造关闭」属**故意**行为，
+          //    超出本守卫的漂移威胁模型 ⇒ 其真伪由 `rdd-doctor` / 流程评审承担，不在此机械核验。
+          const head = text.split("\n").slice(0, 15).join("\n")
+          if (next.startsWith(".rddf/improvements/") && isClosedImprovement(head)) continue
+          for (const [i, line] of text.split("\n").entries()) {
+            const historical = HIST.test(line)
+            for (const m of line.matchAll(TOKEN)) {
+              const token = norm(m[0])
+              if (token.startsWith(".rddf/state/verifier")) {
+                // 目录根引用（`.rddf/state/verifier` 本身）合法；具体文件必须落在 owns 模式内
+                if (!isAllowRootDir(token) && !owned(token)) {
+                  hits.push(`${next}:${i + 1}: ${m[0]}（不在 owns 集合内）`)
+                }
+              } else if (!historical) {
+                hits.push(`${next}:${i + 1}: ${m[0]}（根下旧路径且非历史语境）`)
+              }
+            }
+          }
+        }
+      }
+    }
+    for (const r of scanRoots) walk(r)
+    // 规格件单列（与 AC14 同款）：`.rddf/reviews/**` 整体是历史记录区，只白名单这一个规格件
+    // （它被 ADR 元数据当权威引用 ⇒ 属「活文档」）
+    const specPath = path.join(import.meta.dir, "..", ".rddf", "reviews", "backend-handoff-protocol-spec.md")
+    if (existsSync(specPath)) {
+      const specText = readFileSync(specPath, "utf8")
+      for (const [i, line] of specText.split("\n").entries()) {
+        if (HIST.test(line)) continue
+        for (const m of line.matchAll(TOKEN)) {
+          const token = norm(m[0])
+          if (token.startsWith(".rddf/state/verifier")) {
+            if (!isAllowRootDir(token) && !owned(token)) {
+              hits.push(`.rddf/reviews/backend-handoff-protocol-spec.md:${i + 1}: ${m[0]}（不在 owns 集合内）`)
+            }
+          } else {
+            hits.push(`.rddf/reviews/backend-handoff-protocol-spec.md:${i + 1}: ${m[0]}（根下旧路径且非历史语境）`)
+          }
+        }
+      }
+    }
+    expect(hits.join(" | ")).toBe("")
+  })
+
   test("AC7：三处文本一致（plan 选类表 / front §3.1 / build 运行身份表）含写集与 scope 义务", () => {
     // plan.md 选类表 verifier 行
     const planRow = PLAN_MD.split("\n").find((l) => l.includes("`verifier`") && l.includes(".rddf/reviews"))!
@@ -1342,11 +1496,10 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     const joined = rows.join("\n")
     // 负向：产品侧收拢已完成 ⇒ 不得再有「待产品侧收拢」
     expect(joined).not.toContain("待产品侧收拢")
-    // 负向：**现行**行（历史注记除外）不得再把根下点文件说成当前落点
-    const live = rows.filter((l) => !l.includes("历史注记")).join("\n")
-    expect(live).not.toMatch(/\.rddf\/state\/\.ac-/)
     // 正向：记账落点必须被点名（不是靠「全部」这种平凡词满足）
     expect(joined).toContain("记账落点")
+    // ⚠ **路径负向已上移**：「根下旧路径只许出现在历史语境」由 **AC20（路径闭集）** 统一判 ——
+    //   它按**路径**判（不按措辞）、且覆盖**全部活文档**；此处不再重复一份窄口径断言。
   })
 
   test("AC13：§verifier 产出契约 含落点区分（产品 vs 记账），负向不得写反", () => {
@@ -1370,12 +1523,17 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     //   **已知边界（未来态，出现时应扩扫集）**：`.rddf/plans/**`（rdd-builder P1 产物，会被 executing agent 读）
     //          与**未归档** open change 的 `openspec/changes/*/proposal.md`（会被 rdd-verifier 读）——
     //          当前目录不存在 / 无 open change ⇒ 未纳入，出现时按本条扩。
-    //   ⚠ 措辞词表是**枚举式**（仅 / 只允许 / 只能 / 只有 / 限于）；新措辞会静默绕过 ⇒
-    //      根治方向见 `.rddf/improvements/rdd-verifier-state-consolidation.md`（结构比对替代散文正则）。
+    //   ⚠ 措辞词表是**枚举式**（仅 / 只允许 / 只能 / 只有 / 限于）；新措辞会静默绕过。
+    //      写集本身已改由 **AC19（机读块精确比对）** + **AC20（路径闭集）** 判（按**路径 / 逐字内容**判
+    //      ⇒ 换措辞绕不过）。本条补的是「写集被描述得**更窄**」这一类 —— 原型证明它**没有可靠的结构化替代**
+    //      （共现式判定 7/7 误报）⇒ 保留窄词表作兜底。
+    //      ⚠ 与 AC20 内的 HIST 词表**并列**登记（本仓还剩**两处**枚举式词表，不是「唯一」）。
     const stale = /verifier[^\n]{0,40}(仅|只允许|只能|只有|限于)[^\n]{0,20}\.rddf\/reviews/
     const root = path.join(import.meta.dir, "..")
     const scanRoots = ["prompts", "docs", "commands", ".rddf/improvements", ".rddf/roadmap"]
-    const excluded = ["docs/adr"] // `.rddf/state` 从 scanRoots 不可达 ⇒ 不必列
+    // ⚠ 同 AC20：`docs/CHANGELOG.md` 是**历史记录**（自述「不描述现状」）且天然逐字引用判据形态
+    //   ⇒ 引用即命中判据本身 ⇒ 必须排除，否则本条永远红。
+    const excluded = ["docs/adr", "docs/CHANGELOG.md"] // `.rddf/state` 从 scanRoots 不可达 ⇒ 不必列
     const hits: string[] = []
     const walk = (rel: string) => {
       if (excluded.some((e) => rel === e || rel.startsWith(e + "/"))) return
@@ -1384,6 +1542,8 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
         const next = rel ? `${rel}/${entry.name}` : entry.name
         if (entry.isDirectory()) walk(next)
         else if (entry.name.endsWith(".md")) {
+          // 文件级排除（`excluded` 里既可能有**目录**（docs/adr）也可能有**单文件**（docs/CHANGELOG.md））
+          if (excluded.some((e) => next === e)) continue
           const m = readFileSync(path.join(abs, entry.name), "utf8").match(stale)
           if (m) hits.push(`${next}: ${m[0]}`)
         }

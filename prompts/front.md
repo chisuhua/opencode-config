@@ -93,6 +93,16 @@
 | `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` 类的 `scope` **必须同时包含** `.rddf/reviews` 与 `.rddf/state/verifier`（记账落点 —— 产品侧收拢已完成，skill 的**全部**状态文件都在该目录下）。收到 verifier 类的 `HANDOFF:` 时：若其 5 项正文提到「状态机未落盘 / verdict cache 没写」，那是**后端没直写 skill 状态** —— 正常路径下后端**自己写**（single writer）；先查 `scope` 是否真含 `.rddf/state/verifier`（缺 ⇒ **scope 问题，重派**；含却没写 ⇒ 记为后端违约并按 §HANDOFF 交回）；**跨会话 resume 时原 `scope` 不落盘 ⇒ 查不到就视为缺 ⇒ 重派**；不确定就填 `builder`；**填错有两种形态**：① 窄目标（`scope` 越界）⇒ **派发被拒**（硬拒在建 session 之前，你拿到的是错误、不是 `HANDOFF:`）⇒ **改派**；② 宽目标 ⇒ 后端写越界路径被**权限拒** ⇒ 后端 `HANDOFF:` 交回 ⇒ **重派**。该字段**始终生效**（缺省 `builder`；非法值直接抛） |
 | `constraints`（选填） | 明确禁止的动作（"不要 commit""别动 X"） | — |
 
+<!-- 机读投影：下面这块是 `lib/delegate-core.ts::VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` 的**逐字副本** ——
+     守卫按**精确比对**校验（多一个路径 / 少一个路径 / 改一个字符 ⇒ 红）。
+     散文措辞不再承担「写集对不对」的判据（措辞是开集的，换个说法就能绕过）。
+     图例：`allow:` 是**前缀根**（语义 = 散文的 `X/**`）；`owns:` 是**文件名模式**（`<name>` / `*` 为占位符）。
+     需要对齐时：bun -e 'import {verifierWriteSetBlock} from "./lib/delegate-core.ts"; console.log(verifierWriteSetBlock())' 打印后整块替换。 -->
+<!-- role-class-write-set:verifier
+allow: .rddf/reviews, .rddf/state/verifier
+owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl, .rddf/state/verifier/.ac-verdict-*.json, .rddf/state/verifier/.ac-verification.jsonl, .rddf/state/verifier/.ac-verifier-blocked.jsonl, .rddf/state/verifier/rdd-verify-context-<change>.json
+-->
+
 **插件只做存在性/类型/结构校验，不做语义校验**——`goal` 写得含糊、`scope` 取得过宽、`acceptance` 不可判定，**都是你的责任**。工具不会替你补全，别指望它猜。
 
 ### 3.2 `grants`：需要额外权限时，先向用户预批

@@ -3,11 +3,13 @@
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
 > 来源：`docs/adr/ADR-class-write-scope-alignment.md`（D1b 过渡期规则 + D3-1「残留显式承认」）
 > 归属：**产品侧**（`~/.agents/skills/rdd-workflow` 的 `rdd-verifier` skill 与 `archive_gate_check`）—— 本仓**无权限面**，本文件是**待办登记**（stub），不是本仓的实施计划
-> **状态：已完成（2026-11-14）** —— 产品侧 `rdd-workflow` 仓的 change `consolidate-verifier-state` 已实施
-> （目录收拢 + `owns:` 补齐为 6 项 + 悬空指针改真实路径 + 遗留搬迁函数 + 规格/文档/ADR 同步）；
-> 本仓收尾（③ 逐文件清单 → 产品侧执行；④ 本仓收尾 → 常量形态 / 退役过渡期 / 守卫 / CHANGELOG）**已完成**。
+> **实施状态**：已立项 → 产品侧 `rdd-workflow` 仓 change `consolidate-verifier-state`
+> （`openspec/changes/archive/2026-11-14-consolidate-verifier-state/`，2026-11-14 已归档：目录收拢 + `owns:` 补齐为 6 项 +
+> 悬空指针改真实路径 + 遗留搬迁函数 + 规格/文档/ADR 同步）；本仓收尾 = 批次 `v2.24`
+> （`docs/CHANGELOG.md` v2.24：常量形态 / 退役过渡期 / 工具 schema 派生面 / 守卫 / front.md 处置）。
+> ⚠ **本文件自此是历史记录**（记的是**收拢前**的旧路径）⇒ 守卫 AC20 的「已关闭 improvement 排除」规则适用。
 > 关联 change：`class-write-scope-alignment`（AC18 要求本 stub 存在且其 Acceptance 含 owns 核对项）
-> planner 审查：**待办登记**，未过 metis（实施前须补）
+> planner 审查：**待办登记**，未过 metis（实施前须补）—— **关闭时未补**，此行留存当时状态（历史记录）
 
 ## Why
 
@@ -104,10 +106,20 @@ grep -n "VERIFIER_OWNS_PATHS" -A 10 lib/delegate-core.ts  # 本仓常量
    ⇒ 连带迁移**读路径**（`archive_gate_check` 读 verdict cache、`rdd-doctor` 读 blocked log）。
 2. **删除悬空指针** `.rddf/state/.verifier-report.json` 的声明（或补上真正的写入方）。
 3. **核对 owns 清单**：`VERIFIER_OWNS_PATHS`（`lib/delegate-core.ts`，6 项）与 `SKILL.md:28-32` 是否仍一致（**加第 7 个路径时仓内守卫不会红** —— 这一条是人工同步残留，本项负责收尾）。
-4. **（演进项）文档投影 ↔ 代码常量的结构比对**：把 spec 3.1 表 / `prompts/build.md` 运行身份表 / `prompts/plan.md` 选类表的 verifier 行，从「散文正则守卫」升级为**解析表格行 ↔ `VERIFIER_ALLOW_ROOTS` 集合的结构比对**（散文正则降为兜底）。
+4. **（演进项）文档投影 ↔ 代码常量的结构比对**：~~把 spec 3.1 表 / `prompts/build.md` 运行身份表 / `prompts/plan.md` 选类表的 verifier 行，从「散文正则守卫」升级为**解析表格行 ↔ `VERIFIER_ALLOW_ROOTS` 集合的结构比对**（散文正则降为兜底）。
    - 动机：`class-write-scope-alignment` 的 AC14 是**枚举式措辞**假设（仅 / 只允许 / 只能 / 只有 / 限于）⇒ 新措辞会静默绕过（2026-11-14 实测漏掉三处，其中一处措辞是「只有」）。
    - 先例：`docs/CHANGELOG.md` v2.20 ④（`priority_blocked` 提升为导出常量、守卫不再手抄）与 accepted roots ↔ `PLAN_REF_ROOTS` 的双向校验。
 5. 收拢完成后，`ADR-class-write-scope-alignment` D1b 的**过渡期规则**可退役（`verifier` 类后端直写全部 skill 状态），并把 `prompts/build.md` 的过渡期段与 symptom-bridge 句改为「历史说明」。
+
+> **演进项 4 的收口记录（2026-11-15）**：已由本仓批次 **v2.25** 落地（不再是「待办」）：
+> - **AC19（机读块精确比对）**：`lib/delegate-core.ts::verifierWriteSetBlock()` 渲染规范块 ⇒
+>   `prompts/{build,plan,front}.md` 各嵌**逐字副本** ⇒ 守卫按**精确字符串比对**（多/少/改一个字符 ⇒ 红）。
+> - **AC20（路径闭集）**：活文档里的 verifier 状态路径**按路径判**（不再靠措辞）——
+>   根下旧路径只许出现在历史语境；块内具体文件必须落在 **owns 模式**内。
+> - **未收口的部分（如实记录）**：「写集被描述得**更窄**」这一类（AC14 的措辞词表）**没有可靠的结构化替代**
+>   —— 原型证明共现式判定 7/7 误报 ⇒ AC14 保留为**最后一处**枚举式词表（已在守卫注释里登记）。
+> - 变红演练 4 例（改常量 / 塞根下旧路径 / 改投影块 / 塞块外新形态文件）全部实跑通过；
+>   其中第 4 例在实现修正**之前不红**（TOKEN 正则不产出 `verifier/` 开头 token ⇒ 该面是死代码）—— 已修。
 
 ## Acceptance
 

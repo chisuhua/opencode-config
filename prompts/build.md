@@ -440,6 +440,16 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | `no-role` | 读；**询问用户角色**；轻量讨论；**调 `explore` / `librarian` 做只读调研**（不改仓库状态） | 一切 edit；会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等）；创建 openspec change；调写类 subagent | `【角色: 未设定】未读取到角色且用户未指定。请告诉我本次以什么角色工作：architect / planner / builder / verifier。` |
 | `general` | **全部**：edit、shell、commit、subagent、openspec change、skill | 无额外禁止 | `【角色: general \| source: <...>】build agent 处于通用模式。如需限制请说"切换到 X"。` |
 
+<!-- 机读投影：下面这块是 `lib/delegate-core.ts::VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` 的**逐字副本** ——
+     守卫按**精确比对**校验（多一个路径 / 少一个路径 / 改一个字符 ⇒ 红）。
+     散文措辞不再承担「写集对不对」的判据（措辞是开集的，换个说法就能绕过）。
+     图例：`allow:` 是**前缀根**（语义 = 散文的 `X/**`）；`owns:` 是**文件名模式**（`<name>` / `*` 为占位符）。
+     需要对齐时：bun -e 'import {verifierWriteSetBlock} from "./lib/delegate-core.ts"; console.log(verifierWriteSetBlock())' 打印后整块替换。 -->
+<!-- role-class-write-set:verifier
+allow: .rddf/reviews, .rddf/state/verifier
+owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl, .rddf/state/verifier/.ac-verdict-*.json, .rddf/state/verifier/.ac-verification.jsonl, .rddf/state/verifier/.ac-verifier-blocked.jsonl, .rddf/state/verifier/rdd-verify-context-<change>.json
+-->
+
 
 > **开场报告的 `source` 取值**：`<state-file|user|auto>` —— 窗口内自动切换的回合标 `auto`（并带 `window: <used>/<max_rounds>`），见下方「授权窗口」。
 > **固定审查者不受「允许」列限制**：§审查配对 为**本角色**指定的固定审查者（`architect`：`oracle` → `critic`；`planner`：`metis`；`builder`：`verifier` 为角色内建；另有 §审查配对 的治理面行 / 架构面行归属 —— **以 §审查配对 为准，枚举非全集**）属**流程义务**，不受本表「允许」列的列举限制 —— 本表列举的是**自由裁量**可用的工具，两者互不排斥（与 `docs/MULTI-AGENT-DESIGN.md` §3.1「允许 ≠ 必须：矩阵是权限上限，配对是流程下限」同义）。`no-role` 除外：无产出物，其允许列不含任何固定审查者（只读调研见本行允许列）。

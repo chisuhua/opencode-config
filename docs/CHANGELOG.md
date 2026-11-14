@@ -10,6 +10,21 @@
 
 ---
 
+> **v2.25 变更摘要（2026-11-15，写集判据从「散文措辞」升级为「结构比对」）**：
+> ① **问题**：verifier 类的写集上限（`VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS`）在文档侧**只靠散文措辞守卫** —— AC7 查「表格行含 `.rddf/state/verifier`」、AC11 查「行不含 `.rddf/state/.ac-`」、AC14 查一个**措辞正则**（「verifier …（仅|只允许|只能|只有|限于）… `.rddf/reviews`」）。措辞词表是**开集假设** ⇒ 换个说法就绕过；已实测复发**两次**（一次是 delegate 工具 schema 里手抄的活陈述被 oracle 抓到，一次是 AC11 的平凡断言被 critic 抓到）。
+> ② **修正**：① **规范机读块** —— `lib/delegate-core.ts::verifierWriteSetBlock()` 渲染 `<!-- role-class-write-set:verifier` / `allow:` / `owns:` 块（内容**完全由常量派生**）；`prompts/build.md`（§角色列表表后）、`prompts/plan.md`（选类表后）、`prompts/front.md`（§3.1 后）各嵌**逐字副本** + 注记（图例 + 机械对齐命令）。② **AC19（新增）**：三份 prompt 必须逐字包含规范块、且块与起始标记**各恰好 1 处**（多/少/改一个字符 ⇒ 红；陈旧副本 ⇒ 红）。③ **AC20（新增）**：**路径闭集** —— 活文档（含规格件）里的 verifier 状态路径**按路径判**：根下旧路径（`.ac-*` / `rdd-verify-context*` / `.verifier-*`）只许出现在历史标注行；块内具体文件必须落在 **owns 模式**内。④ **AC11 转换**：删掉被 AC20 覆盖的路径负向（避免两份口径），保留退役/落点断言。⑤ **P3**：backlog stub 按本仓惯例关闭（`**实施状态**：已立项 → …archive/…`）⇒ 演进项 4「结构比对」标注收口。
+> ③ **审查**：oracle 1 轮 **`PASS-WITH-NOTES`**（3 条 finding 全闭合，其中 1 条**高影响**：AC20 的「新形态闭集」分支曾是**死代码** —— TOKEN 正则不产出 `verifier/` 开头的 token ⇒ 声称的判据面根本没生效；**且 oracle 建议的修法（allow 根前缀覆盖）会让该分支恒真** —— allow 根是目录根、其下一切都被覆盖 ⇒ 最终改为「只按 owns 模式判」）→ critic 1 轮 **`APPROVE_WITH_CONDITIONS`**（`mergeable: yes`，**无 BLOCKER**；1 条 SHOULD_FIX = 两处「最后一处词表」登记互相矛盾 ⇒ 已并列登记；8 条 NIT 全部处置）。审稿记录：`.rddf/reviews/write-set-structural-projection-review.md`。
+> ④ **验证**：`bun test tests/` **535 pass / 0 fail**；anchors **23/23**；**变红演练 5 例**逐条实跑（改常量 / 塞根下旧路径 / 改投影块 / 塞**块外新形态**文件 / 塞 `.verifier-*` 族 ⇒ 各自变红；其中第 4 例在修复前**不红**，正是死代码的实证）；注记里的机械对齐命令实测输出与规范块逐字一致。
+> ⑤ **一条新发现的交互（写治理文件时会踩）**：**治理文档引用判据的字面形态 ⇒ 命中判据本身** ——
+> 本条 v2.25 的 ① 段逐字引了 AC14 的正则与 AC11 的路径形态 ⇒ 两条守卫当场把自己判红。
+> 结构性修法：`docs/CHANGELOG.md` **从 AC14 / AC20 的扫描集排除**（它开头自述「**本文档不描述现状**，
+> 只记录什么时候改了什么、为什么」⇒ 是历史记录，不是现行指引）。顺带暴露扫描器的一个真 bug：
+> `excluded` 原先**只判目录**（`docs/adr` 生效）⇒ **单文件**排除失效 ⇒ 已补文件级判定。
+> 另：提交前用 `bun test … | tail` 会让 `&&` 链只看 `tail` 的退出码 ⇒ **带着失败提交**；此后一律单独校验退出码。
+> ⑥ **残留**：① 本仓还剩**两处**枚举式词表（AC20 的 HIST 行级豁免闸门 —— 可「活错误陈述 + 同行塞历史词」同框洗白；AC14 的窄化描述判据 —— 原型证明共现式判定 **7/7 误报**、无可替代的结构化写法）—— 并列登记在守卫注释里，不再宣称「唯一」；② 「已关闭 improvement 整体排除」是**改状态行即可翻转**的开关（伪造关闭属故意行为，超出守卫威胁模型 ⇒ 由 `rdd-doctor` / 流程评审兜）；③ `PLAN_REF_ROOTS` 那族 accepted-roots 守卫**仍是句子解析** —— 本批只升级了 verifier 写集这一族。
+
+---
+
 > **v2.24 变更摘要（2026-11-14，verifier 状态收拢 ⇒ 过渡期「主会话代跑」退役）**：
 > ① **问题**：产品侧（`rdd-workflow` 仓）change `consolidate-verifier-state` 已把 `rdd-verifier` skill 的 4 个状态文件从 `.rddf/state/` **根下**收拢进 `.rddf/state/verifier/`（目录级），并把 skill 的 `owns:` 由 4 项补齐为 **6 项**（原先 2 项是「实际写入但从未声明」的路径）。本仓是消费方：`verifier` 类的写集上限正是 `.rddf/state/verifier`（**目录级**）⇒ 收拢前，被派发的 verifier 后端**写不进** verdict cache / shared audit log / halted audit / staged context ⇒ 只能退化成「后端只跑取证与判决、**状态机落盘由主会话代跑**」的过渡期绕路（`ADR-class-write-scope-alignment` D1b）。收拢完成 ⇒ **该绕路退役**。
 > ② **修正**（治理面 ⇒ oracle → critic）：① **常量**：`VERIFIER_OWNS_PATHS` 6 项全部改为 `.rddf/state/verifier/` 前缀 ⇒ 派生视图 `VERIFIER_BACKLOG_ROOT_FILES` **自动归零**（不是手抄）；② **面向模型的派生面**（关键）：delegate 工具 schema 的 `role_class` 参数描述原先**手抄**「edit 上限=.rddf/reviews」——那是 front LLM 在派发瞬间实际读的文本 ⇒ 改了常量就会漏改它 ⇒ front 可能据此把记账落点排除出 scope。改为由 `verifierAllowRootLabels()` **派生渲染**（路径**与**数量都不再手抄），并加一条守卫断言该描述必须派生；③ `prompts/build.md`：过渡期规则划删除线 + 标注退役依据（产品侧 change）+ 根下 `.ac-*` 的「症状桥接」解读降级为历史注记（作废）；补「既没被拒也没写 ⇒ 后端违约」的并列处置；④ `prompts/front.md`：§3.1 删「主会话执行 skill 补齐」，改为「先查 scope 是否真含记账落点（缺 ⇒ scope 问题重派；含却没写 ⇒ 后端违约）」+ 跨会话 resume 查不到 scope 视为缺；§3.3「收回后复核」加 verifier 专用项（**按路径直接查存在性** —— 这些文件被 gitignore，`git status` / `artifacts` 数不到）；⑤ **ADR 退役贯穿**：子篇 D1b 加退役注（保留原文可追溯）+ D1c 加退役注（「不构成义务」标为过渡期描述）+ 后果/风险章的现在时陈述加退役标记 + D3-1/V6 加「该判据随收拢失效」的修订注；父篇 `ADR-backend-handoff-role-class` 的 verifier 写集行括注改为「过渡期规则已退役」；⑥ `scripts/build_critic_prompt.sh` 修一个真 bug：`--staged` 只影响 stat、**diff 正文仍取未暂存**（实战踩到：审稿人可能读到另一批改动）⇒ 正文与 stat 必须同范围；`--staged` 与 `<ref>` 改为互斥（直接拒斥，别猜）。
