@@ -1422,6 +1422,36 @@ describe("verifier 写集：上限 vs 授权（class-write-scope-alignment）", 
     }
   })
 
+  test("收拢就绪（ready）：4 个根下点文件搬到 .rddf/state/verifier/ 后**已可用**（本仓无需再改代码）", () => {
+    // 产品侧 rdd-verifier-state-consolidation 的目标形态：把 4 个根下点文件收拢进 verifier/ 子目录。
+    // 本断言证明「收拢后的路径已在 verifier 类的允许集与 scope 授权内」⇒ 迁移时本仓无需 flag day。
+    const repo = archRepo("v-consolidation-ready", { archPaths: ["docs/adr"] })
+    const scope = [".rddf/reviews", ".rddf/state/verifier"]
+    const perms = classPermissions({
+      roleClass: "verifier",
+      workRoot: repo,
+      scope,
+      kind: "engineering",
+      grants: [],
+    })
+    const post = [
+      ".rddf/state/verifier/.ac-verdict-demo.json",
+      ".rddf/state/verifier/.ac-verification.jsonl",
+      ".rddf/state/verifier/.ac-verifier-blocked.jsonl",
+      ".rddf/state/verifier/rdd-verify-context-demo.json",
+      ".rddf/state/verifier/demo.json", // loop state
+      ".rddf/state/verifier/demo.audit.jsonl",
+    ]
+    for (const path of post) {
+      // ① 类上限放行（派发不会被拒）
+      expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: [path] }, repo)).not.toThrow()
+      // ② 权限净效果：allow（授权来自 scope 含 .rddf/state/verifier）
+      expect(evaluateEffect(perms, "edit", path)).toBe("allow")
+    }
+    // ③ 收拢**前**的根下路径仍拒（迁移前后可区分，证明不是「整目录放开」）
+    expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: [".rddf/state/.ac-verdict-demo.json"] }, repo)).toThrow(/越界/)
+  })
+
   test("AC12：D1d-1 —— .rddf/state 的其它路径对 verifier 仍拒", () => {
     const repo = archRepo("v-state-deny")
     for (const f of [".rddf/state/pair.json", ".rddf/state/role.json", ".rddf/state/ledger.jsonl", ".rddf/state/sessions.json"]) {

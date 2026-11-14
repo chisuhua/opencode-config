@@ -724,12 +724,20 @@ export function classAllowRoots(roleClass: RoleClass, projectRoot: string): stri
 }
 
 /**
- * `rdd-verifier` skill 的 `role.boundaries.owns`（**单点常量**）。
+ * `rdd-verifier` skill 的**状态文件全量**（**单点常量**）—— 分两类：
  *
- * 用途：`verifier` 类的**写集上限**（`classAllowRoots`）+ 守卫的「代码 ↔ skill owns」对照面。
+ * - **`owns:` 声明的 4 项**（`SKILL.md:29-32`）：`.rddf/state/verifier/<name>.json`、`<name>.audit.jsonl`、
+ *   `.rddf/state/.ac-verdict-*.json`、`.rddf/state/.ac-verification.jsonl`
+ * - **实际写入但未在 `owns:` 声明的 2 项**：`.rddf/state/.ac-verifier-blocked.jsonl`（`SKILL.md:415` halted 审计）、
+ *   `.rddf/state/rdd-verify-context-<change>.json`（`scripts/run_verification.sh:7` staged 上下文）
+ *
+ * ⚠ 「6 项 = owns 全量」是**不准确**的说法（owns 只列 4 项）；本常量的定义是「skill **写入的全部状态路径**」，
+ * 因为它才是 `verifier` 类写集的真实约束面。
+ *
+ * 用途：`verifier` 类的**写集上限**（`classAllowRoots`）+ 守卫的「代码 ↔ skill」对照面。
  * ⚠ **同步是人工的**：skill 在 `~/.agents/skills/**`（仓外），仓库 CI 的 `bun test` 不能依赖它
- * ⇒ 无法在守卫里直接读 skill 的 frontmatter。产品侧给 owns 加第 7 个路径时**本守卫不会红**；
- * 该残留由 backlog `rdd-verifier-state-consolidation`（收拢目录时一并核对）承担。
+ * ⇒ 无法在守卫里直接读 frontmatter。产品侧新增第 7 个路径时**本守卫不会红**；该残留由 backlog
+ * `rdd-verifier-state-consolidation`（收拢目录时一并核对）承担。
  */
 export const VERIFIER_OWNS_PATHS: readonly string[] = [
   ".rddf/state/verifier/<name>.json",
