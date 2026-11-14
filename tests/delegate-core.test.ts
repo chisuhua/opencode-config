@@ -39,7 +39,6 @@ import {
   VERIFIER_ALLOW_ROOTS,
   VERIFIER_BACKLOG_ROOT_FILES,
   VERIFIER_OWNS_PATHS,
-  isPathWithin,
   classPermissions,
   classSubagentRules,
   isPathWithin,

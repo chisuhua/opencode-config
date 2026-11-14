@@ -1173,11 +1173,16 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(bridge).toContain("HANDOFF")
   })
 
-  test("AC9：§审查配对 builder（架构面）行含「scope 必须包含」+「未包含时只落响应正文」", () => {
+  test("AC9：§审查配对 builder（架构面）行含「scope 必须包含」+「未包含时只落响应正文」；plan.md 选类表 builder 行同款", () => {
     const row = BUILD_MD.split("\n").find((l) => l.includes("`builder`（架构面）"))!
     expect(row).toContain("scope")
     expect(row).toMatch(/scope[^|]*必须包含/)
     expect(row).toContain("只落响应正文")
+    // D2b 的第二个落点：派发侧（plan.md 选类表 builder 行）—— 缺它 ⇒ 派发方无义务依据
+    const planBuilder = PLAN_MD.split("\n").find((l) => l.includes("`builder`") && l.includes("架构文档目录"))!
+    expect(planBuilder).toContain("scope")
+    expect(planBuilder).toMatch(/scope[^|]*必须包含/)
+    expect(planBuilder).toContain("只落响应正文")
   })
 
   test("AC10：父篇 D3 verifier 行已落改 + Status 有修订记录（未完成指针已删）", () => {

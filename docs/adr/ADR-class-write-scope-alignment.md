@@ -12,12 +12,11 @@
   ——`.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`——
   收拢进 `verifier/`；并清理 dangling 的 `.rddf/state/.verifier-report.json`：`SKILL.md:49` 声明它、
   但全 skills 目录无组件写它）
-- AC 映射: 待立项后由 planner 补（Verification 的 V1–V7b 即 AC 前身）
+- AC 映射：`openspec/changes/class-write-scope-alignment/proposal.md` 的 AC1–AC19（Verification 的 V1–V7b 即 AC 前身）
 - 审稿记录: `.rddf/reviews/adr-class-write-scope-alignment-review.md`（oracle 2 轮：BLOCK → PASS-WITH-NOTES；
   critic 2 轮：REJECT → **APPROVE** / `mergeable: yes`）
 - 签批范围说明：本次签的是**方向**（D1–D3 + V1–V11）；**父篇 D3 表 verifier 行的实际落改与代码改动
-  在实施 change 内同批完成**（本 ADR 的 D3 第 4 条 + V11 钉住）—— 父篇 D3 行当前描述的是**现行实现**，
-  父篇 Status 行已记「正在按本 ADR 修订」指针
+  在实施 change 内同批完成**（本 ADR 的 D3 第 4 条 + V11 钉住）—— 实施完成后父篇 D3 行与 Status 行即指向新契约
 
 ## 背景与问题
 

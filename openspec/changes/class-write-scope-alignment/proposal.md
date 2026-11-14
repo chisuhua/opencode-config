@@ -73,25 +73,25 @@
 
 > 判据正文以上表为准；本段供 `rdd-verifier` 读取。
 
-- [ ] AC1 verifier allow 集合 == 两项
-- [ ] AC2 builder / architect 不受影响
-- [ ] AC3 6 个 scope 形态（放行/放行/放行/拒/拒/拒）
-- [ ] AC4 组合路径（不抛 + allow + 仍 deny）
-- [ ] AC5 `.rddf/state` 负向不变量（内置条目）+ 后代仍允许 + 合法配置不红
-- [ ] AC6 常量 6 项 + 派生视图 4 项 + 正负向断言
-- [ ] AC7 三处文本一致（含 scope 义务在派发侧）
-- [ ] AC8 过渡期规则四要素
-- [ ] AC9 builder 架构面产出的 scope 硬规则
-- [ ] AC10 父篇落改（内容 + 负向 + 顺序）
-- [ ] AC11 build.md 内部三处收口
-- [ ] AC12 D1d-1：四个 state 文件全拒
-- [ ] AC13 D1d-2：产品落点 vs 记账落点不混用
-- [ ] AC14 陈旧写集陈述全域清除
-- [ ] AC15 守卫变红演练
-- [ ] AC16 无新机制
-- [ ] AC17 回归绿 + anchors 非 SKIP + openspec validate 通过
-- [ ] AC18 backlog stub 已建
-- [ ] AC19 oracle → critic 双审闭合
+- [x] AC1 verifier allow 集合 == 两项
+- [x] AC2 builder / architect 不受影响
+- [x] AC3 6 个 scope 形态（放行/放行/放行/拒/拒/拒）
+- [x] AC4 组合路径（不抛 + allow + 仍 deny）
+- [x] AC5 `.rddf/state` 负向不变量（内置条目）+ 后代仍允许 + 合法配置不红
+- [x] AC6 常量 6 项 + 派生视图 4 项 + 正负向断言
+- [x] AC7 三处文本一致（含 scope 义务在派发侧）
+- [x] AC8 过渡期规则四要素
+- [x] AC9 builder 架构面产出的 scope 硬规则
+- [x] AC10 父篇落改（内容 + 负向 + 顺序）
+- [x] AC11 build.md 内部三处收口
+- [x] AC12 D1d-1：四个 state 文件全拒
+- [x] AC13 D1d-2：产品落点 vs 记账落点不混用
+- [x] AC14 陈旧写集陈述全域清除
+- [x] AC15 守卫变红演练
+- [x] AC16 无新机制
+- [x] AC17 回归绿 + anchors 非 SKIP + openspec validate 通过
+- [x] AC18 backlog stub 已建
+- [x] AC19 oracle → critic 双审闭合
 
 ## 非目标
 
