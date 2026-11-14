@@ -36,7 +36,7 @@
 
 | 缺口 | 说明 |
 |---|---|
-| **CS-5 未验证** | 新增的回归用例（「修改文件上的测试失败 ⇒ `ac-fail` 而非 `blocked`」，防 oracle BLOCK 的根因复发）在运行时撞 **Token Plan 429 用量上限**（`provider.rate-limit`，10 次 retry 后 error、0 条文本）⇒ 按纪律**不重试**。用例已入库（`rdd-workflow-e2e` commit `01e0b68`），待额度恢复后跑。**它不属本 change 的 AC**（AC7 由 CS-3 覆盖），但它是「失败签名分类」的唯一端到端证据 ⇒ 未跑通前，该分类只有单测 + 文本守卫证据 |
+| **CS-5 未验证** | 新增的回归用例（「修改文件上的测试失败 ⇒ `ac-fail` 而非 `blocked`」，防 oracle BLOCK 的根因复发）**两次尝试均撞 Token Plan 429 用量上限**（2026-11-14 首跑 + 复跑：`provider.rate-limit`，各 10 次 retry 后 error、**0 条文本**、`src/app.ts` 未被改 ⇒ 会话根本没拿到模型响应）⇒ 按纪律**不重试**。用例已入库（`rdd-workflow-e2e` commit `01e0b68`），待额度恢复后跑。**它不属本 change 的 AC**（AC7 由 CS-3 覆盖），但它是「失败签名分类」的唯一端到端证据 ⇒ 未跑通前，该分类只有单测 + 文本守卫证据 |
 
 ## 遗留清扫复核（本次范围内）
 
