@@ -750,6 +750,14 @@ describe("被派发后端的审查降级例外守卫（live e2e AC14 实证的 p
     expect([...SLOT_STATES]).toEqual(["dispatching", "active", "idle", "suspended", "tombstone"])
   })
 
+  test("plan.md 的 verifier 派发要求含「简报必须声明可解析 <base>」（缺它 ⇒ 后端一律 blocked）", () => {
+    const PLAN = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
+    const row = PLAN.split("\n").find((l) => l.includes("`verifier`") && l.includes(".rddf/state/verifier"))!
+    expect(row).toContain("`<base>`")
+    expect(row).toMatch(/必须声明/)
+    expect(row).toContain("blocked")
+  })
+
   test("AC6：文本锚点齐（基线 / 任一判据 / 不产出判定 / 阻塞类型：）+ 防回归句仍在", () => {
     const sec = evidenceSection()
     expect(sec).toContain("基线")

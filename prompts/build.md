@@ -340,14 +340,14 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
   > - **环境信号** ⇒ 走**基线对照** ⇒ 取证不可用（`blocked`）。环境信号只有四类：① runner / 依赖缺失（命令报错 `command not found` / `Cannot find module`）② 命令**超时** ③ 退出 0 但**未执行任何用例**（0 tests / 输出为空 / 被过滤器排除）④ 导入 / 收集阶段报错（collection error）。
   > - **内容类取证**（`grep` / 读取文件内容）⇒ 基线对照**适用**（`git show <base>:<path>` 可完整重演）：基线上同样「失败」⇒ `blocked`；仅本 change 失败 ⇒ `ac-fail`。⚠ 此类里「grep 未命中本 change 新增内容」与「产物尚未存在」是**判据信号**，不是环境信号。
   >
-  > **基线取法**：`git merge-base HEAD <base>`（`<base>` 取自**派发方在简报里声明的基线**；缺省 `origin/main`，取不到即 `<base>` 不可解析）。判定只用只读命令 —— `git diff --name-only <base>...HEAD` 判取证对象是否被本 change 触及、`git show <base>:<path>` 读基线内容。**不得** stash / checkout / 新建 worktree。
+  > **基线取法**：`git merge-base HEAD <base>`（`<base>` 取自**派发方在简报里声明的基线**；**新派发**（`prompts/plan.md` 选类表）已要求必声明 —— 缺省 `origin/main` **仅对未声明基线的存量简报生效**，取不到即 `<base>` 不可解析）。判定只用只读命令 —— `git diff --name-only <base>...HEAD` 判取证对象是否被本 change 触及、`git show <base>:<path>` 读基线内容。**不得** stash / checkout / 新建 worktree。
   > - ⚠ **`<base>` 不可解析** ⇒ **等同取证不可用（`blocked`）**，**不得**按 `ac-fail` 处理（否则环境故障会被路由成「回 builder 修 AC」，白烧 3 轮额度）。
   > - ⚠ **两条 ⚠ 的优先级**：`<base>` 不可解析 ⇒ **优先 `blocked`**（无法分类 ⇒ 取保守侧）；「取证对象是本次**新增**文件（diff 中 `A`）⇒ 默认 `ac-fail`」只在 **`<base>` 可解析且失败形态为判据信号**时适用。
   > - 同一命令**至多重试 1 次**（排除抖动）；重试后仍失败 ⇒ 按上表的形态分类。（额度类失败**不重试**；取证命令的抖动不属于额度类。）
   >
   > kind 优先级：① 已有带证据的判据不通过 ⇒ `ac-fail`（body 第 ④ 项写明剩余哪些判据无法取证）；② **pass 被禁止且无任何带证据的不通过** ⇒ `blocked`（含「7 条通过 + 1 条不可用 + 0 条失败」形态 ⇒ 不得判 pass ⇒ `blocked`）。
   >
-  > **不产出判定，但必须留痕**：由 **verifier 自己**落一份受阻记录 `.rddf/reviews/<change>-verify-blocked.md` —— 首行 `HANDOFF: <kind>`，正文含逐条判据的取证命令 + 输出摘要 + 已用轮次，**不含任何 pass 结论**。（写者是 verifier 本身：`.rddf/reviews/**` 在其写集内；**主会话代写会丢掉取证细节** —— `last_assistant_text` 会被截断，长命令最先丢。）
+  > **不产出判定，但必须留痕**：由 **verifier 自己**落一份受阻记录 `.rddf/reviews/<change>-verify-blocked.md` —— 首行 `HANDOFF: <kind>`（本场景下 kind = 上面 kind 优先级选出的那一个，**不会是** `needs-revision`），正文含逐条判据的取证命令 + 输出摘要 + 已用轮次，**不含任何 pass 结论**。（写者是 verifier 本身：`.rddf/reviews/**` 在其写集内；**主会话代写会丢掉取证细节** —— `last_assistant_text` 会被截断，长命令最先丢。）
   >   - ⚠ **本落点不替代 `rddf feedback` 凭据**，也不构成「不新造落点」的例外：凭据通道仍是唯一权威；受阻记录只是**审计痕迹**（轮次 + 取证细节）。
   >   - ⚠ **已用轮次的聚合**：轮 1 受阻（记账在 `-verify-blocked.md`）、轮 2 通过（记账在 `-verify.md`）时，轮 3 从**两份文件里取较大值**（受阻记录不具判定效力，但轮次要累计）。
   >   - **权威序**：`-verify-blocked.md` **不具判定效力**；同一 change 存在 `-verify.md` 时**以 `-verify.md` 为准**，受阻记录仅作审计痕迹。

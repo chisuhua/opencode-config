@@ -95,15 +95,15 @@
 
 > 判据正文以上表为准；本段供 `rdd-verifier` 读取。
 
-- [ ] AC1 三段文本（定义 / 分档 / kind 优先级）
-- [ ] AC2 逐类独立 bullet + 共现
-- [ ] AC3 kind 集合动态抽取一致
-- [ ] AC4 负向 + 既有三条断言保留
-- [ ] AC5 未新增（token allowlist / SLOT_STATES / outcome 集合）
-- [ ] AC6 文本锚点齐
-- [ ] AC7（手工）回放记录落盘（主会话誊写）
-- [ ] AC8 回归绿 + anchors 无 SKIP + openspec validate 通过
-- [ ] AC9 oracle → critic 双审闭合
+- [x] AC1 三段文本（定义 / 分档 / kind 优先级）
+- [x] AC2 逐类独立 bullet + 共现
+- [x] AC3 kind 集合动态抽取一致
+- [x] AC4 负向 + 既有三条断言保留
+- [x] AC5 未新增（token allowlist / SLOT_STATES / outcome 集合）
+- [x] AC6 文本锚点齐
+- [x] AC7（手工）回放记录落盘（主会话誊写）
+- [x] AC8 回归绿 + anchors 无 SKIP + openspec validate 通过
+- [x] AC9 oracle → critic 双审闭合
 
 ## 非目标
 
