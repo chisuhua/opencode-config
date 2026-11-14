@@ -69,7 +69,7 @@
      需要对齐时：bun -e 'import {verifierWriteSetBlock} from "./lib/delegate-core.ts"; console.log(verifierWriteSetBlock())' 打印后整块替换。 -->
 <!-- role-class-write-set:verifier
 allow: .rddf/reviews, .rddf/state/verifier
-owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl, .rddf/state/verifier/.ac-verdict-*.json, .rddf/state/verifier/.ac-verification.jsonl, .rddf/state/verifier/.ac-verifier-blocked.jsonl, .rddf/state/verifier/rdd-verify-context-<change>.json
+owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl, .rddf/state/verifier/.ac-verdict-*.json, .rddf/state/verifier/.ac-verification.jsonl, .rddf/state/verifier/.ac-verifier-blocked.jsonl, .rddf/state/verifier/rdd-verify-context-<name>.json
 -->
 
 - **换类不能原地换**：同一 session 的能力在创建时定型 ⇒ 需要别的类 ⇒ 由后端 handoff 交回，再**重新派发**（新 session 的模型上下文不继承，计划要点要重贴）。

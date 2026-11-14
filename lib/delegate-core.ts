@@ -781,7 +781,7 @@ export const VERIFIER_OWNS_PATHS: readonly string[] = [
   ".rddf/state/verifier/.ac-verdict-*.json",
   ".rddf/state/verifier/.ac-verification.jsonl",
   ".rddf/state/verifier/.ac-verifier-blocked.jsonl",
-  ".rddf/state/verifier/rdd-verify-context-<change>.json",
+  ".rddf/state/verifier/rdd-verify-context-<name>.json",
 ]
 
 /**

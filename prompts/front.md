@@ -100,7 +100,7 @@
      需要对齐时：bun -e 'import {verifierWriteSetBlock} from "./lib/delegate-core.ts"; console.log(verifierWriteSetBlock())' 打印后整块替换。 -->
 <!-- role-class-write-set:verifier
 allow: .rddf/reviews, .rddf/state/verifier
-owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl, .rddf/state/verifier/.ac-verdict-*.json, .rddf/state/verifier/.ac-verification.jsonl, .rddf/state/verifier/.ac-verifier-blocked.jsonl, .rddf/state/verifier/rdd-verify-context-<change>.json
+owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl, .rddf/state/verifier/.ac-verdict-*.json, .rddf/state/verifier/.ac-verification.jsonl, .rddf/state/verifier/.ac-verifier-blocked.jsonl, .rddf/state/verifier/rdd-verify-context-<name>.json
 -->
 
 **插件只做存在性/类型/结构校验，不做语义校验**——`goal` 写得含糊、`scope` 取得过宽、`acceptance` 不可判定，**都是你的责任**。工具不会替你补全，别指望它猜。

@@ -21,7 +21,11 @@
 > 只记录什么时候改了什么、为什么」⇒ 是历史记录，不是现行指引）。顺带暴露扫描器的一个真 bug：
 > `excluded` 原先**只判目录**（`docs/adr` 生效）⇒ **单文件**排除失效 ⇒ 已补文件级判定。
 > 另：提交前用 `bun test … | tail` 会让 `&&` 链只看 `tail` 的退出码 ⇒ **带着失败提交**；此后一律单独校验退出码。
-> ⑥ **残留**：① 本仓还剩**两处**枚举式词表（AC20 的 HIST 行级豁免闸门 —— 可「活错误陈述 + 同行塞历史词」同框洗白；AC14 的窄化描述判据 —— 原型证明共现式判定 **7/7 误报**、无可替代的结构化写法）—— 并列登记在守卫注释里，不再宣称「唯一」；② 「已关闭 improvement 整体排除」是**改状态行即可翻转**的开关（伪造关闭属故意行为，超出守卫威胁模型 ⇒ 由 `rdd-doctor` / 流程评审兜）；③ `PLAN_REF_ROOTS` 那族 accepted-roots 守卫**仍是句子解析** —— 本批只升级了 verifier 写集这一族。
+> ⑥ **跨仓对齐**：本仓 `VERIFIER_OWNS_PATHS` 与产品仓 `SKILL.md` 的 owns 清单的**占位符**曾不一致
+> （本仓 `rdd-verify-context-<change>.json` vs 产品仓 `<name>.json`）⇒ 已统一为 `<name>`，
+> 两仓清单**逐字一致**（可 `diff`）⇒ 未来跨仓漂移一眼可见。产品仓侧的同仓 CI 断言见其 change
+> `verifier-owns-block-guard`（`_lib/verifier/state_paths.py` + `tests/unit/test_verifier_owns_block.py`）。
+> ⑦ **残留**：① 本仓还剩**两处**枚举式词表（AC20 的 HIST 行级豁免闸门 —— 可「活错误陈述 + 同行塞历史词」同框洗白；AC14 的窄化描述判据 —— 原型证明共现式判定 **7/7 误报**、无可替代的结构化写法）—— 并列登记在守卫注释里，不再宣称「唯一」；② 「已关闭 improvement 整体排除」是**改状态行即可翻转**的开关（伪造关闭属故意行为，超出守卫威胁模型 ⇒ 由 `rdd-doctor` / 流程评审兜）；③ `PLAN_REF_ROOTS` 那族 accepted-roots 守卫**仍是句子解析** —— 本批只升级了 verifier 写集这一族。
 
 ---
 
