@@ -58,7 +58,7 @@
 
 - **新增**：被派发 verifier 类的「取证不可用 ⇒ 交回」路径（`blocked` / `ac-fail` 的区分规则 + 部分取证的落点规则）；降级例外段的逐类后果指针。
 - **不新增**：工具、状态字段、outcome 值、通知通道（沿用既有 HANDOFF 契约；HANDOFF kind 集合不变）。
-- **既有能力不变**：verifier 类的 `edit` 边界（仅 `.rddf/reviews/**`）、subagent 白名单、架构类的双审收口流程、§verifier 产出契约的判据来源与证据要求。
+- **既有能力不变**：verifier 类的 `edit` 边界（`.rddf/reviews/**` + `.rddf/state/verifier/**` 记账落点 —— 后者由 `class-write-scope-alignment` 于 2026-11-14 加入）、subagent 白名单、架构类的双审收口流程、§verifier 产出契约的判据来源与证据要求。
 - ⚠ **不变式声明（防高估收益）**：本项**不加机读校验**，「报告里是否真有证据」仍靠 prompt + 人工 ⇒ **伪造 pass 的机器面不变**（`no_work_evidence` 仍不覆盖「有写盘但无证据」）。
 
 ## Impact
@@ -75,7 +75,7 @@
 
 | 缺口 | 为什么不在本项 |
 |---|---|
-| `verifier` 类命中 `rdd-verifier` 分流三条件时要写 `.rddf/state/verifier/<change>.json`，而 verifier 类的写集只有 `.rddf/reviews/**` ⇒ 越类；且 `shell` 不受类约束（存在重定向绕过路径） | 属**产品侧 skill 与类写集的对齐**，不是 prompt 措辞问题 ⇒ 单独立项 |
+| `verifier` 类命中 `rdd-verifier` 分流三条件时要写 `.rddf/state/verifier/<change>.json`，而**当时** verifier 类的写集**不含**该子目录 ⇒ 越类（**已由 `class-write-scope-alignment` 于 2026-11-14 关闭**：allow 集加入 `.rddf/state/verifier`；本行保留为立项依据）；且 `shell` 不受类约束（存在重定向绕过路径） | 属**产品侧 skill 与类写集的对齐**，不是 prompt 措辞问题 ⇒ 单独立项 |
 | `builder` 类能否落 §审查配对「架构面 critic」的产出去向 `.rddf/reviews/`（builder 写集未含该目录） | 属**类写集设计**，改动面是权限面（`classPermissions`）⇒ 单独立项 |
 
 ## 依赖与顺序

@@ -10,6 +10,15 @@
 
 ---
 
+> **v2.23 变更摘要（2026-11-14，post-archive 修正：AC14 扫描集恢复「活文档」口径）**：
+> ① **问题**：实施 `class-write-scope-alignment` 时，其 AC14（陈旧写集陈述清除）的扫描集被写成 `prompts/** + docs/** + commands/**` ⇒ **漏了 `.rddf/**`**，导致三处**现在时的假陈述**留在活文档里（都声称 verifier 的 edit 边界只含 `.rddf/reviews/**`，与 shipped code 矛盾）：`.rddf/improvements/delegated-verifier-evidence-gap.md` 的能力陈述与 Out-of-Scope 表、以及**规格件** `.rddf/reviews/backend-handoff-protocol-spec.md` 的 3.1 能力画像表（该文件被 ADR 元数据当权威引用）。
+> ② **修正**（无行为/决策变更 ⇒ 不新开 change，按 §审查配对 判例走「改守卫 ⇒ oracle → critic 必审」）：① 三处文本改为准确陈述（能力陈述补记账落点；Out-of-Scope 行改为「**当时**不含该子目录 + **已由 `class-write-scope-alignment` 关闭**」，不复述陈旧契约）；② spec 3.1 表改为**留旧值痕迹 + 日期**形态（`.rddf/reviews/**`（v5 修订 2026-11-14：+ …）），版本口径段补 `v5 = v4 + …`；③ 守卫 AC14 的扫描集恢复「**活文档清单**」：新增 `.rddf/improvements/**`、`.rddf/roadmap/**` 与规格件；措辞词表补「只有 / 限于」（否则「写集只有 `.rddf/reviews`」会静默绕过）；守卫注释登记**已知边界**（`.rddf/plans/**`、未归档 open change 的 `proposal.md` —— 当前不存在，出现时扩）。
+> ③ **审查**：oracle `PASS-WITH-NOTES`（7 条，含「第三处漏网 `:78`」「词表枚举假设」两条硬发现）→ critic **`APPROVE`**（`mergeable: yes`，无 BLOCKER / SHOULD_FIX；2 NIT 已处置）⇒ 全部落盘。
+> ④ **验证**：`bun test tests/` 全绿；anchors 23/23；**变红演练 3 例**（improvement 能力陈述 / Out-of-Scope 行 / spec 表 ⇒ 各自变红并**精确指出文件**，还原后全绿）。
+> ⑤ **残留**：根治方向是「文档投影 ↔ `VERIFIER_ALLOW_ROOTS` **结构比对**」（替代散文正则）—— 已登记进 `.rddf/improvements/rdd-verifier-state-consolidation.md` 的演进项；另：父篇 ADR 元数据的「工作规格 | spec（v3）」指针已失准（文件到 v5），随下次 ADR 修订同步。
+
+---
+
 > **v2.22 变更摘要（2026-11-14，架构类文档的落点与治理归属收口）**：
 > ① **问题**：① `docs/adr/ADR-backend-handoff-role-class.md` 的 D5「识别」条目写着「异步路径在**完成通知**后…」，而工具契约里**没有推送通道**（`dispatch` 返回 ≠ 完成）——按字面等待一个不存在的通知 = **卡死**；② `prompts/plan.md` 为此加过一句临时消歧（ADR 措辞修正后其前提消失）；③ §治理面作用域表未裁定**本仓**（既是配置根又是项目仓）的 `docs/adr/**` 归属 ⇒ 「改 ADR 要不要走 critic」每次都要重新判；④ 「Accepted ADR 的**描述性措辞**修订走哪条审查」无成文判例 ⇒ 同类措辞漂移会复发。
 > ② **修正**（change `adr-d5-async-completion-wording`，已立项 / 实施完成，归档状态见归档记录）：① D5 识别条目改为**纯观测式**表述：「异步路径**没有完成通知** —— 由用户回来、或主会话下次读 `sessions` 观测到 `running=false` 后，再读 `rddf feedback list`（记录为唯一权威）」，并补**逃逸口径**（槽位释放是 reconcile-on-read 惰性、自然完成后 `state` 可能仍为 `active` ⇒ **不必等 `state=idle`**，`running=false` + `outcome=succeeded` 即足以继续）；**决策内容 / 选项对比 / 后果章 / Verification 章 / Status 行一律不动**，修订可追落条目行尾；② 删 `prompts/plan.md` 的临时消歧句；③ `.rddf/reviews/backend-handoff-protocol-spec.md` 保留原文 + 行尾 `v4 修订` 注 + 自定口径段补 `v4 = v3 + …`（保住 v3 审计痕迹）；④ `prompts/build.md` §治理面作用域表新增「**本仓特例裁定**」（本仓 `docs/adr/**` 属 **ADR 行**、不属治理面）与「**判例（Accepted ADR 的描述性措辞修订）**」（改措辞 ⇒ 只 oracle；同时改守卫断言 ⇒ 治理面 ⇒ oracle → critic 必审；Status 行不动）。

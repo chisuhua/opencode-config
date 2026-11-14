@@ -1352,12 +1352,21 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(sec.some((l) => l.includes("状态/记账文件写入") && l.includes(".rddf/reviews/"))).toBe(false)
   })
 
-  test("AC14：活文档里不再有把 verifier 写集描述为「仅 .rddf/reviews」的句子（全域扫描，排除集按 proposal）", () => {
-    const stale = /verifier[^\n]{0,40}(仅|只允许|只能)[^\n]{0,20}\.rddf\/reviews/
+  test("AC14：活文档里不再有把 verifier 写集描述为「仅 .rddf/reviews」的句子（**活文档清单**，非全域）", () => {
+    // ⚠ 判据边界（实施时收窄过一次，本 patch 恢复「活文档」口径并补两处漏网）：
+    //   **扫**：prompts/**、docs/**（除 docs/adr）、commands/**、.rddf/improvements/**、.rddf/roadmap/**、
+    //         以及**规格件** .rddf/reviews/backend-handoff-protocol-spec.md（它被 ADR 元数据当权威引用）
+    //   **不扫**：docs/adr/**（历史 ADR 描述写作时点状态，父篇由 AC10 单独覆盖）、.rddf/state/**（运行时）、
+    //          .rddf/reviews/** 的历史记录（*-verify.md / *-review.md / *-discovery.md / 观察报告等）
+    //   **已知边界（未来态，出现时应扩扫集）**：`.rddf/plans/**`（rdd-builder P1 产物，会被 executing agent 读）
+    //          与**未归档** open change 的 `openspec/changes/*/proposal.md`（会被 rdd-verifier 读）——
+    //          当前目录不存在 / 无 open change ⇒ 未纳入，出现时按本条扩。
+    //   ⚠ 措辞词表是**枚举式**（仅 / 只允许 / 只能 / 只有 / 限于）；新措辞会静默绕过 ⇒
+    //      根治方向见 `.rddf/improvements/rdd-verifier-state-consolidation.md`（结构比对替代散文正则）。
+    const stale = /verifier[^\n]{0,40}(仅|只允许|只能|只有|限于)[^\n]{0,20}\.rddf\/reviews/
     const root = path.join(import.meta.dir, "..")
-    // 扫描集 = prompts/** + docs/** + commands/**；排除 docs/adr/**（历史 ADR 描述写作时点状态）
-    const scanRoots = ["prompts", "docs", "commands"]
-    const excluded = ["docs/adr"]
+    const scanRoots = ["prompts", "docs", "commands", ".rddf/improvements", ".rddf/roadmap"]
+    const excluded = ["docs/adr"] // `.rddf/state` 从 scanRoots 不可达 ⇒ 不必列
     const hits: string[] = []
     const walk = (rel: string) => {
       if (excluded.some((e) => rel === e || rel.startsWith(e + "/"))) return
@@ -1372,6 +1381,10 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
       }
     }
     for (const r of scanRoots) walk(r)
+    // 规格件单列扫描（.rddf/reviews 整体是历史记录区，只白名单这一个规格件）
+    const specPath = path.join(root, ".rddf", "reviews", "backend-handoff-protocol-spec.md")
+    const specHit = existsSync(specPath) ? readFileSync(specPath, "utf8").match(stale) : null
+    if (specHit) hits.push(`.rddf/reviews/backend-handoff-protocol-spec.md: ${specHit[0]}`)
     expect(hits.join(" | ")).toBe("")
   })
 

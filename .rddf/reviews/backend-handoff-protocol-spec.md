@@ -4,6 +4,7 @@
 > 状态：**已落 docs + ADR（Accepted 2026-11-13）+ 立项**（`openspec/changes/backend-handoff-role-class/`）；逐条验收以该 change 的 proposal 为准。
 > v3 = v2 + oracle（8 条唯一裁定）与 metis（6 条 P0）的合并结果。**下一节「裁定表」是唯一口径**，正文与旧表格冲突时以裁定表为准。
 > v4 = v3 + 本文第 4 条行尾的 v4 修订注（异步面无推送通道；口径见 R-11）。**历史条目保留原文**，仅行尾标注修订。
+> v5 = v4 + 3.1 表 verifier 行的 edit 边界补 `.rddf/state/verifier/**` 记账落点（依据 `class-write-scope-alignment`，2026-11-14）。
 
 ---
 
@@ -63,7 +64,7 @@
 |---|---|---|---|---|
 | `builder` | 按 scope 实施代码/测试 | `scope` | 统一白名单（R-4） | 只实施；评审由主会话发起 |
 | `architect` | 读代码、写 ADR / 架构文档、自己跑 oracle→critic | R-3 三元并集 | 统一白名单 | 可有条件转 Status（R-5）；已签批 ADR 的决策变更必须 handoff |
-| `verifier` | 读、跑测试、写验收报告 | 仅 `.rddf/reviews/**` | 统一白名单 | 只出证据与判决，不改实现、不改 tasks.md |
+| `verifier` | 读、跑测试、写验收报告 | `.rddf/reviews/**`（v5 修订 2026-11-14：+ `.rddf/state/verifier/**` 记账落点） | 统一白名单 | 只出证据与判决，不改实现、不改 tasks.md |
 
 **约束强度（写进简报，避免高估）**：`edit` / `subagent` 结构性生效（session permissions，deny 覆盖 agent allow）；**`shell` 不结构性**（`CONSTANT_DENY` 不挡 `> file` / `tee`）⇒ 主会话收回后以 `git status` 复核。
 

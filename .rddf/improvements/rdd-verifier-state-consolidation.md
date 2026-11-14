@@ -30,7 +30,10 @@
    ⇒ 连带迁移**读路径**（`archive_gate_check` 读 verdict cache、`rdd-doctor` 读 blocked log）。
 2. **删除悬空指针** `.rddf/state/.verifier-report.json` 的声明（或补上真正的写入方）。
 3. **核对 owns 清单**：`VERIFIER_OWNS_PATHS`（`lib/delegate-core.ts`，6 项）与 `SKILL.md:28-32` 是否仍一致（**加第 7 个路径时仓内守卫不会红** —— 这一条是人工同步残留，本项负责收尾）。
-4. 收拢完成后，`ADR-class-write-scope-alignment` D1b 的**过渡期规则**可退役（`verifier` 类后端直写全部 skill 状态），并把 `prompts/build.md` 的过渡期段与 symptom-bridge 句改为「历史说明」。
+4. **（演进项）文档投影 ↔ 代码常量的结构比对**：把 spec 3.1 表 / `prompts/build.md` 运行身份表 / `prompts/plan.md` 选类表的 verifier 行，从「散文正则守卫」升级为**解析表格行 ↔ `VERIFIER_ALLOW_ROOTS` 集合的结构比对**（散文正则降为兜底）。
+   - 动机：`class-write-scope-alignment` 的 AC14 是**枚举式措辞**假设（仅 / 只允许 / 只能 / 只有 / 限于）⇒ 新措辞会静默绕过（2026-11-14 实测漏掉三处，其中一处措辞是「只有」）。
+   - 先例：`docs/CHANGELOG.md` v2.20 ④（`priority_blocked` 提升为导出常量、守卫不再手抄）与 accepted roots ↔ `PLAN_REF_ROOTS` 的双向校验。
+5. 收拢完成后，`ADR-class-write-scope-alignment` D1b 的**过渡期规则**可退役（`verifier` 类后端直写全部 skill 状态），并把 `prompts/build.md` 的过渡期段与 symptom-bridge 句改为「历史说明」。
 
 ## Acceptance
 
