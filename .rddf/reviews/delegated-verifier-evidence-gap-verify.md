@@ -4,7 +4,7 @@
 - 验收日期：2026-11-14
 - 验收角色：builder 内建的 verifier 环节（角色内建，非 subagent）
 - 已用轮次：**2 轮**（第 1 轮 oracle **BLOCK**（失败签名分类缺失）；第 2 轮全绿 + critic 全落）
-- 结论：**通过**（AC1–AC6、AC8、AC9 有机器证据；**AC7 由 e2e CS-3 通过**；CS-5 因额度未验证，见「已知缺口」）
+- 结论：**通过**（AC1–AC6、AC8、AC9 有机器证据；**AC7 由 e2e CS-3 通过**；**CS-5 于 2026-11-14 额度恢复后实跑通过**（加固版，见「已知缺口」栏的加固说明））
 
 ## 判据来源
 
@@ -36,7 +36,7 @@
 
 | 缺口 | 说明 |
 |---|---|
-| **CS-5 未验证** | 新增的回归用例（「修改文件上的测试失败 ⇒ `ac-fail` 而非 `blocked`」，防 oracle BLOCK 的根因复发）**两次尝试均撞 Token Plan 429 用量上限**（2026-11-14 首跑 + 复跑：`provider.rate-limit`，各 10 次 retry 后 error、**0 条文本**、`src/app.ts` 未被改 ⇒ 会话根本没拿到模型响应）⇒ 按纪律**不重试**。用例已入库（`rdd-workflow-e2e` commit `01e0b68`），待额度恢复后跑。**它不属本 change 的 AC**（AC7 由 CS-3 覆盖），但它是「失败签名分类」的唯一端到端证据 ⇒ 未跑通前，该分类只有单测 + 文本守卫证据 |
+| **CS-5 已验证（且已加固）** | 回归用例「**被修改文件**上的测试失败 ⇒ `ac-fail` 而非 `blocked`」于 2026-11-14 额度恢复后实跑通过（EXIT=0）。⚠ 首版断言**证明不了它声称的事**：① 「测试失败」是空转（fixture 初始就失败，提交信息即 'add failing test'）；② 前提不可达（被派发后端是 `role_class=verifier`，按契约不得改 `src/**`，它如实拒绝 ⇒ 「文件被改」从未发生）。**加固后**才成立：fixture 初始绿（x = 2）→ 由 **harness** 改坏（x = 3）⇒ 「文件相对 HEAD 已被改动」；失败签名断言为「含 Expected/Received 且不含 runner 缺失」；分类断言为「含 `HANDOFF: ac-fail` 且不含 `HANDOFF: blocked`」；另断言后端未改源码。证据：`git diff`（-x=2/+x=3）、bun 输出（Expected: 2 / Received: 3）、HANDOFF 3×ac-fail / 0×blocked |
 
 ## 遗留清扫复核（本次范围内）
 
@@ -61,4 +61,4 @@
 **PASS** —— AC1–AC9 逐条有证据（AC7 由 e2e CS-3 覆盖）⇒ 可归档
 （`openspec archive delegated-verifier-evidence-gap --skip-specs`）。
 
-**待办**：CS-5（回归用例）待 Token Plan 额度恢复后跑通；跑通前「失败签名分类」的端到端证据缺一条（已有单测 + 文本守卫）。
+**待办**：无。CS-5 已于 2026-11-14 实跑通过（含加固：首版断言空转 + 前提不可达，已修正）。

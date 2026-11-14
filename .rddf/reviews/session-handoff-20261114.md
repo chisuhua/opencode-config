@@ -20,7 +20,7 @@
 
 | # | 卡点 | 表现 | 恢复后怎么跑 |
 |---|---|---|---|
-| 1 | **Token Plan 429 额度** | e2e `CS-5`（失败签名分类：修改文件上的测试失败 ⇒ `ac-fail` 而非 `blocked`）**两次尝试均 429**（10 次 retry、0 条文本、fixture 未被改） | `cd /workspace/main/rdd-workflow-e2e && E2E_REAL_RUNTIME=1 TMPDIR="$PWD/.tmp-l2" bats --filter CS-5 tests/integration/test_class_scope_runtime.bats`；通过后把该文件头的「未验证」注记删掉 |
+| 1 | ~~**Token Plan 429 额度**~~ **已解除** | e2e `CS-5` 2026-11-14 额度恢复后实跑通过；且**首版断言是空转的**（fixture 初始就失败 + 被派发 verifier 按契约不能改 `src/**`）⇒ 已加固为「初始绿 → harness 改坏 → 断言失败签名 + ac-fail/blocked 分类 + 后端未改源码」 | 已完成（e2e commit `a0ac808`）；无需再跑 |
 | 2 | **产品仓写权限** | `rdd-verifier-state-consolidation`（把 4 个根下点文件收拢进 `.rddf/state/verifier/`）需改 `~/.agents/skills/rdd-workflow` | 按 `.rddf/reviews/rdd-verifier-state-consolidation-rfc.md` §4.8 的 8 步；完成后回本仓做同文件 §6 的 8 项收尾 |
 
 ## 3. 每个「唯一真源」在哪（别再手抄）
