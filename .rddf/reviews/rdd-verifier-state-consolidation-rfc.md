@@ -52,9 +52,41 @@ _lib/verifier/cache.py:23        def _cache_path(project_root, change_name) -> P
 _lib/verifier/archive_gate.py:42 def _cache_path(main_root, change_name) -> Path:
 ```
 
-**两个独立函数各自拼同一路径**。迁移时只改一个 ⇒ **归档门读的路径与写入方不同 ⇒ 归档门永远「没有 verdict」⇒ 静默失效**
-（不报错，只是判定永远不通过）。建议顺序：**先把 `archive_gate.py` 的 `_cache_path` 改为 `from .cache import _cache_path`（或升为公开 `verdict_cache_path`）**，
-让「路径只有一个定义点」，**再**做目录迁移 —— 否则迁移期就是在两处之间对暗号。
+**两个独立函数各自拼同一路径表达式**（`.rddf/state/.ac-verdict-<change>.json`）。迁移时只改一个 ⇒
+**归档门读的路径与写入方不同 ⇒ 归档门永远「没有 verdict」⇒ 静默失效**（不报错，只是判定永远不通过）。
+
+### ⚠ 合并时的关键约束（读码后发现，别踩）
+
+| | `cache.py:23` | `archive_gate.py:42` |
+|---|---|---|
+| 参数名 | `project_root` | `main_root` |
+| **root 来源** | 调用方传入的**工程根** | 该文件自己用 `git rev-parse --git-common-dir` 求出的**主仓根**（`archive_gate.py:20-39`） |
+| 路径表达式 | 相同 | 相同 |
+
+⇒ **只合并「路径表达式」，不要合并「root 来源」**。worktree 场景下 `main_root ≠ project_root`：归档门必须去**主仓**找 cache
+（因为 worktree 里没有），若把两者并成一个 `(root, change)` 且让 archive_gate 传 `project_root`，**worktree 下归档门会去 worktree 找 ⇒ 永远 miss**。
+
+**推荐改法**（只动路径表达式，root 来源各留各的）：
+
+```python
+# _lib/verifier/cache.py —— 新增公开函数（唯一路径定义点）
+def verdict_cache_path(root: Path, change_name: str) -> Path:
+    return Path(root) / ".rddf" / "state" / f".ac-verdict-{change_name}.json"
+
+def _cache_path(project_root: Path, change_name: str) -> Path:   # 保留旧名，内部转调
+    return verdict_cache_path(project_root, change_name)
+```
+
+```python
+# _lib/verifier/archive_gate.py —— 删掉本文件的 _cache_path，改为转调（root 仍是它自己求的 main_root）
+from .cache import verdict_cache_path
+
+def _cache_path(main_root: Path, change_name: str) -> Path:
+    return verdict_cache_path(main_root, change_name)   # ← main_root 不变
+```
+
+> 迁移时**只改 `verdict_cache_path` 里的那一段路径**（`"state" / f".ac-verdict-…"` ⇒ `"state" / "verifier" / f".ac-verdict-…"`）
+> ⇒ 两处同时生效，且 worktree 语义不被破坏。**这就是为什么 §4.0 必须排在目录迁移之前。**
 
 ### 4.1 `verdict cache`：`.ac-verdict-<change>.json`（6 处定义 / 1 处 CI）
 
