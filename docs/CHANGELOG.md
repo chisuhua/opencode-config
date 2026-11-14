@@ -10,6 +10,18 @@
 
 ---
 
+> **v2.26 变更摘要（2026-11-15，遗留项收尾：accepted-roots 也升级为结构比对 + 两处判据收窄）**：
+> ① **问题**：v2.25 把 **verifier 写集**的判据升级为结构比对，但如实登记了 4 条遗留 —— 其中最大一条是：**`PLAN_REF_ROOTS` 那族 accepted-roots 守卫仍是句子解析**（取「accepted roots：」后第一句 + 抓反引号 glob token），换句式即失效；另有「已关闭 improvement 是改状态行即可翻转的开关」「AC14 的窄化描述判据是副词词表（实测漏网过 `edit 上限=.rddf/reviews`）」「跨仓那半无 CI 守卫」。
+> ② **修正**：① **accepted-roots 升级为逐字机读块** —— `lib/delegate-core.ts::planRefRootsBlock()` 渲染 `<!-- accepted-roots:plan-ref` + 4 个 root，`prompts/plan.md` / `docs/MULTI-AGENT-DESIGN.md` / `docs/SUBAGENT-ORCHESTRATION.md` 各嵌**逐字副本**；守卫 = 块精确比对（闭集）+ 正向覆盖 + **行级反向闭集**（锚枚举形态 `accepted roots：`，抓该行 glob token ⊆ 真源）。② **AC20 关闭判定收窄**：带归档指针的 **核本地目录真存在**；跨仓的 **须在状态行本身声明外仓**；语义式关闭保留并登记为不可机械核。③ **AC14 升级为「路径闭合」**：写集动词/副词并集 + 紧跟 `.rddf/reviews`（≤6 字符）⇒ 必须同时给出记账落点 —— 修掉旧副词词表漏网的 `edit 上限=.rddf/reviews`。④ **`isClosedImprovement` 抽成模块级单一实现**（AC20/AC14 共用，消灭双份）。⑤ **跨仓核对入口**：handoff §7 的 `diff` 命令（两仓清单已逐字一致）。
+> ③ **审查**：oracle 1 轮 **`PASS-WITH-NOTES`**（3 条全闭合；其中 1 条是**真判据回退** —— 新守卫丢了「散文枚举 ⊆ 真源」的闭集面 ⇒ 已补行级反向闭集；另核出 B-2 外仓分支**有 live 消费者**，非死代码）→ critic 1 轮 **`APPROVE_WITH_CONDITIONS`**（`mergeable: yes`，**无 BLOCKER**；1 条 SHOULD_FIX = **反向闭集对 `SUBAGENT-ORCHESTRATION.md` 静默空转**（只取首个匹配行 ⇒ 锚到类属提及）⇒ 改为遍历所有枚举行 + 三份投影各做一次演练；3 条 NIT 全处置）。审稿记录：`.rddf/reviews/legacy-items-structural-upgrade-review.md`。
+> ④ **验证**：`bun test tests/` **536 pass / 0 fail**；anchors **23/23**；变红演练 **8 例**逐条实跑（accepted-roots 3 例含三份投影各一次 / AC14 4 例 / 关闭判定 1 例）；跨仓 `diff` 实测一致。
+> ⑤ **顺带抓到一个真缺陷**：`prompts/plan.md:90` 最后一个 accepted root **缺闭合反引号** —— 旧守卫「取第一句就截断」把它藏住了；新闭集断言当场抓到（**这是「句子解析会藏住真实缺陷」的直接证据**）。
+> ⑥ **残留（如实登记）**：① 「语义式关闭」（无归档指针）**不可机械核**（伪造属故意行为，归 `rdd-doctor`/流程评审）；② AC14 两处已知边界（否定语境可洗白「已给出记账落点」；动词与路径隔 >6 字符会漏）；③ accepted-roots 的「枚举拆到下一行」会漏；④ 跨仓那半无 CI 守卫（人工 `diff`）；⑤ 两处枚举式词表仍在（AC20 的 HIST / AC14 的写集动词表）。
+> ⑦ **诚实结论（critic 给的口径）**：两族升级相对旧实现**不是「严格更强」，而是「换漏网集」** —— 真正的增益是**块级逐字闭集**（旧实现完全没有的面）+ 抓到了上面那个真缺陷。
+
+---
+
+
 > **v2.25 变更摘要（2026-11-15，写集判据从「散文措辞」升级为「结构比对」）**：
 > ① **问题**：verifier 类的写集上限（`VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS`）在文档侧**只靠散文措辞守卫** —— AC7 查「表格行含 `.rddf/state/verifier`」、AC11 查「行不含 `.rddf/state/.ac-`」、AC14 查一个**措辞正则**（「verifier …（仅|只允许|只能|只有|限于）… `.rddf/reviews`」）。措辞词表是**开集假设** ⇒ 换个说法就绕过；已实测复发**两次**（一次是 delegate 工具 schema 里手抄的活陈述被 oracle 抓到，一次是 AC11 的平凡断言被 critic 抓到）。
 > ② **修正**：① **规范机读块** —— `lib/delegate-core.ts::verifierWriteSetBlock()` 渲染 `<!-- role-class-write-set:verifier` / `allow:` / `owns:` 块（内容**完全由常量派生**）；`prompts/build.md`（§角色列表表后）、`prompts/plan.md`（选类表后）、`prompts/front.md`（§3.1 后）各嵌**逐字副本** + 注记（图例 + 机械对齐命令）。② **AC19（新增）**：三份 prompt 必须逐字包含规范块、且块与起始标记**各恰好 1 处**（多/少/改一个字符 ⇒ 红；陈旧副本 ⇒ 红）。③ **AC20（新增）**：**路径闭集** —— 活文档（含规格件）里的 verifier 状态路径**按路径判**：根下旧路径（`.ac-*` / `rdd-verify-context*` / `.verifier-*`）只许出现在历史标注行；块内具体文件必须落在 **owns 模式**内。④ **AC11 转换**：删掉被 AC20 覆盖的路径负向（避免两份口径），保留退役/落点断言。⑤ **P3**：backlog stub 按本仓惯例关闭（`**实施状态**：已立项 → …archive/…`）⇒ 演进项 4「结构比对」标注收口。

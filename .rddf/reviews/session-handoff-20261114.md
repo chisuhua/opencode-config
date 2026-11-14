@@ -33,7 +33,8 @@
 | 交回后的收尾三问 | `prompts/plan.md` 的同名小节 | `prompts/front.md` §3.3 按标题名引用 |
 | HANDOFF kind 集合 | `prompts/build.md` §HANDOFF 契约的「kind 只用既有三类」句 | 守卫 AC3 **动态抽取** |
 | verifier 状态路径 | `VERIFIER_OWNS_PATHS`（**6 项，全部在 `.rddf/state/verifier/` 下** —— 2026-11-14 产品侧收拢完成；
-  skill 的 `owns:` 也已补齐为 6 项） | 守卫 AC6（派生视图归零）+ 消费侧退役批 v2.24 |
+  skill 的 `owns:` 也已补齐为 6 项） | 守卫 **AC19**（机读块逐字）+ **AC20**（路径闭集）+ AC6（派生视图归零） |
+| 写集的**跨仓**一致性 | 本仓 `VERIFIER_OWNS_PATHS` ↔ 产品仓 `skills/rdd-verifier/SKILL.md` 的 `owns:`（**两仓清单已逐字一致**） | **无 CI 守卫**（skill 在用户 home）⇒ **人工 diff（维护后跑一次）**：见下方命令 |
 | 治理面归属 | `prompts/build.md` §治理面作用域表 + 「本仓特例裁定」（`docs/adr/**` = ADR 行） | 每次治理面改动 |
 
 ## 4. 下一动作的三个入口（按优先级）
@@ -80,3 +81,17 @@ cd /workspace/main/rdd-workflow-e2e && bats -r tests/       # 默认态全 skip�
 cd /workspace/main/rdd-workflow && python3 -m pytest tests/unit tests/integration -q   # 3492 passed / 2 skipped
 cd /workspace/main/rdd-workflow && bats tests/integration/test_rdd_verifier_*.bats …   # 43 ok（verifier/archive-gate）
 ```
+
+## 7. 跨仓核对（两仓清单已逐字一致，可直接 diff）
+
+```bash
+# 本仓（真源 → 机读块渲染）
+cd ~/.config/opencode && bun -e 'import {verifierWriteSetBlock} from "./lib/delegate-core.ts"; console.log(verifierWriteSetBlock())' | grep '^owns:' > /tmp/opencode/owns-opencode.txt
+# 产品仓（skill 的 owns: 块，经其 state_paths.py 渲染）
+cd /workspace/main/rdd-workflow && python3 -c "from _lib.verifier.state_paths import SKILL_OWNS_PATHS; print('owns: ' + ', '.join(SKILL_OWNS_PATHS))" > /tmp/opencode/owns-product.txt
+diff /tmp/opencode/owns-opencode.txt /tmp/opencode/owns-product.txt && echo "✔ 两仓 verifier owns 清单逐字一致"
+```
+
+> **为什么没有 CI 守卫**：产品侧 skill 装在 `~/.agents/skills/**`（用户 home）⇒ 本仓 `bun test` 不能依赖它
+> （依赖了在 CI 上必然 SKIP ⇒ 等于没有守卫）。⇒ 这一半靠**两仓各自钉自己那半**（本仓 AC19/AC20；产品仓
+> `tests/unit/test_verifier_owns_block.py`）+ **上面这条人工 diff**。

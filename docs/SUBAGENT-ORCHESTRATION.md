@@ -110,6 +110,17 @@
 `front` 与 `plan`（planner 角色）**并列**放行同一通道；plan 派**可写实施**时必须带 `plan_ref`：
 
 - 解析根写死 `project_dir`（不用插件进程 cwd）；**accepted roots**：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`。
+
+<!-- 机读投影：下面这块是 `lib/delegate-core.ts::PLAN_REF_ROOTS` 的**逐字副本** ——
+     守卫按**精确比对**校验（多一个根 / 少一个根 / 改一个字符 ⇒ 红）。
+     accepted roots 是 `validatePlanRef` 的**运行期判据**（闭集）⇒ 投影多写一个根 = 假承诺。
+     需要对齐时：bun -e 'import {planRefRootsBlock} from "./lib/delegate-core.ts"; console.log(planRefRootsBlock())' 打印后整块替换。 -->
+<!-- accepted-roots:plan-ref
+.rddf/plans/**
+.rddf/improvements/**
+.rddf/roadmap/**
+openspec/changes/*/proposal.md
+-->
 - **可写 ≠ 可引用**：accepted roots 是唯一判据，与 plan 的 `edit` 白名单无包含关系。
 - 存在性校验是「计划先行」的强制函数，**不是相关性证明**。
 - plan 的计划产出口径收敛到 `.rddf/plans/<slug>.md`（配置里 `.plans/*.md` 的放行保留，但不再是口径，也不在 accepted roots 内）。

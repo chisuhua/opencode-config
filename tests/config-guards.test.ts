@@ -28,8 +28,31 @@ import {
   PLAN_REF_ROOTS,
   PRIORITY_BLOCKED_FIELDS,
   SLOT_STATES,
+  planRefRootsBlock,
   verifierWriteSetBlock,
 } from "../lib/delegate-core.ts"
+
+/**
+ * 「已关闭 improvement」判定（**单一实现**，AC20 与 AC14 共用；不得各写一份）。
+ *
+ * 两种形态，机械可核程度不同：
+ *   ① 状态行含 `已完成|已关闭|已归档` ⇒ **语义式关闭**（不可机械核 —— 伪造关闭属故意行为，
+ *      超出漂移威胁模型，归 `rdd-doctor` / 流程评审）；
+ *   ② `已立项` + 头部有 `openspec/changes/archive/<name>/` ⇒ **核该目录真存在**；
+ *      不存在时只有**状态行本身**声明是外仓才豁免（live 消费者：
+ *      `.rddf/improvements/rdd-verifier-state-consolidation.md` —— 状态行写「产品侧 rdd-workflow 仓」，
+ *      archive 目录在产品仓、本地不存在）。
+ */
+function isClosedImprovement(head: string): boolean {
+  const line = head.split("\n").find((l) => /^\s*>\s*\*\*(实施状态|状态)\*\*/.test(l)) ?? ""
+  if (/已完成|已关闭|已归档/.test(line)) return true
+  if (!/已立项/.test(line)) return false
+  const m = head.match(/openspec\/changes\/archive\/([^/\s`)\]，。]+)/)
+  if (!m) return false
+  const localDir = path.join(import.meta.dir, "..", "openspec", "changes", "archive", m[1] as string)
+  if (existsSync(localDir)) return true
+  return /产品侧|外仓|其它仓|rdd-workflow/.test(line) // `rdd-workflow-e2e` 被 `rdd-workflow` 子串覆盖，不必并列
+}
 
 const CONFIG_PATH = path.join(import.meta.dir, "..", "opencode.jsonc")
 const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8"))
@@ -401,28 +424,62 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     }
   })
 
-  test("accepted roots：真源（delegate-core.ts 的 PLAN_REF_ROOTS）与三份投影一致（双向）", () => {
+  test("accepted roots：真源（delegate-core.ts 的 PLAN_REF_ROOTS）与三份投影的**机读块**逐字一致（闭集）", () => {
+    // v2.26：从「句子解析 + glob 形态过滤」升级为**逐字机读块**（与 verifier 写集同一范式）。
+    // 旧实现的反向校验靠「取 `accepted roots：` 后第一句 + 抓反引号里含 `*` 的 token」——
+    // 是**句子解析**，换句式即失效（本仓 2026-11-15 已在 verifier 写集那一族修过同款）。
     const roots = PLAN_REF_ROOTS.map((r) => r.label)
     expect(roots.length, "真源应声明 4 个 accepted root").toBe(4)
+    const canonical = planRefRootsBlock()
     for (const rel of ["prompts/plan.md", "docs/MULTI-AGENT-DESIGN.md", "docs/SUBAGENT-ORCHESTRATION.md"]) {
       const text = readFileSync(path.join(ROOT, rel), "utf8")
-      // 正向：真源的根都要在投影里
+      // ① 逐字块（**闭集**的机器判据；多/少/改一个字符 ⇒ 红）
+      expect(text.includes(canonical), `${rel} 缺少或偏离 accepted-roots 规范块`).toBe(true)
+      expect(text.split(canonical).length - 1, `${rel} 的规范块应恰好出现 1 次`).toBe(1)
+      // ② 正向覆盖：真源的根仍要在**散文**里出现（agent 读的是散文）
       for (const r of roots) {
         expect(text, `${rel} 的 accepted roots 缺少「${r}」`).toContain(r)
       }
-      // 反向：根是**闭集** —— 投影多写一个根 ⇒ agent 会照它行动而运行时拒绝
-      // 只取「accepted roots：」之后的**第一句**（允许 markdown 强调夹在中间，如 `accepted roots**：`）
-      const seg = (text.split(/accepted roots[*`]*[：:]/)[1] ?? "").split(/[。\n]/)[0]
-      expect(seg.length, `${rel} 里找不到「accepted roots：」清单段（反向校验形同虚设）`).toBeGreaterThan(0)
-      // 只把 **glob 形态**（含 `*`）的 token 当作「根」—— 普通文件路径（如 ADR 引用）不算
-      const listed = [...seg.matchAll(/`([^`]+)`/g)]
-        .map((m) => m[1] as string)
-        .filter((t) => t.includes("*"))
-        .slice(0, 8)
-      for (const l of listed) {
-        expect(roots, `${rel} 列了真源没有的 accepted root「${l}」`).toContain(l)
+      // ③ **反向闭集（行级）**：散文的 accepted-roots 枚举不得出现真源之外的根 ——
+      //    否则 agent 照散文行动而被 `validatePlanRef` 运行时拒绝（假承诺）。
+      //    ⚠ 定位方式**不是**自由句子解析：找**每一行**含 `accepted roots` 的行（结构锚），
+      //    只抓该行反引号里含 `*` 的 token（根形态）。
+      //    ⚠ 必须遍历**所有**这样的行，不能只取第一处：`docs/SUBAGENT-ORCHESTRATION.md` 的第 5 行是
+      //      「机器消费的值」的**类属提及**（无 glob token ⇒ 空转），真正的**枚举**在第 112 行 ——
+      //      只取首个匹配会让该文件的 ③ 恒平凡满足（critic 抓到的静默空转）。
+      //    ⚠ 锚的是**枚举形态**（`accepted roots：` 带冒号），不是**任意提及**：
+      //      `MULTI-AGENT-DESIGN.md` 的 v2.17 订正行写着「`.plans/*.md` 的放行保留，但不再是口径，
+      //      也**不在** accepted roots 内」——它含 `accepted roots` 字样**且含 glob**，但那是**排除**语境；
+      //      按「任意提及」锚会把它误判成「列了真源没有的根」。
+      // ⚠ 已知边界：**拆到下一行**的枚举（续行不含冒号形态）仍会漏（fail-closed 方向，登记备查）。
+      const anchorLines = text.split("\n").filter((l) => /accepted roots[*`]*[：:]/.test(l))
+      expect(anchorLines.length, `${rel} 找不到「accepted roots：」枚举行`).toBeGreaterThan(0)
+      for (const anchorLine of anchorLines) {
+        const listed = [...anchorLine.matchAll(/`([^`]+)`/g)]
+          .map((m) => m[1] as string)
+          .filter((t) => t.includes("*"))
+        for (const l of listed) {
+          expect(roots, `${rel} 的散文枚举列了真源没有的 accepted root「${l}」`).toContain(l)
+        }
       }
     }
+  })
+
+  test("AC20-辅助：isClosedImprovement 的**外仓关闭分支**有 live 消费者（不是死代码）", () => {
+    // v2.25 教训：判据分支可能是死代码（「分支存在 ≠ 分支生效」）⇒ 每个分支都要有**对应**证据。
+    // B-2 分支（目录不存在 + 状态行声明外仓 ⇒ 豁免）的 live 消费者：
+    //   `.rddf/improvements/rdd-verifier-state-consolidation.md`（关闭在产品仓）
+    const p = path.join(import.meta.dir, "..", ".rddf", "improvements", "rdd-verifier-state-consolidation.md")
+    expect(existsSync(p), "live 消费者文件不存在 ⇒ B-2 分支需重新取证").toBe(true)
+    const head = readFileSync(p, "utf8").split("\n").slice(0, 15).join("\n")
+    expect(isClosedImprovement(head), "该文件应被判为已关闭（外仓关闭形态）").toBe(true)
+    // 且它的归档目录**确实不在本仓**（否则走的是 B-1 而非 B-2）
+    const m = head.match(/openspec\/changes\/archive\/([^/\s`)\]，。]+)/)!
+    expect(m, "该文件头部应含归档指针").toBeTruthy()
+    expect(
+      existsSync(path.join(import.meta.dir, "..", "openspec", "changes", "archive", m[1] as string)),
+      "该目录若存在于本仓则走 B-1 ⇒ 本用例不再覆盖 B-2",
+    ).toBe(false)
   })
 
   test("priority_blocked 字段：真源（delegate-core.ts）与 ADR / 汇总文档一致", () => {
@@ -1351,13 +1408,7 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     // ⚠ **已关闭 improvement 的判定**：必须带**完成/归档**语义；`已立项` 只有在**同行**给出
     //   归档指针时才算已关闭（本仓惯例：`已立项 → openspec/changes/archive/…`）。
     //   且只认**头部区**（前 15 行）—— 正文中部引用一句他人状态行不得翻转整文件豁免。
-    // 关闭判定 = **状态行**说了算：`已完成|已关闭|已归档` ⇒ 关闭；
-    // `已立项` 只有在**头部块内**给出归档指针（`openspec/changes/archive/…`，可在下一行）时才算关闭。
-    const isClosedImprovement = (head: string): boolean => {
-      const line = head.split("\n").find((l) => /^\s*>\s*\*\*(实施状态|状态)\*\*/.test(l)) ?? ""
-      if (/已完成|已关闭|已归档/.test(line)) return true
-      return /已立项/.test(line) && head.includes("openspec/changes/archive/")
-    }
+    // 关闭判定走模块级 `isClosedImprovement`（与 AC14 共用同一实现，不得各写一份）
     // ⚠ **覆盖面与 AC14 同一口径**（未覆盖面：`.rddf/plans/**`、未归档 open change 的 proposal.md）。
     // TOKEN 必须三向：块内**新形态**路径（`verifier/…`）也要抽出来 —— 否则「块外新路径」这一面是死代码。
     // ⚠ 排除字符集必须含 `,` 与 `、`（机读块里 owns 是**逗号分隔**的一行 ⇒ 否则 token 会带上尾逗号）。
@@ -1383,8 +1434,10 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
           const text = readFileSync(path.join(abs, entry.name), "utf8")
           // 已关闭的 improvement 是**历史记录**（记的是当时的路径）⇒ 不参与现行判据
           // （只看**头部区**前 15 行 —— 正文中部引用别人的状态行不得翻转整文件豁免）
-          // ⚠ 已知残留（**故意不闭合**）：改状态行即可翻转整文件豁免；「伪造关闭」属**故意**行为，
-          //    超出本守卫的漂移威胁模型 ⇒ 其真伪由 `rdd-doctor` / 流程评审承担，不在此机械核验。
+          // ⚠ 已知残留（**部分收窄**，不追求闭合）：
+          //    - 带**归档指针**的关闭 ⇒ **已机械核**（本仓目录必须真存在；跨仓须显式声明）；
+          //    - 仅写「已完成/已关闭」而无指针 ⇒ **不可机械核**（语义式关闭）⇒ 「伪造关闭」属**故意**行为，
+          //      超出本守卫的漂移威胁模型 ⇒ 其真伪由 `rdd-doctor` / 流程评审承担。
           const head = text.split("\n").slice(0, 15).join("\n")
           if (next.startsWith(".rddf/improvements/") && isClosedImprovement(head)) continue
           for (const [i, line] of text.split("\n").entries()) {
@@ -1514,26 +1567,26 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(sec.some((l) => l.includes("状态/记账文件写入") && l.includes(".rddf/reviews/"))).toBe(false)
   })
 
-  test("AC14：活文档里不再有把 verifier 写集描述为「仅 .rddf/reviews」的句子（**活文档清单**，非全域）", () => {
-    // ⚠ 判据边界（实施时收窄过一次，本 patch 恢复「活文档」口径并补两处漏网）：
-    //   **扫**：prompts/**、docs/**（除 docs/adr）、commands/**、.rddf/improvements/**、.rddf/roadmap/**、
-    //         以及**规格件** .rddf/reviews/backend-handoff-protocol-spec.md（它被 ADR 元数据当权威引用）
-    //   **不扫**：docs/adr/**（历史 ADR 描述写作时点状态，父篇由 AC10 单独覆盖）、.rddf/state/**（运行时）、
-    //          .rddf/reviews/** 的历史记录（*-verify.md / *-review.md / *-discovery.md / 观察报告等）
-    //   **已知边界（未来态，出现时应扩扫集）**：`.rddf/plans/**`（rdd-builder P1 产物，会被 executing agent 读）
-    //          与**未归档** open change 的 `openspec/changes/*/proposal.md`（会被 rdd-verifier 读）——
-    //          当前目录不存在 / 无 open change ⇒ 未纳入，出现时按本条扩。
-    //   ⚠ 措辞词表是**枚举式**（仅 / 只允许 / 只能 / 只有 / 限于）；新措辞会静默绕过。
-    //      写集本身已改由 **AC19（机读块精确比对）** + **AC20（路径闭集）** 判（按**路径 / 逐字内容**判
-    //      ⇒ 换措辞绕不过）。本条补的是「写集被描述得**更窄**」这一类 —— 原型证明它**没有可靠的结构化替代**
-    //      （共现式判定 7/7 误报）⇒ 保留窄词表作兜底。
-    //      ⚠ 与 AC20 内的 HIST 词表**并列**登记（本仓还剩**两处**枚举式词表，不是「唯一」）。
-    const stale = /verifier[^\n]{0,40}(仅|只允许|只能|只有|限于)[^\n]{0,20}\.rddf\/reviews/
+  test("AC14（路径闭合）：活文档里「verifier 写集 = 仅 .rddf/reviews」类陈述必须同时给出记账落点", () => {
+    // ── 判据（2026-11-15 升级：从「副词词表」换成「**路径闭合**」）──────────────────────
+    // 旧判据只看**副词**（仅 / 只允许 / 只能 / 只有 / 限于）⇒ 实测漏网过一类：
+    // `edit 上限=.rddf/reviews`（**无副词**）当时没被本条抓到，是 oracle 在 delegate 工具
+    // schema 里人工发现的。新判据 = 「**写集动词/副词** + `.rddf/reviews`」⇒ 该行**必须**
+    // 同时给出 `.rddf/state/verifier`（缺 ⇒ 把写集描述窄了）。
+    // ⚠ 仍是**枚举式**词表（本仓最后两处之一，与 AC20 的 HIST 并列登记）：未知动词/副词会漏判。
+    //   可接受的边界：这类陈述的**必要成分**是「写集动词」本身（不写动词就不构成写集声明）。
+    // ⚠ **窗口取舍（6 字符）**：旧判据是 `{0,40}` + `{0,20}` 的宽窗口 —— 实测额外召回的**大多是误报**
+    //   （「仅在通过验收后把报告写入 …」这类流程描述）。窄窗口是对**真实故障形态**（紧挨式写集声明）
+    //   的定向修复；代价是「动词与路径隔 >6 字符」的松散形态会漏（fail-closed 方向，可接受）。
+    // ⚠ 词表里**不写 `edit 上限`**：alternation 中 `上限` 在前 ⇒ 长分支被遮蔽（恒不可达），写了是噪声。
+    const CLAIM = /(可写|能写|写集|上限|写入范围|仅|只允许|只能|只有|限于)[^。\n]{0,6}`?\.rddf\/reviews/
+    const HIST = /历史|退役|作废|legacy|pre-consolidation|旧路径|旧形态|旧版|收拢前|已收拢/
     const root = path.join(import.meta.dir, "..")
     const scanRoots = ["prompts", "docs", "commands", ".rddf/improvements", ".rddf/roadmap"]
     // ⚠ 同 AC20：`docs/CHANGELOG.md` 是**历史记录**（自述「不描述现状」）且天然逐字引用判据形态
     //   ⇒ 引用即命中判据本身 ⇒ 必须排除，否则本条永远红。
-    const excluded = ["docs/adr", "docs/CHANGELOG.md"] // `.rddf/state` 从 scanRoots 不可达 ⇒ 不必列
+    // ⚠ 未覆盖面（与 AC20 同口径）：`.rddf/plans/**`、未归档 open change 的 `proposal.md`。
+    const excluded = ["docs/adr", "docs/CHANGELOG.md"]
     const hits: string[] = []
     const walk = (rel: string) => {
       if (excluded.some((e) => rel === e || rel.startsWith(e + "/"))) return
@@ -1542,18 +1595,25 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
         const next = rel ? `${rel}/${entry.name}` : entry.name
         if (entry.isDirectory()) walk(next)
         else if (entry.name.endsWith(".md")) {
-          // 文件级排除（`excluded` 里既可能有**目录**（docs/adr）也可能有**单文件**（docs/CHANGELOG.md））
           if (excluded.some((e) => next === e)) continue
-          const m = readFileSync(path.join(abs, entry.name), "utf8").match(stale)
-          if (m) hits.push(`${next}: ${m[0]}`)
+          const text = readFileSync(path.join(abs, entry.name), "utf8")
+          // 已关闭的 improvement 是历史记录（**与 AC20 共用同一判定** —— 只此一份）
+          if (next.startsWith(".rddf/improvements/")
+              && isClosedImprovement(text.split("\n").slice(0, 15).join("\n"))) continue
+          for (const [i, line] of text.split("\n").entries()) {
+            if (HIST.test(line)) continue
+            if (!line.includes("verifier")) continue
+            if (!CLAIM.test(line)) continue
+            // ⚠ 已知边界：本豁免只看「该行是否出现记账落点」。**否定/重定向语境**可洗白
+            //   （如「不应写入 .rddf/state/verifier；verifier 写集只有 .rddf/reviews」）——
+            //   启发式层面可接受（与 HIST 同属登记在案的边界），不在此闭合。
+            if (line.includes(".rddf/state/verifier")) continue
+            hits.push(`${next}:${i + 1}: ${line.slice(0, 100)}`)
+          }
         }
       }
     }
     for (const r of scanRoots) walk(r)
-    // 规格件单列扫描（.rddf/reviews 整体是历史记录区，只白名单这一个规格件）
-    const specPath = path.join(root, ".rddf", "reviews", "backend-handoff-protocol-spec.md")
-    const specHit = existsSync(specPath) ? readFileSync(specPath, "utf8").match(stale) : null
-    if (specHit) hits.push(`.rddf/reviews/backend-handoff-protocol-spec.md: ${specHit[0]}`)
     expect(hits.join(" | ")).toBe("")
   })
 

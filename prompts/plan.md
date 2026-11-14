@@ -88,6 +88,17 @@ owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl,
 **五条硬规则**：
 
 1. **派可写实施必须带 `plan_ref`**：引用一个**已存在**的计划文件（accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`）。没有计划就不要派 —— 先写计划。知识类（只读）后端不带 `plan_ref`。
+
+<!-- 机读投影：下面这块是 `lib/delegate-core.ts::PLAN_REF_ROOTS` 的**逐字副本** ——
+     守卫按**精确比对**校验（多一个根 / 少一个根 / 改一个字符 ⇒ 红）。
+     accepted roots 是 `validatePlanRef` 的**运行期判据**（闭集）⇒ 投影多写一个根 = 假承诺。
+     需要对齐时：bun -e 'import {planRefRootsBlock} from "./lib/delegate-core.ts"; console.log(planRefRootsBlock())' 打印后整块替换。 -->
+<!-- accepted-roots:plan-ref
+.rddf/plans/**
+.rddf/improvements/**
+.rddf/roadmap/**
+openspec/changes/*/proposal.md
+-->
 2. **同一工作树同时只允许一个后端在跑**（单槽，与谁派发无关）。派发被拒时错误信息会给出**占槽者 session id** —— 那不是你派的后端，别去动它。
    - **plan 优先**（`ADR-plan-delegate-engineering-session` D7）：若占槽者是 **front** 的后端，plan **不自动抢占**（不替 front 决定何时停）—— 按拒绝信息里的 `owner=front` 提示走：① 请 front 侧 release；② 由用户协调；③ 等它自己跑完。若占槽者也是 plan 的（你自己的另一个会话），照常 `suspend` 它再派。
 3. **`dispatch` 返回 ≠ 任务完成**：它只证明简报已投递并被确认消费。要结论：用 `sessions` 查，或改用 `delegate` 同步等。

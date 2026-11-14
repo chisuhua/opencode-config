@@ -1032,6 +1032,24 @@ export function planRefRootLabels(): string {
 }
 
 /**
+ * `plan_ref` 的 **accepted roots 规范机读块**（`accepted-roots:plan-ref`）。
+ *
+ * 用途与 `verifierWriteSetBlock()` 同一范式：把「清单是闭集」这条事实从**散文句子解析**
+ * 降为**逐字机读投影** —— 三份投影（`prompts/plan.md` / `docs/MULTI-AGENT-DESIGN.md` /
+ * `docs/SUBAGENT-ORCHESTRATION.md`）各嵌本块的逐字副本，守卫按**精确比对**校验。
+ *
+ * ⚠ 为什么必须闭集：accepted roots 是 `validatePlanRef` 的**运行期判据** —— 投影多写一个根，
+ * agent 会照它行动而被运行时拒绝（假承诺）。
+ */
+export function planRefRootsBlock(): string {
+  return [
+    "<!-- accepted-roots:plan-ref",
+    ...PLAN_REF_ROOTS.map((r) => r.label),
+    "-->",
+  ].join("\n")
+}
+
+/**
  * 校验 plan_ref。
  *
  * - 解析根：绝对路径原样使用；相对路径**相对 project_dir** 解析（不用插件进程 cwd ——
