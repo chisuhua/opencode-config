@@ -45,9 +45,13 @@
    （当前 `N = 112`；`t1 − t0 = 0 < 7 天` ⇒ 两个门都未到。）
 3. ~~**拿到产品仓权限时**：做 8 步迁移~~ —— **已完成**（2026-11-14，产品侧 change `consolidate-verifier-state`；
    消费侧退役批 = 本仓 `v2.24`）。**剩余**：产品侧该 change 的 `openspec archive`（待其仓全量回归门）。
-4. **新出现的一条**：守卫的**枚举式词表**（AC8/AC11 的措辞判据）仍是**开集假设** ——
-   根治方向 = 文档投影 ↔ `VERIFIER_ALLOW_ROOTS` **结构比对**（已登记在
-   `.rddf/improvements/rdd-verifier-state-consolidation.md` 的演进项）。
+4. ~~守卫的**枚举式词表**~~ —— **2026-11-15 已做**（批次 `v2.25`）：写集判据升级为**结构比对**
+   （AC19 规范块逐字比对 + AC20 路径闭集）；**残留**：两处枚举式词表（AC20 的 HIST 行级豁免闸门
+   / AC14 的窄化描述判据，原型证明无可替代的结构化写法）—— 已并列登记，不再宣称「唯一」。
+5. **产品仓 P2**（`verifier-owns-block-guard`）：skill 的 `owns:` 清单 ↔ 代码绑定（**同仓** CI 可验）
+   + 两仓清单占位符对齐为 `<name>`（逐字可 diff）。
+6. **下一个自然触发点**：`subagent-contract-critic-enforce` 复评 —— **最早 2026-11-21**
+   （`t0 = 2026-11-14` + 7 天；⚠ 提前跑 R1 会把封闭窗终点钉死）。
 
 ## 5. 本轮踩过的坑（同类问题请直接对照）
 
@@ -63,11 +67,14 @@
   CS-6 首版：`! grep "Permission denied"` 命中模型**自述**「没有出现 Permission denied」⇒ 假阳性 | e2e 断言只认**文件系统事实**与**结构化字段**（工具 `state.error` / ledger `blocked_reason`），**不断言模型措辞** |
 | **改了常量，漏改面向模型的派生面** | delegate 工具 schema 的 `role_class` 描述手抄「edit 上限=.rddf/reviews」—— front 据此可能把记账落点排除出 scope | 面向模型的文本必须**由常量派生**（`verifierAllowRootLabels()`），并加守卫钉住 |
 | **治理工具自身的范围 bug** | `scripts/build_critic_prompt.sh --staged` 只影响 stat、diff 正文仍取未暂存 ⇒ 审稿人可能读到另一批改动 | diff 正文与 stat 必须**同范围**；组合参数直接**互斥拒斥** |
+| **治理文档引用判据 ⇒ 命中判据自己** | CHANGELOG 逐字引了 AC14 的正则与 AC11 的路径形态 ⇒ 两条守卫当场把自己判红 | 结构性修：`docs/CHANGELOG.md`（自述「不描述现状」）从扫描集排除；并暴露扫描器 bug：`excluded` 原先**只判目录** ⇒ 单文件排除失效 |
+| **管道掩盖退出码 ⇒ 带着失败提交** | `bun test … | tail -4 && git commit` ⇒ `&&` 看的是 `tail` 的退出码 | 提交前**单独**校验测试退出码；不用管道串起「测试 ⇒ 提交」 |
+| **判据分支是死代码（声称的面没生效）** | AC20 的「新形态闭集」分支因 TOKEN 正则不产出对应 token ⇒ 不可达；**变红演练只测了旧路径那支** | 每个判据分支都要有**对应**的变红演练；「分支存在」≠「分支生效」 |
 
 ## 6. 验证基线（下次改动前的对照）
 
 ```
-cd ~/.config/opencode        && bun test tests/            # 533 pass / 0 fail（8 files）
+cd ~/.config/opencode        && bun test tests/            # 535 pass / 0 fail（8 files）
 cd ~/.config/opencode        && bash scripts/check-upstream-anchors.sh   # 23/23
 cd /workspace/main/rdd-workflow-e2e && bats -r tests/       # 默认态全 skip（runtime 用例不进 CI）
 cd /workspace/main/rdd-workflow && python3 -m pytest tests/unit tests/integration -q   # 3492 passed / 2 skipped
