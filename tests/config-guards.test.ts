@@ -687,6 +687,8 @@ describe("被派发后端的审查降级例外守卫（live e2e AC14 实证的 p
     expect(sec).toContain("不可加载")
     // 负向：「取证不可用」与「blocked」之间不得出现 ⇒ / 则（禁无条件蕴含）
     expect(sec).not.toMatch(/取证不可用[^\n]{0,12}(⇒|则)[^\n]{0,12}blocked/)
+    // 负向：也不得用「等同」等其它等价措辞绕过（只禁 ⇒/则 会漏）
+    expect(sec).not.toMatch(/取证不可用[^\n]{0,12}(等同|意味着|即为)[^\n]{0,12}blocked/)
   })
 
   test("AC2：例外段逐类独立 bullet（受例 bullet 内类名与 HANDOFF: blocked 同行；类名至多一条受例 bullet）", () => {
@@ -709,6 +711,23 @@ describe("被派发后端的审查降级例外守卫（live e2e AC14 实证的 p
     // 负向：explore 不得与 blocked 同行
     expect(sec).not.toMatch(/explore[^\n]*HANDOFF: blocked/)
     expect(sec).not.toMatch(/HANDOFF: blocked[^\n]*explore/)
+    // 负向：受例 bullet 行内**顺带**提别的类名 ⇒ 计数按**首个类名**（行内提及不参与）——
+    // 若实现者改成「按行内任意出现计数」，architect 会因 builder bullet 里的提���而被误判
+    for (const b of ruled) {
+      const lead = b.trimStart().match(/^> - `(architect|builder|verifier)`/)?.[1]
+      expect(lead).toBeTruthy()
+    }
+    // 「判定类」carve-out：不得改回「审稿报告」（否则与受阻记录义务直接矛盾）
+    expect(sec).toContain("判定类")
+    expect(sec).not.toMatch(/不得落审稿报告/)
+    // 「逐类后果」的**定义处**（运行身份段）也须存在 —— 例外段只做指针
+    const identityIdx = lines.findIndex((l) => l.startsWith("#### 被派发后端的运行身份与交回契约"))
+    expect(identityIdx).toBeGreaterThan(-1)
+    const identity = lines.slice(identityIdx).join("\n")
+    const defLine = identity.split("\n").find((l) => l.includes("逐类后果（被派发后端）"))!
+    expect(defLine).toContain("architect")
+    expect(defLine).toContain("builder")
+    expect(defLine).toContain("HANDOFF: blocked")
   })
 
   test("AC3：HANDOFF 允许 kind 集合 == {needs-revision, ac-fail, blocked}（从 §HANDOFF 契约动态抽取）", () => {
@@ -737,6 +756,16 @@ describe("被派发后端的审查降级例外守卫（live e2e AC14 实证的 p
     expect(sec).toContain("任一判据")
     expect(sec).toContain("不产出判定")
     expect(sec).toContain("阻塞类型：")
+    // 受阻记录四要素（落点 / 自落 / 权威序 / 轮次聚合）
+    expect(sec).toContain(".rddf/reviews/<change>-verify-blocked.md")
+    expect(sec).toContain("verifier 自己")
+    expect(sec).toContain("以 `-verify.md` 为准")
+    expect(sec).toContain("取较大值")
+    // 失败签名分类（oracle BLOCK 的闭合点）
+    expect(sec).toContain("判失败形态")
+    expect(sec).toContain("判据信号")
+    expect(sec).toContain("环境信号")
+    expect(sec).toContain("collection error")
     // 防回归：既有「0 工具调用就判 pass = 假阳性，判定作废」句与报告落点句**仍在**
     const build = lines.join("\n")
     expect(build).toContain("0 工具调用就判 pass")
