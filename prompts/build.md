@@ -332,6 +332,29 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 
 - **不改实现**（角色边界）：列出失败项 + 证据 + 复现命令，路由回 build
 - **重试上限 3 轮**（与 `RDDF_VERIFIER_MAX_LOOPS=3` 对齐）：同一 change 第 3 轮仍失败 → `halted`，写审计记录交用户裁决，不再自动打回。走 skill 时轮次记在 `.rddf/state/verifier/<change>.json`；本地验收记在报告文件的「已用轮次」里，下一轮先读它再决定是否还能打回
+- **取证不可用 ⇒ 交回**（判据不可得时的唯一出口）：
+  > 任一判据的取证**不可用** ⇒ **不得判 pass**。**pass 结论必须全量取证**；**失败结论只需单条带证据的不通过**（不要求其余判据取证齐全）。
+  >
+  > 判据（基线对照）：同一取证命令在**不含本 change 的基线上**也**报错 / 无法运行** ⇒ 取证不可用（`blocked`）；仅在本 change 上失败 ⇒ 这是**判据不通过**的证据（`ac-fail`）。
+  > - ⚠ **「失败」只指命令报错 / 无法运行**；**不**包括「grep 未命中本 change 新增内容」与「产物尚未存在」（那是**判据信号**，不是环境信号）。
+  > - 基线取法：`git merge-base HEAD <base>`（`<base>` 取自**派发方在简报里声明的基线**；缺省 `origin/main`，取不到即 `<base>` 不可解析）。判定只用只读命令 —— `git diff --name-only <base>...HEAD` 判取证对象是否被本 change 触及、`git show <base>:<path>` 读基线内容。**不得** stash / checkout / 新建 worktree。
+  > - ⚠ **`<base>` 不可解析** ⇒ **等同取证不可用（`blocked`）**，**不得**按 `ac-fail` 处理（否则环境故障会被路由成「回 builder 修 AC」，白烧 3 轮额度）。
+  > - 取证对象是本次**新增**文件（diff 中为 `A`）⇒ 基线不可比 ⇒ 按本 change 判据处理（默认 `ac-fail`）。
+  > - 命令退出 0 但**未执行任何用例**（0 tests / 输出为空 / 被过滤器排除）⇒ 等同取证不可用，**不得据此判 pass**。
+  > - 命令**超时**（> 简报 `timeout`，缺省 10 分钟）⇒ 取证不可用。
+  > - 同一命令**至多重试 1 次**（排除抖动）；重试后仍失败且基线同样失败 ⇒ 取证不可用。（额度类失败**不重试**；取证命令的抖动不属于额度类。）
+  >
+  > kind 优先级：① 已有带证据的判据不通过 ⇒ `ac-fail`（body 第 ④ 项写明剩余哪些判据无法取证）；② 无任何判据可判定 ⇒ `blocked`。
+  >
+  > **不产出判定，但必须留痕**：由 **verifier 自己**落一份受阻记录 `.rddf/reviews/<change>-verify-blocked.md` —— 首行 `HANDOFF: <kind>`，正文含逐条判据的取证命令 + 输出摘要 + 已用轮次，**不含任何 pass 结论**。（写者是 verifier 本身：`.rddf/reviews/**` 在其写集内；**主会话代写会丢掉取证细节** —— `last_assistant_text` 会被截断，长命令最先丢。）
+  >   - ⚠ **本落点不替代 `rddf feedback` 凭据**，也不构成「不新造落点」的例外：凭据通道仍是唯一权威；受阻记录只是**审计痕迹**（轮次 + 取证细节）。
+  >   - ⚠ **已用轮次的聚合**：轮 1 受阻（记账在 `-verify-blocked.md`）、轮 2 通过（记账在 `-verify.md`）时，轮 3 从**两份文件里取较大值**（受阻记录不具判定效力，但轮次要累计）。
+  >   - **权威序**：`-verify-blocked.md` **不具判定效力**；同一 change 存在 `-verify.md` 时**以 `-verify.md` 为准**，受阻记录仅作审计痕迹。
+  >   - **主会话形态**（本节适用对象不止被派发后端）：主会话侧的 verifier 遇取证不可用 ⇒ 向用户报告分类结果（不落受阻记录、不作判定）。
+  >
+  > **5 项正文的追加句**（既有语义不变）：③ 首句固定 `阻塞类型：取证不可用 | 判据不通过`，其后写需要什么决策；④ 逐条列「已取证（命令 + 输出摘要）/ 未取证（原因）」。`--from rdd-builder` 是常量；`ac-fail` 必须带 `--ref-change <change>`。
+  >
+  > **不适用**（不是取证不可用）：① 「判据来源为空」（proposal 无 `## 验收标准` / `## Acceptance` 段）⇒ `proposal_drift` / `needs-revision`；② `rdd-verifier` skill 不可加载 ⇒ 视为未命中，走本地验收。
 - **三处落点（三元，勿混用）**：**产品落点** = `.rddf/reviews/`（验收报告与受阻记录）｜**记账落点** = `.rddf/state/verifier/`（轮次 / 审计状态机）｜**根下点文件** = `.rddf/state/.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`（**待产品侧收拢**进记账落点，收拢前见下方过渡期规则）。**记账文件不得冒充验收报告**。
 - **过渡期规则**（`ADR-class-write-scope-alignment` D1b；产品侧收拢前适用）：① `verifier` 类**只跑取证与判决**，判决落 `.rddf/reviews/<change>-verify.md`；② **状态机落盘（verdict cache / loop state / audit）由主会话代跑** —— 被派发后端在 **LLM Verification Protocol 的 Step 5**（持久化）之前停手，把证据与判决写进响应正文（产品内容落 `.rddf/reviews/`），主会话按 skill 协议补齐状态机写入（**执行 skill，不是手工 edit 状态文件** —— 保住 single writer）；③ **不改 skill 本体**；④ **产品侧收拢目录后，后端可直写全部 skill 状态**（一个目录覆盖）。
   - **症状桥接**：在 `.rddf/state/.ac-*` 收到 `Permission denied` = **本契约生效，不是故障** ⇒ 带证据与判决 `HANDOFF` 交回主会话（先例：architect 写 arch 路径被拒时同理）。
@@ -487,7 +510,13 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 2. 在**当回合响应正文首行**注明 `⚠️ 未启用 <reviewer> 审查（原因：<quota|network|denied>）—— 已用内置自检清单代替`（`edit` 类改动没有「结论」文件，响应正文是唯一必然存在的载体，不得因此省略）；
 3. **不得**把「审查者不可用」当成「审查通过」，也不得省略这条注明。
 
-> ⚠ **例外：被派发的后端不适用本降级**。`architect` 类后端在 `subagent` 不可用时**必须 `HANDOFF: blocked`**（见「被派发后端的运行身份与交回契约」），**不得**用内置自检代替审查 —— 后端无人值守，自检即自审自批。受阻时**不得完成任何收口动作**（不得转 Status、不得落审稿报告、不得登记关联 change），即使保持 `Draft` 也不例外。本节第 1–3 条只适用于**主会话**的角色。
+> ⚠ **例外：被派发的后端不适用本降级**。后端无人值守，自检即自审自批，**不得**用内置自检代替审查。逐类后果**只在「被派发后端的运行身份与交回契约（`role_class`）」定义**（本节不复述）：
+> - `architect` 类（oracle→critic 强制）：审查者不可用 ⇒ `HANDOFF: blocked`。
+> - `builder` 类（**架构面 critic 行**）：该行审查者不可用 ⇒ `HANDOFF: blocked`。⚠ 这是**新增**的受阻义务（现状只约束 `architect`）；架构面 critic 的额度耗尽是常态 ⇒ 后果显式承认为「空手交回」。
+> - `builder` 类（逐 change 验收）：审查者是 `verifier`（角色内建，非 subagent）⇒ 不因 `subagent` 不可用而受阻。
+> - `verifier` 类：无固定 subagent 审查者 ⇒ 不因 `subagent` 不可用而受阻；但取证若依赖关系类定位（谁调用 / 影响面）而 `explore` 不可用 ⇒ 按 §verifier 产出契约 的「取证不可用 ⇒ 交回」走。
+>
+> 受阻时**不得完成任何收口动作**（不得转 Status、不得落**判定类**报告、不得登记关联 change），即使保持 `Draft` 也不例外 —— **判定类**报告指「含 pass/fail 结论的验收报告」；§verifier 产出契约 的**受阻记录**（`<change>-verify-blocked.md`，不含任何判定结论）**不在此禁止范围内**。本节第 1–3 条只适用于**主会话**的角色。
 
 > 实测：2026-11-04 本机 subagent 因 Token Plan 用量上限**全部调用失败**。降级是常态需求，不是边缘情况。
 
@@ -538,6 +567,7 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` | 同上 | ADR / 架构文档 / 审稿报告（可自己跑 oracle→critic 收口） |
 | `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（**记账落点**；过渡期由主会话代跑，见 §verifier 产出契约；**派发侧要求见 plan.md 选类表** —— 本表是「能写什么」，不含「派发时 scope 必须包含什么」） | 同上 | 验收报告（只出证据与判决，**不改实现**） |
 
+- **逐类后果（被派发后端）**：审查者不可用 ⇒ `HANDOFF: blocked` —— `architect` 类（oracle→critic 强制）与 `builder` 类的**架构面 critic 行**；`builder` 的逐 change 验收（审查者是 verifier，角色内建）与 `verifier` 类**不因 `subagent` 不可用而受阻**（`verifier` 的取证依赖类定位时另按 §verifier 产出契约 走）。
 - **越类的判据是「写目标」，不是「读什么」**：读任何路径都不算越类；跑测试在 `builder`（acceptance 自查）与 `verifier`（独立取证）两类都合法。**要写的东西不在本类允许集内 ⇒ 停在动手前**，按下面的 HANDOFF 契约交回主会话。
 - **架构文档目录属 `architect` 类**（按 §架构文档范围 的**目录集口径**判定 —— 配置的 `arch_paths` ∪ fallback 目录集；被派发 session 侧用**闭合清单**实现，见 ADR D3）：`builder` 类把它们显式写进 scope 会被**直接拒绝派发**；宽 scope（如 `.` / `docs`）允许派发，但你写 arch 路径会收到 `Permission denied` —— 那不是故障，是类边界 ⇒ 按 HANDOFF 交回，不要换写法绕过。
 - **发现实际任务与本类不符 ⇒ 停下 `HANDOFF: blocked`**，不得硬做、不得自行切换类（**没有 session 内换类入口**：权限在创建时定型，`resume` 不重设）。

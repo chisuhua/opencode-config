@@ -643,6 +643,106 @@ describe("被派发后端的审查降级例外守卫（live e2e AC14 实证的 p
     expect(line).toBeTruthy()
     expect(line!).toContain("主会话")
   })
+
+  // ── delegated-verifier-evidence-gap（扩展同一 describe，不新建第二份守同一段的守卫）──
+
+  /** 例外段（逐类 bullet）与「取证不可用」段的切片 */
+  const exceptionSection = () => {
+    const start = lines.findIndex((item) => item.includes("审查者不可用时（必须降级，不得静默跳过）"))
+    const end = lines.findIndex((item) => item.includes("实测：2026-11-04"))
+    return lines.slice(start, end).join("\n")
+  }
+  const evidenceSection = () => {
+    const start = lines.findIndex((item) => item.includes("**取证不可用 ⇒ 交回**"))
+    if (start < 0) return ""
+    const rest = lines.slice(start)
+    let inFence = false
+    let end = rest.length
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i].trimStart().startsWith("```")) { inFence = !inFence; continue }
+      if (!inFence && /^- \*\*三处落点/.test(rest[i])) { end = i; break }
+    }
+    return rest.slice(0, end).join("\n")
+  }
+
+  test("AC1：取证不可用段含三段文本（定义 / pass-失败分档 / kind 优先级）+ 负向边界形态", () => {
+    const sec = evidenceSection()
+    expect(sec).not.toBe("")
+    // ① 定义句：基线对照
+    expect(sec).toContain("取证**不可用**")
+    expect(sec).toContain("基线对照")
+    expect(sec).toContain("merge-base")
+    expect(sec).toContain("不可解析")
+    // ② 分档：pass 全量 / 失败单条
+    expect(sec).toContain("pass 结论必须全量取证")
+    expect(sec).toContain("失败结论只需单条带证据的不通过")
+    // ③ kind 优先级两条
+    expect(sec).toContain("ac-fail")
+    expect(sec).toContain("`blocked`")
+    // 边界：零用例 / 超时 / 重试 1 次 / 判据来源为空 / skill 不可加载
+    expect(sec).toContain("未执行任何用例")
+    expect(sec).toContain("超时")
+    expect(sec).toContain("至多重试 1 次")
+    expect(sec).toContain("判据来源为空")
+    expect(sec).toContain("不可加载")
+    // 负向：「取证不可用」与「blocked」之间不得出现 ⇒ / 则（禁无条件蕴含）
+    expect(sec).not.toMatch(/取证不可用[^\n]{0,12}(⇒|则)[^\n]{0,12}blocked/)
+  })
+
+  test("AC2：例外段逐类独立 bullet（受例 bullet 内类名与 HANDOFF: blocked 同行；类名至多一条受例 bullet）", () => {
+    const sec = exceptionSection()
+    const bullets = sec.split("\n").filter((l) => l.trimStart().startsWith("> - "))
+    const ruled = bullets.filter((l) => l.includes("HANDOFF: blocked"))
+    expect(ruled.length).toBeGreaterThanOrEqual(2) // architect + builder（架构面）
+    for (const b of ruled) {
+      expect(b).toMatch(/`(architect|builder)`/)
+    }
+    // 每个类名至多出现在一条**受例** bullet（按 bullet 的**首个类名**计 —— 行内提及别的类不算）
+    for (const cls of ["architect", "builder", "verifier"]) {
+      const hits = ruled.filter((l) => l.trimStart().startsWith("> - `" + cls + "`"))
+      expect(hits.length).toBeLessThanOrEqual(1)
+    }
+    // 逐类后果的定义处（指针）+ 不受阻的两类
+    expect(sec).toContain("逐类后果")
+    expect(sec).toContain("只在")
+    expect(bullets.some((l) => l.includes("`verifier`") && l.includes("不因 `subagent` 不可用而受阻"))).toBe(true)
+    // 负向：explore 不得与 blocked 同行
+    expect(sec).not.toMatch(/explore[^\n]*HANDOFF: blocked/)
+    expect(sec).not.toMatch(/HANDOFF: blocked[^\n]*explore/)
+  })
+
+  test("AC3：HANDOFF 允许 kind 集合 == {needs-revision, ac-fail, blocked}（从 §HANDOFF 契约动态抽取）", () => {
+    const start = lines.findIndex((l) => l.includes("#### HANDOFF：交回主会话的凭据化契约"))
+    expect(start).toBeGreaterThan(-1)
+    const rest = lines.slice(start + 1)
+    const end = rest.findIndex((l) => /^#### /.test(l))
+    const section = rest.slice(0, end < 0 ? rest.length : end).join("\n")
+    // kind 集合取自「kind 只用既有三类：…」那句（`--kind <kind>` 是占位符，不是值域）
+    const kindLine = section.split("\n").find((l) => l.includes("kind 只用既有三类"))!
+    const kinds = new Set([...kindLine.matchAll(/`([a-z-]+)`/g)].map((m) => m[1]))
+    expect([...kinds].sort()).toEqual(["ac-fail", "blocked", "needs-revision"])
+  })
+
+  test("AC4/AC5：负向（explore×blocked）+ 未新增（token allowlist / SLOT_STATES / outcome 集合）", () => {
+    const sec = exceptionSection()
+    expect(sec).not.toMatch(/explore[^\n]*HANDOFF: blocked/)
+    expect(sec).not.toMatch(/HANDOFF: blocked[^\n]*explore/)
+    // 未新增：SlotState 枚举不变
+    expect([...SLOT_STATES]).toEqual(["dispatching", "active", "idle", "suspended", "tombstone"])
+  })
+
+  test("AC6：文本锚点齐（基线 / 任一判据 / 不产出判定 / 阻塞类型：）+ 防回归句仍在", () => {
+    const sec = evidenceSection()
+    expect(sec).toContain("基线")
+    expect(sec).toContain("任一判据")
+    expect(sec).toContain("不产出判定")
+    expect(sec).toContain("阻塞类型：")
+    // 防回归：既有「0 工具调用就判 pass = 假阳性，判定作废」句与报告落点句**仍在**
+    const build = lines.join("\n")
+    expect(build).toContain("0 工具调用就判 pass")
+    expect(build).toContain("判定作废")
+    expect(build).toContain("报告落点")
+  })
 })
 
 describe("交回后的收尾三问（resume-precheck-guidance 投影守卫）", () => {
