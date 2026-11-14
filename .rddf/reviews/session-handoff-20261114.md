@@ -32,17 +32,22 @@
 | 架构内容分流（讨论/决策/实现） | `prompts/plan.md` 的「架构内容分流」小节（build.md 的「落点路由」是**被引用**的真源，只出现一次） | plan / front 按标题名引用 |
 | 交回后的收尾三问 | `prompts/plan.md` 的同名小节 | `prompts/front.md` §3.3 按标题名引用 |
 | HANDOFF kind 集合 | `prompts/build.md` §HANDOFF 契约的「kind 只用既有三类」句 | 守卫 AC3 **动态抽取** |
-| verifier 状态路径 | `VERIFIER_OWNS_PATHS`（6 项 = owns 声明 4 + 实际写入未声明 2） | 守卫 + 状态收拢 RFC |
+| verifier 状态路径 | `VERIFIER_OWNS_PATHS`（**6 项，全部在 `.rddf/state/verifier/` 下** —— 2026-11-14 产品侧收拢完成；
+  skill 的 `owns:` 也已补齐为 6 项） | 守卫 AC6（派生视图归零）+ 消费侧退役批 v2.24 |
 | 治理面归属 | `prompts/build.md` §治理面作用域表 + 「本仓特例裁定」（`docs/adr/**` = ADR 行） | 每次治理面改动 |
 
 ## 4. 下一动作的三个入口（按优先级）
 
-1. **额度恢复时**：跑 CS-5（见 §2 #1，5 分钟）。
+1. ~~**额度恢复时**：跑 CS-5~~ —— **已完成**（2026-11-14，e2e commit `a0ac808`；并**加固**了首版空转的断言）。
 2. **任何时候**：`subagent-contract-critic-enforce` 的**触发条件是 `N ≥ 150`** —— 先跑
    `bun scripts/audit-subagent-prompts.ts --agent critic --json`，数 `messageIndex===0 && !evaluation.ok`；
    `≥150` 就按 `openspec/changes/subagent-contract-critic-enforce/tasks.md` 的**块 R**（R1–R8，逐条命令）复评。
-3. **拿到产品仓权限时**：按 `.rddf/reviews/rdd-verifier-state-consolidation-rfc.md` §4.8 做 8 步迁移
-   （**§4.0 必须最先做**：两处 `_cache_path` 先合成一个路径定义点，否则归档门会静默失效）。
+   （当前 `N = 112`；`t1 − t0 = 0 < 7 天` ⇒ 两个门都未到。）
+3. ~~**拿到产品仓权限时**：做 8 步迁移~~ —— **已完成**（2026-11-14，产品侧 change `consolidate-verifier-state`；
+   消费侧退役批 = 本仓 `v2.24`）。**剩余**：产品侧该 change 的 `openspec archive`（待其仓全量回归门）。
+4. **新出现的一条**：守卫的**枚举式词表**（AC8/AC11 的措辞判据）仍是**开集假设** ——
+   根治方向 = 文档投影 ↔ `VERIFIER_ALLOW_ROOTS` **结构比对**（已登记在
+   `.rddf/improvements/rdd-verifier-state-consolidation.md` 的演进项）。
 
 ## 5. 本轮踩过的坑（同类问题请直接对照）
 
@@ -54,11 +59,17 @@
 | **声称闭合实则未落盘** | 一个批量 patch 脚本中途 assert 失败 ⇒ 前面几条修改没写进文件，但记录里写了「已闭合」 | 改完必须**回读文件**验证（critic 用 grep 抓到） |
 | **治理文件里预断言未发生的事** | CHANGELOG 写死了还没跑的审查结论与「已归档」 | 结论**只能在记录落盘后**写；守卫用 `existsSync` 做机械判据 |
 | **两处 `_cache_path`** | 产品侧同一路径两个定义点 ⇒ 迁移只改一处 ⇒ 归档门静默失效 | 迁移前先**收敛定义点**；且注意 root 来源不同（worktree）不可合并 |
+| **e2e 断言拿模型措辞当证据** | CS-5 首版：断言①「测试失败」空转（fixture 初始就失败）+ 前提不可达（verifier 按契约不能改 `src/**`）；
+  CS-6 首版：`! grep "Permission denied"` 命中模型**自述**「没有出现 Permission denied」⇒ 假阳性 | e2e 断言只认**文件系统事实**与**结构化字段**（工具 `state.error` / ledger `blocked_reason`），**不断言模型措辞** |
+| **改了常量，漏改面向模型的派生面** | delegate 工具 schema 的 `role_class` 描述手抄「edit 上限=.rddf/reviews」—— front 据此可能把记账落点排除出 scope | 面向模型的文本必须**由常量派生**（`verifierAllowRootLabels()`），并加守卫钉住 |
+| **治理工具自身的范围 bug** | `scripts/build_critic_prompt.sh --staged` 只影响 stat、diff 正文仍取未暂存 ⇒ 审稿人可能读到另一批改动 | diff 正文与 stat 必须**同范围**；组合参数直接**互斥拒斥** |
 
 ## 6. 验证基线（下次改动前的对照）
 
 ```
-cd ~/.config/opencode        && bun test tests/            # 532 pass / 0 fail（8 files）
+cd ~/.config/opencode        && bun test tests/            # 533 pass / 0 fail（8 files）
 cd ~/.config/opencode        && bash scripts/check-upstream-anchors.sh   # 23/23
-cd /workspace/main/rdd-workflow-e2e && bats -r tests/       # 88 ok（默认态，runtime 用例全 skip）
+cd /workspace/main/rdd-workflow-e2e && bats -r tests/       # 默认态全 skip（runtime 用例不进 CI）
+cd /workspace/main/rdd-workflow && python3 -m pytest tests/unit tests/integration -q   # 3492 passed / 2 skipped
+cd /workspace/main/rdd-workflow && bats tests/integration/test_rdd_verifier_*.bats …   # 43 ok（verifier/archive-gate）
 ```
