@@ -859,8 +859,15 @@ describe("能力面判据对齐（role-class-rubric-alignment 投影守卫）", 
       const verifier = rows.find((l) => l.includes("`verifier`"))!
       expect(architect).toContain(".rddf/reviews")
       expect(architect).toContain("arch-docs.json")
-      expect(verifier).toContain("仅")
       expect(verifier).toContain(".rddf/reviews")
+    }
+    // 两表的 verifier 行**必须一致**（D3 修订后允许集已是两项：产品落点 + 记账落点）
+    const [planVerifier, buildVerifier] = [PLAN_TABLE, BUILD_TABLE].map((rows) =>
+      rows.find((l) => l.includes("`verifier`"))!,
+    )
+    for (const token of [".rddf/reviews", ".rddf/state/verifier"]) {
+      expect(planVerifier).toContain(token)
+      expect(buildVerifier).toContain(token)
     }
     for (const cls of ["`builder`", "`architect`", "`verifier`"]) {
       expect(FRONT_MD).toContain(cls)
@@ -1113,5 +1120,114 @@ describe("Accepted ADR 措辞修订 + 治理面归属守卫（adr-d5-async-compl
     for (const token of new Set(tokens)) {
       expect(known).toContain(token)
     }
+  })
+})
+
+describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", () => {
+  const PLAN_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
+  const FRONT_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "front.md"), "utf8")
+  const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
+  const ADR_PARENT = readFileSync(
+    path.join(import.meta.dir, "..", "docs", "adr", "ADR-backend-handoff-role-class.md"),
+    "utf8",
+  )
+  const BACKLOG = path.join(
+    import.meta.dir, "..", ".rddf", "improvements", "rdd-verifier-state-consolidation.md",
+  )
+
+  test("AC7：三处文本一致（plan 选类表 / front §3.1 / build 运行身份表）含写集与 scope 义务", () => {
+    // plan.md 选类表 verifier 行
+    const planRow = PLAN_MD.split("\n").find((l) => l.includes("`verifier`") && l.includes(".rddf/reviews"))!
+    expect(planRow).toContain(".rddf/state/verifier")
+    expect(planRow).toContain("scope")
+    expect(planRow).toMatch(/scope[^|]*必须/)
+    // front.md §3.1 的 role_class 行
+    const frontRow = FRONT_MD.split("\n").find((l) => l.includes("`role_class`（选填"))!
+    expect(frontRow).toContain(".rddf/state/verifier")
+    expect(frontRow).toMatch(/scope[^|]*必须同时包含/)
+    // build.md 运行身份表 verifier 行（**在该段内**定位；后端侧：**不是**后端义务 ⇒ 括注指向派发侧）
+    const buildLines = BUILD_MD.split("\n")
+    const identityStart = buildLines.findIndex((l) => l.startsWith("#### 被派发后端的运行身份与交回契约"))
+    expect(identityStart).toBeGreaterThan(-1)
+    const buildRow = buildLines
+      .slice(identityStart)
+      .find((l) => l.startsWith("| `verifier` |"))!
+    expect(buildRow).toContain(".rddf/reviews/**")
+    expect(buildRow).toContain(".rddf/state/verifier/**")
+    expect(buildRow).toContain("plan.md")
+  })
+
+  test("AC8：§verifier 产出契约 含过渡期规则四要素 + 症状桥接句", () => {
+    const sec = BUILD_MD.split("\n")
+    const line = sec.find((l) => l.trimStart().startsWith("- **过渡期规则**"))!
+    expect(line).toContain("只跑取证与判决")
+    expect(line).toContain(".rddf/reviews/")
+    expect(line).toContain("由主会话代跑")
+    expect(line).toContain("不改 skill 本体")
+    expect(line).toContain("后端可直写")
+    // 症状桥接
+    const bridge = sec.find((l) => l.includes("症状桥接"))!
+    expect(bridge).toContain("Permission denied")
+    expect(bridge).toContain("不是故障")
+    expect(bridge).toContain("HANDOFF")
+  })
+
+  test("AC9：§审查配对 builder（架构面）行含「scope 必须包含」+「未包含时只落响应正文」", () => {
+    const row = BUILD_MD.split("\n").find((l) => l.includes("`builder`（架构面）"))!
+    expect(row).toContain("scope")
+    expect(row).toMatch(/scope[^|]*必须包含/)
+    expect(row).toContain("只落响应正文")
+  })
+
+  test("AC10：父篇 D3 verifier 行已落改 + Status 有修订记录（未完成指针已删）", () => {
+    const row = ADR_PARENT.split("\n").find((l) => l.startsWith("| `verifier` |"))!
+    expect(row).toContain(".rddf/state/verifier/**")
+    expect(row).toContain("ADR-class-write-scope-alignment")
+    expect(row).not.toContain("仅 `.rddf/reviews/**`")
+    const status = ADR_PARENT.split("\n").find((l) => l.includes("| Status |"))!
+    expect(status).toContain("D3 verifier 写集修订")
+    expect(status).not.toContain("实施时与代码同批落改")
+  })
+
+  test("AC11：build.md 内部三处状态文件描述收口为三元表述", () => {
+    const rows = BUILD_MD.split("\n").filter((l) => l.includes(".rddf/state/verifier"))
+    // 三处（:324 事实句 / :333 轮次句 / :393 归属表行）都应出现
+    expect(rows.length).toBeGreaterThanOrEqual(3)
+    const joined = rows.join("\n")
+    expect(joined).toContain("待产品侧收拢")
+    // 负向：不得声称根下点文件已在 verifier/ 内
+    expect(joined).not.toMatch(/\.ac-verdict[^\n]*已在[^\n]*verifier/)
+  })
+
+  test("AC13：§verifier 产出契约 含落点区分（产品 vs 记账），负向不得写反", () => {
+    const line = BUILD_MD.split("\n").find((l) => l.includes("三处落点"))!
+    expect(line).toContain("产品落点")
+    expect(line).toContain("记账落点")
+    expect(line).toContain("待产品侧收拢")
+    expect(line).toContain("记账文件不得冒充验收报告")
+    const sec = BUILD_MD.split("\n")
+    expect(sec.some((l) => l.includes("状态/记账文件写入") && l.includes(".rddf/reviews/"))).toBe(false)
+  })
+
+  test("AC14：活文档里不再有把 verifier 写集描述为「仅 .rddf/reviews」的句子", () => {
+    const stale = /verifier[^\n]{0,40}(仅|只允许|只能)[^\n]{0,20}\.rddf\/reviews/
+    const files = [
+      ["prompts/build.md", BUILD_MD],
+      ["prompts/plan.md", PLAN_MD],
+      ["prompts/front.md", FRONT_MD],
+      ["docs/MULTI-AGENT-DESIGN.md", readFileSync(path.join(import.meta.dir, "..", "docs", "MULTI-AGENT-DESIGN.md"), "utf8")],
+      ["docs/backend-handoff-role-class.md", readFileSync(path.join(import.meta.dir, "..", "docs", "backend-handoff-role-class.md"), "utf8")],
+    ] as const
+    for (const [name, text] of files) {
+      expect(`${name}: ${text.match(stale)?.[0] ?? "clean"}`).toContain("clean")
+    }
+  })
+
+  test("AC18：产品侧收拢 backlog stub 已建，且其 Acceptance 含 owns 核对项", () => {
+    expect(existsSync(BACKLOG)).toBe(true)
+    const text = readFileSync(BACKLOG, "utf8")
+    expect(text).toContain("VERIFIER_OWNS_PATHS")
+    expect(text).toContain("owns")
+    expect(text).toMatch(/逐项一致|核对/)
   })
 })

@@ -223,6 +223,7 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 
 - **配置文件**：`<cwd>/.rddf/config/arch-docs.json`
 - **字段**：`arch_paths[]`（架构决策类文档目录，前缀匹配）、`exclude_paths[]`（排除目录）；键顺序以脚本生成器输出为准（`arch_paths` 在前），手写配置勿在 `arch_paths` 之前的字符串值里嵌入 `"arch_paths": [` 字面量（解析器按第一个键名匹配）
+- **禁则**：`arch_paths` **不得**取 `.rddf/state` 的**祖先或本身**（`.` / `.rddf` / `.rddf/state`）—— 状态目录不是架构文档面（它是运行时状态与记账落点）。
 - **目录集口径（唯一一套，不要另立）**：架构文档目录 = §档位选择 的 `arch` 档路径集 —— 配置里的 `arch_paths[]` ∪ **fallback 目录集**（`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design` ∪ `scripts/arch-docs-init.sh` survey 口径的顶层 `adr/`、`rfc/`、`specs/`）∪ **用户明确指定的目录**；一律取**实际存在**的那些。⚠ **受管前提**：被派发 session 侧的架构目录判定用**闭合清单**（即上面这 8 项）；survey 发现的**其他**目录必须先固化进 `arch_paths` 才受管辖 —— 否则「主会话可写范围」会大于「派发侧 deny 范围」，留下一个 builder 可写架构文档的后门。
 - **判定三态**：
   1. **配置存在、`arch_paths` 非空、且其中至少一条路径实际存在** → 可写范围 = `arch_paths[]`；**部分路径失效时仍属本态**（可写范围不变），`--check` 报 `STALE`、同样以 `/arch-docs-init --refresh` 收敛；**路径全部失效时**：可写范围按第 2 态落到 fallback 目录集，**同时属于配置漂移**（`--check` 报 `STALE`、exit 2）→ 提示用 `/arch-docs-init --refresh` 修复；
@@ -321,7 +322,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 ~/.config/opencode/scripts/rdd-skills.sh --json | grep -o '"rdd-verifier"'
 ```
 
-命中 → 调 `skill({id: "rdd-verifier"})`（或 `rddf rdd-verify` 准备上下文），**按其 LLM Verification Protocol 执行判定**。**结果以它写出的 `.rddf/state/.ac-verdict-<change>.json` 为准**，本节报告只引用它 + 补它不覆盖的项（第 5 步遗留清扫）。不要另写一份重复的 verdict。
+命中 → 调 `skill({id: "rdd-verifier"})`（或 `rddf rdd-verify` 准备上下文），**按其 LLM Verification Protocol 执行判定**。**结果以它写出的 `.rddf/state/.ac-verdict-<change>.json` 为准**（该缓存是**归档门的输入**），本节报告只引用它 + 补它不覆盖的项（第 5 步遗留清扫）。不要另写一份重复的 verdict。⚠ 该文件在 `.rddf/state/` **根**下（**待产品侧收拢**进记账落点 `.rddf/state/verifier/`）⇒ 过渡期由主会话代跑状态机（见上方过渡期规则）。
 
 未命中（无 openspec change / 无 AC 段 / P3 gate 未触发 / skill 不可加载）→ 走上面 1–5 步本地验收，判据取自「判据来源」。**本地验收的额外门**：`.rddf/state/iteration.json` 中 `tasks_done == tasks_total > 0`——任务没做完不判通过。
 
@@ -331,6 +332,9 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 
 - **不改实现**（角色边界）：列出失败项 + 证据 + 复现命令，路由回 build
 - **重试上限 3 轮**（与 `RDDF_VERIFIER_MAX_LOOPS=3` 对齐）：同一 change 第 3 轮仍失败 → `halted`，写审计记录交用户裁决，不再自动打回。走 skill 时轮次记在 `.rddf/state/verifier/<change>.json`；本地验收记在报告文件的「已用轮次」里，下一轮先读它再决定是否还能打回
+- **三处落点（三元，勿混用）**：**产品落点** = `.rddf/reviews/`（验收报告与受阻记录）｜**记账落点** = `.rddf/state/verifier/`（轮次 / 审计状态机）｜**根下点文件** = `.rddf/state/.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`（**待产品侧收拢**进记账落点，收拢前见下方过渡期规则）。**记账文件不得冒充验收报告**。
+- **过渡期规则**（`ADR-class-write-scope-alignment` D1b；产品侧收拢前适用）：① `verifier` 类**只跑取证与判决**，判决落 `.rddf/reviews/<change>-verify.md`；② **状态机落盘（verdict cache / loop state / audit）由主会话代跑** —— 被派发后端在 skill 的 Step 5 之前停手，把证据与判决写进响应正文（产品内容落 `.rddf/reviews/`），主会话按 skill 协议补齐状态机写入；③ **不改 skill 本体**；④ **产品侧收拢目录后，后端可直写全部 skill 状态**（一个目录覆盖）。
+  - **症状桥接**：在 `.rddf/state/.ac-*` 收到 `Permission denied` = **本契约生效，不是故障** ⇒ 带证据与判决 `HANDOFF` 交回主会话（先例：architect 写 arch 路径被拒时同理）。
 - **失败分类**（走 skill 时由 skill 判，本地验收自己判）：`implementation_gap`（实现缺失 → 回 build 写代码）vs `proposal_drift`（实现与 AC 不符 → 回 planner 改 proposal）。判不出时默认 gap——重跑代码比重写提案便宜
 
 **报告落点**：`.rddf/reviews/<change-or-task>-verify.md`，必含判据来源、逐条判定 + 证据、失败项与路由建议、遗留清扫结果、已用轮次。
@@ -390,7 +394,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | `openspec/changes/<name>/tasks.md` | `builder` 内置起草 | `rdd-builder` **owns**；`rdd-quick` 在 mode a 最小化生成 |
 | `openspec/changes/<name>/design.md` | `builder` 角色可写并负责**定稿**；opencode `plan` agent 的产出视为**草稿** | **无 skill owns** —— `rdd-builder` 的 owns 已移除该条目（P1 `phase1_plan.sh` 只补 `tasks.md`，从不生成 `design.md`）；`rdd-planner` / `rdd-quick` 均 not_owns → 由执行该 change 的 agent 写 |
 | `docs/adr/ADR-*.md` | `architect`（受「architect 产出形态契约」约束） | `rdd-arch` **owns** |
-| `.rddf/state/verifier/*` | `verifier` 不写 | `rdd-verifier` **owns**（agent 只写 `.rddf/reviews/`） |
+| `.rddf/state/verifier/*` | `verifier` 类**可写**（记账落点，在其允许集内；**过渡期由主会话代跑**） | `rdd-verifier` **owns**（同一路径，single writer；产品落点仍是 `.rddf/reviews/`） |
 | `.rddf/state/.planner-handoff.json` | 任何角色都不手写 | `rdd-planner` **owns** |
 
 **内置流程的降级细节**：
@@ -425,7 +429,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | `architect` | **oracle** → 再 **critic** | oracle：这个决策在目标场景**会怎么坏**（失败模式 / 边界 / 被否掉的替代方案是否真的更差）；critic：**与既有 ADR / 契约是否冲突**（`arch` 档） | 新建 ADR、或反转既有决策 → **双审，oracle 先行**；只同步主题文档 / 改措辞 → 只 oracle；**ADR 的纯错字 / 链接 / 日期修正** → 不审（`prompts/**` 的错字走下方治理面行，那行不豁免） | 每个 ADR：oracle 1 轮 + critic 1 轮；**BLOCKER → 允许 1 次复审**（只验闭合） | ADR 的 Decision 段 / 选项对比表 /「后果 / 代价」章 /「Verification（可勾选验收判据）」章 —— finding 按其所属段落落点修，不塞进别的章 |
 | `planner` | **metis** | 隐藏意图 / 需求歧义 / AI slop 风险 / 缺失的验收标准 / 边界情况 | 新建 improvement 或 proposal，或**重写 ≥ 1/3**（`git diff --numstat` 的新增+删除行数 ≥ 原文件行数的 1/3）；纯状态推进（approved → in-progress）不审 | 该 improvement **总计 1 轮**（场景驱动的「设计前 gap 分析」不另计一轮） | improvement 的「验收标准」「Capabilities」段；proposal 的 Out of Scope |
 | `builder` | **verifier**（角色内建，不是 subagent） | AC 是否逐条满足（每条都要工具证据）/ 边界与错误路径 / 资源释放 / **遗留清扫**（TODO、半截实现、临时日志、被 skip 的测试、未替换的 mock） | **每个 change 完成时必审**，不可跳过。`rdd-quick` 路径**不产生 openspec change**（无空集豁免）→ 按「每个 quick 任务完成时」审 | 3 轮（与 `RDDF_VERIFIER_MAX_LOOPS` 对齐）；第 3 轮仍失败 → halted 交用户 | `.rddf/reviews/<change>-verify.md` |
-| `builder`（架构面） | **critic** | 见「何时调 critic」的 5 个条件 | 触及公开 API / 跨模块契约 / 与 ADR 冲突 / 用户要求 / 合并前 | 每 change 2 轮 | `.rddf/reviews/` 或 change 的 notes |
+| `builder`（架构面） | **critic** | 见「何时调 critic」的 5 个条件 | 触及公开 API / 跨模块契约 / 与 ADR 冲突 / 用户要求 / 合并前 | 每 change 2 轮 | `.rddf/reviews/<change>-arch-review.md`（**派发时 `scope` 必须包含该路径** —— 这是写盘的前提，不是默认权利；**未包含时 findings 只落响应正文**，不落盘 ≠ 失败，是边界生效）或 change 的 notes |
 | `architect`（**治理面**） | **oracle** → **critic**（何时必审见下） | oracle：这条规则在**哪些场景会让 agent 产生错误行为**；critic：与既有不变式 / 角色权限 / 既有规则是否**自相矛盾** | 作用域见下。critic **何时必审**改用可点数判据：本 patch 是否**增删/修改了表格行、不变式条目、自查清单项、或触发条件本身** → 是则必审；只改叙述性文字 → 不审 | **一次改动**（= 一个 patch series / 一次 commit 内触及治理面文件的**集合**）：oracle 1 + critic 1。高影响 finding 视为 BLOCKER → 允许 **1 次复审**（只验 BLOCKER 是否闭合） | 规则正文 + 本节降级自检清单 + **当回合响应正文里的逐条处置记录** |
 
 **治理面作用域（写成可解析的路径，按字面执行）**：
@@ -532,7 +536,7 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 |---|---|---|---|
 | `builder`（缺省） | 简报的 `scope` **减去架构文档目录**（窄目标派发被拒；宽 scope 下写 arch 路径被拒） | explore / librarian / oracle / metis / critic | 代码 / 测试 |
 | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` | 同上 | ADR / 架构文档 / 审稿报告（可自己跑 oracle→critic 收口） |
-| `verifier` | 仅 `.rddf/reviews/**` | 同上 | 验收报告（只出证据与判决，**不改实现**） |
+| `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（**记账落点**；过渡期由主会话代跑，见 §verifier 产出契约；**派发侧要求见 plan.md 选类表** —— 本表是「能写什么」，不含「派发时 scope 必须包含什么」） | 同上 | 验收报告（只出证据与判决，**不改实现**） |
 
 - **越类的判据是「写目标」，不是「读什么」**：读任何路径都不算越类；跑测试在 `builder`（acceptance 自查）与 `verifier`（独立取证）两类都合法。**要写的东西不在本类允许集内 ⇒ 停在动手前**，按下面的 HANDOFF 契约交回主会话。
 - **架构文档目录属 `architect` 类**（按 §架构文档范围 的**目录集口径**判定 —— 配置的 `arch_paths` ∪ fallback 目录集；被派发 session 侧用**闭合清单**实现，见 ADR D3）：`builder` 类把它们显式写进 scope 会被**直接拒绝派发**；宽 scope（如 `.` / `docs`）允许派发，但你写 arch 路径会收到 `Permission denied` —— 那不是故障，是类边界 ⇒ 按 HANDOFF 交回，不要换写法绕过。

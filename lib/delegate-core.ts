@@ -719,9 +719,49 @@ export function archDenyRules(workRoot: string): Array<{ action: string; resourc
  */
 export function classAllowRoots(roleClass: RoleClass, projectRoot: string): string[] {
   if (roleClass === "builder") return []
-  if (roleClass === "verifier") return [".rddf/reviews"]
+  if (roleClass === "verifier") return [...VERIFIER_ALLOW_ROOTS]
   return [...archRoots(projectRoot), ".rddf/reviews", ".rddf/config/arch-docs.json"]
 }
+
+/**
+ * `rdd-verifier` skill 的 `role.boundaries.owns`（**单点常量**）。
+ *
+ * 用途：`verifier` 类的**写集上限**（`classAllowRoots`）+ 守卫的「代码 ↔ skill owns」对照面。
+ * ⚠ **同步是人工的**：skill 在 `~/.agents/skills/**`（仓外），仓库 CI 的 `bun test` 不能依赖它
+ * ⇒ 无法在守卫里直接读 skill 的 frontmatter。产品侧给 owns 加第 7 个路径时**本守卫不会红**；
+ * 该残留由 backlog `rdd-verifier-state-consolidation`（收拢目录时一并核对）承担。
+ */
+export const VERIFIER_OWNS_PATHS: readonly string[] = [
+  ".rddf/state/verifier/<name>.json",
+  ".rddf/state/verifier/<name>.audit.jsonl",
+  ".rddf/state/.ac-verdict-*.json",
+  ".rddf/state/.ac-verification.jsonl",
+  ".rddf/state/.ac-verifier-blocked.jsonl",
+  ".rddf/state/rdd-verify-context-<change>.json",
+]
+
+/**
+ * owns 里**不在** `.rddf/state/verifier/` 子目录下、因而**不在** `verifier` 允许集内的那些
+ * （**由常量派生**，不得手抄第二份）。
+ *
+ * 它们是产品侧的 **backlog**：skill 下版应把它们收拢进 `verifier/` 子目录
+ * （backlog `rdd-verifier-state-consolidation`）。过渡期由主会话代跑状态机落盘
+ * （见 `ADR-class-write-scope-alignment` D1b）。
+ */
+export const VERIFIER_BACKLOG_ROOT_FILES: readonly string[] = VERIFIER_OWNS_PATHS.filter(
+  (path) => !path.startsWith(".rddf/state/verifier/"),
+)
+
+/**
+ * `verifier` 类的**内置**允许写根（`classAllowRoots("verifier")` 的内容）。
+ *
+ * - `.rddf/reviews/**` = **产品落点**（验收报告）
+ * - `.rddf/state/verifier/**` = **记账落点**（skill 自己的轮次 / 审计状态机）
+ *
+ * ⚠ **上限 ≠ 授权**：edit 权限只由 `scopeEditRules(scope)` 派生 ⇒ 派发时 `scope` 仍须包含这两个目录。
+ * ⚠ **不得**把 `.rddf/state` 的其它路径（`pair.json` / `role.json` / `ledger.jsonl` / `sessions.json`）加进来。
+ */
+export const VERIFIER_ALLOW_ROOTS: readonly string[] = [".rddf/reviews", ".rddf/state/verifier"]
 
 /**
  * scope 项归一化（**单一实现**，`scopeEditRules` 与 class 相容性校验共用）。

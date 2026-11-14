@@ -36,6 +36,10 @@ import {
   assertRoleClassCompatible,
   buildBrief,
   classAllowRoots,
+  VERIFIER_ALLOW_ROOTS,
+  VERIFIER_BACKLOG_ROOT_FILES,
+  VERIFIER_OWNS_PATHS,
+  isPathWithin,
   classPermissions,
   classSubagentRules,
   isPathWithin,
@@ -950,6 +954,37 @@ describe("权限组装：edit 与 subagent 净效果（D3 / D4）", () => {
     expect(evaluateEffect(perms, "edit", "src/a.ts")).toBe("deny")
   })
 
+  test("AC4（组合路径）：verifier scope 含记账目录 ⇒ 派发被接受 + 记账可写 + .rddf/state 其它文件仍拒", () => {
+    const repo = archRepo("perm-verifier-scope", { archPaths: ["docs/adr"] })
+    const scope = [".rddf/reviews", ".rddf/state/verifier"]
+    // ① 派发被接受（类上限含该子目录 ⇒ 不抛「越界」）
+    expect(() => assertRoleClassCompatible({ role_class: "verifier", scope }, repo)).not.toThrow()
+    const perms = classPermissions({
+      roleClass: "verifier",
+      workRoot: repo,
+      scope,
+      kind: "engineering",
+      grants: [],
+    })
+    // ② 记账落点可写（授权来自 scope，不是来自类上限）
+    expect(evaluateEffect(perms, "edit", ".rddf/state/verifier/x.json")).toBe("allow")
+    // ③ 上限**不泄漏为授权**：.rddf/state 的其它路径仍拒
+    expect(evaluateEffect(perms, "edit", ".rddf/state/pair.json")).toBe("deny")
+  })
+
+  test("AC4 后半：scope 不含记账目录 ⇒ 写记账目录被拒（上限 ≠ 授权）", () => {
+    const repo = archRepo("perm-verifier-noallow", { archPaths: ["docs/adr"] })
+    const perms = classPermissions({
+      roleClass: "verifier",
+      workRoot: repo,
+      scope: [".rddf/reviews"],
+      kind: "engineering",
+      grants: [],
+    })
+    expect(evaluateEffect(perms, "edit", ".rddf/reviews/x.md")).toBe("allow")
+    expect(evaluateEffect(perms, "edit", ".rddf/state/verifier/x.json")).toBe("deny")
+  })
+
   test("三类 subagent 白名单一致：只读 agent allow；general / context-builder / build deny", () => {
     const repo = archRepo("perm-subagent", { archPaths: ["docs/adr"] })
     for (const rc of ["builder", "architect", "verifier"] as const) {
@@ -990,7 +1025,7 @@ describe("权限组装：edit 与 subagent 净效果（D3 / D4）", () => {
   test("classAllowRoots：builder 无上限 / verifier 只 reviews / architect 三元并集", () => {
     const repo = archRepo("allow-roots", { archPaths: ["docs/adr"] })
     expect(classAllowRoots("builder", repo)).toEqual([])
-    expect(classAllowRoots("verifier", repo)).toEqual([".rddf/reviews"])
+    expect(classAllowRoots("verifier", repo)).toEqual([".rddf/reviews", ".rddf/state/verifier"])
     expect(classAllowRoots("architect", repo)).toEqual([
       "docs/adr",
       ".rddf/reviews",
@@ -1322,4 +1357,76 @@ afterAll(() => {
   } catch {
     /* 清理失败不影响测试结论 */
   }
+})
+
+// ── class-write-scope-alignment（AC1 / AC2 / AC3 / AC5 / AC6 / AC12）─────────
+
+describe("verifier 写集：上限 vs 授权（class-write-scope-alignment）", () => {
+  test("AC1：verifier 允许集 == {.rddf/reviews, .rddf/state/verifier}（集合断言，顺序无关）", () => {
+    const repo = archRepo("v-roots")
+    expect([...classAllowRoots("verifier", repo)].sort()).toEqual([".rddf/reviews", ".rddf/state/verifier"])
+  })
+
+  test("AC2：builder 仍 []；architect 不含 .rddf/state/verifier", () => {
+    const repo = archRepo("v-others")
+    expect(classAllowRoots("builder", repo)).toEqual([])
+    expect(classAllowRoots("architect", repo)).not.toContain(".rddf/state/verifier")
+    expect(classAllowRoots("architect", repo)).toContain(".rddf/reviews")
+  })
+
+  test("AC3：6 个 scope 形态（放行 3 / 拒 3）", () => {
+    const repo = archRepo("v-forms")
+    const ok = (scope: string) =>
+      expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: [scope] }, repo)).not.toThrow()
+    const bad = (scope: string) =>
+      expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: [scope] }, repo)).toThrow(/越界/)
+    ok(".rddf/state/verifier/x.json")
+    ok(".rddf/state/verifier")
+    ok(".rddf/state/verifier/")
+    bad(".rddf/state/pair.json")
+    bad(".rddf/state/verifier2/x.json") // 兄弟目录（前缀语义按路径段）
+    bad(".rddf/reviews/../state/pair.json") // 穿越（归一化后越界）
+  })
+
+  test("AC5：负向不变量 —— 内置条目不等于/祖先于 .rddf/state；后代仍允许；合法配置不红", () => {
+    const repo = archRepo("v-invariant")
+    // 内置条目逐项检查：不得**等于** `.rddf/state`、也不得是它的**祖先**（`.rddf/state` 不落在 root 之下）
+    for (const root of VERIFIER_ALLOW_ROOTS) {
+      expect(root).not.toBe(".rddf/state")
+      expect(".rddf/state".startsWith(root + "/")).toBe(false)
+    }
+    // 后代（`.rddf/state/verifier`）**仍被允许** ⇒ 判据不是「含 state 子串」
+    expect(classAllowRoots("verifier", repo)).toContain(".rddf/state/verifier")
+    // 合法配置：`arch_paths` 取 `.rddf/state/adr`（后代）⇒ architect 不因此越界
+    const repo2 = archRepo("v-invariant-ok", { archPaths: [".rddf/state/adr"] })
+    mkdirSync(path.join(repo2, ".rddf", "state", "adr"), { recursive: true }) // 配置路径须存在才生效（态 1）
+    expect(classAllowRoots("architect", repo2)).toContain(".rddf/state/adr")
+  })
+
+  test("AC6：常量 6 项 + 派生视图 4 项（派生，不手抄）+ 正负向断言", () => {
+    expect(VERIFIER_OWNS_PATHS).toHaveLength(6)
+    expect(VERIFIER_BACKLOG_ROOT_FILES).toHaveLength(4)
+    // 派生关系：backlog = owns 中不在子目录下的那些
+    expect([...VERIFIER_BACKLOG_ROOT_FILES]).toEqual(
+      [...VERIFIER_OWNS_PATHS].filter((x) => !x.startsWith(".rddf/state/verifier/")),
+    )
+    // 正向：允许集 ⊇ owns 中落在子目录下的项（按**路径段**覆盖判定）
+    const roots = classAllowRoots("verifier", archRepo("v-owns"))
+    for (const own of VERIFIER_OWNS_PATHS) {
+      if (!own.startsWith(".rddf/state/verifier/")) continue
+      const concrete = own.replace(/<[^>]+>/g, "x")
+      expect(roots.some((r) => isPathWithin(concrete, r))).toBe(true)
+    }
+    // 负向：backlog 的 4 项**不被**任何 allow root 覆盖
+    for (const f of VERIFIER_BACKLOG_ROOT_FILES) {
+      expect(roots.some((r) => f.startsWith(r))).toBe(false)
+    }
+  })
+
+  test("AC12：D1d-1 —— .rddf/state 的其它路径对 verifier 仍拒", () => {
+    const repo = archRepo("v-state-deny")
+    for (const f of [".rddf/state/pair.json", ".rddf/state/role.json", ".rddf/state/ledger.jsonl", ".rddf/state/sessions.json"]) {
+      expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: [f] }, repo)).toThrow(/越界/)
+    }
+  })
 })

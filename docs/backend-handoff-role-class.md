@@ -52,7 +52,7 @@ plan 主会话：读 evidence → 切角色 → 改 plan/proposal → resume（�
 |---|---|---|---|---|
 | `builder` | `scope` **减去 `archRoots`**（D3 修订：窄目标派发被拒；宽 scope 下 arch 路径写盘被拒） | 五个只读 agent | 代码 / 测试 | 主会话发起评审 |
 | `architect` | `archRoots ∪ .rddf/reviews ∪ arch-docs.json` | 同上 | ADR / 架构文档 / 审稿报告 | 可有条件转 Status；已签批 ADR 的决策变更必须 handoff |
-| `verifier` | 仅 `.rddf/reviews/**` | 同上 | 验收报告 | 判决由主会话消费，不改实现 |
+| `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**` | 同上 | 验收报告 | 判决由主会话消费，不改实现 |
 
 `archRoots(workRoot)` 按 `.rddf/config/arch-docs.json` 的三态解析（配置可用 → `arch_paths`；缺失/为空/损坏/全部失效 → **fallback 目录集的闭合清单**：`docs/adr`、`docs/architecture`、`docs/architecture/adr`、`docs/designs`、`docs/design`、`adr`、`rfc`、`specs`；全无 → 空集，architect 类派发被拒）。**主判定不硬编码目录清单**（配置优先）；fallback 用文档化的闭合清单，且与 `prompts/build.md` 的目录集由守卫测试钉住；解析根与 scope、权限资源同根（`workRoot`）。
 

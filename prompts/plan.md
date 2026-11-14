@@ -58,9 +58,9 @@
 
 | 任务形态 | `role_class` | 后端能写什么 |
 |---|---|---|
-| 实施代码 / 测试 / 修 bug | `builder` | 简报 `scope` **减去架构文档目录**（窄目标派发被拒；宽 scope 下写 arch 路径被拒） |
+| 实施代码 / 测试 / 修 bug | `builder` | 简报 `scope` **减去架构文档目录**（窄目标派发被拒；宽 scope 下写 arch 路径被拒）。产出 `.rddf/reviews/<change>-arch-review.md` 的任务，**`scope` 必须包含该路径**（否则 findings 只落响应正文） |
 | 写改 ADR / 架构文档（可含自己跑 oracle→critic 收口） | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` |
-| 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` | 仅 `.rddf/reviews/**` |
+| 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（记账落点；**派发时 `scope` 必须同时包含这两个目录** —— 上限 ≠ 授权） |
 
 - **换类不能原地换**：同一 session 的能力在创建时定型 ⇒ 需要别的类 ⇒ 由后端 handoff 交回，再**重新派发**（新 session 的模型上下文不继承，计划要点要重贴）。
 - **选错类有两种失败形态**（它无权改别的类）：
