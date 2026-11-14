@@ -62,15 +62,23 @@ else
   DIFF_RANGE=""
   DIFF_STAT_RANGE=""
 fi
+# ⚠ `--staged` 与 `<ref>` **互斥**：两者同传时 diff 正文取 ref 范围、stat 却取 --cached
+# ⇒ 正文与 stat 不同范围 ⇒ 审稿人可能读到另一批改动。直接拒斥，别猜。
+if [[ -n "$BASE_REF" && "$STAGED_ONLY" == "1" ]]; then
+  echo "ERROR: <ref> 与 --staged 互斥（diff 正文与 stat 必须同范围）" >&2
+  exit 2
+fi
 
 # --- guard: empty diff ---
-# Use [[ -z $BASE_REF ]] to expand into nothing (not a literal "")
-if ! diff_output=$(git diff ${BASE_REF:+${BASE_REF}..HEAD} 2>/dev/null); then
-  echo "ERROR: git diff failed for range '${BASE_REF:-unstaged}'" >&2
+# ⚠ 必须用 $DIFF_RANGE（与 stat 同范围）：此前这里写死 `${BASE_REF:+...}` ⇒ `--staged`
+#   只影响 stat、**diff 正文仍取未暂存** ⇒ 正文与 stat 不一致 ⇒ 审稿人读到的可能是
+#   另一批改动（实战踩到：`--staged` 时混进了未暂存的 model-fallback.json）。
+if ! diff_output=$(git diff ${DIFF_RANGE:+"$DIFF_RANGE"} 2>/dev/null); then
+  echo "ERROR: git diff failed for range '${DIFF_RANGE:-unstaged}'" >&2
   exit 1
 fi
 if [[ -z "$diff_output" ]]; then
-  echo "ERROR: no diff for range '${BASE_REF:-unstaged}' (nothing to review)" >&2
+  echo "ERROR: no diff for range '${DIFF_RANGE:-unstaged}' (nothing to review)" >&2
   exit 2
 fi
 

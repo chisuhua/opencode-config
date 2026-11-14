@@ -322,7 +322,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 ~/.config/opencode/scripts/rdd-skills.sh --json | grep -o '"rdd-verifier"'
 ```
 
-命中 → 调 `skill({id: "rdd-verifier"})`（或 `rddf rdd-verify` 准备上下文），**按其 LLM Verification Protocol 执行判定**。**结果以它写出的 `.rddf/state/.ac-verdict-<change>.json` 为准**（该缓存是**归档门的输入**），本节报告只引用它 + 补它不覆盖的项（第 5 步遗留清扫）。不要另写一份重复的 verdict。⚠ 该文件在 `.rddf/state/` **根**下（**待产品侧收拢**进记账落点 `.rddf/state/verifier/`）⇒ 过渡期由主会话代跑状态机（见**下方**过渡期规则）。
+命中 → 调 `skill({id: "rdd-verifier"})`（或 `rddf rdd-verify` 准备上下文），**按其 LLM Verification Protocol 执行判定**。**结果以它写出的 `.rddf/state/verifier/.ac-verdict-<change>.json` 为准**（该缓存是**归档门的输入**），本节报告只引用它 + 补它不覆盖的项（第 5 步遗留清扫）。不要另写一份重复的 verdict。该文件在**记账落点** `.rddf/state/verifier/` 下（2026-11-14 产品侧收拢完成）⇒ 被派发后端**自己写**，主会话不代跑。
 
 未命中（无 openspec change / 无 AC 段 / P3 gate 未触发 / skill 不可加载）→ 走上面 1–5 步本地验收，判据取自「判据来源」。**本地验收的额外门**：`.rddf/state/iteration.json` 中 `tasks_done == tasks_total > 0`——任务没做完不判通过。
 
@@ -356,9 +356,9 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
   > **5 项正文的追加句**（既有语义不变）：③ 首句固定 `阻塞类型：取证不可用 | 判据不通过`，其后写需要什么决策；④ 逐条列「已取证（命令 + 输出摘要）/ 未取证（原因）」。`--from rdd-builder` 是常量；`ac-fail` 必须带 `--ref-change <change>`。
   >
   > **不适用**（不是取证不可用）：① 「判据来源为空」（proposal 无 `## 验收标准` / `## Acceptance` 段）⇒ `proposal_drift` / `needs-revision`；② `rdd-verifier` skill 不可加载 ⇒ 视为未命中，走本地验收。
-- **三处落点（三元，勿混用）**：**产品落点** = `.rddf/reviews/`（验收报告与受阻记录）｜**记账落点** = `.rddf/state/verifier/`（轮次 / 审计状态机）｜**根下点文件** = `.rddf/state/.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`（**待产品侧收拢**进记账落点，收拢前见下方过渡期规则）。**记账文件不得冒充验收报告**。
-- **过渡期规则**（`ADR-class-write-scope-alignment` D1b；产品侧收拢前适用）：① `verifier` 类**只跑取证与判决**，判决落 `.rddf/reviews/<change>-verify.md`；② **状态机落盘（verdict cache / loop state / audit）由主会话代跑** —— 被派发后端在 **LLM Verification Protocol 的 Step 5**（持久化）之前停手，把证据与判决写进响应正文（产品内容落 `.rddf/reviews/`），主会话按 skill 协议补齐状态机写入（**执行 skill，不是手工 edit 状态文件** —— 保住 single writer）；③ **不改 skill 本体**；④ **产品侧收拢目录后，后端可直写全部 skill 状态**（一个目录覆盖）。
-  - **症状桥接**：在 `.rddf/state/.ac-*` 收到 `Permission denied` = **本契约生效，不是故障** ⇒ 带证据与判决 `HANDOFF` 交回主会话（先例：architect 写 arch 路径被拒时同理）。
+- **verifier 状态落点（2026-11-14 起已收拢）**：**产品落点** = `.rddf/reviews/`（验收报告与受阻记录）｜**记账落点** = `.rddf/state/verifier/`（轮次 / 审计状态机 / verdict cache / shared audit log / staged context —— **skill 写入的全部状态文件都在这里**）。产品侧 change `consolidate-verifier-state` 已把原先躺在 `.rddf/state/` 根下的 4 个点文件收拢进记账落点 ⇒ `verifier` 类的允许集覆盖 skill 的**全部**状态面。**记账文件不得冒充验收报告**。
+- ~~**过渡期规则**~~（`ADR-class-write-scope-alignment` D1b，**2026-11-14 已退役**，退役依据 = 产品侧 change `consolidate-verifier-state`）：产品侧收拢完成 ⇒ **不再需要**「状态机落盘由主会话代跑」这条绕路。**当前规则**：`verifier` 类后端可**直写**全部 skill 状态（verdict cache / loop state / audit），且必须直写（single writer）—— 判决仍落 `.rddf/reviews/<change>-verify.md`。两种异常各有处置：① 收到 `.rddf/state/verifier/**` 的 `Permission denied` ⇒ **派发 scope 没含记账落点**（不是契约生效），按 §HANDOFF 交回并写明缺哪个 scope 条目；② **既没被拒也没写**（scope 正常、后端却没落状态机）⇒ **后端违约** —— 按路径查 `.rddf/state/verifier/.ac-verdict-<change>.json` 是否存在（gitignore ⇒ `git status` 数不到），缺 ⇒ 记违约并按 §HANDOFF 处置，**主会话不代跑**。
+  - **历史注记**（收拢前曾出现过，现已不应再发生）：在 `.rddf/state/.ac-*`（**根下**）收到 `Permission denied` 曾被解读为「过渡期契约生效」—— **新写入不再发生在根下**（该目录已收拢进 `.rddf/state/verifier/`；存量未迁移工作树里的残留文件可能仍在，**只读不受影响**）⇒ 此解读**作废**。
 - **失败分类**（走 skill 时由 skill 判，本地验收自己判）：`implementation_gap`（实现缺失 → 回 build 写代码）vs `proposal_drift`（实现与 AC 不符 → 回 planner 改 proposal）。判不出时默认 gap——重跑代码比重写提案便宜
 
 **报告落点**：`.rddf/reviews/<change-or-task>-verify.md`，必含判据来源、逐条判定 + 证据、失败项与路由建议、遗留清扫结果、已用轮次。
@@ -418,7 +418,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | `openspec/changes/<name>/tasks.md` | `builder` 内置起草 | `rdd-builder` **owns**；`rdd-quick` 在 mode a 最小化生成 |
 | `openspec/changes/<name>/design.md` | `builder` 角色可写并负责**定稿**；opencode `plan` agent 的产出视为**草稿** | **无 skill owns** —— `rdd-builder` 的 owns 已移除该条目（P1 `phase1_plan.sh` 只补 `tasks.md`，从不生成 `design.md`）；`rdd-planner` / `rdd-quick` 均 not_owns → 由执行该 change 的 agent 写 |
 | `docs/adr/ADR-*.md` | `architect`（受「architect 产出形态契约」约束） | `rdd-arch` **owns** |
-| `.rddf/state/verifier/*` | `verifier` 类**可写**（记账落点，在其允许集内；**过渡期由主会话代跑**） | `rdd-verifier` **owns**（同一路径，single writer；产品落点仍是 `.rddf/reviews/`） |
+| `.rddf/state/verifier/*` | `verifier` 类**可写**（记账落点，在其允许集内；**skill 写入的全部状态文件都在这里**） | `rdd-verifier` **owns**（同一路径，single writer；产品落点仍是 `.rddf/reviews/`） |
 | `.rddf/state/.planner-handoff.json` | 任何角色都不手写 | `rdd-planner` **owns** |
 
 **内置流程的降级细节**：
@@ -566,7 +566,7 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 |---|---|---|---|
 | `builder`（缺省） | 简报的 `scope` **减去架构文档目录**（窄目标派发被拒；宽 scope 下写 arch 路径被拒） | explore / librarian / oracle / metis / critic | 代码 / 测试 |
 | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` | 同上 | ADR / 架构文档 / 审稿报告（可自己跑 oracle→critic 收口） |
-| `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（**记账落点**；过渡期由主会话代跑，见 §verifier 产出契约；**派发侧要求见 plan.md 选类表** —— 本表是「能写什么」，不含「派发时 scope 必须包含什么」） | 同上 | 验收报告（只出证据与判决，**不改实现**） |
+| `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（**记账落点**；产品侧收拢已完成 ⇒ 后端**直写**全部 skill 状态，见 §verifier 产出契约；**派发侧要求见 plan.md 选类表** —— 本表是「能写什么」，不含「派发时 scope 必须包含什么」） | 同上 | 验收报告（只出证据与判决，**不改实现**） |
 
 - **逐类后果（被派发后端）**：审查者不可用 ⇒ `HANDOFF: blocked` —— `architect` 类（oracle→critic 强制）与 `builder` 类的**架构面 critic 行**；`builder` 的逐 change 验收（审查者是 verifier，角色内建）与 `verifier` 类**不因 `subagent` 不可用而受阻**（`verifier` 的取证依赖类定位时另按 §verifier 产出契约 走）。
 - **越类的判据是「写目标」，不是「读什么」**：读任何路径都不算越类；跑测试在 `builder`（acceptance 自查）与 `verifier`（独立取证）两类都合法。**要写的东西不在本类允许集内 ⇒ 停在动手前**，按下面的 HANDOFF 契约交回主会话。

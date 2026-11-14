@@ -39,6 +39,7 @@ import {
   VERIFIER_ALLOW_ROOTS,
   VERIFIER_BACKLOG_ROOT_FILES,
   VERIFIER_OWNS_PATHS,
+  verifierAllowRootLabels,
   classPermissions,
   classSubagentRules,
   isPathWithin,
@@ -1387,6 +1388,22 @@ describe("verifier 写集：上限 vs 授权（class-write-scope-alignment）", 
     bad(".rddf/reviews/../state/pair.json") // 穿越（归一化后越界）
   })
 
+  test("工具 schema 的 role_class 描述**派生**自 VERIFIER_ALLOW_ROOTS（面向模型的派生面不得手抄）", () => {
+    // ⚠ 工具 schema 的参数描述是 **front LLM 在派发瞬间实际读的文本**（它不读 prompt 填表）
+    // ⇒ 若那里手抄一份字面量，改了常量就会漏改派生面 ⇒ front 可能据此把记账落点排除出 scope。
+    const labels = verifierAllowRootLabels()
+    for (const root of VERIFIER_ALLOW_ROOTS) {
+      expect(labels).toContain(root)
+    }
+    const src = readFileSync(path.join(import.meta.dir, "..", "lib", "delegate-core.ts"), "utf8")
+    const descStart = src.indexOf("role_class: {")
+    const desc = src.slice(descStart, descStart + 1200)
+    expect(desc).toContain("verifierAllowRootLabels()")
+    // 负向：不得再出现手抄的旧上限（只含 .rddf/reviews）
+    expect(desc).not.toContain("edit 上限=.rddf/reviews）")
+    expect(desc).not.toContain("edit 上限=.rddf/reviews)。")
+  })
+
   test("AC5：负向不变量 —— 内置条目不等于/祖先于 .rddf/state；后代仍允许；合法配置不红", () => {
     const repo = archRepo("v-invariant")
     // 内置条目逐项检查：不得**等于** `.rddf/state`、也不得是它的**祖先**（`.rddf/state` 不落在 root 之下）
@@ -1402,29 +1419,31 @@ describe("verifier 写集：上限 vs 授权（class-write-scope-alignment）", 
     expect(classAllowRoots("architect", repo2)).toContain(".rddf/state/adr")
   })
 
-  test("AC6：常量 6 项 + 派生视图 4 项（派生，不手抄）+ 正负向断言", () => {
+  test("AC6：常量 6 项 + 派生视图**已归零**（收拢完成，派生，不手抄）+ 全覆盖断言", () => {
     expect(VERIFIER_OWNS_PATHS).toHaveLength(6)
-    expect(VERIFIER_BACKLOG_ROOT_FILES).toHaveLength(4)
+    // 2026-11-14：产品侧 `consolidate-verifier-state` 已把 4 个根下点文件收拢进
+    // `.rddf/state/verifier/` ⇒ 派生视图**自动归零**（不是手改的）。
+    expect(VERIFIER_BACKLOG_ROOT_FILES).toHaveLength(0)
     // 派生关系：backlog = owns 中不在子目录下的那些
     expect([...VERIFIER_BACKLOG_ROOT_FILES]).toEqual(
       [...VERIFIER_OWNS_PATHS].filter((x) => !x.startsWith(".rddf/state/verifier/")),
     )
-    // 正向：允许集 ⊇ owns 中落在子目录下的项（按**路径段**覆盖判定）
+    // 正向：**全部 6 项**落在允许集内（收拢前只有 2 项在；收拢后 6/6）
     const roots = classAllowRoots("verifier", archRepo("v-owns"))
     for (const own of VERIFIER_OWNS_PATHS) {
-      if (!own.startsWith(".rddf/state/verifier/")) continue
       const concrete = own.replace(/<[^>]+>/g, "x")
       expect(roots.some((r) => isPathWithin(concrete, r))).toBe(true)
     }
-    // 负向：backlog 的 4 项**不被**任何 allow root 覆盖
+    // 负向：**没有任何** owns 项落在允许集外（收拢前是 4 项 backlog ⇒ 现在为 0）
     for (const f of VERIFIER_BACKLOG_ROOT_FILES) {
       expect(roots.some((r) => f.startsWith(r))).toBe(false)
     }
   })
 
-  test("收拢就绪（ready）：4 个根下点文件搬到 .rddf/state/verifier/ 后**已可用**（本仓无需再改代码）", () => {
-    // 产品侧 rdd-verifier-state-consolidation 的目标形态：把 4 个根下点文件收拢进 verifier/ 子目录。
-    // 本断言证明「收拢后的路径已在 verifier 类的允许集与 scope 授权内」⇒ 迁移时本仓无需 flag day。
+  test("收拢已完成（consolidated）：6 个 skill 状态路径全在 verifier 允许集内；根下遗留路径仍拒", () => {
+    // 产品侧 `consolidate-verifier-state`（2026-11-14）已完成：verifier 的 6 个状态路径
+    // 全部落在 `.rddf/state/verifier/` 下 ⇒ 本仓允许集覆盖 skill 的**全部**状态面
+    // ⇒ 「过渡期主会话代跑」可退役。
     const repo = archRepo("v-consolidation-ready", { archPaths: ["docs/adr"] })
     const scope = [".rddf/reviews", ".rddf/state/verifier"]
     const perms = classPermissions({
@@ -1448,7 +1467,7 @@ describe("verifier 写集：上限 vs 授权（class-write-scope-alignment）", 
       // ② 权限净效果：allow（授权来自 scope 含 .rddf/state/verifier）
       expect(evaluateEffect(perms, "edit", path)).toBe("allow")
     }
-    // ③ 收拢**前**的根下路径仍拒（迁移前后可区分，证明不是「整目录放开」）
+    // ③ **收拢前**的根下路径仍拒（收拢是「搬进子目录」，不是「整目录放开」）
     expect(() => assertRoleClassCompatible({ role_class: "verifier", scope: [".rddf/state/.ac-verdict-demo.json"] }, repo)).toThrow(/越界/)
   })
 

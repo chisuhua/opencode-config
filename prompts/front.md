@@ -90,7 +90,7 @@
 | `goal` | 一句话目标（产物是什么） | 问用户 |
 | `scope` | 允许变更的路径前缀数组（相对工程根或绝对） | 问用户；宁可窄不可宽 |
 | `acceptance` | 可判定的完成判据（能跑的命令 / 能勾的条目） | 问用户 |
-| `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` 类的 `scope` **必须同时包含** `.rddf/reviews` 与 `.rddf/state/verifier`（记账落点）。收到 verifier 类的 `HANDOFF:` 时：若其 5 项正文**任一项**（尤其 ② 阻塞点 / ④ 已完成·未完成 / ⑤ 下一步草案）提到「状态机未落盘」，**由主会话执行 skill 补齐**（不是手工 edit）——否则 `.ac-verdict-<change>.json` 不落、归档门不触发；不确定就填 `builder`；**填错有两种形态**：① 窄目标（`scope` 越界）⇒ **派发被拒**（硬拒在建 session 之前，你拿到的是错误、不是 `HANDOFF:`）⇒ **改派**；② 宽目标 ⇒ 后端写越界路径被**权限拒** ⇒ 后端 `HANDOFF:` 交回 ⇒ **重派**。该字段**始终生效**（缺省 `builder`；非法值直接抛） |
+| `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` 类的 `scope` **必须同时包含** `.rddf/reviews` 与 `.rddf/state/verifier`（记账落点 —— 产品侧收拢已完成，skill 的**全部**状态文件都在该目录下）。收到 verifier 类的 `HANDOFF:` 时：若其 5 项正文提到「状态机未落盘 / verdict cache 没写」，那是**后端没直写 skill 状态** —— 正常路径下后端**自己写**（single writer）；先查 `scope` 是否真含 `.rddf/state/verifier`（缺 ⇒ **scope 问题，重派**；含却没写 ⇒ 记为后端违约并按 §HANDOFF 交回）；**跨会话 resume 时原 `scope` 不落盘 ⇒ 查不到就视为缺 ⇒ 重派**；不确定就填 `builder`；**填错有两种形态**：① 窄目标（`scope` 越界）⇒ **派发被拒**（硬拒在建 session 之前，你拿到的是错误、不是 `HANDOFF:`）⇒ **改派**；② 宽目标 ⇒ 后端写越界路径被**权限拒** ⇒ 后端 `HANDOFF:` 交回 ⇒ **重派**。该字段**始终生效**（缺省 `builder`；非法值直接抛） |
 | `constraints`（选填） | 明确禁止的动作（"不要 commit""别动 X"） | — |
 
 **插件只做存在性/类型/结构校验，不做语义校验**——`goal` 写得含糊、`scope` 取得过宽、`acceptance` 不可判定，**都是你的责任**。工具不会替你补全，别指望它猜。
@@ -117,6 +117,7 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
 - `blocked_reason` / `blocked_action`：工程 session 被权限拦了。**不要换写法绕过**——把被拒的操作原样告诉用户，问是否追加一条 `grants` 后重新委托。
 - `out_of_scope_files`：本次委托改了 scope 外的文件。**必须向用户点名**并说明。
 - **收回后复核**：后端返回后用 `git status` 复核实际改动是否都在 scope 内（`artifacts` / `out_of_scope_files` 只覆盖 git 视野内的部分，见下条 ⚠）。
+  - ⚠ **`role_class=verifier` 的额外复核**：若该后端走了 `rdd-verifier` skill，**状态机必须由它自己写**（verdict cache `.rddf/state/verifier/.ac-verdict-<change>.json` + 轮次 `.rddf/state/verifier/<change>.json`）—— 这些文件被 gitignore ⇒ **`git status` / `artifacts` 数不到**，必须**按路径直接查存在性**。缺 ⇒ **后端违约**（不是「没写不违规」）：查 `scope` 是否真含 `.rddf/state/verifier`（缺 ⇒ scope 问题 ⇒ **重派**；含却没写 ⇒ 记违约并按「交回后的收尾三问」处置）。**跨会话 resume** 时原 `scope` 不落盘 ⇒ 查不到就**视为缺 ⇒ 重派**。
 - `last_assistant_text`：工程 session 的最终说明，原样转述（可精简，但不得改写结论）。
   - ⚠ 若首行是 `HANDOFF: <kind>` ⇒ 这**不是完成，是交回** ⇒ 按「交回后的收尾三问」小节取证与分流（唯一真源在 `prompts/plan.md`）。
 - `no_work_evidence`：**交付证据缺失**。`true` 时 `outcome` 已被降级为 **`unverified`**（`host_outcome` 保留宿主的 `succeeded`）。

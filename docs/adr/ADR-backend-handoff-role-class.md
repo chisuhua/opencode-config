@@ -47,7 +47,7 @@
 |---|---|
 | `builder` | `scope` **减去** `archRoots(workRoot)`（两级规则见下） |
 | `architect` | `archRoots(workRoot)` ∪ `.rddf/reviews/**` ∪ `.rddf/config/arch-docs.json` |
-| `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（记账落点；过渡期规则见 `ADR-class-write-scope-alignment` D1b） |
+| `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（记账落点；**过渡期规则已退役**（2026-11-14，产品侧状态文件已收拢 ⇒ 后端直写），见 `ADR-class-write-scope-alignment` D1b 退役注） |
 
 `archRoots` 按 `.rddf/config/arch-docs.json` 三态解析，**与 `prompts/build.md` §架构文档范围 的目录集口径同一套**（不另立第二答案）：
 

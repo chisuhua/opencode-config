@@ -4,6 +4,11 @@
 
 - Status: **Accepted**（2026-11-14，**用户签批「方向」**：D1–D3 的决策方向与 V1–V11 判据；
   **实施另立 change**（代码 + 父篇 D3 行落改 + 三处 prompt + 守卫，治理面 ⇒ 再一轮 oracle → critic））
+  - **修订 2026-11-14**：**D1b 过渡期规则已退役** —— 产品侧 change `consolidate-verifier-state`
+    （`rdd-workflow` 仓）已把 4 个根下点文件收拢进 `.rddf/state/verifier/`，并把它们补进 skill 的
+    `owns:` 声明 ⇒ `verifier` 类的允许集覆盖 skill 的**全部**状态文件 ⇒ **不再需要**「状态机由主会话代跑」。
+    D1a / D1c / D1d / D2 / D3 **不动**（D1c 的 scope 义务仍然有效，只是理由从「为收拢后即开即用」
+    变成「本来就要写」）。
 - Date: 2026-11-14
 - Author: architect（role:architect）
 - Parent: **修订** `ADR-backend-handoff-role-class` 的 **D3 verifier 写集行**（该 D3 其余行、D4、D5 **不动**）
@@ -12,6 +17,10 @@
   ——`.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`——
   收拢进 `verifier/`；并清理 dangling 的 `.rddf/state/.verifier-report.json`：`SKILL.md:49` 声明它、
   但全 skills 目录无组件写它）
+  - **已完成 2026-11-14**：产品侧 `rdd-workflow` 仓的 change `consolidate-verifier-state`
+    （目录收拢 + `owns:` 补齐为 6 项 + dangling 指针改为按 `change_name` 计算的真实路径）
+    ⇒ 本 backlog 关闭；本仓的对应收尾见 `prompts/build.md` §verifier 产出契约 与
+    `lib/delegate-core.ts::VERIFIER_OWNS_PATHS`（6 项全在 `.rddf/state/verifier/` 下 ⇒ 派生 backlog 视图归零）。
 - AC 映射：`openspec/changes/class-write-scope-alignment/proposal.md` 的 AC1–AC19（Verification 的 V1–V7b 即 AC 前身）
 - 审稿记录: `.rddf/reviews/adr-class-write-scope-alignment-review.md`（oracle 2 轮：BLOCK → PASS-WITH-NOTES；
   critic 2 轮：REJECT → **APPROVE** / `mergeable: yes`）
@@ -74,6 +83,10 @@
   **过渡期规则（必须写明，不留灰色地带）**：verifier 类后端**只跑 rdd-verifier 的取证与判决部分**，
   判决结果落 `.rddf/reviews/<change>-verify.md`（verifier 类的产品落点）；**需要 `rdd-verifier` 状态机
   落盘（verdict cache / loop state / audit）时，由主会话代跑**（主会话不受 `role_class` 约束）。
+  - ⚠ **本条已于 2026-11-14 退役（历史条款，保留以便追溯）**：产品侧 change `consolidate-verifier-state`
+    已完成目录收拢 ⇒ 根下点文件不再存在 ⇒ 「verifier 类后端写不进去」的前提消失 ⇒
+    **verifier 类后端现在自己直写全部 skill 状态**（single writer，主会话**不再**代跑）。
+    退役后的现行条款见 `prompts/build.md` §verifier 产出契约。
   - **执行形态的前提（钉死，不留实施方各自发明）**：过渡期**不修改 `rdd-verifier` skill 本体**；
     截断点 = verifier 类后端在 skill 的 Step 5（写 verdict cache / loop state / audit）**之前停手**，
     把已取得的证据与判决写进响应正文（产品内容落 `.rddf/reviews/`），由**主会话**按 skill 协议补齐
@@ -82,9 +95,13 @@
 - **D1c 派发契约（缺了它就是假绿）**：`verifier` 类派发的 `scope` **必须同时包含**
   `.rddf/reviews` 与 `.rddf/state/verifier`（走 rdd-verifier 时）；`prompts/plan.md` 选类表 +
   `prompts/front.md` §3.1 明写。**只把目录加进上限、不写 scope ⇒ 实跑仍 deny。**
-  - 为何过渡期仍强制包含（与 D2a「最小权限」的张力，须申明）：**为产品侧收拢目录后即开即用** ——
-    否则收拢完成那天所有既有派发模板都要改一遍；且语义上它是「该类**可以**写」的声明，不构成义务
-    （后端在过渡期不写它也不违规）。
+  - ⚠ **退役注（2026-11-14）**：原理由「为产品侧收拢目录后即开即用」**已随 D1b 一并失效** ——
+    产品侧收拢已完成 ⇒ `scope` 含记账落点**不再是「为将来准备」，而是「本来就要写」**：
+    走 `rdd-verifier` 时，verdict cache / loop state / audit **必须由后端直写**（single writer，
+    主会话不代跑）⇒ 漏了它 = 后端违约（不是「不违规」）。
+    ⇒ 下方「不构成义务（后端在过渡期不写它也不违规）」一句**只描述过渡期**，**已作废**；
+    现行义务见 `prompts/build.md` §verifier 产出契约。**「scope 必须同时包含两者」这条约束本身不变**
+    （仍是派发侧义务，只是理由从「预备」变成「必需」）。
 - **D1d 边界（同时成立）**：
   1. **不加** `.rddf/state` 的其它路径（`pair.json` / `role.json` / `ledger.jsonl` / `sessions.json` /
      其它 skill 状态仍不在允许集内）；
@@ -111,6 +128,10 @@
    `PRIORITY_BLOCKED_FIELDS` 的单点清单范式，`delegate-core.ts:306-313`），守卫断言
    「`classAllowRoots("verifier")` ⊇ 常量里**属于子目录**的部分」，并显式列出**产品侧 backlog 的 4 项**
    （断言它们仍**不在**允许集内 —— 防「以为已经给了」）。
+   - ⚠ **修订注（2026-11-14）**：本条第二分句（4 项断言**仍不在**允许集内）随 D1b 退役**失效** —-
+     产品侧已把 4 项收拢进 `.rddf/state/verifier/` ⇒ 守卫改为断言**派生视图 `VERIFIER_BACKLOG_ROOT_FILES` 归零**
+     （派生 ⇒ 恒等式，不是手抄第二份），并保留「新增根下状态文件即非空」的机械探测器能力。
+     第一分句（单点常量 + 「允许集 ⊇ 常量里属于子目录的部分」）**不变**。
    - **为什么不改成「守卫直接读 `SKILL.md` 抽 `owns`」**（被否决的备选，理由必须记下）：skill 在
      `~/.agents/skills/**`（用户 home），**仓库 CI 的 `bun test` 不能依赖仓外路径** ⇒ 该守卫在 CI 上
      必然 SKIP，等于没有守卫。
@@ -144,9 +165,10 @@
 
 **正面**
 
-- `verifier` 类的**上限已覆盖** skill 的两个子目录状态文件（`<name>.json` / `<name>.audit.jsonl`）——
-  过渡期实际落盘仍由**主会话代跑**（见 D1b），产品侧把根下点文件收拢进 `verifier/` 子目录后，
-  verifier 类后端即可**直写**全部 skill 状态（一个目录覆盖）。
+- `verifier` 类的**上限已覆盖** skill 的**全部**状态文件（`<name>.json` / `<name>.audit.jsonl` /
+  `.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`）——
+  ⚠ **本条为 2026-11-14 修订前的快照**：产品侧已把根下点文件收拢进 `verifier/` 子目录 ⇒
+  verifier 类后端**直写**全部 skill 状态（一个目录覆盖），**不再**由主会话代跑（见 D1b 退役注）。
 - 缺口 1 的**剩余部分**（4 个根下点文件）从「隐性越类」变成**显式 backlog + 过渡期规则**，可追踪。
 - `builder` 的架构面 findings 有确定规则（scope 含则落盘、否则响应正文），不再是「看情况」。
 - 三份契约由**守卫**钉住（含 skill `owns` ↔ 代码），加一条负向不变量（`.rddf/state` 不得整目录开放）。
@@ -154,8 +176,9 @@
 **负面**
 
 - `verifier` 的写集描述要改 3 处（`prompts/build.md` 运行身份表 / `prompts/plan.md` 选类表 / `prompts/front.md` §3.1）。
-- **过渡期 verifier 类不能完整跑 `rdd-verifier` 状态机**（verdict cache / loop state / audit 需主会话代跑）⇒ 这是
-  **显式的功能缺口**，换来的是「不把 per-change 文件族写进权限面」的边界清晰。产品侧收拢目录后关闭。
+- ~~**过渡期 verifier 类不能完整跑 `rdd-verifier` 状态机**（verdict cache / loop state / audit 需主会话代跑）~~ ⇒ 这是
+  **显式的功能缺口**，换来的是「不把 per-change 文件族写进权限面」的边界清晰。
+  ⚠ **该缺口已于 2026-11-14 关闭**（产品侧收拢完成 ⇒ 后端直写，见 D1b 退役注）。
 - `builder` findings 未写进 scope 时只在响应正文（跨会话可追溯性略降）。
 
 **风险**
@@ -163,9 +186,9 @@
 | 风险 | 缓解 |
 |---|---|
 | 「加进上限」被误读为「已授权」 | D1c 显式写「scope 仍须包含」+ 守卫断言文本 + V4 带 scope 前提 |
-| 过渡期规则被忽略，verifier 后端撞 `Permission denied` 后误判为故障 | D1b 明写「过渡期只跑取证与判决，状态机由主会话代跑」；`prompts/build.md` 的 verifier 段同步 |
+| ~~过渡期规则被忽略，verifier 后端撞 `Permission denied` 后误判为故障~~（**过渡期专属风险，已随 D1b 退役失效**） | D1b 曾明写「过渡期只跑取证与判决，状态机由主会话代跑」；`prompts/build.md` 的 verifier 段同步。**退役后的对应风险**（scope 漏记账目录 ⇒ 后端撞 `Permission denied`）由现行条款处置：判为「派发 scope 问题」⇒ 重派 |
 | `.rddf/state` 将来被整目录开放 | D3-2 负向不变量（allow root 不得等于或祖先于 `.rddf/state`） |
-| 三个根下点文件被当成「已解决」 | D3-1 断言它们**仍不在**允许集内（显式列出） |
+| ~~三个根下点文件被当成「已解决」~~（**已解决**：产品侧 2026-11-14 收拢） | 原缓解 = D3-1 断言它们**仍不在**允许集内（显式列出）—— 该断言随收拢**退役**，改为派生视图「backlog 归零」+「新增根下状态文件即非空」的机械探测器能力（见 D3-1 修订注） |
 
 **回滚**：`classAllowRoots("verifier")` 去掉 `.rddf/state/verifier`（单点）+ 三处 prompt 文本回退；
 `builder` 侧只回退文档口径；产品侧 backlog 独立。
@@ -179,14 +202,19 @@
 - [ ] V4 **权限净效果（带 scope 前提）**：verifier 派发 `scope` **含** `.rddf/state/verifier` ⇒
       该路径 `edit` 为 `allow`；**scope 不含** ⇒ `deny`（证明「上限 ≠ 授权」这一语义被正确表达）
 - [ ] V5 负向不变量：任何 `classAllowRoots(cls)` 的结果都**不含**等于或祖先于 `.rddf/state` 的条目
-- [ ] V6 产品侧 backlog 项**仍不在**允许集内（`.ac-verdict-*` / `.ac-verification.jsonl` /
-      `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`），且 ADR / 守卫**显式列出**它们
+- [ ] V6 ⚠ **已随 2026-11-14 收拢退役**（原判据：产品侧 backlog 项**仍不在**允许集内
+      （`.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`），
+      且 ADR / 守卫**显式列出**它们）—— **现行判据**：这 4 项**已在** `.rddf/state/verifier/` 内，
+      守卫断言**派生视图归零**（`VERIFIER_BACKLOG_ROOT_FILES` 长度 0）且 6 项全部被允许集覆盖
 - [ ] V7 文本三处一致：`prompts/build.md` 运行身份表 + `prompts/plan.md` 选类表含 `.rddf/state/verifier`
       与「scope 必须包含」；`prompts/front.md` §3.1 含同语义描述（该文件无写集表）
-- [ ] V7b `prompts/build.md` §verifier 产出契约 含**过渡期规则**（verifier 类只跑取证与判决；
-      状态机落盘由主会话代跑；产品侧收拢后后端直写）
+- [ ] V7b ⚠ **已随 2026-11-14 退役**（原判据：`prompts/build.md` §verifier 产出契约 含**过渡期规则**
+      （verifier 类只跑取证与判决；状态机落盘由主会话代跑；产品侧收拢后后端直写））
+      —— **现行判据**：§verifier 产出契约 含**退役标记 + 现行规则**（verifier 类后端**直写**全部 skill 状态、
+      single writer；scope 漏记账落点 ⇒ 判为派发 scope 问题；既没被拒也没写 ⇒ 后端违约）
+      + 守卫 AC8 钉住该形状
 - [ ] V8 `prompts/build.md` §审查配对 `builder`（架构面）行含「scope 必须包含」+「未包含时只落响应正文」
 - [ ] V9 回归：`bun test tests/` 全绿；`scripts/check-upstream-anchors.sh` 无 FAIL
 - [ ] V10 治理面审查：本 ADR 走 **oracle → critic** 各 1 轮（顺序不可颠倒），BLOCKER 全闭后方可实施
 - [ ] V11 **父篇已落改**：`ADR-backend-handoff-role-class.md` 的 D3 verifier 行含 `.rddf/state/verifier`
-      + 过渡期规则指针；其 Status 行后续有本次修订记录（日期 + 「D3 verifier 写集修订」）
+      + 过渡期规则指针（**2026-11-14 已更新为「已退役」括注**）；其 Status 行后续有本次修订记录（日期 + 「D3 verifier 写集修订」）

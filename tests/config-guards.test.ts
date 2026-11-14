@@ -1295,19 +1295,22 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(buildRow).toContain("plan.md")
   })
 
-  test("AC8：§verifier 产出契约 含过渡期规则四要素 + 症状桥接句", () => {
+  test("AC8：§verifier 产出契约 —— 过渡期规则**已退役** + 现行规则是「后端直写」+ 根下路径解读作废", () => {
     const sec = BUILD_MD.split("\n")
-    const line = sec.find((l) => l.trimStart().startsWith("- **过渡期规则**"))!
-    expect(line).toContain("只跑取证与判决")
-    expect(line).toContain(".rddf/reviews/")
-    expect(line).toContain("由主会话代跑")
-    expect(line).toContain("不改 skill 本体")
-    expect(line).toContain("后端可直写")
-    // 症状桥接
-    const bridge = sec.find((l) => l.includes("症状桥接"))!
-    expect(bridge).toContain("Permission denied")
-    expect(bridge).toContain("不是故障")
-    expect(bridge).toContain("HANDOFF")
+    // ① 退役标记 + 指向产品侧 change
+    const retired = sec.find((l) => l.includes("过渡期规则") && l.includes("已退役"))!
+    expect(retired).toContain("consolidate-verifier-state")
+    // ② 现行规则：后端**直写**全部 skill 状态（single writer）
+    expect(retired).toContain("直写")
+    expect(retired).toContain("single writer")
+    // ③ 负向：「主会话代跑」**不得**被写成现行规则（该措辞只允许出现在退役语境里）
+    const live = sec.filter(
+      (l) => l.includes("主会话代跑") && !l.includes("退役") && !l.includes("不再需要"),
+    )
+    expect(live).toEqual([])
+    // ④ 历史注记：根下 `.ac-*` 的「症状桥接」解读**作废**
+    const note = sec.find((l) => l.includes(".rddf/state/.ac-*") && l.includes("作废"))!
+    expect(note).toContain("已收拢进")
   })
 
   test("AC9：§审查配对 builder（架构面）行含「scope 必须包含」+「未包含时只落响应正文」；plan.md 选类表 builder 行同款", () => {
@@ -1332,22 +1335,28 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(status).not.toContain("实施时与代码同批落改")
   })
 
-  test("AC11：build.md 内部三处状态文件描述收口为三元表述", () => {
+  test("AC11：build.md 内部状态文件描述收口为「全部在记账落点」+ 负向不得再有「待产品侧收拢」", () => {
     const rows = BUILD_MD.split("\n").filter((l) => l.includes(".rddf/state/verifier"))
-    // 三处（:324 事实句 / :333 轮次句 / :393 归属表行）都应出现
+    // 三处（状态落点句 / 退役句 / 归属表行 / 运行身份表行）都应出现
     expect(rows.length).toBeGreaterThanOrEqual(3)
     const joined = rows.join("\n")
-    expect(joined).toContain("待产品侧收拢")
-    // 负向：不得声称根下点文件已在 verifier/ 内
-    expect(joined).not.toMatch(/\.ac-verdict[^\n]*已在[^\n]*verifier/)
+    // 负向：产品侧收拢已完成 ⇒ 不得再有「待产品侧收拢」
+    expect(joined).not.toContain("待产品侧收拢")
+    // 负向：**现行**行（历史注记除外）不得再把根下点文件说成当前落点
+    const live = rows.filter((l) => !l.includes("历史注记")).join("\n")
+    expect(live).not.toMatch(/\.rddf\/state\/\.ac-/)
+    // 正向：记账落点必须被点名（不是靠「全部」这种平凡词满足）
+    expect(joined).toContain("记账落点")
   })
 
   test("AC13：§verifier 产出契约 含落点区分（产品 vs 记账），负向不得写反", () => {
-    const line = BUILD_MD.split("\n").find((l) => l.includes("三处落点"))!
+    const line = BUILD_MD.split("\n").find((l) => l.includes("verifier 状态落点"))!
     expect(line).toContain("产品落点")
     expect(line).toContain("记账落点")
-    expect(line).toContain("待产品侧收拢")
     expect(line).toContain("记账文件不得冒充验收报告")
+    // 负向：不得再声称有「根下点文件待收拢」
+    expect(line).not.toContain("待产品侧收拢")
+    expect(line).not.toMatch(/\.rddf\/state\/\.ac-verdict/)
     const sec = BUILD_MD.split("\n")
     expect(sec.some((l) => l.includes("状态/记账文件写入") && l.includes(".rddf/reviews/"))).toBe(false)
   })

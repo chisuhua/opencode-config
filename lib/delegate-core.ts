@@ -724,37 +724,50 @@ export function classAllowRoots(roleClass: RoleClass, projectRoot: string): stri
 }
 
 /**
- * `rdd-verifier` skill 的**状态文件全量**（**单点常量**）—— 分两类：
+ * `verifier` 类的 edit 上限标签（**由常量派生**，供**面向模型的工具描述**渲染）。
  *
- * - **`owns:` 声明的 4 项**（`SKILL.md:29-32`）：`.rddf/state/verifier/<name>.json`、`<name>.audit.jsonl`、
- *   `.rddf/state/.ac-verdict-*.json`、`.rddf/state/.ac-verification.jsonl`
- * - **实际写入但未在 `owns:` 声明的 2 项**：`.rddf/state/.ac-verifier-blocked.jsonl`（`SKILL.md:415` halted 审计）、
- *   `.rddf/state/rdd-verify-context-<change>.json`（`scripts/run_verification.sh:7` staged 上下文）
+ * ⚠ 为什么必须是派生的：工具 schema 的参数描述是 **front LLM 在派发瞬间实际读的文本**
+ * （它不读 prompt 填表）⇒ 若这里手抄一份字面量，改了 `VERIFIER_ALLOW_ROOTS` 就会
+ * **漏改面向模型的派生面** ⇒ front 可能据此把记账落点排除出 `scope`（造出
+ * 「scope 漏 `.rddf/state/verifier`」的故障）。派生 ⇒ 不可能漂移。
+ */
+export function verifierAllowRootLabels(): string {
+  return VERIFIER_ALLOW_ROOTS.join(" + ")
+}
+
+/**
+ * `rdd-verifier` skill 的**状态文件全量**（**单点常量**）。
  *
- * ⚠ 「6 项 = owns 全量」是**不准确**的说法（owns 只列 4 项）；本常量的定义是「skill **写入的全部状态路径**」，
- * 因为它才是 `verifier` 类写集的真实约束面。
+ * **2026-11-14 起：6 项全部在 `.rddf/state/verifier/` 命名空间内** —— 产品侧
+ * `rdd-workflow` 的 change `consolidate-verifier-state` 已把 4 个根下点文件
+ * （`.ac-verdict-*.json` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` /
+ * `rdd-verify-context-*.json`）收拢进该目录，并把它们补进 skill 的 `owns:` 声明
+ * （原先只声明 4 项，其中 2 项是**实际写入但未声明**的）。
+ *
+ * ⇒ `VERIFIER_BACKLOG_ROOT_FILES`（派生视图）**自动归零** ⇒ `verifier` 类的允许集
+ * （`.rddf/state/verifier`）覆盖 skill 写入的全部状态 ⇒ **过渡期「主会话代跑」已退役**。
  *
  * 用途：`verifier` 类的**写集上限**（`classAllowRoots`）+ 守卫的「代码 ↔ skill」对照面。
  * ⚠ **同步是人工的**：skill 在 `~/.agents/skills/**`（仓外），仓库 CI 的 `bun test` 不能依赖它
- * ⇒ 无法在守卫里直接读 frontmatter。产品侧新增第 7 个路径时**本守卫不会红**；该残留由 backlog
- * `rdd-verifier-state-consolidation`（收拢目录时一并核对）承担。
+ * ⇒ 无法在守卫里直接读 frontmatter。产品侧新增第 7 个路径时**本守卫不会红**；
+ * 该残留仍由 backlog `rdd-verifier-state-consolidation` 承担（目录已收拢，但**清单同步**未做）。
  */
 export const VERIFIER_OWNS_PATHS: readonly string[] = [
   ".rddf/state/verifier/<name>.json",
   ".rddf/state/verifier/<name>.audit.jsonl",
-  ".rddf/state/.ac-verdict-*.json",
-  ".rddf/state/.ac-verification.jsonl",
-  ".rddf/state/.ac-verifier-blocked.jsonl",
-  ".rddf/state/rdd-verify-context-<change>.json",
+  ".rddf/state/verifier/.ac-verdict-*.json",
+  ".rddf/state/verifier/.ac-verification.jsonl",
+  ".rddf/state/verifier/.ac-verifier-blocked.jsonl",
+  ".rddf/state/verifier/rdd-verify-context-<change>.json",
 ]
 
 /**
  * owns 里**不在** `.rddf/state/verifier/` 子目录下、因而**不在** `verifier` 允许集内的那些
  * （**由常量派生**，不得手抄第二份）。
  *
- * 它们是产品侧的 **backlog**：skill 下版应把它们收拢进 `verifier/` 子目录
- * （backlog `rdd-verifier-state-consolidation`）。过渡期由主会话代跑状态机落盘
- * （见 `ADR-class-write-scope-alignment` D1b）。
+ * **2026-11-14：空**（产品侧收拢已完成 ⇒ 派生视图自动归零）。
+ * 保留这个派生视图而不是删掉：它是「产品侧又新增了根下状态文件」的**机械探测器** ——
+ * 一旦有人再往 `.rddf/state/` 根下加 verifier 状态，这里会立刻非空 ⇒ 守卫变红。
  */
 export const VERIFIER_BACKLOG_ROOT_FILES: readonly string[] = VERIFIER_OWNS_PATHS.filter(
   (path) => !path.startsWith(".rddf/state/verifier/"),
@@ -1227,6 +1240,9 @@ export function buildBrief(brief: ReturnType<typeof validateBrief>, projectRoot:
     } else if (brief.role_class === "verifier") {
       lines.push(
         "2. 只出证据与判决：按判据来源逐条取证（每条至少 1 条工具证据），报告实际执行的命令与结果；不改实现、不改 tasks.md。",
+      )
+      lines.push(
+        "   走 `rdd-verifier` skill 时，其状态机（verdict cache / loop state / audit）由你**直写**到 `.rddf/state/verifier/`（single writer，主会话不代跑）。",
       )
     } else {
       lines.push("2. 按 acceptance 自行验证，报告实际执行的命令与结果。")
@@ -1825,7 +1841,8 @@ export function delegateToolDefinition(ctx: any): any {
               description:
                 "本次派发允许后端做哪一类工作（缺省 builder；缺省只认缺省值，null/空串非法）。" +
                 "builder=按 scope 实施；architect=写改 ADR/架构文档（edit 上限=架构文档目录 + .rddf/reviews + arch-docs.json）；" +
-                "verifier=只取证与判决（edit 上限=.rddf/reviews）。**scope 越出该类上限 ⇒ 派发被拒**；" +
+                `verifier=只取证与判决（edit 上限=${verifierAllowRootLabels()}；scope 须覆盖上述全部目录）。` +
+                "**scope 越出该类上限 ⇒ 派发被拒**；" +
                 "同一 session 内不允许换类（换类请新建 session）。",
             },
           },

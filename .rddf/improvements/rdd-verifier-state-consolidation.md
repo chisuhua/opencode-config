@@ -3,6 +3,9 @@
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
 > 来源：`docs/adr/ADR-class-write-scope-alignment.md`（D1b 过渡期规则 + D3-1「残留显式承认」）
 > 归属：**产品侧**（`~/.agents/skills/rdd-workflow` 的 `rdd-verifier` skill 与 `archive_gate_check`）—— 本仓**无权限面**，本文件是**待办登记**（stub），不是本仓的实施计划
+> **状态：已完成（2026-11-14）** —— 产品侧 `rdd-workflow` 仓的 change `consolidate-verifier-state` 已实施
+> （目录收拢 + `owns:` 补齐为 6 项 + 悬空指针改真实路径 + 遗留搬迁函数 + 规格/文档/ADR 同步）；
+> 本仓收尾（③ 逐文件清单 → 产品侧执行；④ 本仓收尾 → 常量形态 / 退役过渡期 / 守卫 / CHANGELOG）**已完成**。
 > 关联 change：`class-write-scope-alignment`（AC18 要求本 stub 存在且其 Acceptance 含 owns 核对项）
 > planner 审查：**待办登记**，未过 metis（实施前须补）
 
@@ -23,7 +26,7 @@
 
 另有一处**悬空指针**：`SKILL.md:49` 声明 `.rddf/state/.verifier-report.json`，但全 skills 目录**无任何组件写它**（`rddf_session_hooks.sh` 只把它登记进 `sessions.json`）⇒ 清理时一并处理。
 
-## 可执行部分（本仓已做 / 产品侧待做）
+## 可执行部分（**已全部完成**，2026-11-14）
 
 > 本节把「产品侧才能改的部分」与「本仓现在就能做的部分」分开 —— 本仓**无 `~/.agents/skills/**` 的写权限**，
 > 所以能做的只有：① 核对证据 ② **收拢就绪性证明** ③ 逐文件改动清单 ④ 本仓收尾清单。
@@ -38,7 +41,7 @@
 | `owns:`（`:32`） | `.rddf/state/.ac-verification.jsonl` | ✅ |
 | **实际写入但未声明**（`:415` halted 审计） | `.rddf/state/.ac-verifier-blocked.jsonl` | ✅ |
 | **实际写入但未声明**（`scripts/run_verification.sh:7` staged） | `.rddf/state/rdd-verify-context-<change>.json` | ✅ |
-| **悬空指针**（`:49` 声明，**无写入方**） | `.rddf/state/.verifier-report.json` | ❌（未纳入，待清理） |
+| **悬空指针**（`:49` 声明，**无写入方**） | `.rddf/state/.verifier-report.json` | ❌（**已处理**：产品侧改为按 `change_name` 计算的真实路径；skill 侧 context pointer 改指 `.rddf/state/verifier/`） |
 
 ⇒ 常量与 skill 的**实际写入面**一致（6 项）；`owns:` 只声明了其中 4 项（那 2 项是 skill 自己没声明的）。
 核对命令（本机可跑，CI 不可 —— skill 在仓外）：
@@ -55,7 +58,7 @@ grep -n "VERIFIER_OWNS_PATHS" -A 10 lib/delegate-core.ts  # 本仓常量
 `.rddf/state/verifier/` 后**已在 verifier 类的允许集与 scope 授权内** ⇒ 产品侧迁移时**本仓无需 flag day**；
 同时断言**收拢前**的根下路径**仍拒**（⇒ 不是「整目录放开」）。
 
-### ③ 产品侧逐文件改动清单（待产品仓执行）
+### ③ 产品侧逐文件改动清单（**已执行** —— 产品侧 change `consolidate-verifier-state`）
 
 | # | 文件 | 改动 |
 |---|---|---|
@@ -70,7 +73,12 @@ grep -n "VERIFIER_OWNS_PATHS" -A 10 lib/delegate-core.ts  # 本仓常量
 | 9 | `SKILL.md:29-32` 的 `owns:` | 收拢后 4 项实际变成 `.rddf/state/verifier/.ac-*` ⇒ 更新声明（并把 2 个未声明项补进去） |
 | 10 | `SKILL.md:49` 的 `.verifier-report.json` | **悬空指针**：删除声明或补上写入方 |
 
-### ④ 本仓收尾清单（产品侧收拢**之后**才做）
+### ④ 本仓收尾清单（**已完成**）
+
+> **完成记录（2026-11-14）**：a 过渡期规则退役 ✔｜b 症状桥接降级为历史注记 ✔｜c front.md 代跑提示删除 ✔｜
+> d ADR D1b 标注退役 ✔｜e `VERIFIER_OWNS_PATHS` 6 项全在新命名空间（派生 backlog 视图**自动归零**）✔｜
+> f 守卫 AC6 / AC8 / AC11 / AC13 改写为「退役后形状」✔｜g CHANGELOG v2.24 ✔｜
+> h e2e 新增运行时用例（verifier 类跑 Step 5 **落盘成功**，不再是交回）✔
 
 | # | 落点 | 改动 |
 |---|---|---|
