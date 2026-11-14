@@ -80,6 +80,38 @@
 
 enforce 后：被拒调用**不产生子会话** ⇒ `audit` 的违规率**结构性归零** ⇒ 回退判据**不能**用 audit 报表，只能取 `subagent-contract.log` 中 **`gate=L1` && `level=violation` && `mode=enforce`** 的条数（**排除 `gate=L2`**：该路径 `enforceable:false` 从不拦截）。回退触发：该计数在 enforce 后 7 天内 > 0 且人工复核其中 ≥ 1 条为误拦。
 
+## 复评触发点（2026-11-15 重算，**不提前取数**）
+
+> ⚠ **为什么现在不跑块 R**：R1 会**重算四元组并取一个 `t1`（取数时刻）** ⇒ 提前跑就把
+> **封闭窗的终点**提前钉在今天（`t1 − t0 = 1 天`）⇒ 之后永远等不到 7 天窗。
+> ⇒ **等到 2026-11-21 之后**再一次性跑块 R（R1–R8，逐条命令见 `openspec/changes/subagent-contract-critic-enforce/tasks.md`）。
+
+**2026-11-15 重算（只数不改窗，不作为 `t1`）**：
+
+| 指标 | 基线（2026-11-14） | 2026-11-15 | 变化 |
+|---|---|---|---|
+| 首轮数 | 349 | **353** | +4 |
+| 续接数 | 28 | 28 | — |
+| **首轮违规 `N`** | 112 | **112** | **0** |
+| 豁免数 | 79 | 79 | — |
+| 合规率 | 45.3% | **45.9%** | ↑（分母涨了 4 个**合规**调用） |
+
+⇒ 新增的 4 次首轮调用**全部合规**（含本轮 oracle/critic 双审：critic 那次带了完整 7 字段契约）
+⇒ **契约机制本身有效**（合规路径不产生违规）。
+
+**最早可复评日**：**2026-11-21**（`t0 = 2026-11-14` + 7 天）。到那天的动作：
+
+```bash
+cd ~/.config/opencode
+# ① 复评（一次跑完 R1–R8；命令清单见 tasks.md 块 R）
+#    先重算四元组 + N（数 messageIndex===0 && !evaluation.ok）
+bun scripts/audit-subagent-prompts.ts --agent critic --json
+# ② 取数当天的 mode 快照 + 封闭窗核对（t1 − t0 ≥ 7×86400×1000）
+# ③ 不变量（三文件零改动 + core hash 未变）
+git diff --stat <baseline_sha>..HEAD -- lib/subagent-contract-core.ts plugins/subagent-contract.ts scripts/audit-subagent-prompts.ts
+# ④ 结论二选一（R8）⇒ 决定是否开 enforce
+```
+
 ## 本 change 的剩余工作（为何尚未归档）
 
 | AC | 状态 |
