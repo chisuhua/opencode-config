@@ -10,7 +10,8 @@
  * 复现：`bun test tests/config-guards.test.ts`
  */
 import { describe, expect, test } from "bun:test"
-import { existsSync, readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 
 import {
@@ -1209,18 +1210,62 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(sec.some((l) => l.includes("状态/记账文件写入") && l.includes(".rddf/reviews/"))).toBe(false)
   })
 
-  test("AC14：活文档里不再有把 verifier 写集描述为「仅 .rddf/reviews」的句子", () => {
+  test("AC14：活文档里不再有把 verifier 写集描述为「仅 .rddf/reviews」的句子（全域扫描，排除集按 proposal）", () => {
     const stale = /verifier[^\n]{0,40}(仅|只允许|只能)[^\n]{0,20}\.rddf\/reviews/
-    const files = [
-      ["prompts/build.md", BUILD_MD],
-      ["prompts/plan.md", PLAN_MD],
-      ["prompts/front.md", FRONT_MD],
-      ["docs/MULTI-AGENT-DESIGN.md", readFileSync(path.join(import.meta.dir, "..", "docs", "MULTI-AGENT-DESIGN.md"), "utf8")],
-      ["docs/backend-handoff-role-class.md", readFileSync(path.join(import.meta.dir, "..", "docs", "backend-handoff-role-class.md"), "utf8")],
-    ] as const
-    for (const [name, text] of files) {
-      expect(`${name}: ${text.match(stale)?.[0] ?? "clean"}`).toContain("clean")
+    const root = path.join(import.meta.dir, "..")
+    // 扫描集 = prompts/** + docs/** + commands/**；排除 docs/adr/**（历史 ADR 描述写作时点状态）
+    const scanRoots = ["prompts", "docs", "commands"]
+    const excluded = ["docs/adr"]
+    const hits: string[] = []
+    const walk = (rel: string) => {
+      if (excluded.some((e) => rel === e || rel.startsWith(e + "/"))) return
+      const abs = path.join(root, rel)
+      for (const entry of readdirSync(abs, { withFileTypes: true })) {
+        const next = rel ? `${rel}/${entry.name}` : entry.name
+        if (entry.isDirectory()) walk(next)
+        else if (entry.name.endsWith(".md")) {
+          const m = readFileSync(path.join(abs, entry.name), "utf8").match(stale)
+          if (m) hits.push(`${next}: ${m[0]}`)
+        }
+      }
     }
+    for (const r of scanRoots) walk(r)
+    expect(hits.join(" | ")).toBe("")
+  })
+
+  test("AC5 承接：§架构文档范围 含「arch_paths 不得取 .rddf/state 的祖先或本身」禁句", () => {
+    const line = BUILD_MD.split("\n").find((l) => l.includes("arch_paths") && l.includes(".rddf/state"))!
+    expect(line).toContain("不得")
+    expect(line).toContain("祖先或本身")
+    expect(line).toContain("状态目录不是架构文档面")
+  })
+
+  test("AC10④：父篇 ADR 的 commit 必须是代码 commit 的祖先或同一 commit（父篇滞后必红）", () => {
+    // 一次性判据（验后即冻）：用 git log -1 取**该文件**的最后提交
+    const sha = (file: string) => {
+      try {
+        return execFileSync("git", ["log", "-1", "--format=%H", "--", file], {
+          cwd: path.join(import.meta.dir, ".."),
+          encoding: "utf8",
+        }).trim()
+      } catch {
+        return ""
+      }
+    }
+    const parentSha = sha("docs/adr/ADR-backend-handoff-role-class.md")
+    const codeSha = sha("lib/delegate-core.ts")
+    if (!parentSha || !codeSha) return // 环境无 git ⇒ 跳过（判据在验收报告里人工核对）
+    // is-ancestor 退出码 0 ⇒ 父篇 commit 是代码 commit 的祖先或同一 commit（父篇滞后 ⇒ 退出码 1 ⇒ 红）
+    let ok = true
+    try {
+      execFileSync("git", ["merge-base", "--is-ancestor", parentSha, codeSha], {
+        cwd: path.join(import.meta.dir, ".."),
+        stdio: "ignore",
+      })
+    } catch {
+      ok = false
+    }
+    expect(ok).toBe(true)
   })
 
   test("AC18：产品侧收拢 backlog stub 已建，且其 Acceptance 含 owns 核对项", () => {

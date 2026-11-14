@@ -333,7 +333,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 - **不改实现**（角色边界）：列出失败项 + 证据 + 复现命令，路由回 build
 - **重试上限 3 轮**（与 `RDDF_VERIFIER_MAX_LOOPS=3` 对齐）：同一 change 第 3 轮仍失败 → `halted`，写审计记录交用户裁决，不再自动打回。走 skill 时轮次记在 `.rddf/state/verifier/<change>.json`；本地验收记在报告文件的「已用轮次」里，下一轮先读它再决定是否还能打回
 - **三处落点（三元，勿混用）**：**产品落点** = `.rddf/reviews/`（验收报告与受阻记录）｜**记账落点** = `.rddf/state/verifier/`（轮次 / 审计状态机）｜**根下点文件** = `.rddf/state/.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`（**待产品侧收拢**进记账落点，收拢前见下方过渡期规则）。**记账文件不得冒充验收报告**。
-- **过渡期规则**（`ADR-class-write-scope-alignment` D1b；产品侧收拢前适用）：① `verifier` 类**只跑取证与判决**，判决落 `.rddf/reviews/<change>-verify.md`；② **状态机落盘（verdict cache / loop state / audit）由主会话代跑** —— 被派发后端在 skill 的 Step 5 之前停手，把证据与判决写进响应正文（产品内容落 `.rddf/reviews/`），主会话按 skill 协议补齐状态机写入；③ **不改 skill 本体**；④ **产品侧收拢目录后，后端可直写全部 skill 状态**（一个目录覆盖）。
+- **过渡期规则**（`ADR-class-write-scope-alignment` D1b；产品侧收拢前适用）：① `verifier` 类**只跑取证与判决**，判决落 `.rddf/reviews/<change>-verify.md`；② **状态机落盘（verdict cache / loop state / audit）由主会话代跑** —— 被派发后端在 **LLM Verification Protocol 的 Step 5**（持久化）之前停手，把证据与判决写进响应正文（产品内容落 `.rddf/reviews/`），主会话按 skill 协议补齐状态机写入（**执行 skill，不是手工 edit 状态文件** —— 保住 single writer）；③ **不改 skill 本体**；④ **产品侧收拢目录后，后端可直写全部 skill 状态**（一个目录覆盖）。
   - **症状桥接**：在 `.rddf/state/.ac-*` 收到 `Permission denied` = **本契约生效，不是故障** ⇒ 带证据与判决 `HANDOFF` 交回主会话（先例：architect 写 arch 路径被拒时同理）。
 - **失败分类**（走 skill 时由 skill 判，本地验收自己判）：`implementation_gap`（实现缺失 → 回 build 写代码）vs `proposal_drift`（实现与 AC 不符 → 回 planner 改 proposal）。判不出时默认 gap——重跑代码比重写提案便宜
 

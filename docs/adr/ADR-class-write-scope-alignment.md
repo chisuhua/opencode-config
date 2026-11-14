@@ -7,7 +7,7 @@
 - Date: 2026-11-14
 - Author: architect（role:architect）
 - Parent: **修订** `ADR-backend-handoff-role-class` 的 **D3 verifier 写集行**（该 D3 其余行、D4、D5 **不动**）
-- 关联 change: `backlog: class-write-scope-alignment`（尚未立项；立项后回填 `openspec/changes/<name>/`）
+- 关联 change: `openspec/changes/class-write-scope-alignment/`（**已立项** 2026-11-14；实施中）
 - 关联 backlog: `rdd-verifier-state-consolidation`（产品侧：把散在 `.rddf/state/` 根的 verifier 点文件
   ——`.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`——
   收拢进 `verifier/`；并清理 dangling 的 `.rddf/state/.verifier-report.json`：`SKILL.md:49` 声明它、
