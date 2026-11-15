@@ -930,6 +930,7 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 │   ├── CHANGELOG.md            # 历史增量（权限加固史 / 各版本验证记录 / 已完成台账 / 演进日志）
 │   ├── review-automation-backlog.md  # 评审自动化迁移清单（L0/L1/L2/L3 分层）
 │   ├── guard-authoring.md         # **判据与守卫的写法**（方法论参考，**非契约**：怎么把散文判据升级为结构判据 + 变红演练 + 已知陷阱）
+│   ├── test-authoring.md          # **测试构建指南**（方法论参考，**非契约**：四层选型 / 有效红灯 / 断言对象 / 确定性 / 门控 / 核对单）
 │   └── rdd-workflow-product-issues.md  # 待提交上游 rdd-workflow 的产品缺陷清单（4 条）
 ├── prompts/                     # agent prompt 文件（9 个）
 │   ├── build.md                 # 委派规则 + subagent 返回结构表 + critic SOP（7 字段 + 评审预算）+ 角色矩阵 + rdd-workflow 增强层
