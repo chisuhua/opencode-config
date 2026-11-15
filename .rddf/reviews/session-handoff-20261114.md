@@ -55,12 +55,13 @@
    ⑤ 两处枚举式词表仍在（AC20 的 HIST 行级豁免 / AC14 的写集动词表）；
    ⑥ **accepted-roots 守卫缺第三件**（「起始标记独占 1 行」）—— AC19 / AC23 都有三件套，它只有两件套 ⇒
    「陈旧副本留孤儿标记 + 不同体」抓不到（v2.26 既有实现，非 v2.28 引入）。
-   ⚠ **新发现的既有 flaky（与 v2.28 无关，需单独立项）**：`tests/delegate-async.test.ts` 的
+   ✅ **既有 flaky（与 v2.28 无关）—— 已修（2026-11-15）**：`tests/delegate-async.test.ts` 的
    「多实例 / tripwire」三条用例（AC9 赎回开关 / AC8·AC17 tripwire / AC15 水位线）用
    `pid: process.pid + 1` **伪造另一个存活实例**，而存活判定是 `process.kill(pid, 0)`
    ⇒ **`pid+1` 恰好存在与否决定成败** ⇒ 天生 flaky（实测 3 次运行中 1 次 3 fail）。
-   修法方向：伪造实例改用**必然存活**的 pid（如当前 `process.pid` + 不同 `host`），
-   让 `(host, pid)` 判等仍为 foreign ⇒ 确定性成立。
+   修法（已落）：伪造实例改用**跨 host**（`host != os.hostname()` ⇒ `detectForeignInstances` **不查 pid**、
+   保守视为存活）⇒ 与 pid 无关、确定性成立；另把 AC11 的「死 pid」从硬编码 999999 改为
+   `/proc/sys/kernel/pid_max + 1`，并加 AC11b 回归断言钉住「跨 host ⇒ 不查 pid」。
    ⚠ **诚实口径（critic 给的）**：两族升级相对旧实现**不是「严格更强」，而是「换漏网集」** ——
    真正的增益是**块级逐字闭集**（旧实现完全没有的面）+ 抓到了 `prompts/plan.md:90` 缺闭合反引号
    这个真缺陷（旧守卫「取第一句就截断」把它藏住了）。

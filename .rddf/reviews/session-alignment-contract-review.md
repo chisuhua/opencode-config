@@ -9,7 +9,7 @@
 
 | 层 | 真源 | 投影 | 守卫 |
 |---|---|---|---|
-| ① 插件 ⇄ 简报 | `DELEGATE_RESULT_FIELDS`（28 字段）/ `DELEGATE_RESULT_CRITICAL_FIELDS`（7 字段） | 插件运行时**自检**（`assertDelegateResultShape`，缺字段 ⇒ 硬错） | AC21 / AC21b / AC22 |
+| ① 插件 ⇄ 简报 | `DELEGATE_RESULT_FIELDS`（**27** 字段）/ `DELEGATE_RESULT_CRITICAL_FIELDS`（7 字段） | 插件运行时**自检**（`assertDelegateResultShape`，缺字段 ⇒ 硬错） | AC21 / AC21b / AC22 |
 | ② 插件 ⇄ 派发方 prompt | 同 ① | `prompts/plan.md` 的「delegate 返回值」小节 + front.md 的既有小节 | AC21（字段覆盖）/ AC21b（纪律句） |
 | ③ 配置 ⇄ prompt | `opencode.jsonc` 的 permission | `capabilityBlock()` 渲染的 `<!-- capability:<agent>` 块（三份 prompt 各一） | AC23（逐字 + 恰好 1 处 + 标记独占 1 行）/ AC24（散文不得复述） |
 
@@ -32,7 +32,7 @@
 （此前**零调用**）；④ 计划文件与实际执行的偏差修正（编号、勾选、oracle 轮的后续升级）。
 
 4 条中影响：⑤ 「字段全集见 front.md」的宣称**超出守卫覆盖** ⇒ 收窄为「全集 = 插件清单；语义 = front 小节」
-（配套的 AC23b 随之删除 —— 它要求 front.md 列出 28 个字段 ⇒ prompt 噪音）；⑥ 注释枚举补 `out_of_scope_files`；
+（配套的 AC23b 随之删除 —— 它要求 front.md 列出全部 27 个字段 ⇒ prompt 噪音）；⑥ 注释枚举补 `out_of_scope_files`；
 ⑦ plan.md 的指针改用**标题名**（本仓约定禁 `/§\d/` 引用）；⑧ 能力面块头注释的**覆盖宣称收窄**。
 
 3 条低影响：⑨ AC21 的 `outcome` 平凡性（子串）；⑩ describe 头登记已知边界；⑪ assert 顺序（不改，理由见 §4）。
@@ -41,7 +41,7 @@
 
 | # | finding | 闭合方式 |
 |---|---|---|
-| 1 | **真缺陷**：`wait_error` 取值恒为 `undefined` ⇒ `JSON.stringify` **丢键** ⇒ 线上 payload 只有 **27/28** 个契约字段，而运行时自检（用 `in` 判内存对象）与静态 AC22（扫源码）**两层都看不见** | ① `wait_error: waitError ?? null`；② 自检改为查**序列化之后**的对象（通用防线）；③ 新增 **AC21d** 单测把「undefined ⇒ 序列化丢键 ⇒ 自检必须查序列化后」钉住；④ 另核：其余 5 个简写字段（`vcs`/`kind`/`outcome`/`blocked_reason`/`blocked_action`/`blocked_all`）**必然有值** ⇒ 本类缺陷仅此一处 |
+| 1 | **真缺陷**：`wait_error` 取值恒为 `undefined` ⇒ `JSON.stringify` **丢键** ⇒ 线上 payload 只有 **26/27** 个契约字段，而运行时自检（用 `in` 判内存对象）与静态 AC22（扫源码）**两层都看不见** | ① `wait_error: waitError ?? null`；② 自检改为查**序列化之后**的对象（通用防线）；③ 新增 **AC21d** 单测把「undefined ⇒ 序列化丢键 ⇒ 自检必须查序列化后」钉住；④ 另核：其余 5 个简写字段（`vcs`/`kind`/`outcome`/`blocked_reason`/`blocked_action`/`blocked_all`）**必然有值** ⇒ 本类缺陷仅此一处 |
 | 2 | plan.md 的表两行虽改为指向块，**括注仍是能力面复述**（不受 AC24 保护）⇒ 漂移风险复活 | 括注**删除** ⇒ 纯指针（AC24 的结构判据：能力面行必须含 `capability:`） |
 | 3 | assert 落点（副作用**之后**）缺决策记录与恢复路径 | lib 注释补：两个备选（前置 ⇒ 槽位滞留；后置 ⇒ 终态已落盘可取证）＋「失败要响，但状态不许腐」 |
 | 4 | 已知边界未登记 `capabilityBlock` 的**维度闭集**（只渲染 edit/shell/delegate） | describe 头补该边界 |
