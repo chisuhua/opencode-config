@@ -38,7 +38,7 @@
 
 ## Output
 
-Markdown，四个固定小节，顺序不变：
+Markdown，三个固定小节，顺序不变：
 
 ### 匹配文件
 - `/abs/path/file.ext:line` — 为什么与本次问题相关

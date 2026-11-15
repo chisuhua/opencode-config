@@ -24,6 +24,7 @@ import {
 } from "../scripts/agent-guard-rules.ts"
 import { applyRules } from "../scripts/agent-guard-gen.ts"
 import { CONTRACTS } from "../lib/subagent-contract-core.ts"
+import { dispatchToolDefinition } from "../lib/delegate-async.ts"
 import {
   ARCH_FALLBACK_DIRS,
   DELEGATE_RESULT_CRITICAL_FIELDS,
@@ -232,6 +233,164 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     const orchMd = readFileSync(path.join(ROOT, "docs", "SUBAGENT-ORCHESTRATION.md"), "utf8")
     for (const h of headings) {
       expect(orchMd, `SUBAGENT-ORCHESTRATION.md 的 metis 段缺少「${h}」`).toContain(h)
+    }
+  })
+
+  /**
+   * 只读 subagent 的**输出节数与名单**：`prompts/<agent>.md` 的 Output 段（真源）
+   * ⇒ 三处投影（prompt 自述 / `build.md` 的返回结构表 / `MULTI-AGENT-DESIGN.md` 的卡片）
+   * **有序全等**。
+   *
+   * ⚠ **为什么要有这条**：2026-11-15 实测发现 `explore` 的节数在**三处**都写成了「四」
+   * （`explore.md:41` / `build.md:61` / design 卡片），而它实际只有 **3** 个 `###`
+   * ⇒ 「一处错 ⇒ 三处手抄 ⇒ 三处都错」，且**没有任何守卫会发现**。
+   *
+   * ⚠ **数字必须派生**：节数一律从 `headings.length` 现算（prompt 自述里写的是**中文数字**
+   * ⇒ 用 `cnNum()` 转，不手抄映射表）⇒ 增删小节时守卫会红，而不是让人去改三处数字。
+   */
+  /**
+   * **async 四个工具的 description 形态约束**（派生的必要条件）。
+   *
+   * ⚠ **为什么**：2026-11-15 实测发现 `delegate-async.ts` 的 4 个工具 description **全部手抄**：
+   *   - `dispatch` 的「必填/选填」清单（12 个参数名）—— 手抄 ⇒ 参数增减必漂；
+   *   - `sessions` 的「返回：overall / headline / items」—— 与 delegate 的返回契约**不是一回事**，
+   *     但两者在同一仓里 ⇒ 极可能被互相抄。
+   * ⇒ 形态约束：description 表达式段内**不得出现** `DELEGATE_RESULT_*` 字段名或**参数名**的字面量
+   *   （⇒ 「改回手抄」当场红）。
+   */
+  test("async 四个工具的 description：不得手抄返回字段名 / 参数名（形态约束）", () => {
+    const asyncSrc = readFileSync(path.join(ROOT, "lib", "delegate-async.ts"), "utf8")
+    const tools = ["dispatchToolDefinition", "sessionsToolDefinition", "suspendToolDefinition", "cancelToolDefinition"]
+    for (const fn of tools) {
+      const start = asyncSrc.indexOf(`export function ${fn}`)
+      expect(start, `找不到 ${fn}`).toBeGreaterThan(-1)
+      const seg = asyncSrc.slice(start, start + 6000)
+      // ⚠ 必须从 `return {` **之后**找 `description:` —— properties 里每个参数也有 description:
+      const retAt = seg.indexOf("return {")
+      const dStart = seg.indexOf("description:", retAt >= 0 ? retAt : 0)
+      const dEnd = seg.indexOf("input:", dStart)
+      const descSeg = dStart >= 0 && dEnd > dStart ? seg.slice(dStart, dEnd) : ""
+      expect(descSeg.length, `定位不到 ${fn} 的 description 表达式（函数被重构？请更新本判据）`).toBeGreaterThan(0)
+
+      // ① 不得含 delegate 返回契约的字段名（防跨契约抄清单）
+      const fields = DELEGATE_RESULT_FIELDS as readonly string[]
+      const copied = fields.filter((f) => new RegExp(`["'\`]${f}["'\`]`).test(descSeg))
+      expect(copied, `${fn} 的 description 里出现了 delegate 返回契约的字段名（应改为派生）：${copied.join(", ")}`).toEqual([])
+
+      // ② 不得含**参数名**字面量（防手抄必填/选填清单）—— 只对有参数的工具判
+      if (fn === "dispatchToolDefinition") {
+        const props = dispatchToolDefinition({} as any).input?.properties ?? {}
+        const names = Object.keys(props)
+        const hardcoded = names.filter((n) => new RegExp(`["'\`]${n}["'\`]`).test(descSeg))
+        expect(hardcoded, `dispatch 的 description 里出现硬编码参数名（应改为从 schema 派生）：${hardcoded.join(", ")}`).toEqual([])
+        // 且必须真的调用了派生
+        expect(descSeg, "dispatch 的 description 必须从 requiredNames / optionalNames 派生").toMatch(/requiredNames|optionalNames/)
+      }
+    }
+  })
+
+  /**
+   * **新增文件闸门** —— 「增量门」里**唯一可机械**的那一半。
+   *
+   * ⚠ **边界（必须如实说）**：本判据只覆盖「**新增了文件**」；
+   * 「在**已有**文件里新增了一条陈述」**不可机械识别** ⇒ 属 review 流程，不是测试能解决的
+   * （本仓无 CI、无生效的 git hook ⇒ 「沉默 = 违规」今日只能靠跑 `bun test` 时生效）。
+   *
+   * ⇒ 新增一个投影面时，**逼一次决定**：建守卫 / 登记为已知盲区 / 明确排除。
+   */
+  test("新增文件闸门：`prompts/` `docs/` `lib/` 的文件集合 == 清单（多一个 ⇒ 必须做一次决定）", () => {
+    const EXPECTED: Record<string, string[]> = {
+      prompts: [
+        "build.md", "plan.md", "front.md", "explore.md", "librarian.md", "oracle.md", "metis.md",
+        "general.md", "critic.md", "context-builder.md",
+      ],
+      docs: [
+        "MULTI-AGENT-DESIGN.md", "CHANGELOG.md", "SUBAGENT-ORCHESTRATION.md",
+        "guard-authoring.md", "test-authoring.md",
+        "backend-handoff-role-class.md", "front-delegate-architecture.md",
+        "front-delegate-testing.md", "front-delegate-usage.md", "dual-session-delegation.md",
+        "model-fallback-usage.md", "review-automation-backlog.md", "rdd-workflow-product-issues.md",
+      ],
+      lib: ["delegate-core.ts", "delegate-async.ts", "model-fallback-core.ts", "subagent-contract-core.ts"],
+    }
+    for (const [dir, expected] of Object.entries(EXPECTED)) {
+      // ⚠ **已知边界（fail-closed 的反面，必须如实登记）**：`readdirSync` 是**平铺**的 ⇒
+      //   **子目录整树被过滤** —— 新建 `docs/<任意子目录>/foo.md` **不会**被本闸命中。
+      //   而 `docs/adr/` 恰是 arch 文档的高危面 ⇒ **子目录形态是本闸的盲区**。
+      //   ⇒ 补法（本批不做，进 backlog）：递归枚举 + 对子目录单独登记。
+      const actual = readdirSync(path.join(ROOT, dir)).filter((f) => {
+        // 只看**真投影面**：排除备份 / 陈旧副本 / 非内容文件
+        if (f.endsWith(".bak") || f.endsWith(".backup") || f.includes(".bak-")) return false
+        if (!/\.(md|ts)$/.test(f)) return false
+        return true
+      }).sort()
+      const missing = actual.filter((f) => !expected.includes(f))
+      const gone = expected.filter((f) => !actual.includes(f))
+      expect(missing, `${dir}/ 新增了文件但没进清单 —— 必须做一次决定（建守卫 / 登记已知盲区 / 明确排除）：${missing.join(", ")}`).toEqual([])
+      expect(gone, `${dir}/ 清单里的文件不存在了（删了还是改名？）—— 同步清单：${gone.join(", ")}`).toEqual([])
+    }
+  })
+
+  test("只读 subagent 的输出节数与名单：prompt 自述 / build.md / design 卡片 三处有序全等", () => {
+    const buildMd = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+    const designMd = readFileSync(path.join(ROOT, "docs", "MULTI-AGENT-DESIGN.md"), "utf8")
+
+    /** 阿拉伯数字 → 中文数字（1..10）—— 供 prompt 自述里的「N 个固定小节」比对。
+     *  ⚠ >10 节 ⇒ 落 `String(n)` ⇒ 与自述里的中文数字不等 ⇒ **本守卫按红处理**（fail-closed）：
+     *    届时需扩展本函数，而不是放宽判据。 */
+    const cnNum = (n: number): string => ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][n] ?? String(n)
+    const splitList = (raw: string) => raw.split("/").map((x) => x.trim()).filter(Boolean)
+
+    // ⚠ `critic` **不在此列**：它没有 `## Output` 段（输出契约是「4 段式」而非 `###` 小节）⇒
+    //   形态不同，本守卫的解析形态不适用 ⇒ **如实登记为未守卫面**（不是「它不需要」）。
+    for (const agent of ["explore", "librarian", "oracle", "general"]) {
+      const promptMd = readFileSync(path.join(ROOT, "prompts", `${agent}.md`), "utf8")
+      const outM = promptMd.match(/^## Output\s*$/m)
+      expect(outM, `prompts/${agent}.md 缺 ## Output 段`).toBeTruthy()
+      const outputSection = promptMd.slice((outM as RegExpMatchArray).index).split(/^## /m).slice(1).join("\n## ")
+      const headings = [...outputSection.matchAll(/^### (.+)$/gm)].map((m) => (m[1] as string).trim())
+      expect(headings.length, `prompts/${agent}.md 的 Output 段应有小节`).toBeGreaterThan(0)
+
+      // ① prompt 自述：「Markdown，N 个固定小节，顺序不变：」
+      const selfLine = outputSection.split("\n").find((l) => /固定小节/.test(l)) ?? ""
+      const cn = /Markdown，(.?)个固定小节/.exec(selfLine)?.[1] ?? ""
+      expect(cn, `prompts/${agent}.md 的 Output 段自述节数缺失或格式变了：「${selfLine.trim()}」`).toBe(cnNum(headings.length))
+
+      // ② build.md 的返回结构表行：「Markdown N 节：名1 / 名2 / …」
+      //    ⚠ **逐项适用性**：build.md 的那张表是 **subagent 返回结构表** ⇒ 只含 subagent。
+      //      `general` 是主会话 agent（不在该表里）⇒ 这一处对它**不适用** ——
+      //      显式跳过（**不是「假装通过」**），其余三处（自述 / 卡片 / 文件树）照判。
+      //    「适用」的判据 = **该行含「Markdown N 节：」**（subagent 返回结构表的形态）；
+      //    不含 ⇒ 这一处投影对它**不适用**（`general` 是主会话 agent，它在 build.md 里出现
+      //    于**别的表**）⇒ 显式记「不适用」，**不是「假装通过」**。
+      const row = buildMd.split("\n").find((l) => l.startsWith("| `" + agent + "` |"))
+      const rowM = row ? /Markdown (\d+) 节：([^|]+)/.exec(row) : null
+      if (!rowM) {
+        expect(
+          agent,
+          `build.md 里 ${agent} 的行**不含**「Markdown N 节：」—— 若它**是** subagent 则本守卫漏了它；` +
+            `若不是（如 general 是主会话 agent）则这一处投影对它**不适用**，属预期`,
+        ).toBe("general")
+      } else {
+        expect(Number(rowM[1]), `build.md 的 ${agent} 行节数与实际不符`).toBe(headings.length)
+        expect(splitList(rowM[2]), `build.md 的 ${agent} 名单与 ${agent}.md 不一致（含顺序）`).toEqual(headings)
+      }
+
+      // ③ design 卡片：「Markdown N节（名1 / 名2 / …）」
+      const cardM = new RegExp("^#### `" + agent + "`.*$", "m").exec(designMd)
+      expect(cardM, `MULTI-AGENT-DESIGN.md 缺 ${agent} 卡片`).toBeTruthy()
+      const card = designMd.slice((cardM as RegExpMatchArray).index).split(/^#### /m).slice(1).join("\n#### ")
+      const cardOut = /Markdown (.+?)节（([^）]+)）/.exec(card)
+      expect(cardOut, `design 的 ${agent} 卡片里找不到「Markdown N节（…）」`).toBeTruthy()
+      expect(cnNum(headings.length), `design 的 ${agent} 卡片节数与实际不符`).toBe(cardOut![1])
+      expect(splitList(cardOut![2] as string), `design 的 ${agent} 卡片名单与 ${agent}.md 不一致（含顺序）`).toEqual(headings)
+
+      // ④ **文件树行**（第四处投影）：`│   ├── <agent>.md   # （Markdown N节输出）`
+      const treeLine = designMd.split("\n").find((l) => l.includes(`├── ${agent}.md`) || l.includes(`└── ${agent}.md`))
+      expect(treeLine, `design 的文件树里找不到 ${agent}.md 行`).toBeTruthy()
+      const treeOut = /（Markdown (.+?)节输出）/.exec(treeLine as string)
+      expect(treeOut, `design 文件树的 ${agent}.md 行里找不到「（Markdown N节输出）」`).toBeTruthy()
+      expect(cnNum(headings.length), `design 文件树的 ${agent}.md 行节数与实际不符`).toBe(treeOut![1])
     }
   })
 
@@ -1850,6 +2009,15 @@ describe("对齐完备性（元判据：描述面枚举闭集）", () => {
    *   - 无通道 + 未登记 ⇒ **红**（不许静默缺着）
    *   - 有通道 + 仍登记 ⇒ **红**（登记不得变成永久豁免）
    * ⇒ 通道落地时必须删掉对应条目，否则守卫会挡住你。
+   */
+  /**
+   * ⚠ **本表当前为空，且「空」是如实状态**（2026-11-15，metis 指出）：
+   *   - `delegate-base` 那条已随 `delegate-base-channel` 落地而删除；
+   *   - **登记表机制本身有已知局限**：它只能承载「**有对应红判据**」的盲区
+   *     （条目必须能被某个守卫抓住）⇒ 像「`prompts/critic.md.bak-*` 这类**非 `.md` 后缀**的陈旧副本」
+   *     （所有扫描器静默跳过 ⇒ 零守卫）**就承载不了** —— 登记表对它无效。
+   *   ⇒ 本表的**长期价值**取决于「每条登记是否有可验证会红的判据」；
+   *     缺那条判据的盲区必须**另找出路**（如：把陈旧副本纳入扫描后缀集）。
    */
   const KNOWN_UNIMPLEMENTED_CHANNELS: ReadonlyArray<{
     id: string

@@ -150,7 +150,7 @@ openspec/changes/*/proposal.md
 - **核心 prompt**：`prompts/explore.md`
 - **权限**：read-only allowlist（read/grep/glob/list/bash 安全子集/webfetch/websearch）；**v2.5 起 shell 为三段式**：`*: deny` 打头 + 只读白名单 + 尾部守卫 deny（重定向 / `tee` / `find -exec/-fprint/-fls` / `sort|uniq -o` / `git --output|--format|--pretty` / `.env` 族）
 - **不能**写、不能委派
-- **输出**：Markdown 四节（匹配文件 / 直接答案 / 下一步），路径必须绝对
+- **输出**：Markdown 三节（匹配文件 / 直接答案 / 下一步），路径必须绝对
 
 #### `librarian` —— 外部文档/依赖源码 ⭐有特殊委派规则
 - **核心 prompt**：`prompts/librarian.md`（3601 字节，82 行）
@@ -932,16 +932,16 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 │   ├── guard-authoring.md         # **判据与守卫的写法**（方法论参考，**非契约**：怎么把散文判据升级为结构判据 + 变红演练 + 已知陷阱）
 │   ├── test-authoring.md          # **测试构建指南**（方法论参考，**非契约**：四层选型 / 有效红灯 / 断言对象 / 确定性 / 门控 / 核对单）
 │   └── rdd-workflow-product-issues.md  # 待提交上游 rdd-workflow 的产品缺陷清单（4 条）
-├── prompts/                     # agent prompt 文件（9 个）
+├── prompts/                     # agent prompt 文件
 │   ├── build.md                 # 委派规则 + subagent 返回结构表 + critic SOP（7 字段 + 评审预算）+ 角色矩阵 + rdd-workflow 增强层
-│   ├── plan.md                  # 106 行
-│   ├── explore.md               # 54 行（Markdown 四节输出）
-│   ├── librarian.md             # 95 行（Markdown 五节输出）
-│   ├── oracle.md                # 59 行（Markdown 四节输出）
-│   ├── metis.md                 # 70 行（Markdown 六节输出）
-│   ├── general.md               # 84 行（Markdown 四节输出）
-│   ├── critic.md                # 154 行（4 段式审稿输出）
-│   └── context-builder.md       # 180 行（critic prompt 组装器）
+│   ├── plan.md                  # 规划 / 委派 / 契约
+│   ├── explore.md               # （Markdown 三节输出）
+│   ├── librarian.md             # （Markdown 五节输出）
+│   ├── oracle.md                # （Markdown 四节输出）
+│   ├── metis.md                 # （Markdown 六节输出）
+│   ├── general.md               # （Markdown 四节输出）
+│   ├── critic.md                # （4 段式审稿输出）
+│   └── context-builder.md       # （critic prompt 组装器）
 ├── commands/                    # opencode 自定义 slash command
 │   ├── plans-init.md            # /plans-init [path]：初始化项目 .gitignore
 │   ├── role-init.md             # /role-init：写 .rddf/state/role.json

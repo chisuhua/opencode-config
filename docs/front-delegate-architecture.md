@@ -91,8 +91,8 @@
 | `lib/delegate-core.ts` | 638 | **纯逻辑内核**：29 个导出符号 + 工具定义工厂 | **主战场** |
 | `prompts/front.md` | 119 | front 的行为契约（四分类 / brief / 扫描清单 / 降级） | 改 prompt 需重启服务 |
 | `opencode.jsonc.opencode-go` | 1199 | agent 定义 + 权限块 + 门控 | 改权限需重启服务 |
-| `tests/delegate-core.test.ts` | 446 | 纯逻辑单测（51 项） | 随逻辑增补 |
-| `tests/delegate-tool.test.ts` | 372 | 假 ctx 端到端单测（12 项） | 随契约增补 |
+| `tests/delegate-core.test.ts` | — | 纯逻辑单测（用例数以 `bun test` 输出为准） | 随逻辑增补 |
+| `tests/delegate-tool.test.ts` | — | 假 ctx 端到端单测（用例数以 `bun test` 输出为准） | 随契约增补 |
 | `lib/delegate-core.ts` 导出面 | — | 见 §6.2 的扩展点表 | — |
 
 ---

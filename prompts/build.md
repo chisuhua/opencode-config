@@ -58,7 +58,7 @@
 
 | subagent | 返回结构 | build 取哪部分 |
 |---|---|---|
-| `explore` | Markdown 4 节：匹配文件 / 直接答案 / 下一步 | 「匹配文件」里的 `path:line` |
+| `explore` | Markdown 3 节：匹配文件 / 直接答案 / 下一步 | 「匹配文件」里的 `path:line` |
 | `librarian` | Markdown 5 节：文档 / 上游实现 / 获取失败 / 直接回答 / 下一步 | 「直接回答」；「获取失败」= 该资料拿不到，别重复委派 |
 | `oracle` | Markdown 4 节：根因 / 建议 / 已排除的替代方案 / 下一步 | 「建议」按影响排序采纳 |
 | `metis` | Markdown 6 节：隐藏意图 / 歧义 / AI slop 风险 / 缺失的验收标准 / 边界情况 / 建议修改 | 「建议修改」逐条处理 |

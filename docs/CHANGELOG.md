@@ -10,6 +10,54 @@
 
 ---
 
+> **v2.32 变更摘要（2026-11-15，测试覆盖面：先修活缺陷 + 两条可机械的增量门）**：
+> ① **问题**：用户要求「思考更全面的测试集」。先做了 oracle（成本/收益）+ metis（失效模式）
+> **双向挑战**，结论是：**「全面」不可达** —— 判据体系原则上无法自证完备
+> （本轮就是实例：oracle+metis+critic **三方共享同一心智模型** ⇒ **同时**漏掉「消费端三点 diff
+> 在未提交工作树恒空 ⇒ 基线对照无判别力」，直到 metis 第 2 轮才提出）；
+> 正确目标是**对增量的门**（每个新投影面出现时**机械地**逼一次决定：建守卫 / 登记 / 排除），
+> 而非「覆盖面」这个**状态**。且分层里 **L1/L5/L6/L7 是伪层**（L1 靠渲染器派生消灭、
+> L5 与注入演练重复且 mutant 分布与本仓威胁模型「契约漂移/手抄」错位、L6 应是「共享语料+差异登记」、
+> L7 用普通参数表即可）⇒ 8 层塌缩回 `docs/test-authoring.md` §1 的 **4 层** + 3 个横切附件。
+> ② **本批落地（优先修活缺陷，而不是建机制）**：
+> - **修 `explore` 的 off-by-one**：**三处**手抄同一个错数（`explore.md:41` / `build.md:61` /
+>   design 卡片 + **文件树**）都写「四节」而实际 **3** 节 ⇒ 新守卫「只读 subagent 的输出节数与名单：
+>   **四处**投影有序全等（prompt 自述 / `build.md` 行 / design 卡片 / design 文件树行），
+>   节数**从 `headings.length` 派生**（中文数字经 `cnNum()`，不手抄映射表）。
+> - **删掉文档里的用例计数**（4 处文件、含 `tests/README.md`）⇒ 改为「用例数以 `bun test` 输出为准」
+>   —— **删数字，而不是守数字**（本仓复发次数最多、零守卫的一类漂移）。
+> - **design 文件树的行数手抄全删**（`54 行` / `95 行` / …）⇒ 同上处置。
+> - **async 四个工具的 description 形态约束**（禁 `DELEGATE_RESULT_*` 字段名 / 参数名字面量）
+>   + `dispatch` 的**必填/选填清单改为从 schema 现算**（此前手抄 12 个参数名）。
+> - **新增文件闸门**（`prompts/` `docs/` `lib/` 的文件集合 == 清单）⇒ **唯一可机械**的增量门。
+> - **`tests/verify_arch_docs_scope.sh` 的第四态**（入库、能跑、但 `bun test` 不收 `.sh`
+>   ⇒ **无人执行**）⇒ 新增 `tests/arch-docs-scope.test.ts` wrapper 纳入规范命令（床不在时**明确 skip**）。
+> ③ **两个新工件**（用户指定）：
+> - **improvement** `.rddf/improvements/delegate-base-resolved-return.md`（5 段；**由 builder 代
+>   planner 起草、待 planner 审查** —— rdd-workflow 的 `add-improve` 前置在本仓不适用：
+>   无 `improvement-suggestions.md`、无 `.rddf/roadmap.md` 的 Phase Skeleton ⇒ 无 `主题:` 字段可匹配）：
+>   把「实际用的基线 sha」放进返回契约（`base_resolved`）⇒ 根治「跨 resume 同一基线的句柄
+>   **对派发方结构性不可达**」。
+> - **change** `openspec/changes/verifier-baseline-worktree-diff/`（AC1–AC8 / D1–D6）：
+>   修**消费端**的三点 diff 恒空（`git diff <base>...HEAD` 只比已提交，而后端被禁止 commit）。
+> ④ **审查**：oracle + metis（测试体系）→ critic **`APPROVE_WITH_CONDITIONS`**（无 BLOCKER；
+> 4 条 SHOULD_FIX 全闭合：① **design 文件树 L938 仍写「四节」** ⇒ 与卡片当场矛盾（已修，
+>   且文件树已纳入守卫①的第四处投影）；② `general` **确实**有跨文件重复陈述（critic 纠正 metis 的
+>   事实不准）⇒ 已纳入守卫①（并显式标注 `build.md` 那一处对它**不适用** —— 它不在 subagent 表里）；
+> ③ 文件闸门**子目录整树被过滤**的空窗 ⇒ 已在代码注释如实登记（递归枚举进 backlog）；
+> ④ 新 change 的 tasks 有一条判据（`merge-base` 新用途）在 AC 表无对应 ⇒ 已并进 AC6）。
+> ⑤ **残留（如实登记）**：① **判据纯函数化**（「已验证可捕」可机判的**唯一**路径）——
+>   本仓守卫都是内联 `expect()`，不是 `check(text) => violations[]` ⇒ 工作量是原排期 3–5 倍 ⇒ backlog；
+>   ② 文件闸门的**子目录盲区**；③ `prompts/critic.md.bak-*` 这类**非 `.md` 后缀**的陈旧副本
+>   **零守卫且登记表承载不了**（登记表只能装「有对应红判据」的盲区）；
+>   ④ `critic` 的输出契约（4 段式，非 `###` 小节）**形态不同** ⇒ 不在守卫①的覆盖内（如实登记）；
+>   ⑤ design 文件树里其余的手抄（各 prompt 行数已删；`prompts/` 文件数已不写死）。
+> ⑥ **验证**：`bun test tests/` **581 pass / 0 fail**（exit 0）；anchors **23/23**；
+>   `openspec validate`（两个 change）均 valid。
+
+---
+
+
 > **v2.31 变更摘要（2026-11-15，`delegate-base-channel`：给「简报必须声明基线」补上实现通道）**：
 > ① **问题**：`prompts/plan.md` 早就要求 verifier 派发「必须声明可解析的 `<base>`」，
 > `prompts/build.md:343` 的后端确实消费它（`git merge-base HEAD <base>` / `git show <base>:<path>`），

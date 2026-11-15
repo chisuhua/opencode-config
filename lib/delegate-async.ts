@@ -1096,17 +1096,10 @@ export function appendVanishedRow(
 // ───────────────────────────── 工具：dispatch ─────────────────────────────
 
 export function dispatchToolDefinition(ctx: any): any {
-  return {
-    name: TOOL_DISPATCH,
-    description:
-      "把一个工程任务异步派发到一个工程 session（建/复用），投递简报后**立即返回，不等待任务完成**。" +
-      "同一工作树同时只允许一个后端在跑（单槽）；要换后端先用 suspend 暂停当前那个。" +
-      "必填：project_dir（绝对路径）、task、goal、goal_key.intent（kebab slug）、scope、acceptance。" +
-      "选填：agent、constraints、grants、resume_session、remove、plan_ref、role_class、base。" +
-      "base = 本次派发的基线（git ref，如 HEAD~1 或 commit sha）：**role_class=verifier 时必填**" +
-      "（取证要做基线对照）；其它类可省；resume 时由调用方重填（要沿用同一基线 ⇒ 用当初简报里印出的 sha）。" +
-      "返回：session_id / state / goal_key / work_root；**dispatch 返回 ≠ 任务完成**。",
-    input: {
+  // ⚠ **description 的必填/选填清单必须派生**（从下方 schema 现算）——
+  //   手抄清单会漂（参数增减时忘记同步），且它正是 `guard-authoring.md` §1 记的第一次复发形态。
+  //   守卫：`config-guards` 的「async 工具 description 形态约束」+ 逐字比对。
+  const input: any = {
       type: "object",
       properties: {
         project_dir: { type: "string", description: "工程根目录的绝对路径" },
@@ -1156,7 +1149,21 @@ export function dispatchToolDefinition(ctx: any): any {
       },
       required: ["project_dir", "task", "goal", "goal_key", "scope", "acceptance"],
       additionalProperties: false,
-    },
+  }
+  const requiredNames = input.required as string[]
+  const optionalNames = Object.keys(input.properties).filter((k) => !requiredNames.includes(k))
+
+  return {
+    name: TOOL_DISPATCH,
+    description:
+      "把一个工程任务异步派发到一个工程 session（建/复用），投递简报后**立即返回，不等待任务完成**。" +
+      "同一工作树同时只允许一个后端在跑（单槽）；要换后端先用 suspend 暂停当前那个。" +
+      `必填：${requiredNames.join("、")}（goal_key.intent 必须是 kebab slug）。` +
+      `选填：${optionalNames.join("、")}。` +
+      "base = 本次派发的基线（git ref，如 HEAD~1 或 commit sha）：**role_class=verifier 时必填**" +
+      "（取证要做基线对照）；其它类可省；resume 时由调用方重填（要沿用同一基线 ⇒ 用当初简报里印出的 sha）。" +
+      "返回：session_id / state / goal_key / work_root；**dispatch 返回 ≠ 任务完成**。",
+    input,
     options: { permission: ACTION_DISPATCH, codemode: false },
     async execute(input: any, toolContext: any) {
       const brief = validateBrief(input)

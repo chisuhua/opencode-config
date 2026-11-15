@@ -19,13 +19,13 @@
 ```bash
 cd ~/.config/opencode
 
-bun test tests/                          # 全部（当前 216 项，约 4 秒）
-bun test tests/delegate-core.test.ts     # 独占的委托纯逻辑（76 项）
+bun test tests/                          # 全部（用例数**以本次输出为准** —— 不要在此抄数字）
+bun test tests/delegate-core.test.ts     # 独占的委托纯逻辑（用例数以 `bun test` 输出为准）
 bun test tests/delegate-tool.test.ts     # 假 ctx 端到端（既有同步面）
 bun test tests/delegate-async.test.ts    # 异步派发面（dispatch/sessions/suspend/cancel，44 项）
-bun test tests/canonical-root.test.ts    # stateRoot/workRoot 归一（15 项）
-bun test tests/config-guards.test.ts     # 守卫漂移检测（13 项）
-bun test tests/model-fallback-core.test.ts # 模型降级链内核（33 项）
+bun test tests/canonical-root.test.ts    # stateRoot/workRoot 归一（用例数以 `bun test` 输出为准）
+bun test tests/config-guards.test.ts     # 守卫漂移检测（用例数以本次输出为准）
+bun test tests/model-fallback-core.test.ts # 模型降级链内核（用例数以 `bun test` 输出为准）
 
 npm test                                 # 等价（package.json 被 .gitignore 忽略，仅本地便利）
 ```
