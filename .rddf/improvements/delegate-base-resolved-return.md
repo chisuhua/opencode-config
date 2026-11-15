@@ -37,26 +37,40 @@
 
 ## What Changes
 
-### A. 返回契约加 `base_resolved`（**三处同批改，缺一即 fail-closed**）
+### A. 返回契约加 `base_resolved`（**必改 2 处**；另 2 处**自动跟随、不得改实现**）
 
-| 位置 | 改什么 |
-|---|---|
-| `lib/delegate-core.ts` 的 `DELEGATE_RESULT_FIELDS` | 加 `base_resolved`（string \| null） |
-| `lib/delegate-core.ts` 的 `summary` 构造 | 填「本次实际解析出的 sha」（非 verifier / 未填 ⇒ `null`） |
-| `lib/delegate-core.ts` 的 `assertDelegateResultShape()` | 契约常量加了字段 ⇒ **自检自动 fail-closed**（缺字段即抛） |
-| `tests/config-guards.test.ts` 的 AC22 | 契约字段集 ↔ `summary` 键**双向**一致 ⇒ 加字段后自动跟随 |
-| `prompts/plan.md` / `prompts/front.md` | 「委托后怎么读结果」补一行 `base_resolved` 的语义（本次实际用的基线 sha；null = 未用基线） |
+| 位置 | 改什么 | 类别 |
+|---|---|---|
+| `lib/delegate-core.ts` 的 `DELEGATE_RESULT_FIELDS` | 加 `base_resolved`（string \| null） | **必改** |
+| `lib/delegate-core.ts` 的 `summary` 构造 | 填「本次实际解析出的 sha」（四态见 §B） | **必改** |
+| `lib/delegate-core.ts` 的 `assertDelegateResultShape()` | **不改实现** —— 它按契约常量过滤（`!(f in result)`）⇒ 字段一进契约就**自动**要求它存在 | ⚠ **自动跟随**（改它等于改守卫语义） |
+| `tests/config-guards.test.ts` 的 AC22 | **不改** —— 它从源码解析 `summary` 的键做**双向**比对 ⇒ 加 key 后**自动**跟随 | ⚠ **自动跟随** |
+| `prompts/plan.md` / `prompts/front.md` | 「委托后怎么读结果」补一行 `base_resolved` 的语义 | 必改（**须配一条机检**，见 §D） |
 
 ⚠ **顺序不能错**：`assertDelegateResultShape` 跑在**序列化之后**的对象上（v2.28 的修复）⇒
 字段值为 `undefined` 会**丢键** ⇒ 必须 `?? null`（**不是** `undefined`）—— 这正是 v2.28 critic 抓到的那个坑。
 
-### B. `base_resolved` 的语义定义（**必须写死，否则会被误用**）
+⚠ **一处例外（既有缺陷，本项不修但必须知道）**：`outcome=busy` 的**早退分支**
+（`delegate-core.ts` 的 busy 早返回）**不跑 `assertDelegateResultShape`**、也不含任何契约字段
+⇒ 「契约加了字段 ⇒ 自检自动 fail-closed」**在 busy 分支不成立**。⇒ 见 §E 的已知边界。
+
+### B. `base_resolved` 的语义定义（**四态，必须写死，否则会被误用**）
+
+| 情形 | `base_resolved` | 说明 |
+|---|---|---|
+| 非 verifier 类（builder / architect / knowledge） | `null` | **不适用**（不做基线对照） |
+| verifier + **非 git 工程** | `null` | **豁免**（`vcs=false`） |
+| 非 verifier **却传了 `base`** | `null` | ⚠ **静默忽略**（现状：`validateBrief` 只在 `kind==="knowledge"` 时拒 base；builder 传 base 被无声丢弃）⇒ 调用方**分不清**「不适用」与「没生效」 |
+| `base` 不可解析 | **无返回值** | 派发被拒（在建 session 之前）⇒ 没有返回对象 |
 
 - **它是「本次派发实际用的 sha」**，不是「调用方请求的 ref」⇒ 两者可能不同（`HEAD~1` → 具体 sha）。
-- `null` = 本次**没有**用基线（非 verifier 类 / 未填 base / 非 git 工程）。
-- 它**不可用于 resume**：resume 是**新的派发** ⇒ 它的 `base_resolved` 是**新一次**解析的结果。
-  ⇒ 跨 resume 要同一基线 ⇒ 派发方必须把**上次**的 `base_resolved` **显式填进**下次调用的 `base`。
-  （`base` 接受 40 位 sha 作为 ref —— 已实测 `git rev-parse --verify "<sha>^{commit}"` 可解析。）
+- ⚠ **不是纯输入函数**：它是 `resolveCommitSha(base, workRoot)` 的结果 ⇒ 同 `base` 在不同
+  `workRoot`（worktree 场景）下可能解析出不同 sha ⇒ 契约注释**不可**写成「`base` 的解析结果」。
+- **不得由系统自动继承/回填**：resume 时须由调用方**显式**填上次的 sha。
+  （`base` 接受 40 位 sha 作为 ref —— **已实测**：`git rev-parse --verify --end-of-options "<sha>^{commit}"`
+  可解析，且可作两点 diff 的基线。）
+- 同一 session 多次 resume、每次 `base` 可能不同 ⇒ 语义是「**最近一次**解析值」（last-write-wins），
+  因为它就是「下一次要填的输入」。
 
 ### C. 不做什么（明确边界）
 
@@ -70,21 +84,36 @@
 
 - [ ] `DELEGATE_RESULT_FIELDS` 含 `base_resolved`，且 `summary` 构造填「本次实际解析出的 sha」
       （非 verifier / 未填 base / 非 git 工程 ⇒ `null`，**不是** `undefined` —— 否则序列化丢键）
-- [ ] `assertDelegateResultShape()` 对「缺 `base_resolved` 键」**抛错**（fail-closed）——
-      用「构造一个少该键的对象」断言它抛，且消息含字段名
+- [ ] **负向回归**（既有机制，不是新判据）：临时移除 `summary` 的 `base_resolved` 键 ⇒
+      `assertDelegateResultShape()` **抛错**且消息含字段名 ⇒ 证明「契约加字段 ⇒ 自检自动 fail-closed」
+      这条回退保护**仍活着**（不新建判据，AC22 已双向钉住契约↔summary）
 - [ ] AC22 的**双向**一致性守卫随之通过（契约字段集 ↔ `summary` 键），且**未新增**手抄清单
 - [ ] 派发 verifier + 填 `base` ⇒ 返回对象的 `base_resolved` == 该次解析出的 sha（**真实值**，非形态）
 - [ ] 派发 builder（非 verifier）⇒ `base_resolved === null`
-- [ ] **跨 resume 同基线可复现**：第一次派发拿到 `base_resolved = S` ⇒ 第二次 resume 时把 `base: S`
-      填进去 ⇒ 第二次的 `base_resolved` **仍等于 S**（端到端断言，不只是形态）
+- [ ] **跨 resume 同基线可复现**：第一次派发拿到 `base_resolved = S` ⇒ **让 HEAD 前移**（否则
+      填 `HEAD~1` 也会得到 S ⇒ 判别力为零）⇒ 第二次 resume 时把 `base: S` 填进去 ⇒ 第二次的
+      `base_resolved` **仍等于 S**。
+      ⚠ **本条只覆盖「同一 front 连续两次派发」**；**跨 front resume 未覆盖**（见 §F 的形状决策）
+- [ ] **四态各覆盖 1 条**：verifier+base ⇒ 实际 sha；非 verifier ⇒ `null`；
+      verifier + **非 git** ⇒ `null`；**非 verifier 却传了 base ⇒ `null` 且不抛**（静默忽略的现状被钉住）
+- [ ] **dispatch 面有显式决定**（三选一，见 §F）：返回带 `base_resolved` / 登记为已知缺口 /
+      书面理由「不做」—— ⚠ **默不做声 = 不合格**（现状：`dispatch` 在 async 侧**算出了** baseline
+      却**丢弃** ⇒ 异步派发方**永远**拿不到 sha ⇒ D2 在异步面 100% 不可达）
 - [ ] `prompts/plan.md` 与 `prompts/front.md` 的「读结果」段各有一行 `base_resolved` 的语义说明
-      （含「它是实际用的 sha，不是请求的 ref」与「resume 要同一基线 ⇒ 填上次的 sha」）
+      （含「它是实际用的 sha，不是请求的 ref」与「resume 要同一基线 ⇒ 填上次的 sha」），
+      **且有一条机检**（两文件各含 `base_resolved`）—— ⚠ 只写散文不加机检 = 重复现状的病
+      （散文判据是开集，见 `guard-authoring.md` §1）
+- [ ] `docs/CHANGELOG.md` 里「27 个字段」的**公开散文数字**同步为 28
 - [ ] 回归：`bun test tests/` 全绿（**单独校验退出码**）；anchors 无 `FAIL` / 无 `SKIP`
 
 ## Capabilities
 
-- 派发方**可观测**本次实际使用的基线 ⇒ 「跨 resume 同一基线」从**人工纪律**变成**通道**
-- 返回契约多一个字段，但**不**进关键子集 ⇒ 派发方的读取负担不变
+- 派发方**当场可观测**本次实际使用的基线（⚠ 「当场」是限定词 —— 见 §F：返回字段**不覆盖**
+  「另一次调用 / 另一个 front 会话」的场景）
+- 返回契约多一个字段，但**不**进关键子集 ⇒ 派发方的读取负担不变。
+  理由（修正版）：关键子集的定义是「漏了 ⇒ 可能把『宿主说成功但无可验证交付证据』转述成『已完成』」
+  ⇒ `base_resolved` **不承载成功/失败判定** ⇒ 不进。**先例**：`wait_error` / `status_age_ms`
+  同为诊断字段，同样不进。
 - 与 `base` 的入参语义形成**闭环**：入参是「请求的 ref」，出参是「实际用的 sha」
 
 ## Impact
@@ -95,3 +124,38 @@
 - **不破坏**现有派发：非 verifier 类的 `base_resolved` 恒 `null`；`base` 入参语义不变
 - **风险**：若派发方把 `base_resolved` 当成「resume 时自动继承」⇒ 会误用 ⇒ 由 **Acceptance 第 6 条**
   （跨 resume 显式重填的端到端断言）与文档措辞共同守住
+- **异步面（`dispatch`）当前拿不到 sha** ⇒ 若本项不覆盖它，D2 的承诺在异步面**仍不可达**
+  ⇒ 必须做一次显式决定（§F）
+- **busy 早返回分支不含契约字段**（既有缺陷）⇒ 那个分支下派发方拿不到 sha
+
+## E. 已知边界（不假装覆盖）
+
+- **返回字段只在派发当场存在** ⇒ 它**不覆盖**「跨 front 会话的 resume」场景（原 front 已亡 ⇒
+  返回值随其上下文一起消失）⇒ 这正是 §F 的形状决策要回答的。
+- **`busy` 早返回分支**不含任何契约字段、不跑自检（既有缺陷，本项不修）。
+- **单 commit 仓库 / 浅克隆**：`HEAD~1` 不可解析 ⇒ verifier 派发被拒 ⇒ `base_resolved` 在该路径上拿不到。
+- **非 verifier 传 base ⇒ 静默忽略**（四态之一）：不报错但也不生效。
+
+## F. 形状决策（**待用户 / planner 拍板** —— 本草稿不替用户定）
+
+> ⚠ **metis 审查的结论**：本草稿原先把「跨 resume 的基线句柄」与「派发当场多一个返回字段」
+> 当成同一件事，而**返回字段只覆盖后者**。`Why` 里自己写的失败场景（「跨 front resume 时原 front
+> 已亡」）⇒ 返回字段对它**零改善**。
+>
+> ⚠ **design D2 否掉的是「resume **自动继承**基线**」**（会静默携带过期基线），
+> **不是**「把基线**存下来**」⇒ 第三种形状从未被评估过。
+
+| 选项 | 形状 | 覆盖场景 | 成本 | 风险 |
+|---|---|---|---|---|
+| **甲**（本草稿原案） | 只加返回字段 `base_resolved` | **当场**可观测；同一 front 连续两次可守恒 | 必改 2 处 + 2 处 prompt + 1 条机检 | 跨 front 不可达（**已知边界**，须写进 Why） |
+| **乙** | **落盘 `pair.json` + `sessions` 只读回显**（+ 返回字段为辅） | 跨 front 可达（`sessions` 是跨会话唯一读取面） | 落盘点已存在（`registerSession` / `setPairFields`）；`sessions` 已回显 `role_class` 等登记字段 ⇒ 边际成本低 | ⚠ 必须写死「**只读参考，不得自动填入**」⇒ 否则变成 design D2 否掉的「自动继承」 |
+| **丙** | **要求派发方直接传 sha**（`base` 已接受 40 位 sha，**已实测**） | 跨 front 天然守恒（sha 在调用方手里） | **零契约变更** | 解析义务从服务端移回调用方 ⇒ 调用方要会 `git rev-parse`；且调用方填错 sha ⇒ 服务端仍会拒（不丢闸门） |
+
+**判据（极短，供拍板）**：
+
+> **「跨 front 会话的 resume」算不算本项要解决的场景？**
+> - **算** ⇒ 甲**不合格**（对那个场景零改善）⇒ 选 **乙**（落盘 + 回显，且明写「不得自动填」）。
+> - **不算** ⇒ 甲够用，但**必须**在 Why 里把「跨 front 不可达」登记为已知边界，
+>   并**收窄** Acceptance 第 6 条（它现在只覆盖同一 front 连续两次）。
+>
+> **丙** 至少应进选项表（成本为零）；若选丙，本 improvement 退化为「一条 prompt 提示 + 零代码」。
