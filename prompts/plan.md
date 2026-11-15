@@ -94,6 +94,10 @@ owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl,
 - 该字段现在**始终生效**：缺省 `builder`；非法值（`null` / 空串 / 其它）直接抛；`kind=knowledge` 与它互斥。
 - 你自己**不写** ADR / 验收报告：`architect` / `verifier` 类也是**派发**出去的（写动作只发生在后端 session 内）。
 
+**派发参数**：必填 `project_dir`（工程根绝对路径）、`task`（任务原话）、`goal`（一句话目标）、
+`scope`（允许变更的路径前缀数组）、`acceptance`（可判定的验收判据）。选填参数的语义见
+`prompts/front.md` 的参数表与工具 description（两处均已由守卫钉住，**不在此复制**）。
+
 **五条硬规则**：
 
 1. **派可写实施必须带 `plan_ref`**：引用一个**已存在**的计划文件（accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`）。没有计划就不要派 —— 先写计划。知识类（只读）后端不带 `plan_ref`。
@@ -163,6 +167,14 @@ openspec/changes/*/proposal.md
   worktree 子工作区的改动都数不到；别拿它当确证。
 - **`outcome=succeeded` 也不等于完成** —— 它只说明宿主那一回合没报错；「做完了吗」要看
   `artifacts` / 验收判据 / `last_assistant_text`。
+
+**`kind` 只有三个值**（真源 = `prompts/build.md` 的「HANDOFF：交回主会话的凭据化契约」段）：
+
+| `kind` | 后端在说什么 | 你的动作 |
+|---|---|---|
+| `needs-revision` | 要改 plan / AC / tasks 才能继续 | 先给**草案**，用户确认后再改 |
+| `ac-fail` | 要改**已签批 ADR 的决策**（发现语境）；或该 AC 未通过、需回 builder 修（验收语境） | 交用户 / 转 architect；**不得**自行改 ADR 决策 |
+| `blocked` | 缺外部信息 / 凭据 / 用户决策 / **需要主会话的派发决策**（含纯换类） | 问用户，或按 5 项正文第 ⑤ 项重派 |
 
 ### 交回后的收尾三问
 

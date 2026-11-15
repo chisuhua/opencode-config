@@ -28,6 +28,7 @@ import {
   DELEGATE_RESULT_CRITICAL_FIELDS,
   DELEGATE_RESULT_FIELDS,
   capabilityBlock,
+  delegateToolDefinition,
   PLAN_REF_ROOTS,
   PRIORITY_BLOCKED_FIELDS,
   SLOT_STATES,
@@ -1772,5 +1773,204 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(text).toContain("VERIFIER_OWNS_PATHS")
     expect(text).toContain("owns")
     expect(text).toMatch(/逐项一致|核对/)
+  })
+})
+
+/**
+ * 对齐完备性（元判据：**描述面枚举闭集**）。
+ *
+ * 为什么需要这一族：v2.28 的三层对齐只覆盖「真源 ⇄ 两个派发方 prompt」。
+ * 同一个事实还有**第三、第四个投影**，此前没有任何判据扫到：
+ *   ① 工具的 `description` —— **LLM 在派发瞬间实际读的文本**（`verifierAllowRootLabels()`
+ *      的注释自己写明「它不读 prompt 填表」），但它手抄着 5 个旧字段名；
+ *   ② HANDOFF 的 kind 词表 —— AC3 只扫 `build.md`，派发方 `plan.md` / `front.md` 一次都没读；
+ *   ③ 派发参数名 —— `plan.md` 全缺 `project_dir` / `goal` / `constraints` / `grants`。
+ * ⇒ 判据形态从「X 出现在这里」升级为「**所有描述同一事实的投影都必须与真源一致**」。
+ *
+ * ⚠ **已知边界**（照本仓惯例登记，防后人误信完备）：
+ *  - 解析基于「返回：」「选填：」两个固定子句形态 —— 改写这两个词 ⇒ 判据**抛错**（fail-closed）。
+ *    这是有意的：形态变了就该有人来更新判据，而不是让判据静默失效。
+ *  - 只判「清单与真源是否一致」，**不判说明文字准不准**（措辞仍是开集）。
+ *  - `kind` 集合的真源取 `build.md` 的 §HANDOFF 段（与 AC3 同一处）。若将来抽成 lib 常量，
+ *    本族应改为直接引用该常量，且 AC3 需同改（否则两处真源）。
+ *  - AC29 只判「要求有通道」，**不判通道是否够用**（例如 base 落在 constraints 里算不算可解析，
+ *    是语义问题，超出静态层）。
+ *  - AC28 只判**必填**参数名（`schema.required`）⇒ 选填参数的**语义**缺口不在覆盖内：
+ *    例如 `plan.md` 全文未提 `grants`（用户预批），但它是选填、不填也能派发 ⇒ 静态层判不出「该讲没讲」。
+ *  - AC25/AC26 的**形态约束**扫描范围锚定到 `delegateToolDefinition()` 的 description 表达式；
+ *    函数被重构/移走 ⇒ 判据**抛错**（fail-closed），不会静默扩大或缩小范围。
+ *    它们证明的是「description 不是手抄的」+「渲染器输出与契约逐项一致」；
+ *    **不证明** gloss 文案的语义准确性（那是人读检查的事）。
+ *  - AC29 是**双向登记式**判据：无实现通道 ⇒ 必须已登记（绿 = **已登记**，不是**已修**）；
+ *    通道落地后仍留登记 ⇒ 红。⇒ 不要把 AC29 的绿读成「`<base>` 有通道了」。
+ */
+describe("对齐完备性（元判据：描述面枚举闭集）", () => {
+  const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
+  const PLAN_MD2 = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
+  const FRONT_MD2 = readFileSync(path.join(import.meta.dir, "..", "prompts", "front.md"), "utf8")
+  const CORE_SRC = readFileSync(path.join(import.meta.dir, "..", "lib", "delegate-core.ts"), "utf8")
+
+  // `ctx` 只在 execute 内使用 ⇒ 传空对象安全（这里只读 schema 与 description）
+  const tool: any = delegateToolDefinition({} as any)
+  const desc: string = String(tool.description ?? "")
+  const props: Record<string, unknown> = tool.input?.properties ?? {}
+  const requiredNames: string[] = (tool.input?.required ?? []) as string[]
+  const allNames = Object.keys(props)
+  const optionalNames = allNames.filter((n) => !requiredNames.includes(n))
+
+  /** 取「<label>…：…」子句（允许标签后带括注；**缺失即抛**，不静默）。 */
+  const clause = (label: string): string => {
+    const m = desc.match(new RegExp(`${label}[^：]*：([^。\\n]+)`))
+    if (!m) throw new Error(`工具 description 里找不到 «${label}…：» 子句（形态变了 ⇒ 更新本判据）`)
+    return m[1]!
+  }
+  /** 拆 token：去括号注、按 `/` 或 `、` 分、去尾句号。 */
+  const tokens = (s: string): string[] =>
+    s
+      .replace(/（[^）]*）/g, "")
+      .replace(/\([^)]*\)/g, "")
+      .split(/[\/、]/)
+      .map((x) => x.trim().replace(/[。.]$/, ""))
+      .filter((x) => x.length > 0)
+  /** 合法标识符形态（字段名 / 参数名）。 */
+  const isIdent = (s: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)
+
+  const RESULT_FIELDS: readonly string[] = DELEGATE_RESULT_FIELDS as readonly string[]
+  const CRITICAL: readonly string[] = DELEGATE_RESULT_CRITICAL_FIELDS as readonly string[]
+
+  /**
+   * **已知「要求存在、实现通道缺失」的派发面** —— AC29 的唯一豁免载体。
+   *
+   * ⚠ 这不是「豁免名单」，是**登记表**：AC29 是**双向**判据 ——
+   *   - 无通道 + 未登记 ⇒ **红**（不许静默缺着）
+   *   - 有通道 + 仍登记 ⇒ **红**（登记不得变成永久豁免）
+   * ⇒ 通道落地时必须删掉对应条目，否则守卫会挡住你。
+   */
+  const KNOWN_UNIMPLEMENTED_CHANNELS: ReadonlyArray<{
+    id: string
+    gap: string
+    impact: string
+    todo: string
+    registered_at: string
+  }> = [
+    {
+      id: "delegate-base",
+      gap:
+        "`prompts/plan.md` 要求「简报必须声明可解析的 `<base>`」，但 delegate 工具的 schema 无 `base` 参数、" +
+        "`buildBrief()` 也不生成基线行",
+      impact:
+        "派发方只能把基线塞进 `constraints`（自由文本）⇒ 后端拿不到「保证可解析的 git ref」⇒ " +
+        "拼写错的 ref 会穿过派发、直到后端跑 `git merge-base` 才失败，白烧一整轮派发（`build.md` 的基线纪律）",
+      todo:
+        "change: delegate-base-channel —— delegate + dispatch 两处 schema 同步加 `base`、" +
+        "`buildBrief()` 生成基线行、`execute` 内按 `effectiveRoleClass` 后验硬拒（含 vcs 闸门与参数注入加固）、" +
+        "resume 由调用方重填、`plan.md` 与 `build.md` 同批改口径",
+      registered_at: "2026-11-15",
+    },
+  ]
+
+  /**
+   * 定位 `delegateToolDefinition()` 的 **description 表达式**（形态约束的扫描范围）。
+   *
+   * ⚠ 只扫「return { … description: … input, }」这一段 —— 不扫整个函数体：
+   *   input 的 properties 里本来就有大量 `description:`（那是参数说明，不是返回清单）。
+   * 找不到 ⇒ 判据抛错（fail-closed）：函数被重构到别处时，应由人来更新判据。
+   */
+  const fnStart = CORE_SRC.indexOf("export function delegateToolDefinition")
+  expect(fnStart, "找不到 delegateToolDefinition()").toBeGreaterThan(-1)
+  const fnRest = CORE_SRC.slice(fnStart)
+  const nextTop = fnRest.indexOf("\n/**", 10)
+  const fnSeg = nextTop > 0 ? fnRest.slice(0, nextTop) : fnRest
+  const retStart = fnSeg.indexOf("return {")
+  const dStart = retStart >= 0 ? fnSeg.indexOf("description:", retStart) : -1
+  const dEnd = dStart >= 0 ? fnSeg.indexOf("input,", dStart) : -1
+  const descSeg = dStart >= 0 && dEnd > dStart ? fnSeg.slice(dStart, dEnd) : ""
+
+  test("AC25：description 的「返回」子句必须**派生**（源码无字段名字面量）+ 值 pin", () => {
+    expect(descSeg.length, "定位不到 delegateToolDefinition 的 description 表达式（函数被重构？请更新本判据）").toBeGreaterThan(0)
+    // ① **形态约束（主）**：description 表达式内不得出现任何字段名的字符串字面量
+    //    ⇒ 防「改回手抄」：抄得再对，也过不了这条（值 pin 抓不到「抄对了的手抄体」）。
+    const hardcoded = RESULT_FIELDS.filter((f) => new RegExp(`["'\`]${f}["'\`]`).test(descSeg))
+    expect(hardcoded, `description 里出现硬编码字段名（应改为从契约派生）：${hardcoded.join(", ")}`).toEqual([])
+    // 必须真的调用渲染器（否则空 description 也能过形态约束）
+    expect(descSeg, "description 必须调用 renderReturnClause()（不得自己拼清单）").toContain("renderReturnClause()")
+    // ② **值 pin（次）**：渲染子句的 token 序列 == CRITICAL（顺序敏感）⇒ 抓渲染器漏项/乱序
+    expect(tokens(clause("返回")), "「返回」子句的字段序列必须与 CRITICAL 逐项一致").toEqual([...CRITICAL])
+  })
+
+  test("AC26：description 的「选填」子句必须**派生**（源码无参数名字面量）+ 值 pin", () => {
+    // 事故形态：`选填：agent、constraints、grants、resume_session、remove、plan_ref。`
+    //   ⇒ properties 里有 role_class（enum 三值），摘要里没提 ⇒ 派发方可能不知道有这个参数
+    // ① 形态约束（主）：description 表达式内不得出现任何**参数名**的字符串字面量
+    const hardcoded = allNames.filter((n) => new RegExp(`["'\`]${n}["'\`]`).test(descSeg))
+    expect(hardcoded, `description 里出现硬编码参数名（应改为从 schema 派生）：${hardcoded.join(", ")}`).toEqual([])
+    expect(descSeg, "description 必须从 optionalNames / requiredNames 派生").toMatch(/optionalNames|requiredNames/)
+    // ② 值 pin（次）
+    expect(tokens(clause("选填")), "「选填」子句必须与 schema 的非必填参数逐项一致").toEqual(optionalNames)
+  })
+
+  test("AC27：两个派发方 prompt 都必须覆盖 HANDOFF 的 kind 词表（真源 = build.md §HANDOFF）", () => {
+    // AC3 只证明「build.md 里的 kind 集合 == 三类」；它**不证明**派发方认识这三类。
+    // 事故形态：后端写 `HANDOFF: ac-fail`（要改已签批 ADR）⇒ plan.md/front.md 里 `ac-fail` 出现 0 次
+    //   ⇒ 派发方读不懂 kind，只能读散文 ⇒ 无法机械判断该转 architect 还是改 plan。
+    const start = BUILD_MD.split("\n").findIndex((l) => l.includes("#### HANDOFF：交回主会话的凭据化契约"))
+    expect(start, "build.md 缺 §HANDOFF 段").toBeGreaterThan(-1)
+    const rest = BUILD_MD.split("\n").slice(start + 1)
+    const end = rest.findIndex((l) => /^#### /.test(l))
+    const section = rest.slice(0, end < 0 ? rest.length : end).join("\n")
+    const kindLine = section.split("\n").find((l) => l.includes("kind 只用既有三类"))
+    expect(kindLine, "§HANDOFF 段里找不到「kind 只用既有三类」那句").toBeTruthy()
+    const kinds = [...new Set([...(kindLine as string).matchAll(/`([a-z-]+)`/g)].map((m) => m[1]))]
+    expect(kinds.sort(), "kind 集合与预期不符（先修 AC3 的真源）").toEqual(["ac-fail", "blocked", "needs-revision"])
+    for (const [rel, text] of [
+      ["prompts/plan.md", PLAN_MD2],
+      ["prompts/front.md", FRONT_MD2],
+    ] as const) {
+      const missing = kinds.filter((k) => !text.includes(k as string))
+      expect(missing, `${rel} 未覆盖 HANDOFF kind：${missing.join(", ")}（后端会发这些值，派发方必须认识）`).toEqual([])
+    }
+  })
+
+  test("AC28：两个派发方 prompt 都必须覆盖 delegate 的**必填参数名**（列表从 schema 派生）", () => {
+    // 事故形态：plan.md 全文 `project_dir` / `goal` / `constraints` / `grants` 各 0 次
+    //   ⇒ plan 派发时靠 schema 的 description 兜底，本侧没有任何参数填表，也没有指向前端表
+    expect(requiredNames.length, "schema 的 required 不应为空").toBeGreaterThan(0)
+    for (const [rel, text] of [
+      ["prompts/plan.md", PLAN_MD2],
+      ["prompts/front.md", FRONT_MD2],
+    ] as const) {
+      const missing = requiredNames.filter((n) => !text.includes(n))
+      expect(missing, `${rel} 未提及必填参数：${missing.join(", ")}（派发方必须知道要填什么）`).toEqual([])
+    }
+  })
+
+  test("AC29：派发要求必须有实现通道，或**已登记**为已知缺口（双向判据）", () => {
+    // 事故形态：plan.md:63 写「简报必须声明可解析的 `<base>`…不声明 ⇒ 后端一律 blocked」，
+    //   但 delegate 工具 schema **没有 base 参数**、`buildBrief()` **不生成 base 行**
+    //   ⇒ 派发方只能把它塞进 constraints（无结构化通道），而 front.md 甚至没提这个要求。
+    const required = /`<base>`/.test(PLAN_MD2)
+    const registry = KNOWN_UNIMPLEMENTED_CHANNELS
+    const entry = registry.find((k) => k.id === "delegate-base")
+    if (!required) {
+      // 要求被撤销 ⇒ 登记也必须删（否则留下一个指向不存在缺口的台账）
+      expect(entry, "plan.md 已不再要求 `<base>` ⇒ 必须删掉 delegate-base 登记").toBeFalsy()
+      return
+    }
+    const hasSchemaParam = Object.prototype.hasOwnProperty.call(props, "base")
+    const briefStart = CORE_SRC.indexOf("export function buildBrief")
+    expect(briefStart, "找不到 buildBrief()").toBeGreaterThan(-1)
+    const briefSeg = CORE_SRC.slice(briefStart, briefStart + 4000)
+    // ⚠ 用「基线」而不是 `base` 做锚：`database` / 注释 / 别的字段名会误命中（metis 指出的判据太松）
+    const briefHasBase = /基线/.test(briefSeg)
+    const hasChannel = hasSchemaParam || briefHasBase
+    if (hasChannel) {
+      expect(entry, "通道已落地 ⇒ **必须删掉 delegate-base 登记**（登记不得变成永久豁免）").toBeFalsy()
+      return
+    }
+    // 无通道 ⇒ 必须已登记，且登记必须**可执行**（有影响描述 + 指向待办）
+    expect(entry, "plan.md 要求 `<base>` 但无实现通道 ⇒ 必须在 KNOWN_UNIMPLEMENTED_CHANNELS 登记").toBeTruthy()
+    expect(entry!.impact.length, "登记必须写明影响（空串 = 无效登记）").toBeGreaterThan(20)
+    expect(entry!.todo, "登记必须指向具体待办（change / improvement 名）").toContain("delegate-base-channel")
+    expect(entry!.registered_at, "登记必须有日期").toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })

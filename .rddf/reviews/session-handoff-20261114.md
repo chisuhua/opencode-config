@@ -55,6 +55,14 @@
    ⑤ 两处枚举式词表仍在（AC20 的 HIST 行级豁免 / AC14 的写集动词表）；
    ⑥ **accepted-roots 守卫缺第三件**（「起始标记独占 1 行」）—— AC19 / AC23 都有三件套，它只有两件套 ⇒
    「陈旧副本留孤儿标记 + 不同体」抓不到（v2.26 既有实现，非 v2.28 引入）。
+   ⑦ **`docs/MULTI-AGENT-DESIGN.md` §6 文件树缺条目**：`front-delegate-testing.md` 等既有方法论文档
+   未列入（§6 只列了 guard-authoring.md / test-authoring.md 等同族的部分）⇒ 按文件树找会漏；补它会触发文件树重排 ⇒ 单独立项。
+   ⑧ **`buildBrief:1422` 手抄 kind 枚举**（后端实际读的投影，优先级高于下面两条）—— 未修，
+   应在 `delegate-base-channel` 之外单独立项（或并入）：应从 `HANDOFF` 契约派生。
+   ⑨ **`delegate-async.ts:1104` / `:1507` 手抄「返回：」清单**（dispatch / sessions 两个工具）—— 未修，
+   应各自派生（与 AC25 同形：形态约束 + 值 pin）。
+   ⑩ **`DELEGATE_RESULT_CRITICAL_FIELDS` 是 `readonly string[]`** ⇒ gloss 的 `satisfies` 退化成同义反复
+   （编译期约束为零，靠运行期 `assertGlossCoverage()` 兜底）。改 `as const` 会连锁所有 `.includes()` 调用点。
    ✅ **既有 flaky（与 v2.28 无关）—— 已修（2026-11-15）**：`tests/delegate-async.test.ts` 的
    「多实例 / tripwire」三条用例（AC9 赎回开关 / AC8·AC17 tripwire / AC15 水位线）用
    `pid: process.pid + 1` **伪造另一个存活实例**，而存活判定是 `process.kill(pid, 0)`

@@ -139,6 +139,7 @@ grants: [{ "action": "shell", "resource": "git push *" }, { "action": "external_
   - ⚠ **`role_class=verifier` 的额外复核**：若该后端走了 `rdd-verifier` skill，**状态机必须由它自己写**（verdict cache `.rddf/state/verifier/.ac-verdict-<change>.json` + 轮次 `.rddf/state/verifier/<change>.json`）—— 这些文件被 gitignore ⇒ **`git status` / `artifacts` 数不到**，必须**按路径直接查存在性**。缺 ⇒ **后端违约**（不是「没写不违规」）：查 `scope` 是否真含 `.rddf/state/verifier`（缺 ⇒ scope 问题 ⇒ **重派**；含却没写 ⇒ 记违约并按「交回后的收尾三问」处置）。**跨会话 resume** 时原 `scope` 不落盘 ⇒ 查不到就**视为缺 ⇒ 重派**。
 - `last_assistant_text`：工程 session 的最终说明，原样转述（可精简，但不得改写结论）。
   - ⚠ 若首行是 `HANDOFF: <kind>` ⇒ 这**不是完成，是交回** ⇒ 按「交回后的收尾三问」小节取证与分流（唯一真源在 `prompts/plan.md`）。
+    kind 只有三个值：`needs-revision`（要改 plan / AC / tasks）、`ac-fail`（要改已签批 ADR 的决策）、`blocked`（缺外部信息 / 凭据 / 用户决策）。
 - `no_work_evidence`：**交付证据缺失**。`true` 时 `outcome` 已被降级为 **`unverified`**（`host_outcome` 保留宿主的 `succeeded`）。
   → **不得转述为"已完成"**；必须转述为「**没有可验证的交付证据**」（不要说成"没有产出"——产物可能落在 git 视野外），并给出证据（`tool_calls` / `write_tool_calls` / `artifacts` / `model_switched`），问用户是重试还是换做法。
   配套证据字段：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是不是角色开场白）、`model_switched`（本轮是否中途换过模型）。

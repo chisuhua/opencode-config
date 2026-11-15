@@ -686,6 +686,67 @@ export const DELEGATE_RESULT_CRITICAL_FIELDS: readonly string[] = [
 ]
 
 /**
+ * 关键字段的**一句话语义**（供工具 description 的渲染器使用）。
+ *
+ * ⚠ **约束强度（如实声明，不夸称）**：`DELEGATE_RESULT_CRITICAL_FIELDS` 声明为
+ * `readonly string[]`，所以 `satisfies Record<(typeof X)[number], string>` 会展开成
+ * `Record<string, string>` ⇒ **编译期约束为零**。真正起作用的是 `assertGlossCoverage()`
+ * （运行期：键集合**双向**相等 + 文案形态安全），它在守卫每次构造 tool 时被触发。
+ * 若将来把该常量改为 `as const`，编译期约束会自动生效 —— 届时把本注释改为「双保险」。
+ *
+ * ⚠ **文案约束**：gloss 内**不得含** `/` 或 `、` —— 渲染器按这两个分隔符切 token，
+ * 括号外的分隔符会产生**伪 token**（判据会红，但报错信息会误导排错方向）。
+ */
+const CRITICAL_FIELD_GLOSS: Record<string, string> = {
+  outcome: "总体结论",
+  host_outcome: "宿主原值，unverified 时仍为 succeeded",
+  blocked_reason: "被权限拒的操作",
+  out_of_scope_files: "改了 scope 外的文件",
+  last_assistant_text: "后端最终说明，首行 HANDOFF 即交回",
+  no_work_evidence: "无交付证据",
+  artifacts: "git 可见的变更数",
+}
+
+/**
+ * gloss 覆盖自检（运行期 fail-closed）—— 键集合与 `DELEGATE_RESULT_CRITICAL_FIELDS` **双向**相等。
+ *
+ * 报错同时打印「缺」与「多」两侧，避免排错要多跑一轮。
+ */
+export function assertGlossCoverage(): void {
+  const missing = DELEGATE_RESULT_CRITICAL_FIELDS.filter((f) => !(f in CRITICAL_FIELD_GLOSS))
+  const extra = Object.keys(CRITICAL_FIELD_GLOSS).filter((k) => !DELEGATE_RESULT_CRITICAL_FIELDS.includes(k))
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `CRITICAL_FIELD_GLOSS 与 DELEGATE_RESULT_CRITICAL_FIELDS 不一致 —— ` +
+        `缺: [${missing.join(", ")}] / 多: [${extra.join(", ")}]`,
+    )
+  }
+  for (const [k, v] of Object.entries(CRITICAL_FIELD_GLOSS)) {
+    if (/[/、]/.test(v)) {
+      throw new Error(`gloss「${k}」含分隔符（/ 或 、）⇒ 会被渲染器切成伪 token: ${v}`)
+    }
+    // 括号**不得嵌套**：判据的剥括号逻辑按「第一个 （…第一个 ）」截断（非贪婪字符类），
+    // 嵌套会产生残留的「）」⇒ 伪 token ⇒ 报错信息误导。
+    const opens = (v.match(/（/g) ?? []).length
+    const closes = (v.match(/）/g) ?? []).length
+    if (opens !== closes) throw new Error(`gloss「${k}」括号不配对: ${v}`)
+    if (opens > 1) throw new Error(`gloss「${k}」含嵌套括号（判据会解析出伪 token）: ${v}`)
+  }
+}
+
+/**
+ * 渲染「返回（关键字段）：…」子句 —— **唯一实现**（工具 description 与守卫共用同一份）。
+ *
+ * ⚠ 只渲染**关键子集**（不渲染全部 27 项）：全集会把 description 撑爆、稀释派发方对
+ * 「漏了就假成功」那几个字段的注意力（同 `DELEGATE_RESULT_CRITICAL_FIELDS` 的设计依据）。
+ * ⇒ 因此标签必须写「**关键字段**」并给出全集指针，不得写「返回：」冒充全集。
+ */
+export function renderReturnClause(): string {
+  assertGlossCoverage()
+  return DELEGATE_RESULT_CRITICAL_FIELDS.map((f) => `${f}（${CRITICAL_FIELD_GLOSS[f]}）`).join(" / ")
+}
+
+/**
  * 返回值形状自检（插件在返回前调用）—— 契约与实现**不得**无声漂移。
  *
  * 缺字段 ⇒ 抛错（硬失败）而不是静默：静默会让派发方按旧契约读一个已经变了的返回结构。
@@ -1961,18 +2022,11 @@ export function lastMessageID(messages: any): string {
  * 插件入口只负责把它注册进 opencode 的工具表。
  */
 export function delegateToolDefinition(ctx: any): any {
-  return {
-        name: TOOL_NAME,
-        description:
-          "把一个工程任务交给另一个工程 session 执行（agent=build），并取回结果。这是**工程行动的唯一出口**（front 与 plan 共用同一通道）。" +
-          "必填：project_dir（工程根绝对路径）、task（任务原话）、goal（一句话目标）、scope（允许变更的路径前缀数组）、acceptance（可判定的验收判据）。" +
-          "选填：agent、constraints、grants（用户预批的操作 [{action,resource}]）、resume_session、remove、plan_ref（计划引用）。" +
-          "返回：session_id / outcome / 最后回复 / blocked_reason / out_of_scope_files。",
-        input: {
+  const input: any = {
           type: "object",
           properties: {
             project_dir: { type: "string", description: "工程根目录的绝对路径" },
-            agent: { type: "string", description: "会话的 agent，默认 build。白名单：build / explore / librarian / oracle / metis / critic" },
+            agent: { type: "string", description: `会话的 agent，默认 build。白名单：${[...ALLOWED_AGENTS].join(" / ")}` },
             task: { type: "string", description: "给工程 session 的任务原话" },
             goal: { type: "string", description: "一句话目标" },
             scope: {
@@ -1993,7 +2047,7 @@ export function delegateToolDefinition(ctx: any): any {
                 required: ["action", "resource"],
                 additionalProperties: false,
               },
-              description: "用户已预批的操作（question/form/edit/write 不可 grant）",
+              description: `用户已预批的操作（${[...GRANT_FORBIDDEN].join("/")} 不可 grant）`,
             },
             resume_session: { type: "string", description: "续接既有工程 session 的 id" },
             remove: { type: "boolean", description: "完成后删除工程 session，默认 false" },
@@ -2005,7 +2059,7 @@ export function delegateToolDefinition(ctx: any): any {
             },
             role_class: {
               type: "string",
-              enum: ["builder", "architect", "verifier"],
+              enum: [...ROLE_CLASSES],
               description:
                 "本次派发允许后端做哪一类工作（缺省 builder；缺省只认缺省值，null/空串非法）。" +
                 "builder=按 scope 实施；architect=写改 ADR/架构文档（edit 上限=架构文档目录 + .rddf/reviews + arch-docs.json）；" +
@@ -2016,7 +2070,23 @@ export function delegateToolDefinition(ctx: any): any {
           },
           required: ["project_dir", "task", "goal", "scope", "acceptance"],
           additionalProperties: false,
-        },
+  }
+
+  // ── description **完全派生**（不得手抄清单：派发瞬间 LLM 读的就是它） ──
+  // ① 必填 / 选填：从 input.required 与 properties 现算；
+  // ② 返回：从 renderReturnClause()（关键子集 + 全集指针）；标签必须写「关键字段」。
+  const requiredNames = input.required as string[]
+  const optionalNames = Object.keys(input.properties).filter((k) => !requiredNames.includes(k))
+
+  return {
+        name: TOOL_NAME,
+        description:
+          "把一个工程任务交给另一个工程 session 执行（agent=build），并取回结果。这是**工程行动的唯一出口**（front 与 plan 共用同一通道）。" +
+          `必填：${requiredNames.join("、")}。` +
+          `选填：${optionalNames.join("、")}。` +
+          `（grants 只能预批非编辑类操作；${[...GRANT_FORBIDDEN].join("/")} 不可 grant。）` +
+          `返回（关键字段；全集见 DELEGATE_RESULT_FIELDS）：${renderReturnClause()}。`,
+        input,
         options: { permission: "delegate", codemode: false },
         async execute(input: any, toolContext: any) {
           const brief = validateBrief(input)

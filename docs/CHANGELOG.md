@@ -10,6 +10,37 @@
 
 ---
 
+> **v2.30 变更摘要（2026-11-15，对齐完备性 P0：把「描述面」纳入闭集）**：
+> ① **问题**：v2.28 的三层对齐**模型本身不完整** —— 它只守「真源 ⇄ 两个派发方 prompt 的返回字段」，
+> 而同一事实的**第三、第四个投影**从未进扫描集：工具 description（**LLM 派发瞬间实际读的文本**，
+> 手抄着 5 个旧字段名、「最后回复」甚至不是字段名）、HANDOFF 的 kind 词表（只在 `build.md`，
+> `plan.md` 里 `needs-revision`/`ac-fail` 各 0 次）、派发参数名（`plan.md` 全文无 `project_dir`/`goal`）。
+> ⇒ **测试全绿 = 模型内部自洽，不证明模型齐全**。
+> ② **修正**（TDD：5 条判据先红 → 修 → 5 绿；`oracle → metis → critic` 三方）：
+> - **`lib/delegate-core.ts`**：`delegateToolDefinition()` 的 description **完全派生**（必填/选填从 schema 现算；
+>   返回子句从 `renderReturnClause()`），标签改「返回（**关键字段**；全集见 `DELEGATE_RESULT_FIELDS`）」；
+>   新增 `CRITICAL_FIELD_GLOSS`（7 个关键字段的一句话语义）+ `assertGlossCoverage()`（**双向**键集合 + 分隔符/嵌套括号校验）；
+>   **另 3 处同款手抄一并派生**（agent 白名单 ← `ALLOWED_AGENTS`、grant 禁区 ← `GRANT_FORBIDDEN`、`enum` ← `ROLE_CLASSES`）。
+> - **`prompts/plan.md`**：kind 微表（值 / 后端在说什么 / 你的动作）+ 「派发参数」段（5 个必填名 + 指针，不复制）；
+>   **`prompts/front.md`**：HANDOFF 条目补 kind 三值。kind 表放在「收尾三问」段**之前**（既有 AC7 对该段有「不许新增标识符」约束 ⇒ 不动它的白名单）。
+> - **判据（新 describe「对齐完备性」）**：**AC25/AC26 = 形态约束为主**（源码扫描：description 内**不得出现字段名/参数名字面量**）
+>   **+ 值 pin 为次**；AC27/AC28 真修 prompt；**AC29 = 双向登记式**（无通道 ⇒ 必须已登记；通道落地后仍留登记 ⇒ 红）。
+> ③ **审查**：oracle（3 批方案 + 发现 base 的真实消费方 `build.md:343`）→ **metis（4 条事实指控全部核实属实，
+> 其中「AC25/26 派生后会变成同源自证」直接推翻了 oracle 的核心论据）** → critic **`APPROVE_WITH_CONDITIONS`**
+> （无 BLOCKER；四处冲突逐条裁决：形态约束为主 / 副本+派生比对 / base 是派发参数非继承上下文 / 3 处同款本批做）。
+> 审稿记录：`.rddf/reviews/alignment-completeness-p0-review.md`。
+> ④ **验证**：`bun test tests/` **550 pass / 0 fail**（exit 0）；anchors **23/23**；**逐条 revert 映射表**
+> A→AC25 / B→AC26 / C→AC27 / D→AC28 / E→AC29（每条精确命中、还原后全绿 ⇒ 无空转绿）；
+> **「抄得完全正确的手抄体」仍被 AC25 抓住**（形态约束有判别力，值 pin 做不到）。
+> ⑤ **残留（如实登记）**：① **AC29 的绿 = 已登记，不是已修** —— `<base>` 仍无通道，E 另立 `delegate-base-channel`
+> （delegate + dispatch 同步、`buildBrief` 基线行、`execute` 后验硬拒 + vcs gate + 注入加固、resume 调用方重填）；
+> ② `buildBrief:1422` 手抄 kind 枚举未修；③ `delegate-async.ts:1104`/`:1507` 手抄返回清单未修（②③ 记交接清单 ⑧⑨）；
+> ④ `DELEGATE_RESULT_CRITICAL_FIELDS` 仍是 `readonly string[]` ⇒ gloss 的 `satisfies` 无编译期约束（⑩）；
+> ⑤ AC28 只判必填参数名。
+
+---
+
+
 > **v2.29 变更摘要（2026-11-15，新增「测试构建指南」）**：
 > ① **问题**：`v2.25`–`v2.28` 三批 + e2e `CS-1`–`CS-7` 积累的测试构建经验散落在审稿记录、计划文件与 commit message 里，
 > 下次要新增测试时无处可查 —— 尤其是「该写哪一层」「什么才算有效红灯」「伪造状态必须必然成立」这三类**反复踩坑**的判断。
