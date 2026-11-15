@@ -1,0 +1,10 @@
+# 本 change 不产生 openspec 的 spec delta。
+#
+# 理由：本仓**不使用** openspec 的 spec registry（仓库内没有 openspec/specs/ 目录）。
+# 本 change 的行为契约以本目录的 proposal.md「## 验收标准」（AC1–AC12）与
+# design.md（D1–D8 决策取舍）为准；守据落在 tests/ 的 AC1–AC12 对应断言。
+# 若将来要引入 spec registry，应改写为真正的 ADDED/MODIFIED requirement +
+# #### Scenario，并删除本文件里的 skip_specs 标记（openspec 会要求二者一致）。
+schema: spec-driven
+created: 2026-11-15
+skip_specs: true
