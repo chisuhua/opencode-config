@@ -10,6 +10,30 @@
 
 ---
 
+> **v2.34 变更摘要（2026-11-16，`delegate-base-resolved-return` 定稿为「丙」：基线身份由派发方持有）**：
+> ① **问题**：`delegate-base-channel`（v2.31）把基线在派发时冻结成 sha 并印进后端简报，但**派发方拿不到那个 sha**
+>   （它只进后端 session 的第一条消息，不在返回契约里）⇒ design **D2** 承诺的「跨 resume 要同一基线 ⇒ 填当初
+>   印出的 sha」**对派发方不可达** ⇒ D2 bite 自己。
+> ② **形状决策（用户 2026-11-16 拍板：选丙）**：
+> - **甲**（加返回字段 `base_resolved`）只覆盖「派发当场」⇒ 对「跨 front resume」**零改善**（返回值随原 front
+>   上下文一起消失）；**乙**（落盘 `pair.json` + `sessions` 只读回显）能覆盖跨 front，但要动登记面 + `sessions`
+>   输出 + 文档；**丙**（要求派发方直接传 sha）**零契约变更**。
+> - ⇒ **选丙**：**基线身份由派发方持有** —— 相对 ref 会随 HEAD 漂移 ⇒ **派发前先自己
+>   `git rev-parse <ref>^{commit}` 解析出 sha 并记下**，把**这个 sha** 填进 `base`（40 位 sha 是合法 ref，**已实测**）
+>   ⇒ 派发与后续 `resume` 用**同一个 sha** ⇒ 基线不漂；跨会话只需**把这个 sha 传下去** ⇒ 无需系统级存储。
+>   **代价**：解析义务移回调用方（要会 `git rev-parse`）；**闸门不丢**（填错的 sha 仍被 `rev-parse --verify` 拒）。
+> ③ **落地**：`prompts/plan.md` / `prompts/front.md` 的「**基线身份由派发方持有**」段 +
+>   两个工具的 `base` description 同步（原先的兜底句只覆盖 resume 场景 ⇒ 现覆盖**每次**派发）。
+>   improvement `.rddf/improvements/delegate-base-resolved-return.md` 定稿为「已选丙」⇒ **甲/乙关闭**，
+>   决策记录保留在 §F（`<details>` 内）。
+> ④ **验证**：`bun test tests/` **586 pass / 0 fail**（exit 0）；anchors **23/23**。
+> ⑤ **残留**：① `base_resolved` **不进**返回契约 ⇒ 派发方**永远**拿不到「本次实际用的 sha」
+>   （丙的代价：由派发方自己算）；② 派发方若**不**照做（仍填相对 ref）⇒ 基线仍会漂
+>   ⇒ 靠 `prompts/**` 的纪律 + 「消费端一律用简报里的 SHA」那条共同守住（**无代码强制**）。
+
+---
+
+
 > **v2.33 变更摘要（2026-11-15，`verifier-baseline-worktree-diff`：基线对照改看工作树）**：
 > ① **问题（实测确认）**：`prompts/build.md` 的基线对照命令含 `git diff --name-only <base>...HEAD`
 > —— **三点 diff（只比已提交）**，而本仓后端**被禁止 commit** ⇒ 被取证的 change 通常**未提交**

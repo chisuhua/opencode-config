@@ -2184,8 +2184,7 @@ export function delegateToolDefinition(ctx: any): any {
               description:
                 "本次派发的基线（git ref，如 HEAD~1 或 commit sha）。**role_class=verifier 时必填**" +
                 "（取证要做基线对照）；其它类可省。resume 时由调用方重填 —— " +
-                "要沿用同一基线请用 sha —— 简报里的 sha 不在返回契约（派发方拿不到）⇒ " +
-                "派发方自己 git rev-parse 记一份。",
+                "基线身份由派发方持有：相对 ref 会随 HEAD 漂移 ⇒ 派发前自己 git rev-parse 解析出 sha 并填这个 sha。",
             },
             plan_ref: {
               type: "string",

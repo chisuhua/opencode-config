@@ -136,7 +136,32 @@
 - **单 commit 仓库 / 浅克隆**：`HEAD~1` 不可解析 ⇒ verifier 派发被拒 ⇒ `base_resolved` 在该路径上拿不到。
 - **非 verifier 传 base ⇒ 静默忽略**（四态之一）：不报错但也不生效。
 
-## F. 形状决策（**待用户 / planner 拍板** —— 本草稿不替用户定）
+## F. 形状决策 —— **已定：丙**（用户 2026-11-16 拍板）
+
+> ✅ **决定：选丙**（要求派发方直接传 sha，`base` 已是合法 ref ⇒ **零契约变更**）。
+> ⇒ 本 improvement **不新增返回字段**、**不改 `DELEGATE_RESULT_FIELDS`**、**不动 `pair.json`**。
+> ⇒ 实际工作只剩「**把丙写进派发方的提示**」——已在 v2.33 落地（`prompts/plan.md` / `prompts/front.md`
+>   的「基线身份由派发方持有」段 + 两个工具的 `base` description）。
+>
+> **为什么丙够**（对比甲/乙）：
+> - 甲（返回字段）只覆盖「派发当场」⇒ 对「跨 front resume」零改善（返回值随原 front 上下文消失）；
+> - 乙（落盘 + `sessions` 回显）能覆盖跨 front，但要动登记面 + `sessions` 输出 + 文档 ⇒ 面大；
+> - **丙把「基线身份」交回派发方** ⇒ 派发方自己 `git rev-parse <ref>^{commit}` 解析并**记下 sha**，
+>   填进 `base` ⇒ 派发与后续 resume 用**同一个 sha** ⇒ 基线不漂；
+>   跨会话只需**把这个 sha 传下去**（对话历史 / 用户转述）⇒ 无需系统级存储。
+> ⇒ **代价**：解析义务从服务端移回调用方（调用方要会 `git rev-parse`）；
+>   但**闸门不丢**（填错的 sha 仍会被 `rev-parse --verify` 拒）。
+>
+> ⚠ **因此本 improvement 的后续动作**：
+> - [x] 丙形态写进 `prompts/plan.md` / `prompts/front.md` / 两个工具的 `base` description（v2.33）
+> - [x] **不**加 `base_resolved` 返回字段（甲）—— 结论已定，本项**关闭**
+> - [x] **不**落盘 `pair.json`（乙）—— 结论已定，本项**关闭**
+> - [ ] 归入 `docs/CHANGELOG.md` 的 v2.33 段（已在）并**关闭本 improvement**（登记为「已由丙形态覆盖」）
+
+<details>
+<summary>备选形状（保留作决策记录 —— 结论：均不采用）</summary>
+
+## ~~F-旧. 形状决策（已由上面的「丙」取代）~~
 
 > ⚠ **metis 审查的结论**：本草稿原先把「跨 resume 的基线句柄」与「派发当场多一个返回字段」
 > 当成同一件事，而**返回字段只覆盖后者**。`Why` 里自己写的失败场景（「跨 front resume 时原 front
@@ -159,3 +184,5 @@
 >   并**收窄** Acceptance 第 6 条（它现在只覆盖同一 front 连续两次）。
 >
 > **丙** 至少应进选项表（成本为零）；若选丙，本 improvement 退化为「一条 prompt 提示 + 零代码」。
+
+</details>

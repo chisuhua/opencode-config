@@ -97,8 +97,10 @@ owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl,
 **派发参数**：必填 `project_dir`（工程根绝对路径）、`task`（任务原话）、`goal`（一句话目标）、
 `scope`（允许变更的路径前缀数组）、`acceptance`（可判定的验收判据）。选填参数的语义见
 `prompts/front.md` 的参数表与工具 description（两处均已由守卫钉住，**不在此复制**）。
-其中 `base`（本次派发的基线）**对 `role_class=verifier` 是必填**（不填 ⇒ 派发被拒）；
-`resume` 时由**调用方重填**（相对 ref 会随 HEAD 漂移 ⇒ 要沿用同一基线，请用 **sha**）。⚠ 简报里的 sha **只进后端 session、不在返回契约** ⇒ 派发方拿不到它 ⇒ **自己先 `git rev-parse <ref>^{commit}` 记下 sha**，resume 时填这个 sha。
+其中 `base`（本次派发的基线）**对 `role_class=verifier` 是必填**（不填 ⇒ 派发被拒）。
+**基线身份由派发方持有**：相对 ref（`HEAD~1`）会随 HEAD 漂移 ⇒ **派发前先自己
+`git rev-parse <ref>^{commit}` 解析出 sha 并记下**，把**这个 sha** 填进 `base`（40 位 sha 是合法 ref）
+⇒ 派发与后续 `resume` 用**同一个 sha** ⇒ 基线不漂；跨会话只需把这个 sha 传下去。
 
 **五条硬规则**：
 
