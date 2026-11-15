@@ -46,6 +46,38 @@ const TMP = mkdtempSync(path.join(tmpdir(), "delegate-async-test-"))
 const git = (args: string[], cwd: string) =>
   execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
 
+/**
+ * 伪造「另一个**存活**实例」的实例戳 —— **必须跨 host**。
+ *
+ * `detectForeignInstances()` 的存活判定是「**同 host 才查 `pidAlive`**；跨 host 保守视为存活」
+ * （见 `lib/delegate-core.ts` 的同名函数注释，AC11 也钉了这条语义）。
+ *
+ * ⚠ **不能用「同 host + `process.pid + 1`」**：那依赖 `pid+1` 恰好存在 ⇒ **天生 flaky**
+ * （2026-11-15 实测 3 次运行中 1 次 3 条用例全红）。用跨 host ⇒ 与 pid 无关 ⇒ 确定性成立。
+ */
+const FOREIGN_HOST = "cs-test-remote-host"
+function seedForeignInstance(stateDir: string, name = "other"): void {
+  mkdirSync(stateDir, { recursive: true })
+  writeFileSync(
+    path.join(stateDir, `.instance-999998-${name}.json`),
+    JSON.stringify({ pid: 999998, host: FOREIGN_HOST, started_at: new Date().toISOString() }),
+  )
+}
+
+/**
+ * 一个**必然不存在**的 pid（`/proc/sys/kernel/pid_max` + 1）——
+ * 用于「同 host 的死 pid 不算实例」这类断言（硬编码 999999 有概率撞上真实进程 ⇒ 也 flaky）。
+ */
+function deadPid(): number {
+  try {
+    const max = Number(readFileSync("/proc/sys/kernel/pid_max", "utf8").trim())
+    if (Number.isFinite(max) && max > 0) return max + 1
+  } catch {
+    /* 非 Linux ⇒ 用保守上界 */
+  }
+  return 4_194_305
+}
+
 function repo(name: string): string {
   const dir = path.join(TMP, name)
   mkdirSync(dir, { recursive: true })
@@ -1321,10 +1353,7 @@ describe("cancel：停机证据门控（ADR-front-cancel-release）", () => {
     // 伪造另一个**存活**实例（同 host、pid+1）⇒ tripwire 命中 ⇒ 严格模式
     const stateDir = path.join(dir, ".rddf/state")
     mkdirSync(stateDir, { recursive: true })
-    writeFileSync(
-      path.join(stateDir, `.instance-${process.pid + 1}-other.json`),
-      JSON.stringify({ pid: process.pid + 1, host: hostname(), started_at: new Date().toISOString() }),
-    )
+    seedForeignInstance(stateDir)
     const r = await run(cancelToolDefinition(ctx), { session_id: a.session_id })
     expect(r.foreign_instance).toBe(true)
     expect(r.stop_judge).toBe("degraded")
@@ -2732,10 +2761,7 @@ describe("授权释放（ADR-front-stop-ownership D1）", () => {
     const s2 = sessions.get(b.session_id)!
     s2.time = { idle: Date.now() + 10_000 }
     s2.messages = []
-    writeFileSync(
-      path.join(stateDir, `.instance-${process.pid + 1}-other.json`),
-      JSON.stringify({ pid: process.pid + 1, host: hostname(), started_at: new Date().toISOString() }),
-    )
+    seedForeignInstance(stateDir)
     const r1 = await run(suspendToolDefinition(ctx), { session_id: b.session_id })
     expect(r1.suspended).toBe(false)
     expect(r1.foreign_instance).toBe(true)
@@ -2753,10 +2779,7 @@ describe("授权释放（ADR-front-stop-ownership D1）", () => {
     s.messages = []
     const stateDir = path.join(dir, ".rddf/state")
     mkdirSync(stateDir, { recursive: true })
-    writeFileSync(
-      path.join(stateDir, `.instance-${process.pid + 1}-other.json`),
-      JSON.stringify({ pid: process.pid + 1, host: hostname(), started_at: new Date().toISOString() }),
-    )
+    seedForeignInstance(stateDir)
     process.env.RDDF_SUSPEND_ALLOW_DEGRADED = "1"
     try {
       const r = await run(suspendToolDefinition(ctx), { session_id: a.session_id })
@@ -2811,6 +2834,23 @@ describe("授权释放（ADR-front-stop-ownership D1）", () => {
     expect(after).toBeGreaterThanOrEqual(before)
   })
 
+  test("AC11b（回归）：跨 host 的戳**不查 pid 存活** ⇒ seedForeignInstance 的伪造与 pid 无关（确定性）", () => {
+    // 这条钉住的是**为什么**上面三处 tripwire 用例必须用跨 host 伪造：
+    //   `detectForeignInstances()` 对跨 host **保守视为存活**（不查 pidAlive）⇒ 与 pid 无关 ⇒ 确定性。
+    //   若哪天实现改成「跨 host 也查 pid」⇒ 本用例会红 ⇒ 提醒改回 seedForeignInstance 的实现。
+    const dir = repo("own-ac11b")
+    const stateDir = path.join(dir, ".rddf/state")
+    ensureInstanceStamp(dir) // 本进程的戳（同 host 活 pid）
+    const dead = deadPid()   // **必然不存在**的 pid
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(
+      path.join(stateDir, `.instance-${dead}-remote-dead.json`),
+      JSON.stringify({ pid: dead, host: FOREIGN_HOST, started_at: new Date().toISOString() }),
+    )
+    // 跨 host + 死 pid ⇒ 仍算存活 ⇒ 判多实例（这就是伪造 foreign 的确定性来源）
+    expect(detectForeignInstances(dir)).toBe(true)
+  })
+
   test("AC11 戳的存活判定：同 host 的**死 pid** 不算实例；跨 host 戳算存活（保守）", async () => {
     const dir = repo("own-ac11")
     const { ctx } = createFakeCtx()
@@ -2819,9 +2859,10 @@ describe("授权释放（ADR-front-stop-ownership D1）", () => {
     mkdirSync(stateDir, { recursive: true })
     ensureInstanceStamp(dir) // 本进程留戳（否则「活实例数」基数不对）
     // 死 pid（同 host）⇒ 不算存活 ⇒ 不判多实例
+    const dead = deadPid()
     writeFileSync(
-      path.join(stateDir, `.instance-999999-dead.json`),
-      JSON.stringify({ pid: 999999, host: hostname(), started_at: new Date().toISOString() }),
+      path.join(stateDir, `.instance-${dead}-dead.json`),
+      JSON.stringify({ pid: dead, host: hostname(), started_at: new Date().toISOString() }),
     )
     expect(detectForeignInstances(dir)).toBe(false)
     // 跨 host ⇒ 保守视为存活 ⇒ 判多实例
