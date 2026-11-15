@@ -258,6 +258,52 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
    * ⇒ 形态约束：description 表达式段内**不得出现** `DELEGATE_RESULT_*` 字段名或**参数名**的字面量
    *   （⇒ 「改回手抄」当场红）。
    */
+  /**
+   * verifier-baseline-worktree-diff（AC5 / AC6）：`prompts/build.md` 的**基线取法**段。
+   *
+   * ⚠ **为什么**：旧命令 `git diff --name-only <base>...HEAD` 是**三点 diff（只比已提交）**，
+   *   而本仓后端**被禁止 commit** ⇒ 未提交工作树下**恒为空** ⇒ 「取证对象是否被本 change 触及」
+   *   永远「未触及」⇒ **基线对照在真实用法下没有判别力**。
+   * ⇒ 命令必须改成**两点**（基线 ↔ 工作树）+ 未跟踪文件走**并列的另一路** +
+   *   **明写两侧不对称**（否则后人会按「对称」直觉把 `git show` 改成工作树版本 ⇒ 分类能力失效）。
+   */
+  test("build.md 的基线取法：两点 diff + 未跟踪文件另一路 + 两侧不对称 + merge-base 的新用途", () => {
+    const BUILD = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+    const lines = BUILD.split("\n")
+    const start = lines.findIndex((l) => l.includes("**基线取法**"))
+    expect(start, "build.md 缺「基线取法」段").toBeGreaterThan(-1)
+    // 取到该段真正结束（下一个 `kind 优先级` 之前），而不是固定行数
+    const rest = lines.slice(start)
+    const endRel = rest.findIndex((l) => l.includes("kind 优先级"))
+    const section = rest.slice(0, endRel > 0 ? endRel : 12).join("\n")
+
+    // ① 命令：两点（基线 ↔ 工作树），且**不再出现**三点写法
+    expect(section, "基线取法段必须用两点 diff（基线 ↔ 工作树）").toContain("git diff --name-only <base>")
+    // ⚠ **放宽成闭集**：只挡 `...HEAD` 会漏掉 `<base>...main` 之类变体 ⇒ 段内**任何** `...` 都挡
+    expect(section, "基线取法段不得再用三点 diff（未提交工作树下恒空 ⇒ 无判别力）").not.toMatch(/\.\.\./)
+
+    // ④' 内容类取证的**命令本身**必须钉住（AC4 的文档面对应面）：
+    //    只断「不对称 / 提交内容」等措辞 ⇒ 把 `git show <base>:<path>` 整段删掉仍全绿
+    expect(section, "基线取法段必须保留 `git show <base>:<path>`（内容类取证可完整重演的根）").toContain("git show <base>:")
+
+    // ⑤ **必须用简报里冻结的 SHA**（`→` 后半段）—— 否则「派发时冻结」被绕过：
+    //    主会话在取证期间 commit ⇒ 相对 ref 解析成另一个 commit ⇒ 基线漂移 ⇒ 判错位。
+    expect(section, "基线取法段必须写明一律用简报基线行 `→` 后的 SHA（相对 ref 会随 HEAD 漂移）").toMatch(/SHA|→\s*后的/)
+
+    // ② 未跟踪文件：`git diff` 不含它 ⇒ 必须并列另一路
+    expect(section, "基线取法段必须写明未跟踪文件走 `ls-files --others --exclude-standard` 那一路").toContain("ls-files --others --exclude-standard")
+
+    // ③ 两侧**不对称**：基线侧 = 提交内容；工作树侧 = 两点 diff（含未提交改动）
+    expect(section, "基线取法段必须写明基线侧与工作树侧的不对称").toMatch(/不对称/)
+    expect(section, "基线取法段必须写明基线侧取的是提交内容").toMatch(/提交内容/)
+    // ⚠ **负向收紧**：「不对称」是**成对**的词 —— 只判它存在，则「两侧对称」这种回改也过
+    //   ⇒ 段内除「不对称」外**不得出现裸「对称」**（挡最高频的回改写法；换词的写法仍需靠 review）
+    expect(section, "基线取法段出现了裸「对称」（应为「不对称」）").not.toMatch(/(?<!不)对称/)
+
+    // ④ `merge-base` 的**新用途**：祖先关系诊断；**对照一律用 `<base>` 本身**
+    expect(section, "基线取法段必须写明 merge-base 只作祖先关系诊断（对照用 <base> 本身）").toMatch(/诊断/)
+  })
+
   test("async 四个工具的 description：不得手抄返回字段名 / 参数名（形态约束）", () => {
     const asyncSrc = readFileSync(path.join(ROOT, "lib", "delegate-async.ts"), "utf8")
     const tools = ["dispatchToolDefinition", "sessionsToolDefinition", "suspendToolDefinition", "cancelToolDefinition"]

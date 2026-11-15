@@ -10,6 +10,42 @@
 
 ---
 
+> **v2.33 变更摘要（2026-11-15，`verifier-baseline-worktree-diff`：基线对照改看工作树）**：
+> ① **问题（实测确认）**：`prompts/build.md` 的基线对照命令含 `git diff --name-only <base>...HEAD`
+> —— **三点 diff（只比已提交）**，而本仓后端**被禁止 commit** ⇒ 被取证的 change 通常**未提交**
+> ⇒ 该 diff **恒为空** ⇒ 「取证对象是否被本 change 触及」永远「未触及」
+> ⇒ **基线对照在真实用法下没有判别力**（内容类取证的第一道分类失效 ⇒ 环境故障被误判）。
+> ② **修正**（change: `openspec/changes/verifier-baseline-worktree-diff/`，AC1–AC8 / D1–D6）：
+> - **命令**：两点 `git diff --name-only <base>`（基线 ↔ **工作树**）+ 并列
+>   `git ls-files --others --exclude-standard`（`git diff` **不含**未跟踪文件）+ `git show <base>:<path>`。
+> - **两侧不对称**（有意，且**负向钉住**）：基线侧 = **提交内容**（可完整重演）；工作树侧 =
+>   **含未提交改动**。⚠ 若有人按「两边一样」的直觉把 `git show` 改成工作树版本 ⇒ 分类能力当场失效。
+> - `git merge-base HEAD <base>` 只作**祖先关系诊断**；**对照一律用 `<base>` 本身**。
+> - **一律用简报基线行 `→` 后的 SHA**（oracle 第 1 轮抓到的**高影响真缺陷**：输入侧在派发时冻结了
+>   sha，消费端却按 raw ref 解析 ⇒ 主会话期间 commit ⇒ **基线漂移** ⇒ 判错位）。
+>   存量简报（无 sha 行）退回该行所写的 ref —— ⚠ 明标为**降级模式**（按 `<base>` 不可解析 ⇒ `blocked`）。
+> ③ **判据**：AC1–AC4（**真 git fixture**，不 mock；含「三点 diff 恒空」这个**旧命令失效的证据**）、
+>   AC5/AC6（文档面守卫，含「任何 `...` 都挡」的**闭集**负向 + 「除『不对称』外不得出现裸『对称』」）、
+>   AC7（回归）、AC8（revert 留痕）。AC1–AC4 **当场即绿**（git 行为本来如此 ⇒ 防漂移类）
+>   ⇒ 判别力由 revert 演练的 **E（「把判据本身改坏」⇒ AC1 红）**证明。
+> ④ **审查**：oracle 第 1 轮 `PASS-WITH-NOTES`（**高影响真缺陷**：sha vs raw ref 的漂移；另 3 条中低影响
+>   全部落地：守卫三点负向闭集化 / 不对称负向收紧 / AC8 留痕）→ critic 第 1 轮 **`APPROVE_WITH_CONDITIONS`**
+>   （无 BLOCKER；3 条 SHOULD_FIX 全闭合：① 守卫**没钉** `git show <base>:<path>` 这条命令本身
+>   （删掉它守卫仍绿 ⇒ 补断言）② revert-map 覆盖表「共享同一条路径」的说法对 AC3/AC4 **不成立** ⇒ 已改写
+>   ③ 存量简报 ref 兜底的残余漂移未标为降级模式 ⇒ 已补；2 条 NIT 全闭合）。
+> ⑤ **验证**：`bun test tests/` **586 pass / 0 fail**（exit 0）；anchors **23/23**；
+>   **revert 演练 5 条（A–E）逐条精确命中、还原后全绿**（留痕：
+>   `.rddf/reviews/verifier-baseline-worktree-diff-revert-map.md`）；`git show <sha>:<path>` 语法实测有效。
+> ⑥ **残留（如实登记）**：① **回滚会恢复「基线对照无判别力」的状态**（design 的回滚行明写）；
+>   ② 「两侧不对称」仍是**措辞**判据（负向断言只挡最高频回改；换词需 review）⇒ 结构化表化**可延后**；
+>   ③ 「判据被 weaken」**无机械防线**（守卫守卫测试 = 无限递归）⇒ 靠 review 流程；
+>   ④ 「一工作树一 change」的归因假设未消解（两点 diff 把工作树**所有**未提交改动归因给被取证 change
+>   ⇒ 过触发但保守）；⑤ 消费端纪律**无代码强制**（散文 + 守卫而已）⇒ 已登记为已知边界；
+>   ⑥ 消费端纪律**未工具化**（抽脚本最彻底，但超 scope）⇒ 独立 improvement 候选。
+
+---
+
+
 > **v2.32 变更摘要（2026-11-15，测试覆盖面：先修活缺陷 + 两条可机械的增量门）**：
 > ① **问题**：用户要求「思考更全面的测试集」。先做了 oracle（成本/收益）+ metis（失效模式）
 > **双向挑战**，结论是：**「全面」不可达** —— 判据体系原则上无法自证完备

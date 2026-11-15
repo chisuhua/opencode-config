@@ -78,4 +78,8 @@ git ls-files --others --exclude-standard                 # 新增的未跟踪文
 | 有人把 `git show <base>:<path>` 改成工作树版本 | AC6 的「不对称」措辞 + 文档明写 |
 | 未跟踪文件被漏掉 | AC3（并列两路）+ 文档明写 |
 | `<base>` 是别的分支的提交时，对照对象含糊 | D4：对照用 `<base>` 本身；`merge-base` 只作祖先关系诊断 |
+| **归因假设（本 change 未消解）**：两点 diff 把工作树里**所有**未提交改动都归因给被取证的 change
+  ⇒ design 隐含「**一工作树一 change**」的假设（本 change 实施时的工作树就是反例：本 change 与
+  `delegate-base-resolved-return` 的修订并存）。方向**保守**（过触发 ⇒ 走 `blocked`，不会误判 `ac-fail`）
+  ⇒ 登记为已知边界，不在本 change 修 |
 | **回滚** | 改回 `build.md` 的三点命令 + 删 AC1–AC4 的判据（AC5/AC6 的守卫随之失效）—— 但**回滚会恢复「基线对照无判别力」的状态**，故应在 CHANGELOG 明写 |

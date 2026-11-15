@@ -7,9 +7,9 @@
 
 ## 前置确认
 
-- [ ] **0.1** 确认 `prompts/build.md` 基线取法段的当前原文（AC5/AC6 要改它）
-- [ ] **0.2** 确认 `tests/` 里既有的 git fixture 助手（`gitRepo()`）可复用（真 git ⇒ D5）
-- [ ] **0.3** 确认 `prompts/plan.md` / `prompts/front.md` 是否提到基线对照命令
+- [x] **0.1** 确认 `prompts/build.md` 基线取法段的当前原文（AC5/AC6 要改它）
+- [x] **0.2** 确认 `tests/` 里既有的 git fixture 助手（`gitRepo()`）可复用（真 git ⇒ D5）
+- [x] **0.3** 确认 `prompts/plan.md` / `prompts/front.md` 是否提到基线对照命令
       （**若没提则不新增** ⇒ 不制造第二处描述面）
 
 ---
@@ -18,58 +18,61 @@
 
 > 判据形态：**真 git fixture**（D5）—— 证明「工作树两点 diff 有判别力、旧三点命令失效」。
 
-- [ ] **Step 1:** 写失败断言 ——
+- [x] **Step 1:** 写失败断言 ——
       ① fixture：基线提交含 `a.txt`；**工作树改写** `a.txt`（**不 commit**）
       ② `git diff --name-only <base>` **必须列出** `a.txt`
       ③ `git diff --name-only <base>...HEAD` **必须为空**（旧命令失效的**证据**）
       ④ 工作树**未**改 `b.txt` ⇒ 两点 diff **不含** `b.txt`
-- [ ] **Step 2:** 确认红 —— ⚠ **注意**：①②④ 现在就成立（git 行为本来如此）⇒ 判据是
+- [x] **Step 2:** 确认红 —— ⚠ **注意**：①②④ 现在就成立（git 行为本来如此）⇒ 判据是
       **防漂移**类，**当场即绿**是预期的；③ 也是绿的 ⇒ **本 Task 可能「预期即绿」**。
       ⇒ 如实记录（不假装红过），并在 Task 5 用 revert 演练证明它**有判别力**
-- [ ] **Step 3:** 最小实现：**无需改实现**（git 行为即如此）⇒ 只加判据
-- [ ] **Step 4:** 确认绿
+- [x] **Step 3:** 最小实现：**无需改实现**（git 行为即如此）⇒ 只加判据
+- [x] **Step 4:** 确认绿
 
 ## Task 2：未跟踪文件 + 基线侧可重演（AC3 / AC4）
 
-- [ ] **Step 1:** 写失败断言 ——
+- [x] **Step 1:** 写失败断言 ——
       ① 工作树新增**未跟踪**文件 ⇒ `git diff --name-only <base>` **不含**它，
          但 `git ls-files --others --exclude-standard` **含**它
       ② 工作树改写 `a.txt` 后，`git show <base>:a.txt` 仍返回**基线版本**（内容 ≠ 工作树版本）
-- [ ] **Step 2:** 确认红/绿（防漂移类，可能即绿 ⇒ 如实记录）
-- [ ] **Step 3:** 最小实现：只加判据
-- [ ] **Step 4:** 确认绿
+- [x] **Step 2:** 确认红/绿（防漂移类，可能即绿 ⇒ 如实记录）—— **实测：当场即绿**（git 行为本来如此）
+      ⇒ 已在 revert 演练里用「E：把判据本身改坏」证明其有判别力
+- [x] **Step 3:** 最小实现：只加判据
+- [x] **Step 4:** 确认绿
 
 ## Task 3：改 `prompts/build.md` 的基线取法（AC5 / AC6）
 
-- [ ] **Step 1:** 写失败断言（守卫）——
+- [x] **Step 1:** 写失败断言（守卫）——
       ① 基线取法段含 `git diff --name-only <base>`（**两点**）且**不含**三点写法
       ② 段内明写**未跟踪文件**走 `git ls-files --others --exclude-standard` 那一路
       ③ 段内明写**基线侧（提交内容）vs 工作树侧（两点 diff）的不对称**
       ④ 段内写明 `merge-base` 的**新用途**（祖先关系诊断；对照用 `<base>` 本身）
-- [ ] **Step 2:** 确认红
-- [ ] **Step 3:** 改 `prompts/build.md`（**只改这一段**，不动其它取证纪律）
-- [ ] **Step 4:** 确认绿
+- [x] **Step 2:** 确认红
+- [x] **Step 3:** 改 `prompts/build.md`（**只改这一段**，不动其它取证纪律）
+- [x] **Step 4:** 确认绿
 
 ## Task 4：口径核对 + 全量回归（AC7）
 
-- [ ] **Step 1:** 核对 `prompts/plan.md` / `prompts/front.md`（前置 0.3 的结论）——
+- [x] **Step 1:** 核对 `prompts/plan.md` / `prompts/front.md`（前置 0.3 的结论）——
       **若它们提到了三点命令 ⇒ 一并改；若没提 ⇒ 不新增任何描述面**
-- [ ] **Step 2:** `bun test tests/` 全绿（**单独校验退出码**，不用管道串）
-- [ ] **Step 3:** `bash scripts/check-upstream-anchors.sh` 无 `FAIL` / 无 `SKIP`
+- [x] **Step 2:** `bun test tests/` 全绿（**单独校验退出码**，不用管道串）
+- [x] **Step 3:** `bash scripts/check-upstream-anchors.sh` 无 `FAIL` / 无 `SKIP`
 
 ## Task 5：revert 演练 + CHANGELOG（AC8）
 
-- [ ] **Step 1:** 把 `build.md` 的命令改回**三点** ⇒ AC5 必须红
-- [ ] **Step 2:** 把「不对称」那段删掉 ⇒ AC6 必须红
-- [ ] **Step 3:** 还原 ⇒ 全绿
-- [ ] **Step 4:** 留痕写入 `.rddf/reviews/verifier-baseline-worktree-diff-revert-map.md`
-- [ ] **Step 5:** 落 CHANGELOG 条目（**必须写明「回滚会恢复『基线对照无判别力』的状态」** —— design 的回滚行）
+- [x] **Step 1:** 把 `build.md` 的命令改回**三点** ⇒ AC5 必须红
+- [x] **Step 2:** 把「不对称」那段删掉 ⇒ AC6 必须红
+- [x] **Step 3:** 还原 ⇒ 全绿
+- [x] **Step 4:** 留痕写入 `.rddf/reviews/verifier-baseline-worktree-diff-revert-map.md`
+- [x] **Step 5:** 落 CHANGELOG 条目（**必须写明「回滚会恢复『基线对照无判别力』的状态」** —— design 的回滚行）
 
 ## 审查（收口前）
 
-- [ ] **R1:** 治理面（`prompts/**` + 守卫断言）⇒ oracle 1 轮 → critic 1 轮
-- [ ] **R2:** critic 的 BLOCKER 全闭（如有）⇒ 复审 1 次只验闭合
-- [ ] **R3:** 审稿记录落 `.rddf/reviews/verifier-baseline-worktree-diff-review.md`
+- [x] **R1:** 治理面（`prompts/**` + 守卫断言）⇒ oracle 1 轮 → critic 1 轮
+      —— oracle 第 1 轮 `PASS-WITH-NOTES`：抓到**高影响真缺陷**「输入侧冻结了 sha、消费端却用 raw ref
+      ⇒『派发时冻结』被绕过（主会话期间 commit ⇒ 基线漂移）」⇒ 已修（`build.md` 补「一律用 `→` 后的 SHA」+ 守卫⑤）
+- [x] **R2:** critic 的 BLOCKER 全闭（如有）⇒ 复审 1 次只验闭合
+- [x] **R3:** 审稿记录落 `.rddf/reviews/verifier-baseline-worktree-diff-review.md`
 
 ## 已知边界（写进测试注释，不假装覆盖）
 
