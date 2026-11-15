@@ -93,6 +93,15 @@
 | `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` 类的 `scope` **必须同时包含** `.rddf/reviews` 与 `.rddf/state/verifier`（记账落点 —— 产品侧收拢已完成，skill 的**全部**状态文件都在该目录下）。收到 verifier 类的 `HANDOFF:` 时：若其 5 项正文提到「状态机未落盘 / verdict cache 没写」，那是**后端没直写 skill 状态** —— 正常路径下后端**自己写**（single writer）；先查 `scope` 是否真含 `.rddf/state/verifier`（缺 ⇒ **scope 问题，重派**；含却没写 ⇒ 记为后端违约并按 §HANDOFF 交回）；**跨会话 resume 时原 `scope` 不落盘 ⇒ 查不到就视为缺 ⇒ 重派**；不确定就填 `builder`；**填错有两种形态**：① 窄目标（`scope` 越界）⇒ **派发被拒**（硬拒在建 session 之前，你拿到的是错误、不是 `HANDOFF:`）⇒ **改派**；② 宽目标 ⇒ 后端写越界路径被**权限拒** ⇒ 后端 `HANDOFF:` 交回 ⇒ **重派**。该字段**始终生效**（缺省 `builder`；非法值直接抛） |
 | `constraints`（选填） | 明确禁止的动作（"不要 commit""别动 X"） | — |
 
+<!-- 机读投影：下面这块是 `opencode.jsonc` 里本 agent 的**能力面**（edit / shell / delegate）——
+     守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。
+     本 agent 的散文若复述能力面 ⇒ 会与本块漂移 ⇒ **一律指向本块，不复述**。 -->
+<!-- capability:front
+edit: none
+edit-wildcard: deny
+shell: deny-wildcard
+delegate: yes
+-->
 <!-- 机读投影：下面这块是 `lib/delegate-core.ts::VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` 的**逐字副本** ——
      守卫按**精确比对**校验（多一个路径 / 少一个路径 / 改一个字符 ⇒ 红）。
      散文措辞不再承担「写集对不对」的判据（措辞是开集的，换个说法就能绕过）。

@@ -1478,3 +1478,77 @@ describe("verifier 写集：上限 vs 授权（class-write-scope-alignment）", 
     }
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════
+// delegate 返回值契约 —— 「派发方 ↔ 被派发方跨会话对齐」的**单一真源**
+//   （派发方必须知晓哪些字段，否则会把「宿主说成功但无交付证据」当完成）
+// ══════════════════════════════════════════════════════════════════════════
+describe("assertDelegateResultShape（返回值契约的运行时自检）", () => {
+  test("AC21c：缺字段 ⇒ 抛错且消息含字段名与真源指针", async () => {
+    const mod = (await import("../lib/delegate-core.ts")) as any
+    const fields = mod.DELEGATE_RESULT_FIELDS as string[]
+    const good: Record<string, unknown> = Object.fromEntries(fields.map((f) => [f, null]))
+    // 齐全 ⇒ 静默通过
+    expect(() => mod.assertDelegateResultShape(good)).not.toThrow()
+    // 缺一个 ⇒ 抛错，消息含字段名 + 真源指针
+    const missing = "no_work_evidence"
+    const bad = { ...good }
+    delete bad[missing]
+    let err: any
+    try {
+      mod.assertDelegateResultShape(bad)
+    } catch (e) {
+      err = e
+    }
+    expect(err, "缺字段时必须抛错").toBeTruthy()
+    expect(String(err?.message ?? err)).toContain(missing)
+    expect(String(err?.message ?? err)).toContain("DELEGATE_RESULT_FIELDS")
+  })
+
+  test("AC21d：值为 undefined 的字段在 **JSON 序列化后**会消失 ⇒ 自检必须查序列化后的对象", async () => {
+    // 2026-11-15 critic 抓到的真缺陷：`wait_error: waitError` 在成功路径恒为 undefined
+    //   ⇒ JSON.stringify **丢键** ⇒ 线上 payload 只有 27/28 个契约字段（而两层守卫都看不见）。
+    //   修法两条：① `?? null`（字段不丢）；② 自检跑在**序列化之后**（通用防线）。
+    const mod = (await import("../lib/delegate-core.ts")) as any
+    const fields = mod.DELEGATE_RESULT_FIELDS as string[]
+    const withUndefined: Record<string, unknown> = Object.fromEntries(fields.map((f) => [f, null]))
+    withUndefined.wait_error = undefined
+    // 序列化后该键消失 ⇒ 只查内存对象会漏
+    expect(JSON.parse(JSON.stringify(withUndefined))).not.toHaveProperty("wait_error")
+    // 而序列化后的对象喂给自检 ⇒ 会抛（这正是插件现在做的）
+    let err: any
+    try {
+      mod.assertDelegateResultShape(JSON.parse(JSON.stringify(withUndefined)))
+    } catch (e) {
+      err = e
+    }
+    expect(err, "序列化后缺字段必须被自检抓到").toBeTruthy()
+    expect(String(err?.message ?? err)).toContain("wait_error")
+  })
+})
+
+describe("delegate 返回值契约（跨会话对齐真源）", () => {
+  test("AC21a：契约常量存在；关键字段是契约子集且覆盖「未验证」这一族", async () => {
+    // 动态 import：让「常量未导出」表现为**这一条**断言失败，而不是整个文件加载失败
+    const mod = (await import("../lib/delegate-core.ts")) as Record<string, unknown>
+    const fields = mod.DELEGATE_RESULT_FIELDS as string[] | undefined
+    const critical = mod.DELEGATE_RESULT_CRITICAL_FIELDS as string[] | undefined
+    expect(fields, "DELEGATE_RESULT_FIELDS 未导出（返回值契约缺单一真源）").toBeDefined()
+    expect(critical, "DELEGATE_RESULT_CRITICAL_FIELDS 未导出").toBeDefined()
+    expect(fields!.length, "契约字段过少").toBeGreaterThan(8)
+    for (const f of critical!) {
+      expect(fields!, `关键字段「${f}」不在契约里`).toContain(f)
+    }
+    // 「未验证」这一族必须在关键字段里 —— 缺它 ⇒ 派发方会把 unverified 当完成
+    for (const f of [
+      "outcome",
+      "host_outcome",
+      "blocked_reason",
+      "no_work_evidence",
+      "artifacts",
+      "last_assistant_text",
+    ]) {
+      expect(critical!, `关键字段缺「${f}」`).toContain(f)
+    }
+  })
+})

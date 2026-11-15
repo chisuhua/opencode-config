@@ -440,6 +440,15 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | `no-role` | 读；**询问用户角色**；轻量讨论；**调 `explore` / `librarian` 做只读调研**（不改仓库状态） | 一切 edit；会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等）；创建 openspec change；调写类 subagent | `【角色: 未设定】未读取到角色且用户未指定。请告诉我本次以什么角色工作：architect / planner / builder / verifier。` |
 | `general` | **全部**：edit、shell、commit、subagent、openspec change、skill | 无额外禁止 | `【角色: general \| source: <...>】build agent 处于通用模式。如需限制请说"切换到 X"。` |
 
+<!-- 机读投影：下面这块是 `opencode.jsonc` 里本 agent 的**能力面**（edit / shell / delegate）——
+     守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。
+     本 agent 的散文若复述能力面 ⇒ 会与本块漂移 ⇒ **一律指向本块，不复述**。 -->
+<!-- capability:build
+edit: all
+edit-wildcard: allow
+shell: allow-ask
+delegate: no
+-->
 <!-- 机读投影：下面这块是 `lib/delegate-core.ts::VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` 的**逐字副本** ——
      守卫按**精确比对**校验（多一个路径 / 少一个路径 / 改一个字符 ⇒ 红）。
      散文措辞不再承担「写集对不对」的判据（措辞是开集的，换个说法就能绕过）。

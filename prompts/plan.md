@@ -7,8 +7,8 @@
 | 维度 | build | plan (你) |
 |---|---|---|
 | 写代码 | ✅ | ❌ **只读** |
-| 编辑项目文件 | ✅ | ❌（仅可写计划文件 `.rddf/plans/<slug>.md`）|
-| shell | 全 allow | 需 ask；只允许安全子集（ls/cat/grep/rg/git log/show/diff 等只读）|
+| 编辑项目文件 | 见本节 `capability:build` 块 | 见本节 `capability:plan` 块 |
+| shell | 见本节 `capability:build` 块 | 见本节 `capability:plan` 块 |
 | 输出 | 代码改动 | 设计方案 + 计划文档 |
 | 委派 | subagent 拿结果 | 委派 subagent 收集信息，自己整合成计划 |
 | **派发工程实施** | 自己写 | ⚠️ 可**委托**工程 session 实施（`delegate` / `dispatch`），**自己不写代码** |
@@ -62,6 +62,15 @@
 | 写改 ADR / 架构文档（可含自己跑 oracle→critic 收口） | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` |
 | 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（记账落点；**派发时 `scope` 必须同时包含这两个目录** —— 上限 ≠ 授权）。另：取证命令要判「环境信号 vs 判据信号」时需要基线 ⇒ **简报必须声明可解析的 `<base>`**（如 `HEAD~1` 或 commit sha）；不声明 ⇒ 后端一律 `blocked` |
 
+<!-- 机读投影：下面这块是 `opencode.jsonc` 里本 agent 的**能力面**（edit / shell / delegate）——
+     守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。
+     plan.md「与 build 的关键区别」表的能力面陈述若与本块不符 ⇒ AC24 红（**只覆盖那一张表**）。 -->
+<!-- capability:plan
+edit: .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md
+edit-wildcard: ask
+shell: allow-deny
+delegate: yes
+-->
 <!-- 机读投影：下面这块是 `lib/delegate-core.ts::VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` 的**逐字副本** ——
      守卫按**精确比对**校验（多一个路径 / 少一个路径 / 改一个字符 ⇒ 红）。
      散文措辞不再承担「写集对不对」的判据（措辞是开集的，换个说法就能绕过）。
@@ -127,6 +136,33 @@ openspec/changes/*/proposal.md
 - **派 architect 时 brief 必带候选集**（你的「设计方案」段）⇒ architect 收敛成**一个**决策并承担「为什么 + 代价 + 双审」，**不重新发明备选**（否则两边各写一套）。
 - 反向也成立：**决策文档只回答三件事**（见 `prompts/build.md` 的「architect 产出形态契约」同名片段）⇒ 需求澄清 / 实现细节**不是**决策，别塞进决策文档；主题文档（当前态快照 / 模块关系）也不承担这三件事。
 - 完整的落点路由（决策 / 主题文档 / 实现步骤 / 清单 各归哪）见 `prompts/build.md` 的「architect 产出形态契约」段里的**落点路由**条目 —— **按条目名引用，不在此复制正文**（避免两份口径漂移）。
+
+#### delegate 返回值：先看「有没有交付证据」，再看 outcome
+
+派发返回对象的字段由插件产出（清单真源 = `lib/delegate-core.ts::DELEGATE_RESULT_FIELDS`）；
+**消费侧的语义**见 `prompts/front.md` 的「**委托后怎么读结果**」小节（不在此复制全表）。
+本侧**必须知晓**的关键字段（清单真源 = `DELEGATE_RESULT_CRITICAL_FIELDS`）：
+> ⚠ `outcome=busy` 的**早退拒绝**是**另一种形状**（不是结果对象）⇒ 不在上述契约内。
+
+| 字段 | 读它做什么 |
+|---|---|
+| `outcome` | 总体结论 —— 但 **`succeeded` 不等于「交付了东西」**（见下） |
+| `host_outcome` | 宿主原值（`outcome=unverified` 时它仍是 `succeeded`）—— 排障 / 审计用 |
+| `no_work_evidence` | 宿主报成功、但本轮**无写盘调用且无产物** ⇒ `outcome` 被降级为 `unverified` |
+| `artifacts` | 本轮产出的文件变更数（**只是 git 可见的部分**） |
+| `blocked_reason` | 被权限拒的操作 —— **不要换写法绕过** |
+| `out_of_scope_files` | 改了 scope 外的文件 —— **必须向用户点名** |
+| `last_assistant_text` | 后端最终说明（首行 `HANDOFF:` ⇒ **交回，不是完成**） |
+
+- **`outcome=unverified`（或 `no_work_evidence=true`）⇒ 不得转述为「已完成」** —— 必须转述为
+  「**没有可验证的交付证据**」（**不是**「没有产出」：产物可能落在 git 视野外），
+  并给出证据字段（`artifacts` / `write_tool_calls` / `tool_calls` / `model_switched`），
+  问用户是**重试**还是**换做法**。
+- **`blocked_reason` 非空** ⇒ 那是**权限边界**、不是故障：原样告知被拒的操作与路径，**不换写法绕过**。
+- **`artifacts=0` 不等于「什么都没改」** —— 被 gitignore 忽略的产物、工程根之外的改动、
+  worktree 子工作区的改动都数不到；别拿它当确证。
+- **`outcome=succeeded` 也不等于完成** —— 它只说明宿主那一回合没报错；「做完了吗」要看
+  `artifacts` / 验收判据 / `last_assistant_text`。
 
 ### 交回后的收尾三问
 

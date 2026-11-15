@@ -580,6 +580,133 @@ export function isRoleClass(value: unknown): value is RoleClass {
 }
 
 /** 解析 role_class：`undefined` ⇒ 缺省 builder；其它任何值（含 `null` / `""`）⇒ 抛。 */
+/**
+ * agent **能力面**的规范机读块（`capability:<agent>`）—— 真源 = `opencode.jsonc` 的 permission。
+ *
+ * 与 `verifierWriteSetBlock()` / `planRefRootsBlock()` **同形**：lib 渲染规范块 → prompt 嵌**逐字副本**
+ * → 守卫按**精确比对**校验（多一个维度 / 少一个维度 / 改一个字符 ⇒ 红）。
+ *
+ * ⚠ 为什么不放在测试里派生：那样会出现「同一类问题两种范式」（本仓已有两块规范块在 lib 里渲染）。
+ *   派生规则（shell 档位怎么由 permission 算出来）因此**与块同处 lib**。
+ *
+ * @param agentId agent 名（`build` / `plan` / `front`）
+ * @param perm 该 agent 的 permission 对象（取自 `opencode.jsonc`）
+ */
+export function capabilityBlock(agentId: string, perm: any): string {
+  const editRaw = perm?.edit
+  const editWildcard = typeof editRaw === "string"
+    ? (editRaw === "allow" ? "allow" : editRaw)
+    : (editRaw?.["*"] ?? "deny")
+  const editList = typeof editRaw === "string"
+    ? (editRaw === "allow" ? ["all"] : [])
+    : Object.entries(editRaw ?? {})
+        .filter(([k, v]) => k !== "*" && v === "allow")
+        .map(([k]) => k)
+        .sort()
+  const edit = editList.length === 0 ? "none" : editList.join(", ")
+
+  const shellRaw = perm?.shell
+  const shellEntries = typeof shellRaw === "string" || !shellRaw ? [] : Object.entries(shellRaw)
+  const shellWildcard = typeof shellRaw === "string" ? shellRaw : (shellRaw?.["*"] ?? "deny")
+  const askCount = shellEntries.filter(([k, v]) => k !== "*" && v === "ask").length
+  const denyCount = shellEntries.filter(([k, v]) => k !== "*" && v === "deny").length
+  const shell =
+    shellWildcard === "ask" ? "ask-wildcard"
+    : shellWildcard === "deny" ? "deny-wildcard"
+    : askCount > 0 && denyCount > 0 ? "allow-ask-and-deny"
+    : askCount > 0 ? "allow-ask"
+    : denyCount > 0 ? "allow-deny"
+    : "allow"
+
+  return [
+    `<!-- capability:${agentId}`,
+    `edit: ${edit}`,
+    `edit-wildcard: ${editWildcard}`,
+    `shell: ${shell}`,
+    `delegate: ${perm?.delegate === "allow" ? "yes" : "no"}`,
+    "-->",
+  ].join("\n")
+}
+
+/**
+ * delegate 工具**返回值字段**（**单一真源**）—— 派发方（front / plan）读的就是这个对象。
+ *
+ * 用途：让「派发方须知晓哪些字段」成为**机械可判**的事，而不是靠散文提醒：
+ *   - 插件在返回前**自检**（`assertDelegateResultShape`）⇒ 契约与实现不会无声漂移；
+ *   - 守卫断言每个派发方 prompt 都覆盖 `DELEGATE_RESULT_CRITICAL_FIELDS`
+ *     （列表**从本常量派生**，不手抄）。
+ *
+ * ⚠ **为什么要有「关键字段」子集**：全部字段都要求派发方写进 prompt 会把 prompt 撑爆；
+ *   子集只含「**漏了就会把未验证当完成**」的那几个（outcome / host_outcome / blocked_reason /
+ *   no_work_evidence / artifacts / last_assistant_text）—— 缺任一个都可能导致**假成功转述**。
+ */
+export const DELEGATE_RESULT_FIELDS: readonly string[] = [
+  "session_id",
+  "project_root",
+  "vcs",
+  "agent",
+  "kind",
+  "resumed",
+  "resumed_by_other_front",
+  "outcome",
+  "new_activity",
+  "host_outcome",
+  "blocked_reason",
+  "blocked_action",
+  "blocked_all",
+  "out_of_scope_files",
+  "changed_files",
+  "scope_check",
+  "last_assistant_text",
+  "tool_calls",
+  "write_tool_calls",
+  "artifacts",
+  "final_is_role_opening",
+  "model_switched",
+  "no_work_evidence",
+  "still_running",
+  "wait_timed_out",
+  "status_age_ms",
+  "wait_error",
+]
+
+/**
+ * 派发方**必须**知晓的字段（漏了 ⇒ 可能把「宿主说成功但无可验证交付证据」转述成「已完成」）。
+ *
+ * `unverified` 的语义由 `outcome` 承载（宿主原值保留在 `host_outcome`）⇒ 两个都要知晓。
+ */
+export const DELEGATE_RESULT_CRITICAL_FIELDS: readonly string[] = [
+  "outcome",
+  "host_outcome",
+  "blocked_reason",
+  "out_of_scope_files",
+  "last_assistant_text",
+  "no_work_evidence",
+  "artifacts",
+]
+
+/**
+ * 返回值形状自检（插件在返回前调用）—— 契约与实现**不得**无声漂移。
+ *
+ * 缺字段 ⇒ 抛错（硬失败）而不是静默：静默会让派发方按旧契约读一个已经变了的返回结构。
+ *
+ * **落点决策（2026-11-15，critic 要求补记）**：自检放在 `registerSession` / `session.remove`
+ * **之后**。两个备选与取舍：
+ * - **前置自检**（先断言后落盘）⇒ 契约失败时 slot 仍占着（active）、ledger 无终态行 ⇒ 槽位可能滞留。
+ * - **后置自检**（当前）⇒ pair/ledger 已写下本轮终态（outcome/state=idle）⇒ **事后可取证**，
+ *   且调用方拿到的是「异常 + 已落盘的终态」⇒ 派发方可以从 `sessions` / ledger 恢复结论。
+ * ⇒ 取后置：**失败要响，但状态不许腐**。
+ */
+export function assertDelegateResultShape(result: Record<string, unknown>): void {
+  const missing = DELEGATE_RESULT_FIELDS.filter((f) => !(f in result))
+  if (missing.length > 0) {
+    throw fail(
+      `delegate 返回值与契约不符：缺少字段 ${missing.join(", ")}` +
+        `（契约真源 = lib/delegate-core.ts::DELEGATE_RESULT_FIELDS）`,
+    )
+  }
+}
+
 export function parseRoleClass(raw: unknown): RoleClass {
   if (raw === undefined) return ROLE_CLASS_DEFAULT
   if (!isRoleClass(raw)) {
@@ -2227,9 +2354,14 @@ export function delegateToolDefinition(ctx: any): any {
             still_running: runStillRunning,
             wait_timed_out: waitTimedOut,
             status_age_ms: Math.max(0, Date.now() - toMillis((after as any)?.time?.updated)),
-            wait_error: waitError,
+            wait_error: waitError ?? null, // ⚠ 不得留 undefined：JSON.stringify 会**丢键** ⇒ payload 少一个契约字段
           }
 
+          // 契约自检：检查**序列化之后**的对象（调用方真正收到的形状）——
+          // ⚠ 只查内存对象会漏掉「值为 undefined ⇒ JSON.stringify 丢键」这一形态。
+          assertDelegateResultShape(
+            JSON.parse(JSON.stringify(summary)) as Record<string, unknown>,
+          )
           return { content: JSON.stringify(summary, null, 2) }
         },
 }

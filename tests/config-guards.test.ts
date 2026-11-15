@@ -25,6 +25,9 @@ import { applyRules } from "../scripts/agent-guard-gen.ts"
 import { CONTRACTS } from "../lib/subagent-contract-core.ts"
 import {
   ARCH_FALLBACK_DIRS,
+  DELEGATE_RESULT_CRITICAL_FIELDS,
+  DELEGATE_RESULT_FIELDS,
+  capabilityBlock,
   PLAN_REF_ROOTS,
   PRIORITY_BLOCKED_FIELDS,
   SLOT_STATES,
@@ -253,7 +256,10 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     const edit = (config.agent.plan as any).permission.edit as Record<string, string>
     expect(edit[".rddf/plans/*.md"], "plan 应放行写 .rddf/plans/*.md").toBe("allow")
     const planMd = readFileSync(path.join(ROOT, "prompts", "plan.md"), "utf8")
-    expect(planMd, "plan.md 不应再出现 .plans/ 口径").not.toContain(".plans/")
+    // ⚠ 口径检查只看**散文**：机读块（capability:*）是配置的**逐字投影**，
+    //    其中的 `.plans/*.md` 是配置里保留的 legacy **放行项**（不是计划产出口径）⇒ 不算违规。
+    const stripMachineBlocks = (md: string) => md.replace(/<!-- capability:[a-z]+\n[\s\S]*?-->\n?/g, "")
+    expect(stripMachineBlocks(planMd), "plan.md 不应再出现 .plans/ 口径").not.toContain(".plans/")
     expect(planMd, "plan.md 应写明 .rddf/plans/<slug>.md").toContain(".rddf/plans/<slug>.md")
   })
 
@@ -1320,6 +1326,114 @@ describe("Accepted ADR 措辞修订 + 治理面归属守卫（adr-d5-async-compl
       .filter((t) => /^[A-Za-z][A-Za-z0-9_]*$/.test(t))
     for (const token of new Set(tokens)) {
       expect(known).toContain(token)
+    }
+  })
+})
+
+/**
+ * 会话间对齐（派发方 ↔ 被派发方）：返回值契约 + 能力面。
+ *
+ * ⚠ **已知边界**（照本仓惯例登记，防后人误信完备）：
+ *  - AC21 = **覆盖**判据（字段名出现即过）：否定句里出现也算过；威胁模型是**漂移**不是故意伪造。
+ *  - AC21b = **措辞**判据：换同义词即红（fail-closed，逼改守卫的人同步改判据）。
+ *  - AC24 = **词表**钉的是旧事故词汇；结构性的那半（能力面行必须指向 `capability:` 块）才是真守卫。
+ *  - busy 早退返回（另一形状）是**拒绝**不是**结果** ⇒ 不在契约内（已知边界）。
+ *  - `capabilityBlock()` 只渲染 **3 个维度**（edit / shell / delegate）⇒ 配置**新增** permission 维度
+ *    （或翻转 `external_directory` 等）时**块与 AC23 都不会自动扩** ⇒ 需同步加维度 + 守卫。
+ */
+describe("会话间对齐（派发方 ↔ 被派发方：返回值契约与能力面）", () => {
+  const PLAN_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
+  const FRONT_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "front.md"), "utf8")
+
+  test("AC21：两个派发方 prompt 都必须覆盖 delegate 返回值的**关键字段**（列表从契约派生，不手抄）", () => {
+    // 真源 = lib/delegate-core.ts::DELEGATE_RESULT_CRITICAL_FIELDS（插件在返回前自检同一份契约）
+    // ⇒ 派发方漏字段 ⇒ 守卫红；契约变 ⇒ 守卫跟着变。
+    expect(DELEGATE_RESULT_CRITICAL_FIELDS.length, "关键字段不应为空").toBeGreaterThan(0)
+    for (const [rel, text] of [
+      ["prompts/plan.md", PLAN_MD],
+      ["prompts/front.md", FRONT_MD],
+    ] as const) {
+      for (const f of DELEGATE_RESULT_CRITICAL_FIELDS) {
+        expect(text.includes(f), `${rel} 未提及返回值字段「${f}」`).toBe(true)
+      }
+    }
+  })
+
+  test("AC21b：派发方必须写明「unverified / no_work_evidence ⇒ 不得转述为已完成」的纪律", () => {
+    // AC21 只保证「提到字段」；这一条保证「提到的是**纪律**」——
+    // 否则派发方知道字段名却仍会把它当成功转述。
+    for (const [rel, text] of [
+      ["prompts/plan.md", PLAN_MD],
+      ["prompts/front.md", FRONT_MD],
+    ] as const) {
+      expect(text, `${rel} 缺「不得转述为已完成」的纪律句`).toMatch(
+        /不得[^。\n]{0,12}转述[^。\n]{0,12}(已完成|完成)/,
+      )
+      expect(text, `${rel} 缺 unverified / no_work_evidence 的处置说明`).toMatch(
+        /unverified|no_work_evidence/,
+      )
+    }
+  })
+
+  test("AC23：三个 agent 的**能力面机读块** == lib 渲染的规范块（逐字 + 恰好 1 处 + 标记行数）", () => {
+    // 真源 = opencode.jsonc（配置）⇒ 块是**投影** ⇒ 配置改了而块没改 ⇒ 红。
+    // 规范块由 `lib/delegate-core.ts::capabilityBlock()` 渲染（与另两块机读块同形）⇒
+    // **派生规则只有一处**（不在测试里另写一份）。
+    const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
+    for (const [agentName, text] of [
+      ["build", BUILD_MD],
+      ["plan", PLAN_MD],
+      ["front", FRONT_MD],
+    ] as const) {
+      const rel = `prompts/${agentName}.md`
+      const canonical = capabilityBlock(agentName, (config.agent as Record<string, any>)[agentName].permission)
+      // ① 逐字包含
+      expect(text.includes(canonical), `${rel} 缺少或偏离能力面规范块`).toBe(true)
+      // ② 恰好 1 处（陈旧副本 ⇒ 红）
+      expect(text.split(canonical).length - 1, `${rel} 的能力面块应恰好出现 1 次`).toBe(1)
+      // ③ 起始标记独占一行且仅 1 处（正文提及不算）
+      const markers = text.split("\n").filter((l) => l.trim() === `<!-- capability:${agentName}`).length
+      expect(markers, `${rel} 的能力面块起始标记应恰好出现 1 行`).toBe(1)
+    }
+  })
+
+  test("AC24：能力面**不得**在散文里复述（必须指向机读块）—— 复述即漂", () => {
+    // 「与 build 的关键区别」表曾写着「shell 全 allow / plan 需 ask 只读子集」——
+    // 与 opencode.jsonc 的真实档位**不符**（build = allow+ask；plan = allow+deny）。
+    // 根因：散文复述了能力面 ⇒ 两份会漂。⇒ 规则：**散文不复述，只指向机读块**。
+    const planTable = PLAN_MD.split("\n").filter((l) => l.startsWith("| ") && l.includes("|"))
+    const claims = ["全 allow", "需 ask；", "只允许安全子集", "仅可写"]
+    for (const line of planTable) {
+      // 只查「与 build 的关键区别」那张表（含维度名的行）
+      if (!/^\|\s*(shell|编辑项目文件|写代码|输出|委派|派发工程实施)/.test(line)) continue
+      for (const c of claims) {
+        expect(line, `plan.md 的「与 build 的关键区别」表仍在复述能力面「${c}」⇒ 应指向 capability:* 块`).not.toContain(c)
+      }
+      if (/^\|\s*(shell|编辑项目文件)/.test(line)) {
+        expect(line, "能力面行必须指向 capability:* 机读块").toContain("capability:")
+      }
+    }
+  })
+
+  test("AC22：契约字段集与插件实际产出的 summary 字段**逐项一致**（不靠手抄）", () => {
+    // 从插件源码里取出 summary 对象的键 ⇒ 与契约比对。
+    // （契约与实现在同一文件 ⇒ 若插件改了字段而忘了改契约，这条会红）
+    const core = readFileSync(path.join(import.meta.dir, "..", "lib", "delegate-core.ts"), "utf8")
+    const start = core.indexOf("const summary = {")
+    expect(start, "未找到插件的 summary 构造").toBeGreaterThan(-1)
+    const end = core.indexOf("\n          }\n", start)
+    expect(end, "未找到 summary 的结束位置").toBeGreaterThan(start)
+    const body = core.slice(start, end)
+    // ⚠ 属性可能写成**简写**（`vcs,`）⇒ 匹配 `key:` 与 `key,` 两种形态
+    const keys = [...body.matchAll(/^\s{12}([a-z_]+)[,:]/gm)].map((m) => m[1] as string)
+    expect(keys.length, "未解析出 summary 字段").toBeGreaterThan(8)
+    // 正向：契约里的每个字段，插件真的产出
+    for (const f of DELEGATE_RESULT_FIELDS) {
+      expect(keys, `契约字段「${f}」在插件 summary 里不存在`).toContain(f)
+    }
+    // 反向：插件产出的每个字段，都在契约里（契约不得漏项 ⇒ 否则派发方按契约读不到）
+    for (const k of keys) {
+      expect(DELEGATE_RESULT_FIELDS, `插件 summary 的字段「${k}」不在契约里`).toContain(k)
     }
   })
 })
