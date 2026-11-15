@@ -10,6 +10,51 @@
 
 ---
 
+> **v2.31 变更摘要（2026-11-15，`delegate-base-channel`：给「简报必须声明基线」补上实现通道）**：
+> ① **问题**：`prompts/plan.md` 早就要求 verifier 派发「必须声明可解析的 `<base>`」，
+> `prompts/build.md:343` 的后端确实消费它（`git merge-base HEAD <base>` / `git show <base>:<path>`），
+> 但**通道不存在** —— `delegate` 与 `dispatch` 两个工具的 schema 都没有 `base`，`buildBrief()` 不生成基线行
+> ⇒ 派发方只能塞进 `constraints` 自由文本 ⇒ **typo 穿过派发、白烧一整轮**；「声明了没有」不可机械核。
+> ② **修正**（change: `openspec/changes/delegate-base-channel/`，AC1–AC14 / design D1–D9 / TDD 7 Task）：
+> - **schema**：两个工具同步加 `base`（`type: "string"`，**选填** + 条件必填；`required` 不含它
+>   —— vcs=false 与 knowledge 两道豁免使无条件必填不成立）。dispatch 必须同批（`additionalProperties: false` 会硬拒）。
+> - **形态层校验**（`validateBrief`）：只认 `undefined` 为「没填」（`""`/`null` 非法）；注入加固
+>   （拒 `-` 开头 / 空白 / `..`）；`knowledge + base` **硬拒**（不再静默忽略，与 role_class/grants 同策略）。
+> - **派发前硬拒**（共享闸门 `assertVerifierBaseline`）：`role_class=verifier` + git 仓 + 未填 base ⇒
+>   **建 session 之前**拒（文案含「base / verifier / resume 须重填」）；`vcs=false` ⇒ 豁免
+>   （否则非 git 工程的全量 verifier 派发被拒 = 行为回归）。
+>   ⚠ **位置与顺序都是决策**：在 `execute`（`validateBrief` 拿不到 `effectiveRoleClass`/`vcs`/`workRoot`），
+>   且排在 `assertRoleClassCompatible` **之后**（先判「你是谁」再判「你缺什么」——
+>   否则「scope 越界」这条更根本的错误会被 base 错掩盖）。
+> - **sha 冻结**：派发时用 `git rev-parse --verify --end-of-options "<ref>^{commit}"` 解析成 sha，
+>   简报印 `- 基线（base）: <raw> → <sha>`。① `^{commit}` peel 是必需的（annotated tag 裸 ref 校验会失败，
+>   而消费端 `merge-base` 会 peel ⇒ 不 peel 就误拒合法 base）；② 印 sha 是因为**相对 ref 会随 HEAD 漂移**
+>   （dispatch/resume 窗口内）⇒ 冻结后才自洽；③ `cwd=workRoot`（worktree 下 stateRoot 指向主仓 ⇒ 用它会解析到主仓 HEAD）。
+> - **文档面五处同步**：`plan.md`（verifier 行 + 派发参数段）、`front.md`（role_class 行 + 3.1 标题**去手抄计数**）、
+>   `docs/backend-handoff-role-class.md:31`（参数流图）、两个工具的 description。
+> - **判据**：AC1/AC2/AC3/AC4/AC5/AC6/AC7/AC8/AC9/AC10/AC11/AC12/AC13/AC14 —— 含
+>   **AC2 的端到端静态闭环**（从简报输出解析 sha，在 fixture 仓真跑 `merge-base` ⇒ exit 0，**不需要 LLM**）
+>   与 **AC8 的 resume 路径**（登记类到达闸门）。
+>   **AC29 从「双向登记式」转为「行为断言」**（通道落地 ⇒ 登记必须删；判据从「扫源码字样」改为「断言简报输出」）。
+> ③ **审查**：oracle（11 条建议 / 5 个技术缺陷）→ metis（P0-1..P0-6 / E1–E8 / **元层盲区**）→
+>   critic 第 1 轮 **REJECT**（2 个 plan 档 BLOCKER：AC12 判据可平凡满足、Task 1→9 红色窗口）⇒
+>   change 按 9 条必改修订（`0557509`）⇒ 实施 ⇒ oracle 第 2 轮 `PASS-WITH-NOTES`（8 条全落地）⇒
+>   **critic 第 2 轮 `APPROVE_WITH_CONDITIONS`**（无 BLOCKER；4 条 SHOULD_FIX：过承诺的 sha 句 /
+>   sha 对应性强断言 / dispatch 侧「无 VCS」行与零副作用断言 / 落 CHANGELOG —— **全部已落地**）。
+>   记录：`.rddf/reviews/delegate-base-channel-review.md`。
+> ④ **验证**：`bun test tests/` **577 pass / 0 fail**（exit 0）；anchors **23/23**；
+>   **revert 演练 9 条（A–I）逐条精确命中预期判据、还原后全绿**（含两条专门为「当场即绿」的判据设计的
+>   注入破坏：H = 闸门改按声明值判 ⇒ AC8 双红；I = 删 dispatch 的传参字面量 ⇒ dispatch 侧红）。
+> ⑤ **残留（如实登记）**：① **破坏性收紧** —— 今天靠 `constraints` 塞基线的 verifier 派发会被硬拒
+>   （有意收紧，消 typo 白烧一轮）；② **派发方拿不到实际用的 sha**（`base_resolved` 未进返回契约 ⇒
+>   跨 resume 的「同一基线」句柄**结构性不可达** ⇒ 已加过渡兜底句「自己 `git rev-parse` 记一份」，
+>   返回侧留独立 improvement，见交接清单 ⑪）；③ 消费端三点 diff 在未提交工作树**恒空**
+>   （`build.md:343`，**先于本 change 存在** ⇒ 另立 change）；④ 非 verifier 填 base 被静默丢弃（已知边界）；
+>   ⑤ git 超时/ENOENT 的错误归因粒度偏粗（已知边界）。
+
+---
+
+
 > **v2.30 变更摘要（2026-11-15，对齐完备性 P0：把「描述面」纳入闭集）**：
 > ① **问题**：v2.28 的三层对齐**模型本身不完整** —— 它只守「真源 ⇄ 两个派发方 prompt 的返回字段」，
 > 而同一事实的**第三、第四个投影**从未进扫描集：工具 description（**LLM 派发瞬间实际读的文本**，

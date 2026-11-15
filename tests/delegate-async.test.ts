@@ -2960,3 +2960,114 @@ describe("授权释放（ADR-front-stop-ownership D1）", () => {
     expect(usage).toContain("foreign_instance")
   })
 })
+
+/**
+ * delegate-base-channel（AC1 dispatch 侧 / AC10 dispatch 侧）：dispatch 的 `base` 参数与 description。
+ *
+ * ⚠ dispatch 的 description 是**手抄**的（`delegate-async.ts` 里无派生渲染器）
+ * ⇒ 它不会随 schema 自动更新 ⇒ **必须有守卫钉住**，否则「schema 有 base 但模型不知道」会静默发生
+ * （这正是 `v2.30` 要消灭的「手抄派生面会漂」的形态）。
+ */
+describe("delegate-base-channel：dispatch 的 base 参数与 description", () => {
+  const tool: any = dispatchToolDefinition({} as any)
+  const props: Record<string, any> = tool.input?.properties ?? {}
+  const required: string[] = (tool.input?.required ?? []) as string[]
+
+  test("AC1（dispatch 侧）：schema 有 base（string，选填），且 required 不含它", () => {
+    expect(props.base, "dispatch 的 schema 缺 base 参数").toBeTruthy()
+    expect(props.base.type).toBe("string")
+    expect(required, "base 不应是 schema 级必填").not.toContain("base")
+  })
+
+  test("AC10（dispatch 侧）：**手抄**的 description 必须写明 base 的条件必填语义", () => {
+    const d = String(tool.description ?? "")
+    expect(d, "dispatch description 未提 base").toContain("base")
+    expect(d, "dispatch description 未提 verifier 必填").toContain("verifier")
+    expect(d, "dispatch description 未提 resume 重填").toContain("resume")
+  })
+})
+
+/**
+ * delegate-base-channel（AC5 / AC6 / AC7 的 **dispatch 侧**）：异步面必须与同步面**同层同序**
+ * （design D8：共享 helper ⇒ 不漂移）。这条断言的存在意义就是**防漂移**：
+ * 若有人只改同步面（或把 dispatch 的调用点挪到相容性校验之前），这里会红。
+ */
+describe("delegate-base-channel：dispatch 侧的基线闸门（与同步面同构）", () => {
+  const verifierDispatch = (dir: string, extra: any = {}) => ({
+    ...baseInput(dir),
+    scope: [".rddf/reviews"],
+    role_class: "verifier",
+    ...extra,
+  })
+
+  test("AC5（dispatch 侧）：verifier + 缺 base ⇒ 硬拒（文案含三点）", async () => {
+    const dir = repo("dc-dispatch-nobase")
+    const { ctx, sessions } = createFakeCtx()
+    let err: any
+    try {
+      await run(dispatchToolDefinition(ctx), verifierDispatch(dir), "ses_plan_test")
+    } catch (e) {
+      err = e
+    }
+    expect(err, "dispatch 的 verifier 缺 base 应被硬拒").toBeTruthy()
+    const msg = String(err?.message ?? err)
+    expect(msg).toContain("base")
+    expect(msg).toContain("verifier")
+    expect(msg).toContain("resume")
+    // ⚠ 零副作用：被拒的派发**不得**留下 session（同步面有这条，dispatch 侧补齐 —— critic SHOULD_FIX #3）
+    expect(sessions.size, "被拒的 dispatch 不应创建 session").toBe(0)
+  })
+
+  test("AC6（dispatch 侧）：非 git 工程 + verifier + 缺 base ⇒ 放行", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "dc-novcs-"))
+    mkdirSync(path.join(dir, ".rddf/reviews"), { recursive: true })
+    const { ctx, sessions } = createFakeCtx()
+    const res = await run(dispatchToolDefinition(ctx), verifierDispatch(dir), "ses_plan_test")
+    expect(res.state ?? res.outcome, "非 git 工程的 verifier dispatch 被误拒").toBeTruthy()
+    // ⚠ 还要断简报里**确实有**「无 VCS，基线不可用」—— 否则「vcs 没传到 buildBrief」
+    //   这条组合路径被删掉时本用例仍绿（critic SHOULD_FIX #3）
+    const session = [...sessions.values()][0]
+    const briefs = (session.messages ?? []).map((m: any) => m.text ?? "").join("\n")
+    expect(briefs, "dispatch 的非 git 简报缺「无 VCS，基线不可用」").toContain("无 VCS")
+  })
+
+  test("AC7（dispatch 侧）：不可解析 ref ⇒ 硬拒", async () => {
+    const dir = repo("dc-dispatch-badbase")
+    const { ctx } = createFakeCtx()
+    let err: any
+    try {
+      await run(dispatchToolDefinition(ctx), verifierDispatch(dir, { base: "nonexistent-ref-xyz" }), "ses_plan_test")
+    } catch (e) {
+      err = e
+    }
+    expect(err, "不可解析 ref 应被硬拒").toBeTruthy()
+  })
+})
+
+/**
+ * delegate-base-channel（AC2 的 dispatch 侧）：dispatch 的 verifier 简报**必须**含基线行。
+ *
+ * ⚠ 为什么要单独钉：`{ vcs, base: ... }` 这个**传参字面量在两个调用点各写一遍**
+ * （delegate-core.ts 与 delegate-async.ts）⇒ 只钉同步面的话，dispatch 侧被改坏会**静默**
+ * （简报里没有基线，但后端以为自己有）⇒ 与同步面**对称**钉住。
+ */
+describe("delegate-base-channel：dispatch 简报的基线行", () => {
+  test("dispatch verifier + base ⇒ 投递的简报含「基线（base）: <raw> → <sha>」", async () => {
+    const dir = repo("dc-brief-base")
+    const { ctx, sessions } = createFakeCtx()
+    await run(
+      dispatchToolDefinition(ctx),
+      {
+        ...baseInput(dir),
+        scope: [".rddf/reviews"],
+        role_class: "verifier",
+        base: "HEAD",
+      },
+      "ses_plan_test",
+    )
+    const session = [...sessions.values()][0]
+    // ⚠ dispatch 的 fake ctx 把 prompt 存进 `messages`（`delegate-tool.test.ts` 那边才是 `prompts`）
+    const briefs = (session.messages ?? []).map((m: any) => m.text ?? "").join("\n")
+    expect(briefs, "dispatch 的简报缺基线行").toMatch(/基线（base）: HEAD → [0-9a-f]{40}/)
+  })
+})

@@ -81,7 +81,7 @@
 
 ## 三、委托契约（brief）
 
-### 3.1 五个必填字段 + 两个选填
+### 3.1 必填字段与选填字段
 
 | 字段 | 填什么 | 填不出来怎么办 |
 |---|---|---|
@@ -90,7 +90,7 @@
 | `goal` | 一句话目标（产物是什么） | 问用户 |
 | `scope` | 允许变更的路径前缀数组（相对工程根或绝对） | 问用户；宁可窄不可宽 |
 | `acceptance` | 可判定的完成判据（能跑的命令 / 能勾的条目） | 问用户 |
-| `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` 类的 `scope` **必须同时包含** `.rddf/reviews` 与 `.rddf/state/verifier`（记账落点 —— 产品侧收拢已完成，skill 的**全部**状态文件都在该目录下）。收到 verifier 类的 `HANDOFF:` 时：若其 5 项正文提到「状态机未落盘 / verdict cache 没写」，那是**后端没直写 skill 状态** —— 正常路径下后端**自己写**（single writer）；先查 `scope` 是否真含 `.rddf/state/verifier`（缺 ⇒ **scope 问题，重派**；含却没写 ⇒ 记为后端违约并按 §HANDOFF 交回）；**跨会话 resume 时原 `scope` 不落盘 ⇒ 查不到就视为缺 ⇒ 重派**；不确定就填 `builder`；**填错有两种形态**：① 窄目标（`scope` 越界）⇒ **派发被拒**（硬拒在建 session 之前，你拿到的是错误、不是 `HANDOFF:`）⇒ **改派**；② 宽目标 ⇒ 后端写越界路径被**权限拒** ⇒ 后端 `HANDOFF:` 交回 ⇒ **重派**。该字段**始终生效**（缺省 `builder`；非法值直接抛） |
+| `role_class`（选填，缺省 `builder`） | 本次派发允许后端做哪一类工作：`builder` 实施 / `architect` 写改 ADR 与架构文档 / `verifier` 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` 类的 `scope` **必须同时包含** `.rddf/reviews` 与 `.rddf/state/verifier`（记账落点 —— 产品侧收拢已完成，skill 的**全部**状态文件都在该目录下）。收到 verifier 类的 `HANDOFF:` 时：若其 5 项正文提到「状态机未落盘 / verdict cache 没写」，那是**后端没直写 skill 状态** —— 正常路径下后端**自己写**（single writer）；先查 `scope` 是否真含 `.rddf/state/verifier`（缺 ⇒ **scope 问题，重派**；含却没写 ⇒ 记为后端违约并按 §HANDOFF 交回）；**跨会话 resume 时原 `scope` 不落盘 ⇒ 查不到就视为缺 ⇒ 重派**；不确定就填 `builder`；**填错有两种形态**：① 窄目标（`scope` 越界）⇒ **派发被拒**（硬拒在建 session 之前，你拿到的是错误、不是 `HANDOFF:`）⇒ **改派**；② 宽目标 ⇒ 后端写越界路径被**权限拒** ⇒ 后端 `HANDOFF:` 交回 ⇒ **重派**。**派发 verifier 时必须带 `base`**（git ref，如 `HEAD~1` 或 commit sha）—— 取证要做基线对照，不声明 ⇒ 派发被拒；**resume 时由调用方重填**（要沿用同一基线 ⇒ 用 **sha**；简报里的 sha 不在返回契约 ⇒ 派发方拿不到 ⇒ 自己 `git rev-parse <ref>^{commit}` 记一份）。该字段**始终生效**（缺省 `builder`；非法值直接抛） |
 | `constraints`（选填） | 明确禁止的动作（"不要 commit""别动 X"） | — |
 
 <!-- 机读投影：下面这块是 `opencode.jsonc` 里本 agent 的**能力面**（edit / shell / delegate）——

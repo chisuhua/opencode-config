@@ -28,7 +28,7 @@
 
 ```
 plan 主会话（planner 角色）
-  │  delegate | dispatch  { plan_ref, scope, acceptance, role_class }
+  │  delegate | dispatch  { plan_ref, scope, acceptance, role_class, base }
   ▼
 delegate-core
   ├─ validateBrief            role_class 值域；knowledge 互斥

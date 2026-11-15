@@ -19,6 +19,7 @@ import {
   symlinkSync,
 } from "node:fs"
 import { execFileSync } from "node:child_process"
+import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -46,6 +47,7 @@ import {
   realRelative,
   canonicalRoot,
   changedSince,
+  delegateToolDefinition,
   extractBlocked,
   gitStatusPaths,
   kindOfAgent,
@@ -1550,5 +1552,112 @@ describe("delegate 返回值契约（跨会话对齐真源）", () => {
     ]) {
       expect(critical!, `关键字段缺「${f}」`).toContain(f)
     }
+  })
+})
+
+/**
+ * delegate-base-channel（AC1 / AC3 / AC4 / AC9）：`base` 参数的**结构**与**形态层**。
+ *
+ * ⚠ **与 e2e 层的分工**：这里判「参数存在 + 形态合法」，**不判**「派发时会不会真填」
+ * （那是 D7 的已知边界，需真实模型 e2e）。
+ */
+describe("delegate-base-channel：base 参数（结构 + 形态层）", () => {
+  // ⚠ `validateBrief` 有 **project_dir 存在性检查** ⇒ 用假目录会让「base 校验失败」
+  // 被「目录不存在」掩盖 ⇒ 红灯指向错误的断言（TDD 的经典坑，本仓已登记过同类）。
+  const EXISTING_DIR = mkdtempSync(path.join(tmpdir(), "base-chan-"))
+  const tool: any = delegateToolDefinition({} as any)
+  const props: Record<string, any> = tool.input?.properties ?? {}
+  const required: string[] = (tool.input?.required ?? []) as string[]
+
+  test("AC1（delegate 侧）：schema 有 base（string，选填），且 required 不含它", () => {
+    expect(props.base, "delegate 的 schema 缺 base 参数").toBeTruthy()
+    expect(props.base.type).toBe("string")
+    // 选填 + 条件必填（execute 内按 role_class 判定）⇒ 不进 required
+    expect(required, "base 不应是 schema 级必填（vcs=false 与 knowledge 都要豁免）").not.toContain("base")
+  })
+
+  test("AC10（delegate 侧）：base 的 description 必须写明「verifier 必填」与「resume 须重填」", () => {
+    const d = String(props.base?.description ?? "")
+    expect(d, "base 的 description 未提 verifier 必填").toContain("verifier")
+    expect(d, "base 的 description 未提 resume 重填").toContain("resume")
+  })
+
+  test("AC3：base 的空值语义 —— 只认 undefined 为「没填」，空串 / null 非法", () => {
+    const base = { project_dir: EXISTING_DIR, task: "t", goal: "g", scope: ["src"], acceptance: "a", base: "" }
+    expect(() => validateBrief(base as any)).toThrow()
+    const baseNull = { ...base, base: null }
+    expect(() => validateBrief(baseNull as any)).toThrow()
+    // 对照：undefined（没填）不应在这里抛 —— 硬拒在 execute 层（AC5）
+    const baseUndef = { ...base, base: undefined }
+    expect(() => validateBrief(baseUndef as any)).not.toThrow()
+  })
+
+  test("AC4：base 的注入加固 —— 选项注入 / 空白 / 路径穿越 一律拒", () => {
+    const mk = (base: string) => ({ project_dir: EXISTING_DIR, task: "t", goal: "g", scope: ["src"], acceptance: "a", base })
+    for (const bad of ["--help", "-h", "HEAD~1 x", "../etc", "a\nb"]) {
+      expect(() => validateBrief(mk(bad) as any), `base="${bad}" 应被拒`).toThrow()
+    }
+    // 合法形态不得被误伤
+    for (const ok of ["HEAD~1", "3f2a1b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3", "v1.0", "origin/main"]) {
+      expect(() => validateBrief(mk(ok) as any), `base="${ok}" 不应被拒`).not.toThrow()
+    }
+  })
+
+  test("AC9：knowledge 类 + base ⇒ 硬拒（与 role_class / grants 的 knowledge 互斥策略对齐）", () => {
+    const kn = { project_dir: EXISTING_DIR, task: "t", goal: "g", scope: ["src"], acceptance: "a", agent: "explore", base: "HEAD~1" }
+    expect(() => validateBrief(kn as any), "knowledge + base 应被拒（不再静默忽略）").toThrow()
+  })
+})
+
+/**
+ * delegate-base-channel（AC2 / AC6 简报面）：基线行渲染 + **端到端静态闭环**。
+ *
+ * ⚠ 「LLM 会不会填 base」证不了（D7 已知边界）；但「**通道输出能不能被消费端第一条命令消费**」
+ * 是**静态可证**的 —— 从简报输出里解析出 sha，在 fixture 仓真跑 `git merge-base` ⇒ 不需要 LLM。
+ */
+describe("delegate-base-channel：简报基线行 + 端到端静态闭环", () => {
+  const repo = gitRepo("base-chan")
+  // ⚠ 需要**两个** commit —— `HEAD~1` 要求有父提交（单 commit 仓里不存在）
+  writeFileSync(path.join(repo, "SECOND.md"), "# second\n")
+  execFileSync("git", ["add", "-A"], { cwd: repo })
+  execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "second"], { cwd: repo })
+  // ⚠ raw 与 sha 必须**真实对应**（此前 raw="HEAD~1" 但 sha 取 HEAD ⇒ 只证形态、不证对应）
+  //   ⇒ 用 `HEAD~1^{commit}` 的真实解析值。
+  const HEAD_SHA = execFileSync("git", ["rev-parse", "--verify", "HEAD~1^{commit}"], { cwd: repo })
+    .toString()
+    .trim()
+
+  test("AC2：简报输出含「基线（base）: <raw> → <40 位 sha>」（行为断言）", () => {
+    const brief = validateBrief({
+      project_dir: repo, task: "取证", goal: "取证", scope: ["README.md"], acceptance: "ok", base: "HEAD~1",
+    } as any)
+    const text = buildBrief(brief, repo, { base: { raw: "HEAD~1", sha: HEAD_SHA } })
+    expect(text, "简报缺基线行").toContain(`基线（base）: HEAD~1 → ${HEAD_SHA}`)
+    expect(HEAD_SHA, "fixture 仓的 sha 不是 40 位 hex").toMatch(/^[0-9a-f]{40}$/)
+  })
+
+  test("AC6（简报面）：非 git 工程 ⇒ 打印「无 VCS，基线不可用」（而不是报错）", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "novcs-"))
+    const brief = validateBrief({
+      project_dir: dir, task: "取证", goal: "取证", scope: ["src"], acceptance: "ok",
+    } as any)
+    const text = buildBrief(brief, dir, { vcs: false })
+    expect(text, "非 git 工程应打印「无 VCS，基线不可用」").toContain("无 VCS")
+    // ⚠ 不能断言 not.toContain("基线（base）: ") —— 「无 VCS」行也用这个前缀 ⇒ 误伤
+    expect(text, "非 git 工程不该渲染 sha").not.toMatch(/基线（base）:.*→\s*[0-9a-f]{40}/)
+  })
+
+  test("AC2（端到端静态闭环）：从简报输出解析出的 sha 能被消费端第一条命令消费", () => {
+    const brief = validateBrief({
+      project_dir: repo, task: "取证", goal: "取证", scope: ["README.md"], acceptance: "ok", base: "HEAD~1",
+    } as any)
+    const text = buildBrief(brief, repo, { base: { raw: "HEAD~1", sha: HEAD_SHA } })
+    // 从**简报输出**里解析（不是从变量拿）⇒ 证明输出的形态真的可被消费端解析
+    const m = text.match(/基线（base）: .* → ([0-9a-f]{40})/)
+    expect(m, "简报输出里解析不出 sha（形态不可消费）").toBeTruthy()
+    const sha = m![1]!
+    // 消费端第一条命令：git merge-base HEAD <base>
+    const out = execFileSync("git", ["merge-base", "HEAD", sha], { cwd: repo }).toString().trim()
+    expect(out, "merge-base 失败 ⇒ 通道输出不可被消费端消费").toBe(HEAD_SHA)
   })
 })

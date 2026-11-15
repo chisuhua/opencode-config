@@ -11,7 +11,8 @@
  */
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs"
+import { tmpdir } from "node:os"
 import path from "node:path"
 
 import {
@@ -27,8 +28,10 @@ import {
   ARCH_FALLBACK_DIRS,
   DELEGATE_RESULT_CRITICAL_FIELDS,
   DELEGATE_RESULT_FIELDS,
+  buildBrief,
   capabilityBlock,
   delegateToolDefinition,
+  validateBrief,
   PLAN_REF_ROOTS,
   PRIORITY_BLOCKED_FIELDS,
   SLOT_STATES,
@@ -820,7 +823,9 @@ describe("被派发后端的审查降级例外守卫（live e2e AC14 实证的 p
     expect([...SLOT_STATES]).toEqual(["dispatching", "active", "idle", "suspended", "tombstone"])
   })
 
-  test("plan.md 的 verifier 派发要求含「简报必须声明可解析 <base>」（缺它 ⇒ 后端一律 blocked）", () => {
+  // ⚠ 描述已随 `delegate-base-channel` 更新：缺 `<base>` 现在是**派发即被拒**（不再等到后端才 blocked）。
+  //   判据面（三个 toContain/toMatch）**未变** —— 仍要求写明 `<base>` / 必须声明 / blocked 语义。
+  test("plan.md 的 verifier 派发要求含「必须声明可解析 <base>」（缺它 ⇒ 派发即被拒；不再等到后端 blocked）", () => {
     const PLAN = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
     const row = PLAN.split("\n").find((l) => l.includes("`verifier`") && l.includes(".rddf/state/verifier"))!
     expect(row).toContain("`<base>`")
@@ -1801,8 +1806,8 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
  *    函数被重构/移走 ⇒ 判据**抛错**（fail-closed），不会静默扩大或缩小范围。
  *    它们证明的是「description 不是手抄的」+「渲染器输出与契约逐项一致」；
  *    **不证明** gloss 文案的语义准确性（那是人读检查的事）。
- *  - AC29 是**双向登记式**判据：无实现通道 ⇒ 必须已登记（绿 = **已登记**，不是**已修**）；
- *    通道落地后仍留登记 ⇒ 红。⇒ 不要把 AC29 的绿读成「`<base>` 有通道了」。
+ *  - AC29 已于 `delegate-base-channel` 落地：**从「双向登记式」转为「行为断言」**（断言简报输出含基线行）。
+ *    登记表 `KNOWN_UNIMPLEMENTED_CHANNELS` 仍作为**其它**缺口的载体保留（本仓惯例）。
  */
 describe("对齐完备性（元判据：描述面枚举闭集）", () => {
   const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
@@ -1853,20 +1858,6 @@ describe("对齐完备性（元判据：描述面枚举闭集）", () => {
     todo: string
     registered_at: string
   }> = [
-    {
-      id: "delegate-base",
-      gap:
-        "`prompts/plan.md` 要求「简报必须声明可解析的 `<base>`」，但 delegate 工具的 schema 无 `base` 参数、" +
-        "`buildBrief()` 也不生成基线行",
-      impact:
-        "派发方只能把基线塞进 `constraints`（自由文本）⇒ 后端拿不到「保证可解析的 git ref」⇒ " +
-        "拼写错的 ref 会穿过派发、直到后端跑 `git merge-base` 才失败，白烧一整轮派发（`build.md` 的基线纪律）",
-      todo:
-        "change: delegate-base-channel —— delegate + dispatch 两处 schema 同步加 `base`、" +
-        "`buildBrief()` 生成基线行、`execute` 内按 `effectiveRoleClass` 后验硬拒（含 vcs 闸门与参数注入加固）、" +
-        "resume 由调用方重填、`plan.md` 与 `build.md` 同批改口径",
-      registered_at: "2026-11-15",
-    },
   ]
 
   /**
@@ -1944,33 +1935,94 @@ describe("对齐完备性（元判据：描述面枚举闭集）", () => {
     }
   })
 
-  test("AC29：派发要求必须有实现通道，或**已登记**为已知缺口（双向判据）", () => {
-    // 事故形态：plan.md:63 写「简报必须声明可解析的 `<base>`…不声明 ⇒ 后端一律 blocked」，
-    //   但 delegate 工具 schema **没有 base 参数**、`buildBrief()` **不生成 base 行**
-    //   ⇒ 派发方只能把它塞进 constraints（无结构化通道），而 front.md 甚至没提这个要求。
-    const required = /`<base>`/.test(PLAN_MD2)
-    const registry = KNOWN_UNIMPLEMENTED_CHANNELS
-    const entry = registry.find((k) => k.id === "delegate-base")
-    if (!required) {
-      // 要求被撤销 ⇒ 登记也必须删（否则留下一个指向不存在缺口的台账）
-      expect(entry, "plan.md 已不再要求 `<base>` ⇒ 必须删掉 delegate-base 登记").toBeFalsy()
-      return
-    }
-    const hasSchemaParam = Object.prototype.hasOwnProperty.call(props, "base")
-    const briefStart = CORE_SRC.indexOf("export function buildBrief")
-    expect(briefStart, "找不到 buildBrief()").toBeGreaterThan(-1)
-    const briefSeg = CORE_SRC.slice(briefStart, briefStart + 4000)
-    // ⚠ 用「基线」而不是 `base` 做锚：`database` / 注释 / 别的字段名会误命中（metis 指出的判据太松）
-    const briefHasBase = /基线/.test(briefSeg)
-    const hasChannel = hasSchemaParam || briefHasBase
-    if (hasChannel) {
-      expect(entry, "通道已落地 ⇒ **必须删掉 delegate-base 登记**（登记不得变成永久豁免）").toBeFalsy()
-      return
-    }
-    // 无通道 ⇒ 必须已登记，且登记必须**可执行**（有影响描述 + 指向待办）
-    expect(entry, "plan.md 要求 `<base>` 但无实现通道 ⇒ 必须在 KNOWN_UNIMPLEMENTED_CHANNELS 登记").toBeTruthy()
-    expect(entry!.impact.length, "登记必须写明影响（空串 = 无效登记）").toBeGreaterThan(20)
-    expect(entry!.todo, "登记必须指向具体待办（change / improvement 名）").toContain("delegate-base-channel")
-    expect(entry!.registered_at, "登记必须有日期").toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  test("AC29：`<base>` 的实现通道**已落地**（行为断言：简报输出含基线行；登记已删）", () => {
+    // ⚠ 本判据**已从「登记式」转为「行为断言」**（design D6）：
+    //   通道落地前它只做「登记表里有条目即可」；那太松（源码里出现「基线」二字就算数）。
+    //   现在直接断言**行为**：`buildBrief` 的输出含基线行。
+    // ⇒ 若有人删掉基线行渲染，本条红；登记条目（KNOWN_UNIMPLEMENTED_CHANNELS）也不得再有 delegate-base。
+    const entry = KNOWN_UNIMPLEMENTED_CHANNELS.find((k) => k.id === "delegate-base")
+    expect(entry, "通道已落地 ⇒ 登记必须删（登记不得变成永久豁免）").toBeFalsy()
+    expect(
+      Object.prototype.hasOwnProperty.call(props, "base"),
+      "delegate schema 缺 base ⇒ 通道未落地",
+    ).toBe(true)
+    // 行为断言：简报里必须有基线行（`<raw> → <sha>`）
+    const briefText = buildBrief(
+      validateBrief({
+        project_dir: mkdtempSync(path.join(tmpdir(), "ac29-")),
+        task: "取证",
+        goal: "取证",
+        scope: ["src"],
+        acceptance: "ok",
+        base: "HEAD~1",
+      } as any) as any,
+      "/tmp",
+      { base: { raw: "HEAD~1", sha: "0".repeat(40) } },
+    )
+    expect(briefText, "简报缺基线行 ⇒ 通道未真正落地").toContain("基线（base）: HEAD~1 → ")
+    expect(briefText).toMatch(/基线（base）: HEAD~1 → [0-9a-f]{40}/)
+  })
+})
+
+/**
+ * delegate-base-channel（AC10）：**文档面一致** —— 「新增派发参数 ⇒ 五个面同步」。
+ *
+ * ⚠ **为什么判「面」而不是「数字」**：本仓明确厌恶**手抄计数**（front.md 标题曾写
+ * 「五个必填字段 + 两个选填」，而 schema 的选填数早就不是 2 了 ⇒ 计数失真无人察觉）。
+ * ⇒ 判据只钉「该说的地方说了 base / 说了 resume 重填 / 不再带计数」，
+ *   **不钉具体数字** ⇒ 参数增减时不会把判据变成另一份手抄清单。
+ */
+describe("delegate-base-channel：文档面一致（AC10）", () => {
+  const PLAN_T = readFileSync(path.join(import.meta.dir, "..", "prompts", "plan.md"), "utf8")
+  const FRONT_T = readFileSync(path.join(import.meta.dir, "..", "prompts", "front.md"), "utf8")
+  const HANDOFF_T = readFileSync(path.join(import.meta.dir, "..", "docs", "backend-handoff-role-class.md"), "utf8")
+
+  test("AC10-①：plan.md 的 verifier 行必须写明 base 必填", () => {
+    const row = PLAN_T.split("\n").find((l) => l.includes("`verifier`") && l.includes(".rddf/state/verifier"))
+    expect(row, "plan.md 的 verifier 选类行未找到").toBeTruthy()
+    expect(row!, "verifier 行未提 base").toContain("base")
+    expect(row!, "verifier 行未说「必填」").toContain("必填")
+  })
+
+  test("AC10-②：plan.md 的派发参数段必须写明 resume 须重填 base（且跨 resume 用当初的 sha）", () => {
+    const start = PLAN_T.indexOf("**派发参数**")
+    expect(start, "plan.md 缺「派发参数」段").toBeGreaterThan(-1)
+    const seg = PLAN_T.slice(start, PLAN_T.indexOf("\n\n", start) + 2)
+    expect(seg, "派发参数段未提 resume").toContain("resume")
+    expect(seg, "派发参数段未提 base").toContain("base")
+    expect(seg, "派发参数段未说明跨 resume 要用当初的 sha").toContain("sha")
+  })
+
+  test("AC10-③：front.md 的 role_class 参数行必须写明 base 必填 + resume 重填", () => {
+    // ⚠ 必须锚「`role_class`（选填」—— front.md:26 的选类说明行也含 role_class + verifier
+    const row = FRONT_T.split("\n").find((l) => l.includes("`role_class`（选填"))
+    expect(row, "front.md 的 role_class 参数行未找到").toBeTruthy()
+    expect(row!, "front.md 的 role_class 行未提 base").toContain("base")
+    expect(row!, "front.md 的 role_class 行未提 resume").toContain("resume")
+  })
+
+  test("AC10-④：front.md 的 3.1 标题不得带手抄计数（参数增减会让它失真）", () => {
+    const title = FRONT_T.split("\n").find((l) => l.includes("### 3.1"))
+    expect(title, "front.md 缺 3.1 标题").toBeTruthy()
+    expect(title!, "3.1 标题仍带手抄计数（必填/选填个数）⇒ 参数增减时失真").not.toMatch(/个必填|个选填/)
+  })
+
+  test("AC10-④b：backend-handoff-role-class.md 的参数流图必须含 base", () => {
+    const line = HANDOFF_T.split("\n").find((l) => l.includes("delegate | dispatch"))
+    expect(line, "backend-handoff-role-class.md 的参数流图行未找到").toBeTruthy()
+    expect(line!, "参数流图未含 base（新增参数未同步）").toContain("base")
+  })
+
+  test("AC10-⑤：两个工具的 description 都必须写明「verifier 必填」与「resume 重填」", () => {
+    const tool: any = delegateToolDefinition({} as any)
+    const d = String(tool.input?.properties?.base?.description ?? "")
+    expect(d, "delegate 的 base description 未提 verifier").toContain("verifier")
+    expect(d, "delegate 的 base description 未提 resume").toContain("resume")
+    // dispatch 的 description 是**手抄**的 ⇒ 必须另钉（它不会随 schema 自动更新）
+    const asyncSrc = readFileSync(path.join(import.meta.dir, "..", "lib", "delegate-async.ts"), "utf8")
+    const seg = asyncSrc.slice(asyncSrc.indexOf("export function dispatchToolDefinition"))
+    expect(seg.slice(0, 4000), "dispatch 的手抄 description 未提 base").toContain("base")
+    expect(seg.slice(0, 4000), "dispatch 的手抄 description 未提 verifier").toContain("verifier")
+    expect(seg.slice(0, 4000), "dispatch 的手抄 description 未提 resume").toContain("resume")
   })
 })

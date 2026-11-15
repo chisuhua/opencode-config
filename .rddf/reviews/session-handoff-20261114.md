@@ -63,6 +63,12 @@
    应各自派生（与 AC25 同形：形态约束 + 值 pin）。
    ⑩ **`DELEGATE_RESULT_CRITICAL_FIELDS` 是 `readonly string[]`** ⇒ gloss 的 `satisfies` 退化成同义反复
    （编译期约束为零，靠运行期 `assertGlossCoverage()` 兜底）。改 `as const` 会连锁所有 `.includes()` 调用点。
+   ⑪ **派发方拿不到「实际用的基线 sha」** —— `delegate-base-channel` 把 base 解析成 sha 写进了
+   **后端 session 的简报**，但 sha **不在返回契约**（`DELEGATE_RESULT_FIELDS` 无它）⇒ 派发方**结构性不可达**。
+   ⇒ 而 design D2 承诺「跨 resume 要同一基线 ⇒ 填当初简报里印出的 sha」——**这个句柄派发方拿不到**。
+   修法（独立 improvement）：给返回契约加 `base_resolved` ⇒ 须同批改契约常量 + 返回构造 +
+   `assertDelegateResultShape` + 守卫（三处同改，缺一即 fail-closed 红）。
+   过渡兜底（可选）：在 `plan.md` / `front.md` 的 resume 句旁提示「派发方可自行 `git rev-parse` 记录 sha」。
    ✅ **既有 flaky（与 v2.28 无关）—— 已修（2026-11-15）**：`tests/delegate-async.test.ts` 的
    「多实例 / tripwire」三条用例（AC9 赎回开关 / AC8·AC17 tripwire / AC15 水位线）用
    `pid: process.pid + 1` **伪造另一个存活实例**，而存活判定是 `process.kill(pid, 0)`

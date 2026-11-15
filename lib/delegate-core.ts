@@ -1015,6 +1015,78 @@ export function normalizeScopePath(projectRoot: string, raw: string): string | n
  * - `architect` / `verifier`：**每一项**都必须落在该类允许集内（不是「有交集即放行」）；
  * - symlink：解析 realpath 后再判（`docs/adr` → `src` 的软链不得放行）。
  */
+/**
+ * 把 ref 解析成 **commit sha**（不可解析 ⇒ `undefined`）。
+ *
+ * ⚠ `^{commit}` peel 是必需的：annotated tag 用**裸 ref** 校验会失败，而消费端
+ * `git merge-base HEAD <base>` **会** peel tag ⇒ 不 peel 就是**误拒合法 base**（design D5）。
+ *
+ * ⚠ `cwd` 必须是 **workRoot**（不是 stateRoot）：worktree 场景下 stateRoot 指向**主仓**，
+ * 用它会解析到主仓的 HEAD，而���端 session 的 `location.directory = project_dir`（worktree）
+ * ⇒ 校验通过但后端实际解析不一致（design D5）。
+ */
+function resolveCommitSha(ref: string, workRoot: string): { sha?: string; reason?: "git-missing" | "unresolvable" } {
+  try {
+    const out = execFileSync(
+      "git",
+      ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
+      {
+        cwd: workRoot,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        // ⚠ 超时兜底：git 挂起会**无限阻塞**插件 execute（review 要求）
+        timeout: 5000,
+      },
+    )
+    const sha = out.trim()
+    return /^[0-9a-f]{40}$/.test(sha) ? { sha } : { reason: "unresolvable" }
+  } catch (e: any) {
+    // ⚠ **归因要分开**（review 要求）：git 二进制缺失 ≠ ref 写错 ⇒ 错误文案要能区分，
+    //   否则「环境故障」会被写成「ref 拼写错误」⇒ 排错方向被带偏。
+    if (e?.code === "ENOENT") return { reason: "git-missing" }
+    return { reason: "unresolvable" }
+  }
+}
+
+/**
+ * verifier 类的**基线闸门**（design D3 / D4 / D5）—— **共享实现**。
+ *
+ * 两条链路（`delegate` 同步面 / `dispatch` 异步面）**同层同序**调用本函数 ⇒ 不会漂移
+ * （design D8）。调用点必须排在 `assertRoleClassCompatible` **之后**
+ * —— 先判「你是谁」（class × scope 相容性），再判「你缺什么」（base）。
+ *
+ * @returns 已解析的基线（`{ raw, sha }`）；无基线要求时返回 `{}`。
+ */
+export function assertVerifierBaseline(args: {
+  roleClass: RoleClass
+  vcs: boolean
+  base?: string
+  workRoot: string
+}): { raw?: string; sha?: string } {
+  const { roleClass, vcs, base, workRoot } = args
+  // 非 verifier ⇒ 无基线要求（builder / architect / knowledge 都不做基线对照）
+  if (roleClass !== "verifier") return {}
+  // 非 git 工程 ⇒ 豁免（否则非 git 工程的全量 verifier 派发被拒 = 行为回归，design D4）
+  if (!vcs) return {}
+  if (base === undefined) {
+    throw fail(
+      "role_class=verifier 必须声明基线 base（如 HEAD~1 或 commit sha）—— " +
+        "取证要做基线对照（prompts/build.md 的基线纪律）；不声明则取证不可用。" +
+        "（resume 时由调用方重填；要沿用同一基线，请用当初简报里印出的 sha）",
+    )
+  }
+  const resolved = resolveCommitSha(base, workRoot)
+  if (!resolved.sha) {
+    if (resolved.reason === "git-missing") {
+      throw fail(`无法校验 base: ${base} —— 该环境找不到 git 可执行文件（不是 ref 写错）`)
+    }
+    throw fail(
+      `base 不可解析: ${base}（git rev-parse --verify 失败 —— 检查 ref 拼写，以及该仓库是否已有 commit）`,
+    )
+  }
+  return { raw: base, sha: resolved.sha }
+}
+
 export function assertRoleClassCompatible(
   brief: { role_class: RoleClass; scope: string[] },
   workRoot: string,
@@ -1319,6 +1391,8 @@ export function validateBrief(input: any): {
   remove: boolean
   goal_key?: GoalKey
   plan_ref?: string
+  /** 本次派发的基线（git ref）；`undefined` = 没填。 */
+  base?: string
   role_class: RoleClass
   /** 是否**显式**声明了 role_class（`undefined` = 没填 ⇒ 缺省 builder）。 */
   role_class_provided: boolean
@@ -1379,6 +1453,36 @@ export function validateBrief(input: any): {
     throw fail("知识 session 不接受 grants（只读语义不允许任何预批放宽）")
   }
 
+  // base（本次派发的基线）：**形态层**校验。
+  // - 只认 `undefined` 为「没填」（与 role_class 同语义）：`""` / `null` 是**非法值**，
+  //   避免「空串当没填」的静默分支。
+  // - 注入加固：base 会进后端的 git 命令 ⇒ 拒绝首字符 `-`（选项注入）、空白、路径穿越。
+  //   （**可解析性**不在这里判 —— 它需要 workRoot，在 execute 层做，见 assertVerifierBaseline。）
+  // - knowledge 互斥：与 role_class / grants 同策略（知识 session 不做基线对照）。
+  let base: string | undefined
+  if (input.base !== undefined) {
+    if (typeof input.base !== "string") {
+      throw fail("base 必须是字符串（git ref，如 HEAD~1 或 commit sha）")
+    }
+    const b = input.base
+    if (b.trim().length === 0) {
+      throw fail("base 不能为空串（没填就别传这个参数）")
+    }
+    if (b !== b.trim() || /\s/.test(b)) {
+      throw fail(`base 不能含空白字符: ${JSON.stringify(b)}`)
+    }
+    if (b.startsWith("-")) {
+      throw fail(`base 不能以 "-" 开头（会被 git 当成选项而不是 ref）: ${JSON.stringify(b)}`)
+    }
+    if (b.includes("..")) {
+      throw fail(`base 不能含 ".."（路径穿越形态）: ${JSON.stringify(b)}`)
+    }
+    if (kind === "knowledge") {
+      throw fail("知识 session 不接受 base（只读 session 不做基线对照）")
+    }
+    base = b
+  }
+
   // goal_key（ADR D3）：**可选但格式受检**。必填由 dispatch 工具按 kind 检查
   // ——既有 delegate 路径不引入新必填字段（既有判据不得变化，AC50）。
   let goal_key: GoalKey | undefined
@@ -1408,18 +1512,42 @@ export function validateBrief(input: any): {
     remove,
     goal_key,
     plan_ref,
+    base,
     role_class: roleClass,
     role_class_provided: roleClassProvided,
   }
 }
 
-export function buildBrief(brief: ReturnType<typeof validateBrief>, projectRoot: string): string {
+/**
+ * 生成委托简报（后端实际收到的用户消息）。
+ *
+ * ⚠ **第三参 `opts` 是必需的扩展点**（design D4）：`vcs` 与**已解析的基线 sha** 都是
+ * `execute` 阶段的产物 —— `buildBrief` 结构上拿不到（`canonicalRoot` 在 execute 内才解析）。
+ * 放进 brief 类型只会得到恒 `undefined` 的字段 + 每处 spread 手填 ⇒ 漏一处就错。
+ *
+ * `opts` 缺省时**不渲染任何基线/VCS 行** ⇒ 既有两参调用与既有断言零破坏。
+ */
+export function buildBrief(
+  brief: ReturnType<typeof validateBrief>,
+  projectRoot: string,
+  opts?: { vcs?: boolean; base?: { raw: string; sha: string } },
+): string {
   const lines: string[] = []
   lines.push("## 委托简报（来自委托方会话）")
   lines.push("")
   lines.push(`- 目标（goal）: ${brief.goal}`)
   lines.push(`- 工程根: ${projectRoot}`)
   if (brief.plan_ref) lines.push(`- 计划引用（plan_ref）: ${brief.plan_ref}`)
+  // 基线行（design D2/B）：印 **<raw> → <sha>**。
+  //   - 印 sha 是为了「不可变 + 跨 resume 可重填同一基线」（相对 ref 会随 HEAD 漂移）。
+  //   - 非 git 工程 ⇒ 显式说「基线不可用」，而不是留空让后端猜。
+  if (brief.kind === "engineering") {
+    if (opts?.vcs === false) {
+      lines.push("- 基线（base）: 本工程无 VCS，基线不可用")
+    } else if (opts?.base) {
+      lines.push(`- 基线（base）: ${opts.base.raw} → ${opts.base.sha}`)
+    }
+  }
   lines.push(`- 类型（kind）: ${brief.kind}`)
   if (brief.kind === "engineering") {
     lines.push(`- 允许变更范围（scope）: ${brief.scope.join(", ")}`)
@@ -2051,6 +2179,14 @@ export function delegateToolDefinition(ctx: any): any {
             },
             resume_session: { type: "string", description: "续接既有工程 session 的 id" },
             remove: { type: "boolean", description: "完成后删除工程 session，默认 false" },
+            base: {
+              type: "string",
+              description:
+                "本次派发的基线（git ref，如 HEAD~1 或 commit sha）。**role_class=verifier 时必填**" +
+                "（取证要做基线对照）；其它类可省。resume 时由调用方重填 —— " +
+                "要沿用同一基线请用 sha —— 简报里的 sha 不在返回契约（派发方拿不到）⇒ " +
+                "派发方自己 git rev-parse 记一份。",
+            },
             plan_ref: {
               type: "string",
               description:
@@ -2215,6 +2351,13 @@ export function delegateToolDefinition(ctx: any): any {
           // role_class × scope 相容性（D8 ②层）：硬拒发生在 create / registerSession **之前**。
           // 用**有效 class**（resume 时 = 登记值）判定，避免"权限是 architect、声明是 builder"的错配。
           assertRoleClassCompatible({ role_class: effectiveRoleClass, scope: brief.scope }, workRoot)
+          // verifier 基线闸门（design D3：**排在相容性校验之后** ⇒ 先判「你是谁」再判「你缺什么」）
+          const baseline = assertVerifierBaseline({
+            roleClass: effectiveRoleClass,
+            vcs,
+            base: brief.base,
+            workRoot,
+          })
           // 权限组装（单一实现，D8）：scope 解析基准 = workRoot；
           // 只读 session 恒注入单条 edit deny，绝不注入 scope 派生 allow
           // （session 规则排在 agent 规则之后、last-match-wins，会覆盖只读 agent 自身的 edit: deny）。
@@ -2299,7 +2442,11 @@ export function delegateToolDefinition(ctx: any): any {
             }
           }
 
-          const promptText = buildBrief({ ...brief, role_class: effectiveRoleClass }, workRoot)
+          const promptText = buildBrief(
+            { ...brief, role_class: effectiveRoleClass },
+            workRoot,
+            { vcs, base: baseline.raw && baseline.sha ? { raw: baseline.raw, sha: baseline.sha } : undefined },
+          )
           await ctx.session.prompt({ sessionID, text: promptText })
 
           // 超时上限：默认 30 分钟；测试可用 DELEGATE_WAIT_TIMEOUT_MS 缩短。

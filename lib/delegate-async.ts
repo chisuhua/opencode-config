@@ -48,6 +48,7 @@ import {
   frontAlive,
   ownerAgentOf,
   assertRoleClassCompatible,
+  assertVerifierBaseline,
   assertResumeRoleClass,
   ROLE_CLASS_DEFAULT,
   planRefRootLabels,
@@ -1101,11 +1102,22 @@ export function dispatchToolDefinition(ctx: any): any {
       "把一个工程任务异步派发到一个工程 session（建/复用），投递简报后**立即返回，不等待任务完成**。" +
       "同一工作树同时只允许一个后端在跑（单槽）；要换后端先用 suspend 暂停当前那个。" +
       "必填：project_dir（绝对路径）、task、goal、goal_key.intent（kebab slug）、scope、acceptance。" +
+      "选填：agent、constraints、grants、resume_session、remove、plan_ref、role_class、base。" +
+      "base = 本次派发的基线（git ref，如 HEAD~1 或 commit sha）：**role_class=verifier 时必填**" +
+      "（取证要做基线对照）；其它类可省；resume 时由调用方重填（要沿用同一基线 ⇒ 用当初简报里印出的 sha）。" +
       "返回：session_id / state / goal_key / work_root；**dispatch 返回 ≠ 任务完成**。",
     input: {
       type: "object",
       properties: {
         project_dir: { type: "string", description: "工程根目录的绝对路径" },
+        base: {
+          type: "string",
+          description:
+            "本次派发的基线（git ref，如 HEAD~1 或 commit sha）。**role_class=verifier 时必填**" +
+            "（取证要做基线对照）；其它类可省。resume 时由调用方重填 —— " +
+            "要沿用同一基线请用 sha —— 简报里的 sha 不在返回契约（派发方拿不到）⇒ " +
+                "派发方自己 git rev-parse 记一份。",
+        },
         agent: { type: "string", description: "会话的 agent，默认 build" },
         task: { type: "string", description: "给工程 session 的任务原话" },
         goal: { type: "string", description: "一句话目标" },
@@ -1151,7 +1163,8 @@ export function dispatchToolDefinition(ctx: any): any {
       if (brief.kind === "engineering" && !brief.goal_key) {
         throw fail("goal_key 必填（工程 dispatch）：{intent: <kebab-slug>}")
       }
-      const { stateRoot, workRoot } = canonicalRoot(brief.project_dir)
+      // ⚠ `vcs` 必须解构：verifier 基线闸门要用它（非 git 工程 ⇒ 豁免，design D4）
+      const { stateRoot, workRoot, vcs } = canonicalRoot(brief.project_dir)
       // 本轮**有效** role_class（resume 时以登记值为准；新派发 = 请求值）。
       let effectiveRoleClass = brief.role_class
       const frontSessionID = toolContext?.sessionID
@@ -1284,6 +1297,13 @@ export function dispatchToolDefinition(ctx: any): any {
       // —— create / 复用 ——
       // role_class × scope 相容性（D8 ②层）：用**有效 class**判定，硬拒早于 create / claimSlot。
       assertRoleClassCompatible({ role_class: effectiveRoleClass, scope: brief.scope }, workRoot)
+      // verifier 基线闸门（design D3：**排在相容性校验之后** ⇒ 与同步面同层同序）
+      const baseline = assertVerifierBaseline({
+        roleClass: effectiveRoleClass,
+        vcs,
+        base: brief.base,
+        workRoot,
+      })
       // 权限组装（单一实现，D8）：与同步 `delegate` 共用 classPermissions，避免两链路漂移。
       const permissions = classPermissions({
         roleClass: effectiveRoleClass,
@@ -1401,7 +1421,11 @@ export function dispatchToolDefinition(ctx: any): any {
       }
 
       // —— 投递简报（显式 delivery:"queue"，AC6）——
-      const briefText = buildBrief({ ...brief, role_class: effectiveRoleClass }, workRoot)
+      const briefText = buildBrief(
+        { ...brief, role_class: effectiveRoleClass },
+        workRoot,
+        { vcs, base: baseline.raw && baseline.sha ? { raw: baseline.raw, sha: baseline.sha } : undefined },
+      )
       try {
         await ctx.session.prompt({ sessionID, text: briefText, delivery: "queue", id: messageID })
       } catch (e: any) {

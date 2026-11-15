@@ -60,7 +60,7 @@
 |---|---|---|
 | 实施代码 / 测试 / 修 bug | `builder` | 简报 `scope` **减去架构文档目录**（窄目标派发被拒；宽 scope 下写 arch 路径被拒）。产出 `.rddf/reviews/<change>-arch-review.md` 的任务，**`scope` 必须包含该路径**（否则 findings 只落响应正文） |
 | 写改 ADR / 架构文档（可含自己跑 oracle→critic 收口） | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` |
-| 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（记账落点；**派发时 `scope` 必须同时包含这两个目录** —— 上限 ≠ 授权）。另：取证命令要判「环境信号 vs 判据信号」时需要基线 ⇒ **简报必须声明可解析的 `<base>`**（如 `HEAD~1` 或 commit sha）；不声明 ⇒ 后端一律 `blocked` |
+| 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（记账落点；**派发时 `scope` 必须同时包含这两个目录** —— 上限 ≠ 授权）。**必须声明 `<base>`（必填；git ref，如 `HEAD~1` 或 commit sha）**：取证命令要判「环境信号 vs 判据信号」时需要基线；不声明 ⇒ **派发即被拒**（不再等到后端才 `blocked`）。**resume 时由调用方重填** —— 要沿用同一基线，请用当初简报里印出的 sha |
 
 <!-- 机读投影：下面这块是 `opencode.jsonc` 里本 agent 的**能力面**（edit / shell / delegate）——
      守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。
@@ -97,6 +97,8 @@ owns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl,
 **派发参数**：必填 `project_dir`（工程根绝对路径）、`task`（任务原话）、`goal`（一句话目标）、
 `scope`（允许变更的路径前缀数组）、`acceptance`（可判定的验收判据）。选填参数的语义见
 `prompts/front.md` 的参数表与工具 description（两处均已由守卫钉住，**不在此复制**）。
+其中 `base`（本次派发的基线）**对 `role_class=verifier` 是必填**（不填 ⇒ 派发被拒）；
+`resume` 时由**调用方重填**（相对 ref 会随 HEAD 漂移 ⇒ 要沿用同一基线，请用 **sha**）。⚠ 简报里的 sha **只进后端 session、不在返回契约** ⇒ 派发方拿不到它 ⇒ **自己先 `git rev-parse <ref>^{commit}` 记下 sha**，resume 时填这个 sha。
 
 **五条硬规则**：
 

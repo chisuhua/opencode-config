@@ -809,6 +809,9 @@ describe("role_class：同步派发面（AC4 / AC5 / AC8 / AC11 / resume 一致�
       project_dir: project,
       scope: [".rddf/reviews"],
       role_class: "verifier",
+      // ⚠ verifier 类**必须**声明基线（AC5 的新行为）⇒ 这条既有用例要显式给 base。
+      //   该 fixture 只有 1 个 commit ⇒ 用 `HEAD`（`HEAD~1` 在单 commit 仓里不存在）。
+      base: "HEAD",
     })
     const session = [...sessions.values()][0]
     expect(effect(session.permissions, "edit", ".rddf/reviews/case.md")).toBe("allow")
@@ -951,5 +954,196 @@ describe("停机守卫（front-stop-confirmation D2 / front-async-resume-guard A
     leaveStopGuard(stateRoot, workRoot, token)
     const again = await runDelegate(ctx, { ...BASE, project_dir: project, resume_session: backendID })
     expect(again.session_id).toBe(backendID)
+  })
+})
+
+/**
+ * delegate-base-channel（AC5 / AC6 / AC7 / AC8 / AC12）：**execute 层**的基线闸门。
+ *
+ * ⚠ 闸门位置与顺序都是决策（design D3）：
+ *   - 位置 = `execute`（`validateBrief` 拿不到 `effectiveRoleClass` / `vcs` / `workRoot`）；
+ *   - 顺序 = 排在 `assertRoleClassCompatible` **之后**（先判「你是谁」，再判「你缺什么」）。
+ */
+describe("delegate-base-channel：execute 层的基线闸门", () => {
+  /** 两个 commit 的 fixture —— `HEAD~1` 需要**至少两个** commit（单 commit 仓里 `HEAD~1` 不存在）。 */
+  function fixtureWithTwoCommits(): string {
+    const dest = fixtureProject()
+    writeFileSync(path.join(dest, "SECOND.md"), "# second\n")
+    execFileSync("git", ["add", "-A"], { cwd: dest })
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "second"], { cwd: dest })
+    return dest
+  }
+
+  const verifierInput = (project: string, extra: any = {}) => ({
+    ...BASE,
+    project_dir: project,
+    scope: [".rddf/reviews"],
+    role_class: "verifier",
+    ...extra,
+  })
+
+  test("AC5：verifier + git 仓 + 缺 base ⇒ 建 session 之前硬拒（文案含三点）", async () => {
+    const project = fixtureProject()
+    const { ctx, sessions } = createFakeCtx()
+    let err: any
+    try {
+      await runDelegate(ctx, verifierInput(project))
+    } catch (e) {
+      err = e
+    }
+    expect(err, "verifier 缺 base 应被硬拒").toBeTruthy()
+    const msg = String(err?.message ?? err)
+    expect(msg, "错误文案未提 base").toContain("base")
+    expect(msg, "错误文案未提 verifier").toContain("verifier")
+    expect(msg, "错误文案未提示 resume 须重填").toContain("resume")
+    expect(sessions.size, "被拒的派发不应创建 session").toBe(0)
+  })
+
+  test("AC6：非 git 工程 + verifier + 缺 base ⇒ 放行（vcs 闸门，防行为回归）", async () => {
+    const dir = mkdtempSync(path.join("/tmp/opencode", "novcs-delegate-"))
+    mkdirSync(path.join(dir, ".rddf/reviews"), { recursive: true })
+    const { ctx, sessions } = createFakeCtx()
+    const res = await runDelegate(ctx, verifierInput(dir))
+    expect(res.outcome, "非 git 工程的 verifier 派发被误拒").toBeTruthy()
+    expect(sessions.size).toBe(1)
+  })
+
+  test("AC7：不可解析的 ref ⇒ 硬拒；annotated tag 不被误拒（^{commit} peel）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx()
+    // 不可解析
+    let err: any
+    try {
+      await runDelegate(ctx, verifierInput(project, { base: "nonexistent-ref-xyz" }))
+    } catch (e) {
+      err = e
+    }
+    expect(err, "不可解析的 ref 应被硬拒").toBeTruthy()
+    // annotated tag（裸 ref 校验会失败，消费端 merge-base 却能 peel ⇒ 不得误拒）
+    execFileSync("git", ["tag", "-a", "v1.0", "-m", "tag"], { cwd: project })
+    const { ctx: ctx2, sessions } = createFakeCtx()
+    const res = await runDelegate(ctx2, verifierInput(project, { base: "v1.0" }))
+    expect(res.outcome, "annotated tag 被误拒").toBeTruthy()
+    expect(sessions.size).toBe(1)
+  })
+
+  test("AC2（execute 面）：简报含基线行「<raw> → <sha>」", async () => {
+    const project = fixtureWithTwoCommits()
+    const { ctx, sessions } = createFakeCtx()
+    await runDelegate(ctx, verifierInput(project, { base: "HEAD~1" }))
+    const session = [...sessions.values()][0]
+    const brief = session.prompts.join("\n")
+    expect(brief, "简报缺基线行").toContain("基线（base）: HEAD~1 → ")
+    const m = brief.match(/基线（base）: HEAD~1 → ([0-9a-f]{40})/)
+    expect(m, "简报里的 sha 形态不对").toBeTruthy()
+    // ⚠ 必须等于**真实解析值** —— 否则「恒解析 HEAD」这种退化（合法 sha、全绿）打不掉，
+    //   而 D2 的「冻结的是**指定的**基线」承诺就被击穿（critic SHOULD_FIX #2）。
+    const expected = execFileSync("git", ["rev-parse", "--verify", "HEAD~1^{commit}"], { cwd: project })
+      .toString()
+      .trim()
+    expect(m![1], "简报里的 sha 不是被指定的基线（可能恒解析了 HEAD）").toBe(expected)
+    expect(m![1]).not.toBe(
+      execFileSync("git", ["rev-parse", "HEAD"], { cwd: project }).toString().trim(),
+    )
+  })
+
+  test("AC12：scope 越界 + 缺 base ⇒ 第一条错误必须是 scope（base 闸门排在相容性校验之后）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx()
+    let err: any
+    try {
+      await runDelegate(ctx, verifierInput(project, { scope: ["src"] }))
+    } catch (e) {
+      err = e
+    }
+    expect(err, "scope 越界应被拒").toBeTruthy()
+    expect(String(err?.message ?? err), "错误应指向 scope 越界（而不是缺 base）").toContain("越界")
+  })
+})
+
+/**
+ * delegate-base-channel（AC8）：**resume 路径**的基线行为。
+ *
+ * ⚠ 这条是 D3 的**核心论证**的正面证明：闸门判的是 `effectiveRoleClass`（resume 时来自
+ * **登记值**，不是调用方声明值）⇒ resume 一个 verifier session 时，闸门**仍然要求** base。
+ * ⚠ 没有这条断言时，D3 的论证**零覆盖**（oracle 审出：AC8 原计划有、实际没写）。
+ */
+describe("delegate-base-channel：resume 路径的基线（AC8）", () => {
+  function fixtureWithTwoCommits(): string {
+    const dest = fixtureProject()
+    writeFileSync(path.join(dest, "SECOND.md"), "# second\n")
+    execFileSync("git", ["add", "-A"], { cwd: dest })
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "second"], { cwd: dest })
+    return dest
+  }
+
+  /** 先派一个 verifier session（登记 role_class=verifier），再 resume 它。 */
+  async function dispatchVerifierThenResume(project: string, extra: any = {}) {
+    const { ctx, calls, sessions } = createFakeCtx()
+    const first = await runDelegate(ctx, {
+      ...BASE,
+      project_dir: project,
+      scope: [".rddf/reviews"],
+      role_class: "verifier",
+      base: "HEAD",
+      ...extra,
+    })
+    const second = await runDelegate(ctx, {
+      ...BASE,
+      project_dir: project,
+      scope: [".rddf/reviews"],
+      resume_session: first.session_id,
+      ...extra,
+    })
+    return { ctx, calls, sessions, first, second }
+  }
+
+  test("AC8-①：resume 一个 verifier session 且重填 base ⇒ 简报含基线行（登记类到达闸门）", async () => {
+    const project = fixtureWithTwoCommits()
+    const { ctx, sessions } = createFakeCtx()
+    const first = await runDelegate(ctx, {
+      ...BASE,
+      project_dir: project,
+      scope: [".rddf/reviews"],
+      role_class: "verifier",
+      base: "HEAD",
+    })
+    const second = await runDelegate(ctx, {
+      ...BASE,
+      project_dir: project,
+      scope: [".rddf/reviews"],
+      resume_session: first.session_id,
+      base: "HEAD~1", // ← 调用方重填（base 不落盘，也不从登记值继承）
+    })
+    expect(second.resumed).toBe(true)
+    const session = [...sessions.values()][0]
+    const briefs = session.prompts.join("\n")
+    expect(briefs, "resumed 简报缺基线行").toMatch(/基线（base）: HEAD~1 → [0-9a-f]{40}/)
+  })
+
+  test("AC8-②：resume 一个 verifier session **不填** base ⇒ 硬拒（登记类到达闸门）", async () => {
+    const project = fixtureWithTwoCommits()
+    const { ctx } = createFakeCtx()
+    const first = await runDelegate(ctx, {
+      ...BASE,
+      project_dir: project,
+      scope: [".rddf/reviews"],
+      role_class: "verifier",
+      base: "HEAD",
+    })
+    let err: any
+    try {
+      await runDelegate(ctx, {
+        ...BASE,
+        project_dir: project,
+        scope: [".rddf/reviews"],
+        resume_session: first.session_id,
+        // ⚠ 不填 base ⇒ 闸门按**登记值**（verifier）判 ⇒ 必须拒
+      })
+    } catch (e) {
+      err = e
+    }
+    expect(err, "resume verifier 不填 base 应被硬拒（登记类到达闸门）").toBeTruthy()
+    expect(String(err?.message ?? err)).toContain("base")
   })
 })
