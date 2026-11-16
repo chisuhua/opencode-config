@@ -2519,3 +2519,421 @@ describe("delegate-base-channel：文档面一致（AC10）", () => {
     expect(seg.slice(0, 4000), "dispatch 的手抄 description 未提 resume").toContain("resume")
   })
 })
+
+/**
+ * **oracle 意图闸门**（v2.37：architect 审查链在 oracle 之前的「问题陈述对不对」检查点）。
+ *
+ * ⚠ **为什么这一族存在**（2026-11-16）：v2.37 给 architect 的审查链补了「oracle 调用前的意图检查点」，
+ *   而「**可判定的意图陈述**」这个定义写在**三处**：
+ *   `prompts/oracle.md`「模式」段的**意图前提**表（执行体侧 = 真源）、
+ *   `prompts/build.md` §审查配对 的**检查点小节**（调用方侧）、
+ *   `opencode.jsonc` 的 oracle `description`（父模型唯一会读的位置）。
+ *   critic 当场**逐字核对**过三处一致，但**没有任何守卫钉住它**
+ *   ⇒ 任一处被改写（哪怕只是把「要解决的问题」写成「要解决的核心问题」）都不会有红灯。
+ *
+ * ⚠ **判据形态：纯函数 + 内存突变**（同「独立会话机制」族的写法）：
+ *   ① 判据本体是**纯函数** `intentGateViolations(...) => string[]`（语料 ⇒ 违规列表）；
+ *   ② 「当场即绿」的判据用**内存突变**证明判别力（不落盘、不污染工作树）；
+ *   ③ **组成词从真源派生**（oracle.md 意图前提表首行 ⇒ 拆出各项）—— **不手抄术语**
+ *      ⇒ 真源改词时守卫跟着走，并**要求另两处跟上**（任一处漂移即红）。
+ *
+ * ⚠ **段落切片必须精确**：本仓 `build.md` 的 §审查配对 里 `HANDOFF: blocked` 等关键词
+ *   在**别的**段落也出现（被派发后端段）⇒ 用**显式端锚** `between(text, from, until)`
+ *   （锚点缺失 ⇒ 空串 ⇒ 判据红），而不是「切到下一个标题」—— 否则判据会被无关文本**喂饱**（假绿）。
+ */
+describe("oracle 意图闸门（v2.37）", () => {
+  const ROOT = path.join(import.meta.dir, "..")
+  const ORACLE_MD = readFileSync(path.join(ROOT, "prompts", "oracle.md"), "utf8")
+  const BUILD_MD = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+  const MD = readFileSync(path.join(ROOT, "docs", "MULTI-AGENT-DESIGN.md"), "utf8")
+  const ORCH = readFileSync(path.join(ROOT, "docs", "SUBAGENT-ORCHESTRATION.md"), "utf8")
+  const CFG = JSON.parse(readFileSync(path.join(ROOT, "opencode.jsonc"), "utf8"))
+  const DESC = String(CFG.agent.oracle.description ?? "")
+
+  type Corpus = { oracle: string; build: string; desc: string; md: string; orc: string }
+  const CORPUS: Corpus = { oracle: ORACLE_MD, build: BUILD_MD, desc: DESC, md: MD, orc: ORCH }
+
+  /**
+   * 违规条目 = **判据类 + 消息**。
+   *
+   * ⚠ **为什么要带判据类**：突变测试用「期望关键词」定位被哪条判据抓到；关键词若同时出现在
+   *   **两个判据类**的消息里 ⇒ 它就**不可区分** ⇒ 突变被顺带抓到时看不出来。
+   *   ⇒ 判据类入参后，「关键词 ↔ 判据类唯一」这条**隐式不变式**就能被显式断言（见末尾的
+   *   「判据类 ↔ 关键词」用例）。
+   */
+  type Violation = { cls: string; msg: string }
+
+  /**
+   * 从 `from` 切到 `until`（**不含** `until`）；任一锚点缺失 ⇒ 空串。
+   *
+   * ⚠ **为什么用显式端锚、而不是「切到下一个标题」**：本仓 `build.md` 的段头有两种形态 ——
+   *   ① markdown 标题（`#### …`）；② **粗体引导句**（`**治理面判定（verdict）**：…`，
+   *   **正文与段头同行**）。用「行首 `**` 即段头」的启发式会把 §审查配对 的**引言段**
+   *   （`**审查是角色内的固定环节…`：审查者是只读 subagent…）误判成段头 ⇒ 切片当场为空。
+   *   ⇒ 显式端锚 + **锚点缺失 ⇒ 空串 ⇒ 判据红**（fail-loud，不静默喂饱）。
+   */
+  function between(text: string, from: string, until: string): string {
+    const i = text.indexOf(from)
+    if (i < 0) return ""
+    const j = text.indexOf(until, i + from.length)
+    if (j < 0) return ""
+    return text.slice(i, j)
+  }
+
+  /**
+   * 意图闸门的判据 —— **纯函数**（语料 ⇒ 违规列表）。
+   *
+   * 判据分三层：
+   * ① **存在性**：执行体侧（oracle.md 意图前提表）/ 调用方侧（build.md 检查点小节）/
+   *    收口侧（build.md verdict 段）三处规则本体都在；
+   * ② **一致性**：意图陈述的**组成词**（从真源派生）必须同时出现在另两处；
+   * ③ **投影同步**：两份汇总索引（MD / ORCH）跟得上。
+   */
+  function intentGateViolations(c: Corpus): Violation[] {
+    const v: Violation[] = []
+    const push = (cls: string, msg: string) => v.push({ cls, msg })
+
+    // ── ① 执行体侧：oracle.md「## 模式」段内的意图前提 ──
+    const modes = between(c.oracle, "## 模式", "## Output")
+    if (!modes.includes("意图前提（审查模式的闸门）")) {
+      push("执行体侧", "oracle.md 的「## 模式」段内缺「意图前提（审查模式的闸门）」")
+      return v // 派生锚点在此 ⇒ 后续「从真源派生」无从做起
+    }
+    const premise = modes.slice(modes.indexOf("**意图前提（审查模式的闸门）**"))
+    for (const [label, needle] of [
+      ["意图已定", "意图已定"],
+      ["≥2 种合理解读", "≥2 种合理解读"],
+      ["意图未给 / 不定 ⇒ 不给判定行", "不给判定行"],
+    ] as const) {
+      if (!premise.includes(needle)) push("执行体侧", `oracle.md 的意图前提表缺「${label}」`)
+    }
+
+    // ── ② 组成词**从真源派生**（不手抄术语） ──
+    const m = premise.match(/意图已定（(.+?)都给了）/)
+    if (!m) {
+      push("术语派生", "oracle.md 意图前提表首行未匹配「意图已定（…都给了）」⇒ 术语派生锚点失效")
+      return v
+    }
+    const terms = m[1]!.split("+").map((s) => s.trim()).filter(Boolean)
+    if (terms.length < 2) {
+      push("术语派生", `意图陈述的组成词只派生出 ${terms.length} 项 ⇒ 派生锚点失效`)
+      return v
+    }
+    for (const [name, text] of [
+      ["prompts/build.md", c.build],
+      ["oracle description", c.desc],
+    ] as const) {
+      for (const t of terms) {
+        if (!text.includes(t)) {
+          push("三处同源", `${name} 未含真源派生的意图陈述组成词「${t}」`)
+        }
+      }
+    }
+
+    // ── ③「意图未定」的处置口径三处一致 ──
+    for (const [name, text] of [
+      ["prompts/oracle.md", c.oracle],
+      ["prompts/build.md", c.build],
+      ["oracle description", c.desc],
+    ] as const) {
+      if (!text.includes("意图未定")) {
+        push("处置口径", `${name} 未出现「意图未定」（三处处置口径不一致的信号）`)
+      }
+    }
+
+    // ── ④ 调用方侧：build.md 的检查点小节 ──
+    const gate = between(
+      c.build,
+      "#### oracle 调用前的意图检查点（architect 路径）",
+      "**治理面作用域（写成可解析的路径，按字面执行）**",
+    )
+    if (!gate) {
+      push("调用方侧", "prompts/build.md 缺「#### oracle 调用前的意图检查点（architect 路径）」小节")
+    } else {
+      for (const [label, needle] of [
+        ["意图明确", "意图明确"],
+        ["意图 / 范围边界只有用户知道", "只有用户知道"],
+        ["歧义 / slop / 边界情况未枚举", "未枚举"],
+        ["两者都缺", "两者都缺"],
+      ] as const) {
+        if (!gate.includes(needle)) push("调用方侧", `build.md 检查点小节缺情形「${label}」`)
+      }
+      if (!gate.includes("question")) {
+        push("调用方侧", "build.md 检查点小节未提「question」（意图类问题的主通道）")
+      }
+      if (!gate.includes("HANDOFF: blocked")) {
+        push("调用方侧", "build.md 检查点小节未提「HANDOFF: blocked」（被派发后端缺意图时的唯一出口）")
+      }
+      if (!gate.includes("单独")) {
+        push("调用方侧", "build.md 检查点小节未写 metis **单独**调用（可与 oracle 同轮并行 ⇒ 拿不到结果）")
+      }
+    }
+
+    // ── ⑤ 收口侧：verdict 段的操作条件（只写在检查点 bullet 里会被「按 verdict 段字面执行」穿过） ──
+    const verdict = between(c.build, "**治理面判定（verdict）**", "**自指审查**")
+    if (!verdict.includes("已调用但拒发判定行")) {
+      push("收口侧", "build.md 的 verdict 段缺「已调用但拒发判定行」（拒发判定 ⇒ 该轮不成立）")
+    }
+    if (!verdict.includes("不得收口")) push("收口侧", "build.md 的 verdict 段缺「不得收口」")
+    if (!verdict.includes("审查者不可用")) {
+      push("收口侧", "build.md 的 verdict 段未排除「oracle 不可用」（应指向「审查者不可用时」的降级路径）")
+    }
+
+    // ── ⑥ 预算格：metis 轮次 + 拒发重跑不另计（否则父模型会循环调 metis） ──
+    const review = between(
+      c.build,
+      "### 审查配对（每个角色由谁审）",
+      "#### oracle 调用前的意图检查点（architect 路径）",
+    )
+    const archRow = review.split("\n").find((l) => l.startsWith("| `architect` |"))
+    if (!archRow) push("预算格", "build.md §审查配对 表缺 architect 行")
+    else {
+      if (!archRow.includes("至多 1 轮")) push("预算格", "architect 行的预算格缺「至多 1 轮」（metis 轮次无上限）")
+      if (!archRow.includes("不另计")) {
+        push("预算格", "architect 行的预算格缺「不另计」（拒发重跑的 oracle 计数未定义）")
+      }
+    }
+
+    // ── ⑦ description 指向真源（它是父模型唯一会读的位置，必须可执行且可溯源） ──
+    if (!c.desc.includes("prompts/oracle.md")) {
+      push("真源指针", "oracle description 未指向 prompts/oracle.md（规则真源）")
+    }
+
+    // ── ⑧ 投影同步：两份汇总索引跟得上（索引漂移即误导） ──
+    if (!c.md.includes("**oracle 调用前的意图检查点（architect 路径）**")) {
+      push("投影同步", "MULTI-AGENT-DESIGN.md §2.7 缺「oracle 调用前的意图检查点」摘要段")
+    }
+    const mdRow = c.md.split("\n").find((l) => l.includes("`architect`（新 ADR / 反转决策）"))
+    if (!mdRow) push("投影同步", "MULTI-AGENT-DESIGN.md §3.2.0 缺 architect 固定审查配对行")
+    else if (!mdRow.includes("意图检查点")) {
+      push("投影同步", "MULTI-AGENT-DESIGN.md §3.2.0 的 architect 行未指向意图检查点")
+    }
+    if (!c.orc.includes("意图闸门")) push("投影同步", "SUBAGENT-ORCHESTRATION.md §3 缺意图闸门摘要段")
+
+    return v
+  }
+
+  /** 突变的元数据：`expect` = 期望关键词；`expectCls` = 期望**判据类**（关键词须唯一对应它） */
+  type Mutation = { name: string; apply: (c: Corpus) => Corpus; expect: string; expectCls: string }
+
+  const MUTATIONS: Mutation[] = [
+    {
+      name: "执行体侧：删掉「意图前提」段",
+      apply: (c) => ({ ...c, oracle: c.oracle.replace("**意图前提（审查模式的闸门）**", "**（已删）**") }),
+      expect: "意图前提",
+      expectCls: "执行体侧",
+    },
+    {
+      name: "执行体侧：意图前提表删掉「≥2 种合理解读」",
+      apply: (c) => ({ ...c, oracle: c.oracle.replace("≥2 种合理解读", "若干种理解") }),
+      expect: "≥2 种合理解读",
+      expectCls: "执行体侧",
+    },
+    {
+      name: "真源改词：oracle.md 把「要解决的问题」改成别的说法（派生项跟着变 ⇒ 另两处应被逼跟进）",
+      apply: (c) => ({
+        ...c,
+        oracle: c.oracle.replace("要解决的问题", "要解决的核心问题"),
+      }),
+      expect: "组成词",
+      expectCls: "三处同源",
+    },
+    {
+      name: "调用方侧漂移：build.md 的组成词与真源不一致",
+      apply: (c) => ({ ...c, build: c.build.replace("要解决的问题", "要解决的核心问题") }),
+      expect: "组成词",
+      expectCls: "三处同源",
+    },
+    {
+      name: "父模型可见面漂移：description 的组成词与真源不一致",
+      apply: (c) => ({ ...c, desc: c.desc.replace("要解决的问题", "要解决的核心问题") }),
+      expect: "组成词",
+      expectCls: "三处同源",
+    },
+    {
+      name: "三处处置口径不一致：description 删掉「意图未定」",
+      apply: (c) => ({ ...c, desc: c.desc.replace("意图未定则只给建议、不给判定行", "按常规处理") }),
+      expect: "意图未定",
+      expectCls: "处置口径",
+    },
+    {
+      name: "调用方侧：删掉检查点小节标题",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("#### oracle 调用前的意图检查点（architect 路径）", "#### （已删）"),
+      }),
+      // ⚠ 关键词用**完整标题**（含 `####`）而不是「意图检查点」—— 后者同时出现在
+      //   「投影同步」类的消息里（§2.7 摘要段 / §3.2.0 指针）⇒ 关键词不可区分。
+      expect: "#### oracle 调用前的意图检查点（architect 路径）",
+      expectCls: "调用方侧",
+    },
+    {
+      name: "调用方侧：分流表删掉「两者都缺」一行",
+      apply: (c) => ({ ...c, build: c.build.replace("| 两者都缺 |", "| （已删） |") }),
+      expect: "两者都缺",
+      expectCls: "调用方侧",
+    },
+    {
+      name: "调用方侧：删掉被派发后端的唯一出口 HANDOFF: blocked",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("⇒ `HANDOFF: blocked`（缺用户决策）", "⇒ 自行决定"),
+      }),
+      expect: "HANDOFF: blocked",
+      expectCls: "调用方侧",
+    },
+    {
+      name: "调用方侧：metis 改成可与 oracle 同轮并行（并行 ⇒ 拿不到结果）",
+      apply: (c) => ({ ...c, build: c.build.replace("先**单独**调 metis", "先调 metis") }),
+      expect: "单独",
+      expectCls: "调用方侧",
+    },
+    {
+      name: "收口侧：verdict 段删掉「不得收口」（只剩检查点 bullet 里的软表述）",
+      apply: (c) => ({ ...c, build: c.build.replace("**不得收口**", "（略）") }),
+      expect: "不得收口",
+      expectCls: "收口侧",
+    },
+    {
+      name: "收口侧：verdict 段不排除「oracle 不可用」（拒发 与 不可用 两个出口 ⇒ 二义）",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("走「审查者不可用时」的降级路径，**不适用**本条", "（不适用）"),
+      }),
+      expect: "审查者不可用时",
+      expectCls: "收口侧",
+    },
+    {
+      name: "预算格：删掉「至多 1 轮」（metis 轮次无上限 ⇒ 父模型可循环调 metis）",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("意图检查点的 metis **至多 1 轮**", "意图检查点的 metis 轮次不限"),
+      }),
+      expect: "至多 1 轮",
+      expectCls: "预算格",
+    },
+    {
+      name: "预算格：删掉「不另计」（拒发重跑的 oracle 计数未定义 ⇒ 父模型会当成新一轮）",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("因意图拒发而重跑的 oracle **不另计**（补齐同一轮，非新一轮审查）", "（略）"),
+      }),
+      expect: "不另计",
+      expectCls: "预算格",
+    },
+    {
+      name: "父模型可见面：description 删掉指向真源的指针",
+      apply: (c) => ({ ...c, desc: c.desc.replace("（判据见 prompts/oracle.md「模式」段）", "") }),
+      expect: "prompts/oracle.md",
+      expectCls: "真源指针",
+    },
+    {
+      name: "投影脱节：MULTI-AGENT-DESIGN.md §2.7 删掉摘要段",
+      apply: (c) => ({
+        ...c,
+        md: c.md.replace("**oracle 调用前的意图检查点（architect 路径）**", "**（已删）**"),
+      }),
+      expect: "MULTI-AGENT-DESIGN.md",
+      expectCls: "投影同步",
+    },
+    {
+      name: "投影脱节：SUBAGENT-ORCHESTRATION.md 删掉意图闸门摘要段",
+      apply: (c) => ({ ...c, orc: c.orc.replace("一道意图闸门", "（已删）") }),
+      expect: "SUBAGENT-ORCHESTRATION.md",
+      expectCls: "投影同步",
+    },
+  ]
+
+  test("意图闸门：全部判据通过（执行体侧 / 调用方侧 / 收口侧 / 三处同源 / 投影同步）", () => {
+    const violations = intentGateViolations(CORPUS)
+    expect(
+      violations.length,
+      violations.map((x) => `${x.cls}｜${x.msg}`).join("\n"),
+    ).toBe(0)
+  })
+
+  /**
+   * **突变测试**：对语料的**内存副本**施加破坏 ⇒ 判据**必须**报错。
+   *
+   * ⚠ **为什么需要它**：本族判据**当场即绿**（这些规则本来就写好了）⇒
+   *   「绿」本身不说明它有判别力。⇒ 用**内存突变**证明每一类破坏都会被抓到。
+   *   重点覆盖两类**最容易漂**的破坏：**真源改词**（派生项跟着变 ⇒ 另两处被逼跟进）
+   *   与**投影脱节**（索引落后于真源）。
+   *
+   * ⚠ **三重断言**（防「顺带抓到」的假判别力）：
+   *   ① 突变**确实生效**（锚点没变 ⇒ 突变测试本身失效）；
+   *   ② 被抓到 ≥1 条；
+   *   ③ 期望关键词出现在**期望判据类**的消息里，且**不出现在其它判据类**的消息里
+   *      （⇒ 关键词确实**指向**那条判据，而不是被别的判据顺带命中）。
+   */
+  test("突变测试：每一类破坏都必须被意图闸门判据抓到（判别力证据）", () => {
+    for (const m of MUTATIONS) {
+      const mutated = m.apply(CORPUS)
+      const changed = (Object.keys(mutated) as Array<keyof Corpus>).some((k) => mutated[k] !== CORPUS[k])
+      expect(changed, `突变「${m.name}」没生效（锚点已变 ⇒ 突变测试本身失效）`).toBe(true)
+      const violations = intentGateViolations(mutated)
+      expect(violations.length, `突变「${m.name}」**未被抓到** ⇒ 该判据无判别力`).toBeGreaterThan(0)
+      const hits = violations.filter((x) => x.msg.includes(m.expect))
+      expect(
+        hits.length,
+        `突变「${m.name}」被抓到了，但没有一条消息含期望关键词「${m.expect}」（期望判据类「${m.expectCls}」）`,
+      ).toBeGreaterThan(0)
+      const offClass = hits.filter((x) => x.cls !== m.expectCls)
+      expect(
+        offClass.length,
+        `突变「${m.name}」的关键词「${m.expect}」也出现在非期望判据类「${m.expectCls}」的消息里 ⇒ 关键词不可区分：` +
+          offClass.map((x) => `${x.cls}｜${x.msg}`).join("\n"),
+      ).toBe(0)
+    }
+  })
+
+  /**
+   * **判据类 ↔ 期望关键词的唯一性**（把「靠人眼维护的隐式不变式」变成显式红灯）。
+   *
+   * ⚠ **为什么需要它**：突变测试用「关键词」定位被哪条判据抓到。若某关键词同时出现在
+   *   **两个判据类**的消息里，则该关键词**不可区分** ⇒ 某条突变被**别的**判据顺带抓到时，
+   *   本族看不出来（假判别力）。
+   *
+   * ⚠ **探针集 = 突变集**：本用例只检查「被突变触发到的消息模板」上的唯一性 ——
+   *   未被任何突变触发的消息模板不在本用例的覆盖范围内（如实登记在下方未覆盖清单）。
+   */
+  test("判据类 ↔ 期望关键词：每个关键词必须唯一对应一个判据类", () => {
+    const byCls = new Map<string, Set<string>>()
+    for (const m of MUTATIONS) {
+      for (const x of intentGateViolations(m.apply(CORPUS))) {
+        if (!byCls.has(x.cls)) byCls.set(x.cls, new Set())
+        byCls.get(x.cls)!.add(x.msg)
+      }
+    }
+    for (const m of MUTATIONS) {
+      const classes = new Set<string>()
+      for (const [cls, msgs] of byCls) {
+        for (const msg of msgs) if (msg.includes(m.expect)) classes.add(cls)
+      }
+      expect(
+        [...classes].join(","),
+        `关键词「${m.expect}」出现在多个判据类的消息里（${[...classes].join(" / ")}）⇒ 关键词不可区分`,
+      ).toBe(m.expectCls)
+    }
+  })
+
+  /**
+   * ⚠ **未覆盖清单（照本仓惯例如实登记 —— 免得「意图闸门有守卫」这个宣称高于实际）**：
+   * - **行为层零覆盖**：本族全是**文本静态**判据 ⇒ 「父模型真的会在调 oracle 前带上意图陈述」
+   *   「oracle 真的会因为意图未定而拒发」**证不到** ⇒ 需独立仓 `rdd-workflow-e2e` 的真实运行时场景。
+   * - **「换项不删项」抓不到**：派生锚点只验「项数 ≥ 2」与「三处含派生词」⇒ 真源把「范围边界」
+   *   换成**另一项**且另两处同步换 ⇒ 绿。（**删到只剩 1 项**会被「项数 < 2」抓到 ——
+   *   那是**删项**面，与本条是**换项**面。）
+   * - **「意图未定」是全文 token 检查**（该词在 `build.md` 多处出现）⇒ 检查点小节里的处置句
+   *   漂移、只要 token 残留在别处即绿。**oracle 侧更松**：该文件里的「意图未定」全部落在
+   *   「## 模式」的列表与注里，**从不锚在意图前提表内**（表内第三行写的是「意图未给 / 不定」）⇒
+   *   oracle 侧的 token 检查同样不锚在表内。
+   * - **组成词 / 真源指针只要求出现在文件任意位置**，不要求落在检查点小节 / description 的
+   *   意图句内 ⇒ 那两句被改写而术语残留在别处即绿。
+   * - 分流表四行情形的**措辞**只钉关键词、不钉语义 ⇒ 表述自由改写不会被抓（只有删整行才会）。
+   * - `question` / `HANDOFF: blocked` 只在本小节内被钉 —— 本仓别处（被派发后端段）另有一份
+   *   `HANDOFF: blocked` 用法，**改动那处不影响本族**（属别的判据族）。
+   * - **metis 轮次上限**只钉「至多 1 轮」的字样，不钉「实际调用次数」⇒ 计数行为属行为层。
+   * - 「判据类 ↔ 关键词」用例的**探针集 = 突变集** ⇒ 未被任何突变触发的消息模板不在其覆盖内。
+   */
+})

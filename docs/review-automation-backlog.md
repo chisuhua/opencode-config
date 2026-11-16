@@ -123,14 +123,15 @@
 
 **残留缺口（两项）**：
 
-| # | 缺口 | 取证 | 建议 |
-|---|---|---|---|
-| 1 | 三处表述**零一致性守卫** | `tests/config-guards.test.ts` 只锚定判定词表单一真源（`:1125-1136`）与 metis 六节契约（`:208-231`），**新语义对守卫不可见** | 加断言：三处均含「要解决的问题 + 范围边界」且措辞同源（同一关键词集）；另加 oracle.md 含「意图前提」/ build.md 含「oracle 调用前的意图检查点」的存在性断言（防静默 no-op） |
-| 2 | **行为层零覆盖**：父模型是否真的带意图陈述、oracle 是否真的拒发 | 本仓无 e2e 目录；e2e 在独立仓 `/workspace/main/rdd-workflow-e2e`（bats） | 新增场景（architect 路径）：① 输入缺意图陈述 ⇒ oracle **不给判定行** + `下一步` 列出待裁决点；② 父模型补齐意图重跑 ⇒ 给出判定行。⚠ 依赖真实模型 ⇒ flaky 风险，参照 v2.36 的 `E2E_REAL_RUNTIME` 开关分层（词表守卫进 CI，真实运行时场景默认 skip + 注明） |
+| # | 缺口 | 取证 | 建议 | 状态 |
+|---|---|---|---|---|
+| 1 | 三处表述**零一致性守卫** | `tests/config-guards.test.ts` 只锚定判定词表单一真源（`:1125-1136`）与 metis 六节契约（`:208-231`），**新语义对守卫不可见** | 加断言：三处均含真源派生的组成词（**从 `oracle.md` 派生、不手抄术语**）；另加 oracle.md 含「意图前提」/ build.md 含检查点小节的存在性断言（防静默 no-op） | ✅ **已闭合（v2.38）** —— 新增顶层 `describe("oracle 意图闸门（v2.37）")`：8 组判据 / 9 个判据类 + 17 类**内存突变** + 「判据类 ↔ 关键词」唯一性用例。审查：oracle `PASS-WITH-NOTES`（0 BLOCKER）→ critic `APPROVE`（0 BLOCKER / 0 SHOULD_FIX / 3 NIT）。记录：`.rddf/reviews/oracle-intent-guard-review.md` |
+| 2 | **行为层零覆盖**：父模型是否真的带意图陈述、oracle 是否真的拒发 | 本仓无 e2e 目录；e2e 在独立仓 `/workspace/main/rdd-workflow-e2e`（bats） | 新增场景（architect 路径）：① 输入缺意图陈述 ⇒ oracle **不给判定行** + `下一步` 列出待裁决点；② 父模型补齐意图重跑 ⇒ 给出判定行。⚠ 依赖真实模型 ⇒ flaky 风险，参照 v2.36 的 `E2E_REAL_RUNTIME` 开关分层（词表守卫进 CI，真实运行时场景默认 skip + 注明） | ⏳ **未做** —— 跨仓 + 真实模型；静态守卫**证不到**行为层（已登记在守卫的「未覆盖清单」第 1 条） |
 
 **为什么 v2.37 那批没做**：① 改 `tests/config-guards.test.ts` 的断言属**治理面**
 （`prompts/build.md` 治理面作用域表）⇒ 须另起一轮 oracle → critic；② v2.37 的「一次改动」预算
-（oracle 1 + critic 1）**已用完**，不能顺带塞进同一批。
+（oracle 1 + critic 1）**已用完**，不能顺带塞进同一批。⇒ 实际由 **v2.38** 独立一批闭合（自带
+oracle 1 + critic 1 预算）。
 
 ## 3. 不建议自动化的部分
 
