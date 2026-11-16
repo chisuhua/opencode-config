@@ -10,6 +10,34 @@
 
 ---
 
+> **v2.36 变更摘要（2026-11-16，层 2 实施：独立会话的 build 机制有了行为层保证，并暴露一条真实缺陷）**：
+> ① **实施**：`rdd-workflow-e2e` 仓新增 `test_independent_build_session.bats`（E-1/E-2/E-3，默认 skip，
+>   `E2E_REAL_RUNTIME=1` 开启）+ `test_independent_build_session_vocab.bats`（**词表守卫，不需真实模型 ⇒ 进 CI**）
+>   + `tests/test_helper.bash` 的共享助手（`ib_text_of` / `ib_violations_of`，两文件共用 ⇒ 不漂）。
+>   **2026-11-16 真跑通过**：E-1（首行 `【角色: builder | source: state-file】`）、
+>   E-2（切换后首行变 verifier **且 `role.json` 的 `current_role` 被写** —— **磁盘事实** ⇒ 抗 flaky）、
+>   E-3（越权响应三要素齐全，词表有**反例守卫**）。观察报告：本仓
+>   `.rddf/reviews/independent-build-session-e2e-observation.md`（e2e 仓的 `.rddf` 被 gitignore）。
+> ② **★ 暴露的真实缺陷（E-4 保持失败 ⇒ skip 并注明，**不假绿**）**：E-3 三要素齐全 ⇒ 通过；但同一轮
+>   **文件系统事实**显示 **verifier 角色真的改了 `src/app.ts`**（x=1 → x=2）。行为链：越权被正确拒绝 ⇒
+>   引导需要 `question` 工具 ⇒ **非交互环境被拒** ⇒ 模型**自行假设并推进**了越权动作。
+>   ⇒ 根因：`prompts/build.md` 的越权处理**没规定「引导无法执行时怎么办」** ⇒ 无人值守场景的 fallback 是
+>   「按最合理的假设推进」。⇒ **另立 change** 修（见交接清单 ⑪）。
+>   ⚠ **这条只有行为层能抓到**：静态守卫能证明「文档写了三步」，证明不了「拒绝之后没停」；
+>   本仓的角色越权防护是**软约束**（权限层无按角色硬 deny）⇒ 这条失效路径此前完全没被测到。
+> ③ **实测到的 5 条新事实**（此前零覆盖）：① 独立会话的**默认角色不是 builder**（无 role.json ⇒ 回落
+>   **general**，`source` 仍标 `state-file`）⇒ fixture 必须预置 role.json；② **builder 的实际开场报告形态是
+>   `| source: state-file`**，而 build.md 角色矩阵表写 `| change: <名或无>` ⇒ **表与实际不一致**
+>   （待确认两态并存还是写错，见交接清单 ⑫）；③ **`opencode run` 没有 `--standalone` 这个 flag**
+>   （本机 v0.0.0-local-202611110721）⇒ e2e 仓既有的 `test_subagent_contract_runtime.bats` 仍在传它
+>   ⇒ 那批用例要么被额度 skip 挡在前面、要么本就没跑通 ⇒ **follow-up**；④ 模型多行响应的「引导」段在后面
+>   ⇒ 必须取**整条响应**而非首条 text 事件；⑤ 越权拒绝后的引导依赖 `question` 工具（非交互环境不可用）。
+> ④ **验证**：本仓 `bun test tests/` **588 pass / 0 fail**（exit 0）；anchors **23/23**；
+>   e2e 仓真跑 **5 条全绿**（3 条真跑 + 2 条词表守卫），默认态 3 条 skip、退出码 0。
+
+---
+
+
 > **v2.35 变更摘要（2026-11-16，独立会话的 build 机制：层 1 静态守卫 + 层 2 e2e change）**：
 > ① **问题（2026-11-16 核查）**：`build.md` 讲**两种**使用形态 ——
 >   ① **被派发后端**（delegate/dispatch 派出的工程 session）：静态守卫 25 处 + e2e（CS 系列）；

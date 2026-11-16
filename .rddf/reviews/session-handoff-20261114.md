@@ -63,6 +63,15 @@
    应各自派生（与 AC25 同形：形态约束 + 值 pin）。
    ⑩ **`DELEGATE_RESULT_CRITICAL_FIELDS` 是 `readonly string[]`** ⇒ gloss 的 `satisfies` 退化成同义反复
    （编译期约束为零，靠运行期 `assertGlossCoverage()` 兜底）。改 `as const` 会连锁所有 `.includes()` 调用点。
+   ⑪ **独立会话的越权处理有失效路径**（2026-11-16 层 2 实测，e2e `E-4`）：越权被正确拒绝（三要素齐全），
+   但**引导**依赖 `question` 工具 ⇒ 非交互环境被拒 ⇒ 模型**自行假设并推进**了越权动作（verifier 真改了
+   `src/app.ts`）⇒ 根因：`prompts/build.md` 的越权处理**没规定「引导无法执行时怎么办」**。
+   ⇒ **另立 change** 修（补「引导无法执行 ⇒ 停下，不得自行假设推进」+ 层 1 对应判据）。
+   ⚠ 本仓角色越权防护是**软约束**（权限层无按角色硬 deny）⇒ 这条失效路径此前**完全没被测到**。
+   ⑫ **`prompts/build.md` 角色矩阵表的 builder 开场报告形态与实际不符**（2026-11-16 实测）：
+   表写 `【角色: builder | change: <名或无>】`，实测输出是 `【角色: builder | source: state-file】`。
+   ⇒ 可能是「两态并存」（无 change 名时显示 source）也可能是「表写错」⇒ **需在有 change 的工程再验一次**
+   ⇒ 未擅改文档；层 1 的判据只断「形态 + 角色名」，不判第二段字段名 ⇒ 这类漂移抓不到。
    ⑪ **派发方拿不到「实际用的基线 sha」** —— `delegate-base-channel` 把 base 解析成 sha 写进了
    **后端 session 的简报**，但 sha **不在返回契约**（`DELEGATE_RESULT_FIELDS` 无它）⇒ 派发方**结构性不可达**。
    ⇒ 而 design D2 承诺「跨 resume 要同一基线 ⇒ 填当初简报里印出的 sha」——**这个句柄派发方拿不到**。
