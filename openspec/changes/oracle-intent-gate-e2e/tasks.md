@@ -6,25 +6,30 @@
 > ⚠ **实施落在 `rdd-workflow-e2e` 仓**（本仓只留 change 文档）。
 > ⚠ **顺序不可反**：PR-1 → PR-2 → PR-3（D6）—— E-A 最贵且判别力被高估，**不许**卡住 E-B。
 
+> **状态（2026-11-16）**：**PR-1 已落**（e2e 仓 `3e992e0`）—— 骨架 / 门控 / 报告模板 /
+> 两条**零模型**变红演练（AC7-①/①b）全绿。⚠ **AC1 探针未判定**：命中 `provider.rate-limit`（Token Plan
+> 用量上限）⇒ 按「持续态故障不重试」停手；`OIG_CARRIER` 仍 `pending` ⇒ **Task 2（E-B）/ Task 3（E-A）
+> 阻塞于载体判定**（design D2：不许假设 `state.output` 可用）。额度恢复后从 Task 1 Step 3–4 续。
+
 ## 前置确认（动手前）
 
-- [ ] **0.1** 读 e2e 仓 `docs/runtime-assertion-discipline.md` 三条纪律 + `tests/integration/test_subagent_contract_runtime.bats` 的门控写法（`E2E_REAL_RUNTIME` / `sc_preflight` / skip 纪律）
-- [ ] **0.2** 读 `test_independent_build_session.bats` 的 fixture 写法（`role.json` 预置 / 独立 HOME / `IB_ROOT`）
-- [ ] **0.3** **验证 `opencode run --agent oracle` 能否直跑**（配置里 oracle 是 `mode: "subagent"`）—— E-B 的载体依赖它；不可行 ⇒ 退到 `subagent` 最小 wrapper + 注明多一个父侧变量（D5 / proposal 已知边界 #7）
-- [ ] **0.4** 确认 e2e 仓的观察报告落点（`.rddf/reviews/` 是否存在、命名惯例）
-- [ ] **0.5** 确认本仓层 1 静态守卫全绿（`bun test tests/` exit 0）—— 层 2 不得拖累层 1
+- [x] **0.1** 读 e2e 仓 `docs/runtime-assertion-discipline.md` 三条纪律 + `tests/integration/test_subagent_contract_runtime.bats` 的门控写法（`E2E_REAL_RUNTIME` / `sc_preflight` / skip 纪律）
+- [x] **0.2** 读 `test_independent_build_session.bats` 的 fixture 写法（`role.json` 预置 / 独立 HOME / `IB_ROOT`）
+- [x] **0.3** **通道选定：不验证 `--agent oracle` 直跑，改走父会话 wrapper**（`opencode run --agent build` + `subagent` 工具调 `agent=oracle`）—— oracle 是 `mode: "subagent"`，直跑可行性未验证；wrapper 与 E-A 同一条父侧通道 ⇒ 少一个变量。代价：E-B 多带一个「父模型转述」变量（已登记报告已知边界）
+- [x] **0.4** e2e 仓 `.rddf/reviews/` **存在**；但 `.rddf/` 被 **gitignore** ⇒ 报告不进版本库（沿 v2.36 先例：摘要回写本仓 CHANGELOG / change 文档）
+- [x] **0.5** 本仓层 1 静态守卫全绿（`bun test tests/` → 591 pass / 0 fail）
 
 ---
 
 ## Task 1（PR-1）：探针 + 门控骨架 + 报告模板（AC1 / AC6 / AC8）
 
-- [ ] **Step 1:** 建 `tests/integration/test_oracle_intent_gate.bats`：独立 HOME/DB、`setup()`/`teardown()`、**默认 skip**（门控未开 ⇒ `skip` 并给出原因）；`teardown` 调 `sc_kill_sc_processes`（D9）
-- [ ] **Step 2:** 跑一次确认是 **skip**（不是 pass、不是 fail）
-- [ ] **Step 3:** 写 **AC1 探针**：一次最小真跑（`agent=oracle`），打印 `part.state.output` 的**长度 + 首 200 字符**
-- [ ] **Step 4:** 按探针结果**定死主证据载体**（A `state.output` / B `.rddf/reviews/<adr>.md`）并写进报告（D2）；**禁止**不跑探针就假设 A 可用
-- [ ] **Step 5:** 写**门控骨架**：`provider.rate-limit` / `status != completed` / `error` 非空 ⇒ `skip`（D7 三档）
-- [ ] **Step 6:** 写**报告模板**（AC8 固定 9 列：`用例｜模型 id｜日期｜请求指纹｜尝试次数｜全部调用序号｜结论｜证据路径｜SC_SRC 路径 + HEAD`）
-- [ ] **Step 7:** 验证：`bats tests/integration/test_oracle_intent_gate.bats`（默认态全 skip、exit 0）；`E2E_REAL_RUNTIME=1` 下**只跑探针**一次，记录结果
+- [x] **Step 1:** 建 `tests/integration/test_oracle_intent_gate.bats`：独立 HOME/DB、`setup()`/`teardown()`、**默认 skip**（门控未开 ⇒ `skip` 并给出原因）；`teardown` 调 `sc_kill_sc_processes`（D9）
+- [x] **Step 2:** 默认态确认：**零模型 2 pass + 运行时 1 skip**、exit 0（零模型用例**不**进门控，per-case `oig_require_runtime`）
+- [x] **Step 3**（实现）**/ ⚠（实测未判定）**：写 **AC1 探针**：一次最小真跑（`agent=oracle`），打印 `part.state.output` 的**长度 + 首 200 字符**
+- [ ] **Step 4:** **⛔ 阻塞**：按探针结果定死主证据载体（A `state.output` / B `.rddf/reviews/<adr>.md`）并写进报告（D2）；**禁止**不跑探针就假设 A 可用
+- [x] **Step 5:** 写**门控骨架**：`provider.rate-limit` / `status != completed` / `error` 非空 ⇒ `skip`（D7 三档）
+- [x] **Step 6:** 写**报告模板**（AC8 固定 9 列：`用例｜模型 id｜日期｜请求指纹｜尝试次数｜全部调用序号｜结论｜证据路径｜SC_SRC 路径 + HEAD`）
+- [x] **Step 7（部分）:** 默认态验证通过；`E2E_REAL_RUNTIME=1` 跑探针 ⇒ **skip：`provider.rate-limit`（Token Plan 用量上限）** ⇒ 记**未判定**，不重试（e2e 仓 `runtime-assertion-discipline.md` §3）；证据落报告 §1.1
 
 ## Task 2（PR-2）：E-B 两态差分（AC5）—— **判别力最强且最便宜，先做**
 
