@@ -126,7 +126,7 @@
 | # | 缺口 | 取证 | 建议 | 状态 |
 |---|---|---|---|---|
 | 1 | 三处表述**零一致性守卫** | `tests/config-guards.test.ts` 只锚定判定词表单一真源（`:1125-1136`）与 metis 六节契约（`:208-231`），**新语义对守卫不可见** | 加断言：三处均含真源派生的组成词（**从 `oracle.md` 派生、不手抄术语**）；另加 oracle.md 含「意图前提」/ build.md 含检查点小节的存在性断言（防静默 no-op） | ✅ **已闭合（v2.38）** —— 新增顶层 `describe("oracle 意图闸门（v2.37）")`：8 组判据 / 9 个判据类 + 17 类**内存突变** + 「判据类 ↔ 关键词」唯一性用例。审查：oracle `PASS-WITH-NOTES`（0 BLOCKER）→ critic `APPROVE`（0 BLOCKER / 0 SHOULD_FIX / 3 NIT）。记录：`.rddf/reviews/oracle-intent-guard-review.md` |
-| 2 | **行为层零覆盖**：父模型是否真的带意图陈述、oracle 是否真的拒发 | 本仓无 e2e 目录；e2e 在独立仓 `/workspace/main/rdd-workflow-e2e`（bats） | 新增场景（architect 路径）：① 输入缺意图陈述 ⇒ oracle **不给判定行** + `下一步` 列出待裁决点；② 父模型补齐意图重跑 ⇒ 给出判定行。⚠ 依赖真实模型 ⇒ flaky 风险，参照 v2.36 的 `E2E_REAL_RUNTIME` 开关分层（词表守卫进 CI，真实运行时场景默认 skip + 注明） | ⏳ **未做** —— 跨仓 + 真实模型；静态守卫**证不到**行为层（已登记在守卫的「未覆盖清单」第 1 条） |
+| 2 | **行为层零覆盖**：父模型是否真的带意图陈述、oracle 是否真的拒发 | 本仓无 e2e 目录；e2e 在独立仓 `/workspace/main/rdd-workflow-e2e`（bats） | 新增场景（architect 路径）：① 输入缺意图陈述 ⇒ oracle **不给判定行** + `下一步` 列出待裁决点；② 父模型补齐意图重跑 ⇒ 给出判定行。⚠ 依赖真实模型 ⇒ flaky 风险，参照 v2.36 的 `E2E_REAL_RUNTIME` 开关分层（词表守卫进 CI，真实运行时场景默认 skip + 注明） | ⏳ **已立项，待实施（2026-11-16）** —— `openspec/changes/oracle-intent-gate-e2e/`（proposal 含 AC1–AC8）；⚠ **标签已按 metis gap 分析重定义**：E-A = 审查链可达性 smoke（oracle 返回含判定行），入参含组成词降为观察数据（入参是自由文本 ⇒ 直接断言违反 e2e 仓纪律 1）；E-B = **两态差分**（带意图 vs 缺意图是否可分辨）。详见 proposal 的「偏离台账的说明」 |
 
 **项 2 的范围界定（2026-11-16 查过 e2e 仓后确定，避免下一个人重做一遍分析）**：
 
