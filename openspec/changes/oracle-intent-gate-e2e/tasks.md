@@ -12,7 +12,12 @@
 > - **AC5 E-B 实测：两态都有判定行 ⇒ 不可分辨**。⚠ 结论**已降级**：态② 的产物本身含「背景与问题」+
 >   范围声明 ⇒ 意图可从产物推断 ⇒ 「意图未给」前提未真正成立；要真正区分需**不含意图线索**的审查对象
 >   （follow-up）。附带观察：**判定行的位置契约**同样只有软约束（态① 落在正文第 2 行）。
-> - **下一步 = PR-3（E-A）**：需 architect 角色 fixture + 明确审查请求（AC2/AC3/AC4）+ AC7-② 演练。
+> - **PR-3（E-A）已落**（e2e 仓 `e93738c`）：父模型**带了**意图陈述（入参含全部组成词）、`metis` 未插入，
+>   但 oracle 返回的是 **`治理面判定: BLOCK`** 而不是契约词表 `判定: …` ⇒ **AC2 门禁红**。
+>   已核实根因：父模型入参**无**「治理面」字样 ⇒ 是 **oracle 自己**把项目 `docs/adr/**` 判成治理面
+>   （按 `prompts/build.md` 治理面作用域表，项目 ADR **不属**治理面）⇒ **真缺陷**：模式段的
+>   「判定对象属治理面」**没有可操作判据**。⇒ **AC2 当前不满足**，需用户裁决：① 另立 change 修规则
+>   （推荐）② 把 AC2 降级为观察项（与 E-B 同待遇）。AC7-② 因需 hermetic HOME 未做（留 follow-up）。
 
 ## 前置确认（动手前）
 
@@ -44,13 +49,13 @@
 
 ## Task 3（PR-3）：E-A smoke + 变红演练（AC2 / AC3 / AC4 / AC7）
 
-- [ ] **Step 1:** 建 fixture（D5 全表）：`docs/adr/` + 预置 1 份既有 ADR、`role.json`（`role-v2` 全集 / `current_role: architect`）、请求指向 `docs/adr/draft-*.md`、**意图以叙述嵌入且无歧义**
-- [ ] **Step 2:** 跑一次真会话（`--standalone --agent build --session <id> --format json`）⇒ 落 NDJSON
-- [ ] **Step 3:** **AC3 前提**：解析 NDJSON 确认 ≥1 次 `agent=oracle` 的 `tool_use`；**未发生 ⇒ skip 并标注「父模型未调 oracle，未判定」**；另登记 `agent=metis` 是否出现（D5）
-- [ ] **Step 4:** **AC2 门禁**：取**最后一次** `agent=oracle` 调用 ⇒ 按 Step 3 探针定下的载体断言 `^判定: (APPROVE|REJECT)`；**不接受** `治理面判定:`（D4）；`status != completed` / `error` 非空 ⇒ skip（D7）
-- [ ] **Step 5:** **AC4 观察**：把 `input.prompt` **原文**逐字落报告 + 标注「含 / 不含真源派生的组成词」（**不判红**）
+- [x] **Step 1:** 建 fixture（D5 全表；另加被审对象 `docs/adr/draft-002.md`）：`docs/adr/` + 预置 1 份既有 ADR、`role.json`（`role-v2` 全集 / `current_role: architect`）、请求指向 `docs/adr/draft-*.md`、**意图以叙述嵌入且无歧义**
+- [x] **Step 2:** 跑一次真会话（`--standalone --agent build --session <id> --format json`）⇒ 落 NDJSON
+- [x] **Step 3:** **AC3 前提**：解析 NDJSON 确认 ≥1 次 `agent=oracle` 的 `tool_use`；**未发生 ⇒ skip 并标注「父模型未调 oracle，未判定」**；另登记 `agent=metis` 是否出现（D5）
+- [x] **Step 4（实现 + 实测红）:** **AC2 门禁**：取**最后一次** `agent=oracle` 调用 ⇒ 按 Step 3 探针定下的载体断言 `^判定: (APPROVE|REJECT)`；**不接受** `治理面判定:`（D4）；`status != completed` / `error` 非空 ⇒ skip（D7）
+- [x] **Step 5:** **AC4 观察**（入参**含全部组成词** ⇒ 父侧带了意图）：把 `input.prompt` **原文**逐字落报告 + 标注「含 / 不含真源派生的组成词」（**不判红**）
 - [ ] **Step 6:** **AC7 变红演练 ①**：`SC_SRC` 指向删掉**判定行词表**的副本 ⇒ **AC2 必须红**；恢复后复绿（**零模型**）
-- [ ] **Step 7:** **AC7 变红演练 ②**：`SC_SRC` 指向删掉**意图前提段**的副本 ⇒ 期望 **AC5 两态不可分辨**（**不是** AC2 红）；两次演练的实际结果都落报告（D8）
+- [ ] **Step 7（未做）:** **AC7 变红演练 ②**：`SC_SRC` 指向删掉**意图前提段**的副本 ⇒ 期望 **AC5 两态不可分辨**（**不是** AC2 红）；两次演练的实际结果都落报告（D8）
 
 ## Task 4：收口（AC8 定稿 + 台账回写）
 
