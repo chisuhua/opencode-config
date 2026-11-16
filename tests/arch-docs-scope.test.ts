@@ -28,5 +28,9 @@ describe("arch 文档范围守卫（shell 版，经 bun test 纳入规范命令�
     const m = /FAIL=(\d+)/.exec(out)
     expect(m, "脚本输出里找不到 FAIL=N 计数（格式变了 ⇒ 更新本判据）").toBeTruthy()
     expect(Number(m![1]), `verify_arch_docs_scope.sh 有断言失败：\n${out}`).toBe(0)
-  })
+  },
+  // ⚠ **必须显式放宽超时**：bun test 的默认超时是 **5s**，而这个脚本要跑 ~5.3s
+  //   ⇒ 不放宽就会**超时红**（2026-11-16 实测踩到：它此前从不被执行，所以没暴露）。
+  //   ⇒ 凡是「跑外部脚本 / 跑 git」的用例都要给足超时。
+  60_000)
 })

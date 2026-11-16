@@ -267,6 +267,285 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
    * ⇒ 命令必须改成**两点**（基线 ↔ 工作树）+ 未跟踪文件走**并列的另一路** +
    *   **明写两侧不对称**（否则后人会按「对称」直觉把 `git show` 改成工作树版本 ⇒ 分类能力失效）。
    */
+  /**
+   * **独立会话的 build 机制**（开场报告 / 角色切换 / 授权窗口 / 越权处理）。
+   *
+   * ⚠ **为什么这一族存在**（2026-11-16 核查）：`build.md` 的一半篇幅讲「**被派发后端**」
+   *   （有守卫：HANDOFF 契约、5 项模板…），另一半讲「**独立会话的主对话 agent**」——
+   *   而后者在本仓的守卫里 **grep 计数为 0**（开场报告 / 角色切换 / 授权窗口 / 越权处理全无判据），
+   *   e2e 仓的 5 处 `--agent build` 也全是**载体用途**（占槽 / 当 subagent 契约的父模型）。
+   *   ⇒ **用户每天直接对话的那个 agent 的核心机制，此前既无静态判据、也无端到端保证。**
+   *
+   * ⚠ **判据形态：纯函数 + 内存突变** ——
+   *   ① 判据本体是**纯函数** `independentSessionViolations(text) => string[]`（文本 ⇒ 违规列表）
+   *      ⇒ ② 「当场即绿」的判据的**判别力**用**内存突变**证明（见下方「突变测试」）：
+   *      不真改 `build.md`、不污染工作树（oracle 明确推荐的做法）。
+   *   ③ 角色名集合 ← **角色矩阵表的第一列**；开场报告模板 ← **同表的最后一列**；
+   *      `source` 取值 ← 「开场报告的 source 取值」那句；授权窗口字段 ← **`role.json` 的 JSON 示例**。
+   *   ⇒ 除 source 三值与窗口字段集外，**均从真源派生、不手抄**。
+   */
+  describe("独立会话机制（build 作为主对话 agent 的核心机制）", () => {
+    /**
+     * 独立会话机制的判据 —— **纯函数**（文本 ⇒ 违规列表）。
+     *
+     * 抽成纯函数有两个原因：
+     * ① 判据本体可被**内存突变**直接检验（不需要落盘、不污染工作树）；
+     * ② 「当场即绿」的判据必须有**可重复的判别力证据**，否则它只是一句「文档现在是对的」。
+     */
+    function independentSessionViolations(B: string): string[] {
+      const v: string[] = []
+      const L = B.split("\n")
+
+      // ── ① 角色矩阵表（真源）──
+      const headIdx = L.findIndex((l) => l.startsWith("| 角色 |") && l.includes("开场报告格式"))
+      if (headIdx < 0) {
+        v.push("缺「角色 | 允许 | 禁止 | 开场报告格式」表头")
+        return v
+      }
+      const specs: Array<{ role: string; format: string }> = []
+      for (let i = headIdx + 2; i < L.length; i++) {
+        const l = L[i]!
+        if (!l.startsWith("|")) break
+        // ⚠ 按**未转义**的 `|` 切（单元格里的 `|` 写成 `\|`）
+        const cells = l.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"))
+        const role = (cells[1] ?? "").replace(/`/g, "").trim()
+        const format = (cells.filter((c) => c.length > 0).pop() ?? "").trim()
+        if (role) specs.push({ role, format })
+      }
+      if (specs.length < 6) v.push(`角色矩阵表只解析出 ${specs.length} 行（应 ≥6）`)
+      const known = new Set(specs.map((x) => x.role))
+
+      // ── ② 开场报告格式 ──
+      for (const x of specs) {
+        const m = /【角色: ([^】|]+)/.exec(x.format)
+        if (!m) {
+          v.push(`${x.role} 的开场报告格式不是 ` + "`【角色: X …】`" + ` 形态：${x.format}`)
+          continue
+        }
+        const named = (m[1] as string).trim()
+        // 角色名必须是**本行自己的**角色（防「复制粘贴后写成别的合法角色」）
+        const isNoRole = x.role === "no-role"
+        if (!isNoRole && named !== x.role) {
+          v.push(`${x.role} 的开场报告格式里写的角色名是「${named}」≠ 本行角色「${x.role}」`)
+        }
+        if (!known.has(named) && !(isNoRole && named === "未设定")) {
+          v.push(`${x.role} 的开场报告格式里的角色名「${named}」不在角色集合内`)
+        }
+        // 非 no-role 行必须带**第二段**（`source:` 或 builder 的 `change:`）⇒ 防「整段删除」
+        if (!isNoRole && !/【角色: [^】]+\|/.test(x.format)) {
+          v.push(`${x.role} 的开场报告格式缺少第二段（source / change）—— 可能被整段删除`)
+        }
+      }
+
+      // ── ③ `source` 取值（三值；判据 = 冻结快照，同步篡改归治理面审查）──
+      const srcLine = L.find((l) => l.includes("开场报告的 `source` 取值"))
+      if (!srcLine) {
+        v.push("缺「开场报告的 source 取值」说明")
+      } else {
+        const sets = [...srcLine.matchAll(/<([a-z|-]+)>/g)].map((m) => m[1]!.split("|")).filter((x) => x.length === 3)
+        if (sets.length !== 1) v.push(`source 取值那句里找不到唯一的三值集合（找到 ${sets.length} 个）`)
+        else if (sets[0]!.join("|") !== "state-file|user|auto") v.push(`source 取值集合变了：${sets[0]!.join("|")}`)
+      }
+
+      // ── ④ 角色切换：合法值集合 == 角色矩阵表集合（双向闭合）──
+      const legalLine = L.find((l) => l.includes("**合法值**"))
+      if (!legalLine) {
+        v.push("缺「合法值」那句")
+      } else {
+        const legal = new Set([...legalLine.matchAll(/`([\w-]+)`/g)].map((m) => m[1]!))
+        const a = [...legal].sort().join(",")
+        const b = [...known].sort().join(",")
+        if (a !== b) v.push(`「合法值」集合（${a}）与角色矩阵表（${b}）不一致`)
+      }
+
+      // ── ⑤ 角色切换三步顺序（**段作用域** + 每步全文唯一）──
+      const swStart = B.indexOf("### 角色切换")
+      if (swStart < 0) {
+        v.push("缺「### 角色切换」段")
+      } else {
+        const seg = B.slice(swStart, swStart + 2500)
+        const steps = ["校验目标角色合法", "更新项目级 `role.json`", "输出新角色的开场报告"]
+        let cursor = -1
+        for (const st of steps) {
+          const all = [...B.matchAll(new RegExp(st.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))].length
+          if (all !== 1) v.push(`角色切换的步骤「${st}」全文出现 ${all} 次（应恰好 1 次 ⇒ 顺序判定的锚必须唯一）`)
+          const at = seg.indexOf(st)
+          if (at < 0) {
+            v.push(`「### 角色切换」段里缺步骤「${st}」`)
+            continue
+          }
+          if (at <= cursor) v.push(`角色切换的步骤顺序不对：「${st}」出现在前一步之前`)
+          cursor = at
+        }
+      }
+
+      // ── ⑥ 授权窗口：JSON 示例的字段集（**锚在「#### 授权窗口」段内** + 全文块数唯一）──
+      const winStart = B.indexOf("#### 授权窗口")
+      if (winStart < 0) {
+        v.push("缺「#### 授权窗口」段")
+      } else {
+        const winSeg = B.slice(winStart, winStart + 2500)
+        const jm = /```json\n([\s\S]*?)\n```/.exec(winSeg)
+        if (!jm) v.push("「#### 授权窗口」段里找不到 JSON 示例块")
+        else {
+          const keys = [...(jm[1] as string).matchAll(/"(\w+)":/g)].map((m) => m[1]!).sort()
+          const want = ["granted_at", "granted_by", "max_rounds", "roles", "used"]
+          if (keys.join(",") !== want.join(",")) v.push(`auto_switch_window 字段集变了：${keys.join(",")}`)
+        }
+        const totalJson = [...B.matchAll(/```json/g)].length
+        // ⚠ 不用模板字符串：正文里的 ``` 会**提前结束**模板（TS 语法错）
+        if (totalJson !== 1) v.push("全文有 " + totalJson + " 个 json 块（应恰好 1 个 ⇒ 锚点必须唯一）")
+        if (!/used\s*>=\s*max_rounds/.test(B)) v.push("缺「窗口耗尽」判据（used >= max_rounds）")
+      }
+
+      // ── ⑦ 越权处理：三步 + 顺序 + 引用矩阵 + **禁止静默** ──
+      const ovStart = B.indexOf("### 越权处理")
+      if (ovStart < 0) {
+        v.push("缺「### 越权处理」段")
+      } else {
+        const seg = B.slice(ovStart, ovStart + 600)
+        for (const st of ["**先拒绝**", "**再解释**", "**后引导**"]) {
+          if (!seg.includes(st)) v.push(`越权处理段缺步骤「${st}」`)
+        }
+        if (seg.indexOf("**先拒绝**") > seg.indexOf("**再解释**")) v.push("越权处理的「先拒绝 / 再解释」顺序不对")
+        if (seg.indexOf("**再解释**") > seg.indexOf("**后引导**")) v.push("越权处理的「再解释 / 后引导」顺序不对")
+        if (!/上表|角色矩阵/.test(seg)) v.push("越权处理的「再解释」必须引用角色矩阵")
+        if (!/静默/.test(seg)) v.push("越权处理缺「禁止静默执行」—— 那是本机制的最后一道闸门")
+      }
+
+      // ── ⑧ HANDOFF 属**被派发后端**（独立会话不适用）──
+      // ⚠ **必须段作用域**：全文正则会命中「逐类后果（被派发后端）：… `HANDOFF: blocked`」这类
+      //   **别的**行 ⇒ 删掉真正的归属声明也不红（oracle 实测的假绿）⇒ 锚到 HANDOFF 契约段内。
+      // ⚠ **锚点**：「HANDOFF 只对被派发后端成立」这句在**「### 开场报告触发时机」段**的例外句里
+      //   （HANDOFF 契约段本身说的是「交回主会话」，不含「被派发后端」四字）。
+      const hStart = B.indexOf("### 开场报告触发时机")
+      if (hStart < 0) {
+        v.push("缺「### 开场报告触发时机」段")
+      } else {
+        const hRest = B.slice(hStart)
+        const hNext = hRest.indexOf("\n### ")
+        const hSeg = hNext > 0 ? hRest.slice(0, hNext) : hRest.slice(0, 4000)
+        // 该段必须同时有：HANDOFF 的首行规则 + 「被派发后端」的归属限定
+        if (!/HANDOFF/.test(hSeg)) v.push("开场报告触发时机段里没有 HANDOFF 的首行规则")
+        if (!/被派发后端/.test(hSeg)) {
+          v.push("开场报告触发时机段未限定 HANDOFF 只适用于**被派发后端**（独立会话可能误产 HANDOFF 首行）")
+        }
+      }
+
+      return v
+    }
+
+    const BUILD_TEXT = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+
+    test("独立会话机制：全部判据通过（开场报告 / source / 角色切换 / 授权窗口 / 越权 / HANDOFF 归属）", () => {
+      expect(independentSessionViolations(BUILD_TEXT), independentSessionViolations(BUILD_TEXT).join("\n")).toEqual([])
+    })
+
+    /**
+     * **突变测试**：对 `build.md` 的**内存副本**施加高价值破坏 ⇒ 判据**必须**报错。
+     *
+     * ⚠ **为什么需要它**：本族判据**当场即绿**（`build.md` 里这些机制本来就写好了）⇒
+     *   「绿」本身不说明它有判别力。⇒ 用**内存突变**（**不落盘、不污染工作树**）证明：
+     *   每一类破坏都会被抓到。
+     *   （oracle 明确推荐此法，否决「真改 build.md 再还原」——污染工作树 + 还原失败会留真漂移。）
+     */
+    test("突变测试：每一类破坏都必须被独立会话判据抓到（判别力证据）", () => {
+      // ⚠ `expect` = 预期**哪条判据**抓到的关键词 ⇒
+      //   ① 防止「锚点静默 no-op」（第一次 replace 成功、第二次落空 ⇒ 守卫照样过）；
+      //   ② 错误信息能定位到具体判据（不只报突变名）。
+      const MUTATIONS: Array<{ name: string; apply: (b: string) => string; expect?: string }> = [
+        {
+          name: "开场报告：第二段（source / change）被整段删除",
+          apply: (b) => b.replace("【角色: builder \\| change: <名或无>】", "【角色: builder】"),
+        expect: "第二段",
+        },
+        {
+          name: "开场报告：角色名错成别的**合法**角色",
+          apply: (b) => b.replace("【角色: architect \\| source: <state-file\\|user>】", "【角色: planner \\| source: <state-file\\|user>】"),
+        expect: "≠ 本行角色",
+        },
+        {
+          name: "source 取值：改成两值",
+          apply: (b) => b.replace("`<state-file|user|auto>`", "`<state-file|user>`"),
+        expect: "source 取值",
+        },
+        {
+          name: "角色切换：合法值集合少一个角色",
+          apply: (b) => b.replace("`architect` / `planner` / `builder` / `verifier` / `no-role` / `general`", "`architect` / `planner` / `builder` / `verifier` / `no-role`"),
+        expect: "合法值",
+        },
+        {
+          // ⚠ 必须做**真对调**（两串都在、位置互换）⇒ 才由「顺序不对」抓红。
+          //   原文是「③ **先输出新角色的开场报告**」（带 `**` 且多一个「先」字）⇒ 锚点要逐字对齐。
+          name: "角色切换：三步顺序对调（②③ 互换）",
+          apply: (b) =>
+            b
+              .replace("② 更新项目级 `role.json`", "② __TMP_A__")
+              .replace("③ **先输出新角色的开场报告**", "② 更新项目级 `role.json`")
+              .replace("③ **先输出新角色的开场报告**", "③ __TMP_B__")
+              .replace("② __TMP_A__", "③ __TMP_B__")
+              .replace("③ __TMP_B__", "③ **先输出新角色的开场报告**"),
+          expect: "顺序不对",
+        },
+        {
+          name: "授权窗口：JSON 示例删掉 granted_at",
+          apply: (b) => b.replace('  "granted_at": "<ISO 8601 UTC>"\n', ""),
+        expect: "字段集变了",
+        },
+        {
+          name: "越权处理：删掉「先拒绝」步骤",
+          apply: (b) => b.replace("1. **先拒绝**", "1. （略）"),
+        expect: "先拒绝",
+        },
+        {
+          name: "越权处理：删掉「禁止静默执行」",
+          apply: (b) => b.replace("**禁止**：静默执行，或假装没注意到冲突", "**禁止**：假装没注意到冲突"),
+        expect: "静默",
+        },
+        {
+          name: "授权窗口：删掉「窗口耗尽」判据（used >= max_rounds）",
+          apply: (b) => b.replace("`used >= max_rounds`", "`used`（被删）"),
+          expect: "窗口耗尽",
+        },
+        {
+          name: "HANDOFF：删掉「被派发后端」的归属声明",
+          // 实际文本是「**例外**：被派发后端的 **HANDOFF 回合省略开场报告**」（带 `**` 标记）
+          apply: (b) => b.replace("**例外**：被派发后端的 ", "**例外**："),
+        expect: "被派发后端",
+        },
+      ]
+      for (const m of MUTATIONS) {
+        const mutated = m.apply(BUILD_TEXT)
+        expect(mutated, `突变「${m.name}」没生效（锚点已变 ⇒ 突变测试本身失效）`).not.toBe(BUILD_TEXT)
+        const violations = independentSessionViolations(mutated)
+        expect(violations.length, `突变「${m.name}」**未被抓到** ⇒ 该判据无判别力`).toBeGreaterThan(0)
+        if (m.expect) {
+          expect(
+            violations.join("\n"),
+            `突变「${m.name}」被抓到了，但不是预期的判据（期望含「${m.expect}」）`,
+          ).toContain(m.expect)
+        }
+      }
+    })
+
+    /**
+     * ⚠ **未覆盖清单（照本仓惯例如实登记 —— 免得「独立会话机制」这个宣称高于实际）**：
+     * - **角色矩阵的「允许 / 禁止」列本身零判据**（本族只用该表的第一列与最后一列）——
+     *   这是最大的缺口；补它要先解决「允许列是**开集散文**」的判据形态问题（不宜硬上弱断言）。
+     * - 授权窗口的**切换条件**（4 条）、`used += 1`、`updated_by: "auto"`、`history`、「关闭窗口」未钉。
+     * - 切换口令列表 / 「默认不自动切换」/「退出清空窗口」未钉。
+     * - `no-role` 的「询问用户角色」语义未钉（只钉了「未设定」占位名）。
+     * - `role.json` 的**读取时机**与「cwd 变更须重解析」未钉；
+     *   **写侧 schema**（`current_role` / `updated_at` / `updated_by` / `session_id` / `history`
+     *   + 「只保留最近 20 条」）也未钉（本族只钉了 `auto_switch_window` 的字段集）。
+     * - 角色切换的**异常路径**（「其它值拒绝并列出合法值」）未钉。
+     * - `source: auto` 回合的**开场报告形态**（`【角色: X | source: auto | window: <used>/<max_rounds>】`）未钉。
+     * - **开场报告的触发时机**：静态层只能钉「文档声称」；行为面（层 2 的 E-1）也只测首个回合的首行
+     *   ⇒ 这条**两头都证不到**（已在测试注释标注）。
+     * - **HANDOFF 首行**：纯文档宣称守卫（层 2 未测独立会话的 HANDOFF 面）。
+     */
+  })
+
   test("build.md 的基线取法：两点 diff + 未跟踪文件另一路 + 两侧不对称 + merge-base 的新用途", () => {
     const BUILD = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
     const lines = BUILD.split("\n")
