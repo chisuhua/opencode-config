@@ -10,6 +10,27 @@
 
 ---
 
+> **v2.37 变更摘要（2026-11-16，oracle 调用前的意图检查点：给 architect 审查链补上「问题陈述对不对」这一层）**：
+> ① **缺口**：plan 路径早有 metis 硬性前置（`prompts/plan.md:38`），但 architect 的审查链（oracle → critic）**没有任何环节
+>   质疑意图本身** —— oracle 判「这个决策在**给定意图**下会怎么坏」、critic 判「与既有 ADR 是否冲突」，两者都以意图已定为
+>   隐含前提 ⇒ 意图偏了**一致地错**，且错到 ADR 签批后才暴露（`design_drift` 返工）。
+> ② **落两条规则**：**执行体侧** `prompts/oracle.md`「模式」段新增**意图前提**表（意图已定 / ≥2 种合理解读 / 意图未给）——
+>   意图未定 ⇒ **不给判定行**（按咨询口径输出 + `下一步` 列出需用户裁决的分歧点；判据不成立时给判定行 = 伪造结论）；
+>   **调用方侧** `prompts/build.md` §审查配对 新增「oracle 调用前的意图检查点」4 行分流表 + 8 条 bullet（不让 metis 猜意图 /
+>   被派发后端无 `question` 通道 / 落盘载体 / 预算 / metis 输出是材料 / AC 落点纪律 / 与 plan 路径的关系 / 拒发判定时）。
+>   **不照搬 plan 的无条件硬前置**：意图只有用户有权威 ⇒ 问用户优先，metis 只负责可枚举的歧义 / slop / 边界情况（条件式，非每轮）。
+> ③ **收口侧镜像**：verdict 段新增「**已调用但拒发判定行** ⇒ 审查不成立 ⇒ 不得收口」（并排除「oracle 不可用」→ 走「审查者
+>   不可用时」降级）—— 只写在检查点 bullet 里会被「按 verdict 段字面执行」穿过（咨询口径输出无 finding ⇒ 「存在未应答
+>   finding」不触发）。旁路同步：入口行 + architect 行预算格 + oracle `description` + MD §2.7/§3.2.0 + ORCHESTRATION §3。
+> ④ **审查**：oracle `PASS-WITH-NOTES`（0 BLOCKER / 2 高 / 2 中 / 1 可选）→ critic `APPROVE_WITH_CONDITIONS`（**0 BLOCKER** /
+>   1 SHOULD_FIX / 2 NITS，`mergeable: yes`）→ 全部处置（SHOULD_FIX 为零风险一行收窄，不消耗复审轮次）。**部分自指**（改
+>   `prompts/oracle.md` 自身 ⇒ oracle 实例跑旧契约）⇒ 该轮结论不构成独立证据。审稿记录
+>   `.rddf/reviews/oracle-intent-precondition-review.md`；守卫 `103 pass / 0 fail`（本轮未改断言）。
+> ⑤ **backlog**：守卫对新语义不可见（补 `toContain` 断言属治理面 ⇒ 需另起一轮 oracle → critic）；oracle `description` 的
+>   完全指针化待定（会牺牲父模型直接可读性）。
+
+---
+
 > **v2.36 变更摘要（2026-11-16，层 2 实施：独立会话的 build 机制有了行为层保证，并暴露一条真实缺陷）**：
 > ① **实施**：`rdd-workflow-e2e` 仓新增 `test_independent_build_session.bats`（E-1/E-2/E-3，默认 skip，
 >   `E2E_REAL_RUNTIME=1` 开启）+ `test_independent_build_session_vocab.bats`（**词表守卫，不需真实模型 ⇒ 进 CI**）

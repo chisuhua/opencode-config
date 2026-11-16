@@ -114,6 +114,24 @@
 ——本轮就漏了 `docs/MULTI-AGENT-DESIGN.md:974-975`（"63 项"/"96 pass"）与
 `docs/dual-session-delegation.md`（同样的数字）。
 
+### P2-4 oracle 意图闸门的语义一致性守卫 + 行为层覆盖（2026-11-16 新增）
+
+**背景**：v2.37 给 architect 审查链补了「oracle 调用前的意图检查点」（`prompts/build.md` §审查配对），
+并把「**可判定的意图陈述**」这个定义写在**三处**：`prompts/oracle.md`「模式」段的**意图前提**表、
+`prompts/build.md` 的**检查点小节**、`opencode.jsonc` 的 oracle `description`。critic 当时**逐字核对**过
+三处一致，但**没有任何守卫钉住它** ⇒ 任一处被改写不会有任何红灯。
+
+**残留缺口（两项）**：
+
+| # | 缺口 | 取证 | 建议 |
+|---|---|---|---|
+| 1 | 三处表述**零一致性守卫** | `tests/config-guards.test.ts` 只锚定判定词表单一真源（`:1125-1136`）与 metis 六节契约（`:208-231`），**新语义对守卫不可见** | 加断言：三处均含「要解决的问题 + 范围边界」且措辞同源（同一关键词集）；另加 oracle.md 含「意图前提」/ build.md 含「oracle 调用前的意图检查点」的存在性断言（防静默 no-op） |
+| 2 | **行为层零覆盖**：父模型是否真的带意图陈述、oracle 是否真的拒发 | 本仓无 e2e 目录；e2e 在独立仓 `/workspace/main/rdd-workflow-e2e`（bats） | 新增场景（architect 路径）：① 输入缺意图陈述 ⇒ oracle **不给判定行** + `下一步` 列出待裁决点；② 父模型补齐意图重跑 ⇒ 给出判定行。⚠ 依赖真实模型 ⇒ flaky 风险，参照 v2.36 的 `E2E_REAL_RUNTIME` 开关分层（词表守卫进 CI，真实运行时场景默认 skip + 注明） |
+
+**为什么 v2.37 那批没做**：① 改 `tests/config-guards.test.ts` 的断言属**治理面**
+（`prompts/build.md` 治理面作用域表）⇒ 须另起一轮 oracle → critic；② v2.37 的「一次改动」预算
+（oracle 1 + critic 1）**已用完**，不能顺带塞进同一批。
+
 ## 3. 不建议自动化的部分
 
 - 架构取舍是否成立（例如「收敛到单一权威头」vs「保留双副本」）。

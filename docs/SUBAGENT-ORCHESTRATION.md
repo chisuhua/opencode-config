@@ -60,7 +60,10 @@
 | `builder` | **verifier**（角色内建）+ critic | AC 逐条有工具证据 / 边界与错误路径 / 资源释放 / 遗留清扫 | verifier 3 + critic 2 |
 
 **档位（`review_profile`）是 critic 的判据轴**，四档：`arch`（ADR / 架构文档 / roadmap 决策）、`plan`（proposal / design / tasks / spec delta）、`build`（源码 / 测试 / 脚本）、`archive`（归档前增量）。
+
 **权威映射在 `prompts/build.md` §档位选择**；`prompts/critic.md` 的路径推断只是 build 未给档位时的兜底（判据不一致时以 build 侧为准）。
+
+**architect 路径在 oracle 前有一道意图闸门**：输入须含**可判定的意图陈述**（要解决的问题 + 范围边界）—— oracle 判「给定意图下会怎么坏」、critic 判「与既有 ADR 是否冲突」，两者都以意图已定为前提。意图只有用户知道 ⇒ 先 `question` 问用户；歧义 / slop / 边界情况未枚举 ⇒ 先**单独**调 metis（输出作**材料**、非判据）。分流表见 `prompts/build.md` §审查配对；执行体侧见 `prompts/oracle.md` 的「模式」段。
 
 **继承式档位**（`build.md` 复审协议）：复审轮必须带 `## review_profile`（写 `继承第 N 轮：<profile>`）—— 内容可豁免，**档位不可豁免**（它是判据前提；丢了会让同一 change 两轮用不同判据集）。critic 侧缺档位时按继承声明取值，否则 `mixed` 并声明。
 

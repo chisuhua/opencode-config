@@ -322,11 +322,13 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 
 | 产出角色 | 审查者 | 审什么 | 触发条件 | 预算 |
 |---|---|---|---|---|
-| `architect` | **oracle** → **critic** | oracle：目标场景**会怎么坏**（失败模式 / 边界 / 被否掉的替代方案是否真的更差）；critic：**与既有 ADR / 契约是否冲突**（`arch` 档） | 新建 ADR 或反转既有决策 → 双审（oracle 先行）；只同步主题文档 → 只 oracle；**ADR** 纯错字 → 不审（`prompts/**` 的错字走治理面行，那行不豁免） | 每 ADR：oracle 1 + critic 1 |
+| `architect` | **oracle** → **critic** | oracle：目标场景**会怎么坏**（失败模式 / 边界 / 被否掉的替代方案是否真的更差）；critic：**与既有 ADR / 契约是否冲突**（`arch` 档） | 新建 ADR 或反转既有决策 → 双审（oracle 先行；**oracle 前先过意图检查点**，见下）；只同步主题文档 → 只 oracle；**ADR** 纯错字 → 不审（`prompts/**` 的错字走治理面行，那行不豁免） | 每 ADR：oracle 1 + critic 1 |
 | `planner` | **metis** | 隐藏意图 / 需求歧义 / AI slop 风险 / 缺失的验收标准 / 边界情况 | 新建或**重写 ≥ 1/3** 的 improvement / proposal；纯状态推进 → 不审 | 该 improvement **总计** 1 轮（设计前 gap 分析不另计） |
 | `builder` | **verifier**（角色内建，非 subagent） | AC 逐条满足（要工具证据）/ 边界与错误路径 / 资源释放 / **遗留清扫** | **每个 change 完成时必审**，不可跳过；`rdd-quick` 不产生 openspec change（无空集豁免）→ 每个 quick 任务完成时审 | 3 轮（对齐 `RDDF_VERIFIER_MAX_LOOPS`），超限 → halted |
 | `builder`（架构面） | **critic** | 见 §2.4 的 5 个触发条件 | 公开 API / 跨模块契约 / ADR 冲突 / 用户要求 / 合并前 | 每 change 2 轮 |
 | `architect`（**治理面**） | **oracle** → **critic**（何时必审见下） | oracle：这条规则在哪些场景会让 agent 产生**错误行为**；critic：与既有不变式 / 角色权限 / 既有规则是否**自相矛盾** | 作用域见下；critic 必审判据 = 本 patch 是否**增删/修改了表格行、不变式条目、自查清单项、触发条件** | 一次改动（一个 patch series 内触及治理面文件的**集合**）：oracle 1 + critic 1；高影响 finding = BLOCKER → 允许 1 次复审 | 规则正文 + 降级自检清单 + 响应正文逐条处置 |
+
+**oracle 调用前的意图检查点（architect 路径）**：oracle 判「这个决策在**给定意图**下会怎么坏」、critic 判「与既有 ADR / 契约是否冲突」—— 两者都以**意图已定**为前提 ⇒ 意图偏了会「一致地错」。调 oracle 审查前，输入须含**可判定的意图陈述**（要解决的问题 + 范围边界）：意图只有用户知道 ⇒ 先用 `question` 问用户（**主会话**；被派发后端无 `question` 通道 ⇒ 由派发方在 brief 给齐，缺失则 `HANDOFF: blocked`）；歧义 / slop / 边界情况未枚举 ⇒ 先**单独**调 metis（输出作**材料**、非判据）。完整分流表见 `prompts/build.md` §审查配对的「oracle 调用前的意图检查点」；执行体侧见 `prompts/oracle.md` 的「模式」段（「意图前提」）。
 
 **治理面作用域**（按字面执行，必须带前缀 —— 裸 `docs/MULTI-AGENT-DESIGN.md` 在项目 cwd 里解析不到 → 永不触发）：
 
@@ -629,7 +631,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 | 产出角色 | 必须过 | 何时触发 | 预算 |
 |---|---|---|---|
-| `architect`（新 ADR / 反转决策）| `oracle` → `critic` | 每次新建 ADR 或反转既有决策 | 各 1 轮 |
+| `architect`（新 ADR / 反转决策）| `oracle` → `critic` | 每次新建 ADR 或反转既有决策（**oracle 前过意图检查点**，§2.7）| 各 1 轮 |
 | `architect`（只同步主题文档）| `oracle` | 每次 | 1 轮 |
 | `planner`（新建 / 重写 ≥1/3）| `metis` | 每次 | 1 轮 |
 | `builder`（每个 change 完成）| `verifier`（角色内建）| **必审，不可跳过** | 3 轮 |
