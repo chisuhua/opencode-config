@@ -6,10 +6,13 @@
 > ⚠ **实施落在 `rdd-workflow-e2e` 仓**（本仓只留 change 文档）。
 > ⚠ **顺序不可反**：PR-1 → PR-2 → PR-3（D6）—— E-A 最贵且判别力被高估，**不许**卡住 E-B。
 
-> **状态（2026-11-16）**：**PR-1 已落**（e2e 仓 `3e992e0`）—— 骨架 / 门控 / 报告模板 /
-> 两条**零模型**变红演练（AC7-①/①b）全绿。⚠ **AC1 探针未判定**：命中 `provider.rate-limit`（Token Plan
-> 用量上限）⇒ 按「持续态故障不重试」停手；`OIG_CARRIER` 仍 `pending` ⇒ **Task 2（E-B）/ Task 3（E-A）
-> 阻塞于载体判定**（design D2：不许假设 `state.output` 可用）。额度恢复后从 Task 1 Step 3–4 续。
+> **状态（2026-11-16）**：**PR-1 + PR-2 已落**（e2e 仓 `3e992e0` → `3e1cd23`）。
+> - **AC1 探针跑通**（换 provider 绕过 Token Plan 上限）⇒ **载体 = A**；output 包在 `<subagent …>` 里
+>   ⇒ 必须 unwrap + **多行匹配**。
+> - **AC5 E-B 实测：两态都有判定行 ⇒ 不可分辨**。⚠ 结论**已降级**：态② 的产物本身含「背景与问题」+
+>   范围声明 ⇒ 意图可从产物推断 ⇒ 「意图未给」前提未真正成立；要真正区分需**不含意图线索**的审查对象
+>   （follow-up）。附带观察：**判定行的位置契约**同样只有软约束（态① 落在正文第 2 行）。
+> - **下一步 = PR-3（E-A）**：需 architect 角色 fixture + 明确审查请求（AC2/AC3/AC4）+ AC7-② 演练。
 
 ## 前置确认（动手前）
 
@@ -25,19 +28,19 @@
 
 - [x] **Step 1:** 建 `tests/integration/test_oracle_intent_gate.bats`：独立 HOME/DB、`setup()`/`teardown()`、**默认 skip**（门控未开 ⇒ `skip` 并给出原因）；`teardown` 调 `sc_kill_sc_processes`（D9）
 - [x] **Step 2:** 默认态确认：**零模型 2 pass + 运行时 1 skip**、exit 0（零模型用例**不**进门控，per-case `oig_require_runtime`）
-- [x] **Step 3**（实现）**/ ⚠（实测未判定）**：写 **AC1 探针**：一次最小真跑（`agent=oracle`），打印 `part.state.output` 的**长度 + 首 200 字符**
-- [ ] **Step 4:** **⛔ 阻塞**：按探针结果定死主证据载体（A `state.output` / B `.rddf/reviews/<adr>.md`）并写进报告（D2）；**禁止**不跑探针就假设 A 可用
+- [x] **Step 3:** 写 **AC1 探针**：一次最小真跑（`agent=oracle`），打印 `part.state.output` 的**长度 + 首 200 字符**
+- [x] **Step 4:** **载体 = A**（`state.output`，探针实测 194 字符）；⚠ 实测发现 output 包在 `<subagent …>` 里 ⇒ 必须 unwrap + **多行匹配**判定行（A `state.output` / B `.rddf/reviews/<adr>.md`）并写进报告（D2）；**禁止**不跑探针就假设 A 可用
 - [x] **Step 5:** 写**门控骨架**：`provider.rate-limit` / `status != completed` / `error` 非空 ⇒ `skip`（D7 三档）
 - [x] **Step 6:** 写**报告模板**（AC8 固定 9 列：`用例｜模型 id｜日期｜请求指纹｜尝试次数｜全部调用序号｜结论｜证据路径｜SC_SRC 路径 + HEAD`）
-- [x] **Step 7（部分）:** 默认态验证通过；`E2E_REAL_RUNTIME=1` 跑探针 ⇒ **skip：`provider.rate-limit`（Token Plan 用量上限）** ⇒ 记**未判定**，不重试（e2e 仓 `runtime-assertion-discipline.md` §3）；证据落报告 §1.1
+- [x] **Step 7:** 默认态验证通过；探针**最终跑通**（换 provider 绕过额度：`OIG_MODEL=commandcode/deepseek/deepseek-v4.1-flash`）⇒ `status=completed` / `output_len=194` / **载体 A**
 
 ## Task 2（PR-2）：E-B 两态差分（AC5）—— **判别力最强且最便宜，先做**
 
-- [ ] **Step 1:** 手工写**一份**完整审查输入（带意图：决策 + 理由 + 范围，**用叙述不用槽位名** —— D5）
-- [ ] **Step 2:** 跑态①（带意图）⇒ 记录输出里**有无** `^判定: (APPROVE|REJECT)`
-- [ ] **Step 3:** 由 **harness** 删掉意图段得到态②（不是让模型删）⇒ 跑态② ⇒ 记录有无判定行
-- [ ] **Step 4:** 断言「**两态可分辨**」（① 有 ② 无）；**不可分辨 ⇒ 记为「软约束被违反 / 失效」并如实登记，不 fail**（AC5）
-- [ ] **Step 5:** 把两次调用的原始片段 + `SC_SRC` 的 `HEAD`/mtime 落报告（D9）
+- [x] **Step 1:** 手工写**一份**完整审查输入（带意图：决策 + 理由 + 范围，**用叙述不用槽位名** —— D5）
+- [x] **Step 2:** 跑态①（带意图）⇒ 记录输出里**有无** `^判定: (APPROVE|REJECT)`
+- [x] **Step 3:** 由 **harness** 删掉意图段得到态②（不是让模型删）⇒ 跑态② ⇒ 记录有无判定行
+- [x] **Step 4:** 观察「**两态可分辨**」（① 有 ② 无）；**不可分辨 ⇒ 记为「软约束被违反 / 失效」并如实登记，不 fail**（AC5）
+- [x] **Step 5:** 两次调用原始片段 + `SC_SRC` HEAD 落报告（D9）
 
 ## Task 3（PR-3）：E-A smoke + 变红演练（AC2 / AC3 / AC4 / AC7）
 
