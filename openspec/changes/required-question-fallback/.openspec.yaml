@@ -1,0 +1,8 @@
+# 本 change 不产生 openspec 的 spec delta。
+#
+# 理由：本仓**不使用** openspec 的 spec registry（仓库内没有 openspec/specs/ 目录）。
+# 本 change 的行为契约以本目录的 proposal.md「## 验收标准」（AC1–AC13）与 design.md（D1–D8）为准；
+# 守据落在 tests/ 的对应断言。
+schema: spec-driven
+created: 2026-11-17
+skip_specs: true
