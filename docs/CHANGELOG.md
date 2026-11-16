@@ -10,6 +10,30 @@
 
 ---
 
+> **v2.40 变更摘要（2026-11-16，oracle 的「审查域」从猜测改为声明 + 可解析兜底 —— E-A 实测暴露的词表选错）**：
+> ① **缺口**：`prompts/oracle.md` 模式段原写「输入明示『治理面』，**或判定对象属治理面**」⇒
+>   后半句是**猜测分支**（它指向的 `build.md` 作用域表是本仓路径，对别处工程无法解析）。
+>   实测（`rdd-workflow-e2e` E-A，commit `e93738c`）：父侧**带了**意图陈述（入参含全部组成词），
+>   但 oracle 用 `治理面判定: BLOCK` 审了一个**非治理面**对象（项目 `docs/adr/**`），契约词表
+>   `判定:` 从未出现。失配方向不对称：治理面被误判成其他审查 ⇒ `BLOCK` 语义消失 ⇒ 闸门 **fail-open**。
+> ② **改动**（3 处真源 + 2 处投影 + 守卫）：`prompts/oracle.md` 删除猜测分支、改用**四层优先级表**
+>   （声明治理面 / 声明其他审查 / 未声明但含 `~/.config/opencode/` 前缀**且按作用域表属治理面**的路径 ⇒
+>   治理面（`docs/adr/**` 属 ADR 行 ⇒ 例外）/ 否则其他审查 + 标注），并写死冲突按**更严者**、非法取值视同未声明并回显原值、
+>   意图未定优先于本表。词表**字面**放在映射表**之外**（表格单元格要转义 `|`，会撞上既有断言钉的
+>   未转义字面）⇒ 结构规避、既有断言无需改。`prompts/build.md`：治理面行要求调用方声明 +
+>   检查点三条口径（被派发后端不 block / front·plan 豁免 / 与 v2.37 差异有据）+ verdict 段硬条件
+>   （治理面审查见到 `判定:` 或第 4 层标注 ⇒ **审查不成立、不得收口**）。oracle `description`
+>   加一句指针。投影：`docs/MULTI-AGENT-DESIGN.md` §审查配对 + `docs/SUBAGENT-ORCHESTRATION.md` §3。
+>   守卫：新增兄弟块 `describe("oracle 审查域声明（v2.40）")` —— 四层行级锚定 / 猜测分支 grep 证伪 /
+>   标注消费 / 调用方义务 / 投影，共 17 条突变（含 oracle 审出的「后果从句弱化」一条）。
+> ③ **审查**：治理面 ⇒ oracle → critic 各 1 轮（**自指审查**：改 `oracle.md` 模式段时审查实例跑旧契约，
+>   该轮结论不构成独立证据；替代取证 = 静态守卫 + e2e 观察），记录见
+>   `.rddf/reviews/oracle-governance-scope-declaration-review.md`。
+> ④ **验证**：`bun test tests/` 全绿；`openspec validate oracle-governance-scope-declaration --strict` valid；
+>   e2e AC5a/5b/5c 结果见 `rdd-workflow-e2e` 的观察报告（观察项，不 fail）。
+
+---
+
 > **v2.39 变更摘要（2026-11-16，跨仓工作区清单与一致性核对器 —— 把「人工 diff」变成一条可判别的命令）**：
 > ① **缺口**：跨仓事实（本仓 `lib/delegate-core.ts::verifierWriteSetBlock()` 的 `owns:` 行 ↔ 产品仓
 >    `rdd-workflow` 的 `_lib/verifier/state_paths.py::SKILL_OWNS_PATHS`）**至今无守卫** ——

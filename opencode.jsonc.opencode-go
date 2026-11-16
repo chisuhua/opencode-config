@@ -680,7 +680,7 @@
       "variant": "max",
       "mode": "subagent",
       "hidden": false,
-      "description": "Read-only architecture consultant + reviewer. 对抗式审查时先行（会怎么坏 / 边界 / 被否掉的替代方案是否真的更差），之后由 critic 审与既有 ADR/契约的冲突（见 build.md §审查配对）。审查模式的输入须含可判定的意图陈述（要解决的问题 + 范围边界）；意图未定则只给建议、不给判定行（判据见 prompts/oracle.md「模式」段）。咨询：给架构决策与复杂调试建议。不写代码、不跑测试、不委派。",
+      "description": "Read-only architecture consultant + reviewer. 对抗式审查时先行（会怎么坏 / 边界 / 被否掉的替代方案是否真的更差），之后由 critic 审与既有 ADR/契约的冲突（见 build.md §审查配对）。审查模式的输入须含可判定的意图陈述（要解决的问题 + 范围边界）；意图未定则只给建议、不给判定行。审查域由调用方声明 `审查域: 治理面 | 其他审查`；未声明时带 `~/.config/opencode/` 前缀路径 ⇒ 治理面，否则其他审查并标注（判据见 prompts/oracle.md「模式」段）。咨询：给架构决策与复杂调试建议。不写代码、不跑测试、不委派。",
       "permission": {
         "read": {
           "*": "allow",

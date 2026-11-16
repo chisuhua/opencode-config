@@ -2790,7 +2790,7 @@ describe("oracle 意图闸门（v2.37）", () => {
     },
     {
       name: "收口侧：verdict 段删掉「不得收口」（只剩检查点 bullet 里的软表述）",
-      apply: (c) => ({ ...c, build: c.build.replace("**不得收口**", "（略）") }),
+      apply: (c) => ({ ...c, build: c.build.replaceAll("**不得收口**", "（略）") }),
       expect: "不得收口",
       expectCls: "收口侧",
     },
@@ -2934,6 +2934,381 @@ describe("oracle 意图闸门（v2.37）", () => {
    * - `question` / `HANDOFF: blocked` 只在本小节内被钉 —— 本仓别处（被派发后端段）另有一份
    *   `HANDOFF: blocked` 用法，**改动那处不影响本族**（属别的判据族）。
    * - **metis 轮次上限**只钉「至多 1 轮」的字样，不钉「实际调用次数」⇒ 计数行为属行为层。
+   * - **「不得收口」是 verdict 段 token 检查**：v2.40 在该段新增了**第二处**（治理面词表条件）
+   *   ⇒ 未来若删掉其中一处，另一处仍在 ⇒ 本族不会红（只有两处全删才红）。
    * - 「判据类 ↔ 关键词」用例的**探针集 = 突变集** ⇒ 未被任何突变触发的消息模板不在其覆盖内。
+   * - **审查域（v2.40）是兄弟块**：成对判据在 `describe("oracle 审查域声明（v2.40）")` 里，未覆盖清单见彼处。
+   */
+})
+
+/**
+ * 守卫漂移检测：**oracle 审查域声明**（v2.40）。
+ *
+ * 背景：`oracle-intent-gate-e2e` 的 E-A 实测（e2e 仓 `e93738c`）暴露出 —— 父侧带了意图陈述，
+ * 但 oracle 用 `治理面判定: BLOCK` 审了一个**非治理面**对象（项目 `docs/adr/**`）。根因是
+ * `oracle.md` 模式段里那条**猜测分支**「或判定对象属治理面」：它指向的作用域表是本仓路径，
+ * 对别处工程无法解析 ⇒ 模型只能猜。
+ *
+ * 本族钉住四件事：
+ * ① 猜测分支**已删除**（可 grep 证伪）；
+ * ② 四层优先级表**每层的判别词都在同一行**（防表格被拆散 / 行被删）；
+ * ③ 标注有**消费方**（build.md verdict 段），否则闸门 fail-open；
+ * ④ 调用方义务的**范围**（治理面行 + 被派发后端不 block + front/plan 豁免）。
+ *
+ * ⚠ **为什么是兄弟块、不塞进 v2.37 族**：两族的「判据类 ↔ 关键词唯一性」用例互相独立；
+ *   混族会让「判定行」一类关键词跨类污染，唯一性用例当场失效（v2.37 族未覆盖清单有对应条）。
+ *
+ * ⚠ **词表定义行必须在表格外**：表格单元格里的 `|` 要转义，而既有断言
+ *   （`config-guards.test.ts` 的 v2.37 族）钉的是**未转义**字面 `治理面判定: PASS | BLOCK | PASS-WITH-NOTES`。
+ *   ⇒ 词表写在表外的定义行，映射表右列只写词表名。若有人把词表挪进表格 ⇒ 那条既有断言当场红（迁移被拦）。
+ */
+describe("oracle 审查域声明（v2.40）", () => {
+  const ROOT = path.join(import.meta.dir, "..")
+  const ORACLE_MD = readFileSync(path.join(ROOT, "prompts", "oracle.md"), "utf8")
+  const BUILD_MD = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+  const MD = readFileSync(path.join(ROOT, "docs", "MULTI-AGENT-DESIGN.md"), "utf8")
+  const ORCH = readFileSync(path.join(ROOT, "docs", "SUBAGENT-ORCHESTRATION.md"), "utf8")
+  const CFG = JSON.parse(readFileSync(path.join(ROOT, "opencode.jsonc"), "utf8"))
+  const DESC = String(CFG.agent.oracle.description ?? "")
+
+  type Corpus = { oracle: string; build: string; desc: string; md: string; orc: string }
+  const CORPUS: Corpus = { oracle: ORACLE_MD, build: BUILD_MD, desc: DESC, md: MD, orc: ORCH }
+
+  type Violation = { cls: string; msg: string }
+
+  function between(text: string, from: string, until: string): string {
+    const i = text.indexOf(from)
+    if (i < 0) return ""
+    const j = text.indexOf(until, i + from.length)
+    if (j < 0) return ""
+    return text.slice(i, j)
+  }
+
+  /** 第 4 层标注串 —— 本族的单一引用点（改真源只改这一处 + 三处被钉文本）。 */
+  const UNKNOWN_MARK = "审查域=未声明（默认其他审查）"
+
+  /**
+   * 审查域判据 —— **纯函数**（语料 ⇒ 违规列表）。
+   *
+   * 判据分三层（与 v2.37 族同构）：
+   * ① **执行体侧**：四层表每层「层号 + 判别词」同行 / 猜测分支已删 / 标注串在 / 优先级 / 冲突 / 非法值；
+   * ② **调用方 + 收口**：治理面行要求声明 / 被派发后端与 front·plan 口径 / verdict 段消费标注；
+   * ③ **投影**：description 指针 + 两份汇总索引。
+   *
+   * ⚠ 规则文本（优先级 / 冲突 / 非法值）锚在「## 模式」段内，**不全文 token 检查** ——
+   *   否则「词在别处残留」即绿（v2.37 族已登记过这个弱点）。
+   */
+  function scopeDeclViolations(c: Corpus): Violation[] {
+    const v: Violation[] = []
+    const push = (cls: string, msg: string) => v.push({ cls, msg })
+
+    const modes = between(c.oracle, "## 模式", "## Output")
+    if (!modes) {
+      push("分层表", "oracle.md 的「## 模式」段缺失（四层表的唯一载体）")
+      return v
+    }
+
+    // ── ① 四层表：每层的「层号 + 判别词」必须在**同一行** ──
+    const rows = modes.split("\n").filter((l) => /^\|\s*[1-4]\s*\|/.test(l))
+    const layerNeedles: Array<[number, string]> = [
+      [1, "审查域: 治理面"],
+      [2, "审查域: 其他审查"],
+      [3, "作用域表"],
+      [4, "未声明"],
+    ]
+    for (const [n, needle] of layerNeedles) {
+      const row = rows.find((l) => new RegExp(`^\\|\\s*${n}\\s*\\|`).test(l))
+      if (!row || !row.includes(needle)) {
+        push("分层表", `oracle.md 的四层表缺第 ${n} 层（或该层判别词「${needle}」不在同一行）`)
+      }
+    }
+
+    // ── ② 猜测分支已删除（本 change 的**修复本体**，不是附带清理）──
+    if (c.oracle.includes("判定对象属治理面")) {
+      push("猜测分支", "oracle.md 仍有猜测分支「判定对象属治理面」⇒ 模型可绕过声明自行猜审查域")
+    }
+
+    // ── ③ 标注串必须存在（第 4 层的可见性载体；verdict 段按字面消费它）──
+    if (!c.oracle.includes(UNKNOWN_MARK)) {
+      push("标注串", `oracle.md 缺第 4 层标注串「${UNKNOWN_MARK}」⇒ 漏声明不可见`)
+    }
+
+    // ── ④ 与意图前提的优先级（否则「审查不成立」有两个互相矛盾的出口）──
+    if (!modes.includes("优先于本表")) {
+      push("优先级", "oracle.md 未写「意图未定 ⇒ 不给任何判定行（优先于本表）」")
+    }
+
+    // ── ⑤ 冲突裁决 + 非法取值（metis 抓出的两个歧义面）──
+    if (!modes.includes("更严者")) {
+      push("冲突裁决", "oracle.md 缺冲突裁决（声明与路径冲突 ⇒ 按更严者/治理面）")
+    }
+    if (!modes.includes("视同未声明")) {
+      push("非法取值", "oracle.md 缺非法取值处置（视同未声明 + 回显原值）")
+    }
+
+    // ── ⑥ 收口侧：标注必须有消费方，否则闸门 fail-open ──
+    const verdict = between(c.build, "**治理面判定（verdict）**", "**自指审查**")
+    if (!verdict.includes("治理面审查的判定行必须是")) {
+      push("收口侧", "build.md verdict 段缺硬条件「治理面审查的判定行必须是 `治理面判定:`」")
+    }
+    if (!verdict.includes(UNKNOWN_MARK)) {
+      push("收口侧", "build.md verdict 段未消费第 4 层标注（见到标注仍未判「审查不成立」⇒ fail-open）")
+    }
+    // 新硬条件的**后果从句**必须与触发条件同句（否则弱化成「记录后放行」即可绕过；
+    // v2.37 族的「不得收口」token 检查会被旧 bullet 满足 ⇒ 抓不到）
+    const govBullet = verdict.split("\n").find((l) => l.includes("治理面审查的判定行必须是"))
+    if (govBullet && !govBullet.includes("不得收口")) {
+      push("收口侧", "build.md 的新硬条件缺后果从句「不得收口」（弱化成「记录后放行」即可绕过）")
+    }
+
+    // ── ⑦ 调用方侧：治理面行要求声明 + 被派发后端 / front·plan 的差异化口径 ──
+    const review = between(
+      c.build,
+      "### 审查配对（每个角色由谁审）",
+      "#### oracle 调用前的意图检查点（architect 路径）",
+    )
+    const govRow = review.split("\n").find((l) => l.startsWith("| `architect`（**治理面**）"))
+    if (!govRow) push("调用方侧", "build.md §审查配对 表缺「architect（治理面）」行")
+    else if (!govRow.includes("审查域: 治理面")) {
+      push("调用方侧", "build.md 的治理面行未要求声明 `审查域: 治理面`")
+    }
+    const gate = between(
+      c.build,
+      "#### oracle 调用前的意图检查点（architect 路径）",
+      "**治理面作用域（写成可解析的路径，按字面执行）**",
+    )
+    if (!gate) {
+      push("调用方侧", "build.md 缺「oracle 调用前的意图检查点」小节")
+    } else {
+      if (!gate.includes("被派发后端")) push("调用方侧", "检查点小节缺「被派发后端」的声明口径")
+      if (!gate.includes("不 block")) {
+        push("调用方侧", "检查点小节缺「不 block」口径（与 v2.37 的 HANDOFF 口径差异未写明）")
+      }
+      if (!gate.includes("`front` / `plan`")) {
+        push("调用方侧", "检查点小节缺「front / plan 不需声明」的豁免口径")
+      }
+    }
+
+    // ── ⑧ description 是父模型唯一会读的位置 ──
+    if (!c.desc.includes("审查域")) {
+      push("真源指针", "oracle description 未指向审查域规则（父模型唯一会读的位置）")
+    }
+
+    // ── ⑨ 投影同步（两份汇总索引）──
+    if (!c.md.includes("审查域")) push("投影同步", "MULTI-AGENT-DESIGN.md 缺审查域声明摘要段")
+    if (!c.orc.includes("审查域")) push("投影同步", "SUBAGENT-ORCHESTRATION.md 缺审查域声明摘要段")
+
+    return v
+  }
+
+  type Mutation = { name: string; apply: (c: Corpus) => Corpus; expect: string; expectCls: string }
+
+  const MUTATIONS: Mutation[] = [
+    {
+      name: "四层表：删第 1 层行（声明通道消失）",
+      apply: (c) => ({
+        ...c,
+        oracle: c.oracle.replace("| 1 | 调用方声明 `审查域: 治理面` | 治理面 |", "| — |（已删）| — |"),
+      }),
+      expect: "第 1 层",
+      expectCls: "分层表",
+    },
+    {
+      name: "四层表：第 2 层改成治理面（声明其他审查反被判成治理面）",
+      apply: (c) => ({
+        ...c,
+        oracle: c.oracle.replace(
+          "| 2 | 调用方声明 `审查域: 其他审查` | 其他审查 |",
+          "| 2 | 调用方声明 `审查域: 治理面` | 治理面 |",
+        ),
+      }),
+      expect: "第 2 层",
+      expectCls: "分层表",
+    },
+    {
+      name: "四层表：删第 3 层行（可解析兜底消失）",
+      apply: (c) => ({
+        ...c,
+        oracle: c.oracle.replace(
+          "| 3 | **未声明**，但输入含 `~/.config/opencode/` 前缀、且按 `prompts/build.md` 治理面作用域表**属治理面**的路径 | 治理面 |",
+          "| — |（已删）| — |",
+        ),
+      }),
+      expect: "第 3 层",
+      expectCls: "分层表",
+    },
+    {
+      name: "四层表：删第 4 层行（默认其他审查消失）",
+      apply: (c) => ({
+        ...c,
+        oracle: c.oracle.replace("| 4 | 未声明，且无 `~/.config/opencode/` 前缀的路径 | 其他审查 |", "| — |（已删）| — |"),
+      }),
+      expect: "四层表缺第 4 层",
+      expectCls: "分层表",
+    },
+    {
+      name: "猜测分支加回（修复本体被撤）",
+      apply: (c) => ({
+        ...c,
+        oracle: c.oracle.replace("**词表（单一真源）**", "或判定对象属治理面。**词表（单一真源）**"),
+      }),
+      expect: "猜测分支",
+      expectCls: "猜测分支",
+    },
+    {
+      name: "标注串被删（漏声明不可见）",
+      apply: (c) => ({
+        ...c,
+        oracle: c.oracle.replace(/审查域=未声明（默认其他审查）/g, "审查域=未声明"),
+      }),
+      expect: "标注串",
+      expectCls: "标注串",
+    },
+    {
+      name: "优先级行被删（两个「审查不成立」出口）",
+      apply: (c) => ({ ...c, oracle: c.oracle.replace("（优先于本表）", "") }),
+      expect: "优先于本表",
+      expectCls: "优先级",
+    },
+    {
+      name: "冲突裁决被删（声明错不按更严者）",
+      apply: (c) => ({ ...c, oracle: c.oracle.replace("按**更严者**（治理面）", "按声明为准") }),
+      expect: "更严者",
+      expectCls: "冲突裁决",
+    },
+    {
+      name: "非法取值处置被删（解析失败静默丢弃）",
+      apply: (c) => ({ ...c, oracle: c.oracle.replace("**视同未声明**（走第 3/4 层）", "按声明处理") }),
+      expect: "视同未声明",
+      expectCls: "非法取值",
+    },
+    {
+      name: "收口侧：删硬条件（治理面见其他词表也放行）",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("**治理面审查的判定行必须是 `治理面判定:`**", "（已删）"),
+      }),
+      expect: "治理面审查的判定行必须是",
+      expectCls: "收口侧",
+    },
+    {
+      name: "收口侧：verdict 段不消费标注",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("，或 `建议` 段首行有 `审查域=未声明（默认其他审查）`", ""),
+      }),
+      expect: "未消费第 4 层标注",
+      expectCls: "收口侧",
+    },
+    {
+      name: "收口侧：新硬条件的后果从句被弱化成「记录后放行」",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("⇒ **不得收口**，补齐 `审查域: 治理面` 后重跑", "⇒ 记录后放行"),
+      }),
+      expect: "新硬条件缺后果从句",
+      expectCls: "收口侧",
+    },
+    {
+      name: "调用方侧：治理面行删掉声明要求",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("**调 oracle 时必须声明 `审查域: 治理面`**", "（已删）"),
+      }),
+      expect: "治理面行未要求声明",
+      expectCls: "调用方侧",
+    },
+    {
+      name: "调用方侧：删 front/plan 豁免口径",
+      apply: (c) => ({
+        ...c,
+        build: c.build.replace("**`front` / `plan` 不需声明**", "（已删）"),
+      }),
+      expect: "front / plan",
+      expectCls: "调用方侧",
+    },
+    {
+      name: "父模型可见面：description 删审查域",
+      apply: (c) => ({ ...c, desc: c.desc.replace(/审查域/g, "评审域") }),
+      expect: "未指向审查域规则",
+      expectCls: "真源指针",
+    },
+    {
+      name: "投影脱节：MULTI-AGENT-DESIGN.md 删审查域摘要",
+      apply: (c) => ({ ...c, md: c.md.replace(/审查域/g, "评审域") }),
+      expect: "MULTI-AGENT-DESIGN.md",
+      expectCls: "投影同步",
+    },
+    {
+      name: "投影脱节：SUBAGENT-ORCHESTRATION.md 删审查域摘要",
+      apply: (c) => ({ ...c, orc: c.orc.replace(/审查域/g, "评审域") }),
+      expect: "SUBAGENT-ORCHESTRATION.md",
+      expectCls: "投影同步",
+    },
+  ]
+
+  test("审查域声明：全部判据通过（四层表 / 猜测分支 / 标注消费 / 调用方义务 / 投影）", () => {
+    const violations = scopeDeclViolations(CORPUS)
+    expect(
+      violations.length,
+      violations.map((x) => `${x.cls}｜${x.msg}`).join("\n"),
+    ).toBe(0)
+  })
+
+  test("突变测试：每一类破坏都必须被审查域判据抓到（判别力证据）", () => {
+    for (const m of MUTATIONS) {
+      const mutated = m.apply(CORPUS)
+      const changed = (Object.keys(mutated) as Array<keyof Corpus>).some((k) => mutated[k] !== CORPUS[k])
+      expect(changed, `突变「${m.name}」没生效（锚点已变 ⇒ 突变测试本身失效）`).toBe(true)
+      const violations = scopeDeclViolations(mutated)
+      expect(violations.length, `突变「${m.name}」**未被抓到** ⇒ 该判据无判别力`).toBeGreaterThan(0)
+      const hits = violations.filter((x) => x.msg.includes(m.expect))
+      expect(
+        hits.length,
+        `突变「${m.name}」被抓到了，但没有一条消息含期望关键词「${m.expect}」（期望判据类「${m.expectCls}」）`,
+      ).toBeGreaterThan(0)
+      const offClass = hits.filter((x) => x.cls !== m.expectCls)
+      expect(
+        offClass.length,
+        `突变「${m.name}」的关键词「${m.expect}」也出现在非期望判据类「${m.expectCls}」的消息里 ⇒ 关键词不可区分：` +
+          offClass.map((x) => `${x.cls}｜${x.msg}`).join("\n"),
+      ).toBe(0)
+    }
+  })
+
+  test("判据类 ↔ 期望关键词：每个关键词必须唯一对应一个判据类", () => {
+    const byCls = new Map<string, Set<string>>()
+    for (const m of MUTATIONS) {
+      for (const x of scopeDeclViolations(m.apply(CORPUS))) {
+        if (!byCls.has(x.cls)) byCls.set(x.cls, new Set())
+        byCls.get(x.cls)!.add(x.msg)
+      }
+    }
+    for (const m of MUTATIONS) {
+      const classes = new Set<string>()
+      for (const [cls, msgs] of byCls) {
+        for (const msg of msgs) if (msg.includes(m.expect)) classes.add(cls)
+      }
+      expect(
+        [...classes].join(","),
+        `关键词「${m.expect}」出现在多个判据类的消息里（${[...classes].join(" / ")}）⇒ 关键词不可区分`,
+      ).toBe(m.expectCls)
+    }
+  })
+
+  /**
+   * ⚠ **未覆盖清单（照本仓惯例如实登记）**：
+   * - **行为层零覆盖**：「oracle 在真实会话里真的会按四层表选词表」「父模型真的会带声明」
+   *   证不到 ⇒ 由 `rdd-workflow-e2e` 的 AC5a/5b 承担（观察项，N=1 不可归因）。
+   * - **第 3 层的路径匹配是文本层**：本族只验「`~/.config/opencode/` 这个判别词在同一行」，
+   *   不验 oracle 真的做了前缀匹配（那是模型行为）。
+   * - **「非法取值」的解析粒度**：只验规则句存在，不验大小写 / 空格变体真的被归一化（行为层）。
+   * - **规则文本锚在「## 模式」段**：段外残留同一句话即绿（这是有意的 —— 段外那句不生效）。
+   * - **投影只钉存在性**：MD / ORCH 含「审查域」即绿 ⇒ 摘要写错不会被抓（措辞自由改写不应红）。
+   * - **「声明冲突」不 block**：本族不验 verdict 段对冲突标注的处置（按设计只标注、不阻断）。
+   * - **词表字面**由 v2.37 族的既有断言钉住（未转义）；本族不重复钉，避免同一判据两处维护。
+   * - **猜测分支检测是单短语锚点**（`判定对象属治理面`）：用**等价措辞**重写（如「或审查对象属于治理面范围」）
+   *   可逃逸 ⇒ 靠 review 兜底。升级为语义级检测的成本远超收益（文本守卫的固有粒度，同族其余判据亦然）。
+   * - **「判定行以 `判定:` 开头」是文本**：钉规则句存在，不验 oracle 真的按行首匹配（行为层）。
    */
 })

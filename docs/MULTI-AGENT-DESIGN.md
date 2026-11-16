@@ -330,6 +330,8 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 
 **oracle 调用前的意图检查点（architect 路径）**：oracle 判「这个决策在**给定意图**下会怎么坏」、critic 判「与既有 ADR / 契约是否冲突」—— 两者都以**意图已定**为前提 ⇒ 意图偏了会「一致地错」。调 oracle 审查前，输入须含**可判定的意图陈述**（要解决的问题 + 范围边界）：意图只有用户知道 ⇒ 先用 `question` 问用户（**主会话**；被派发后端无 `question` 通道 ⇒ 由派发方在 brief 给齐，缺失则 `HANDOFF: blocked`）；歧义 / slop / 边界情况未枚举 ⇒ 先**单独**调 metis（输出作**材料**、非判据）。完整分流表见 `prompts/build.md` §审查配对的「oracle 调用前的意图检查点」；执行体侧见 `prompts/oracle.md` 的「模式」段（「意图前提」）。
 
+**审查域声明（与意图陈述正交）**：oracle 用哪套判定词表由**审查域**决定 —— 治理面给**治理面词表**，其他审查给**判定行词表**（两套字面见 `prompts/oracle.md` 的「模式」段，单一真源）。审查域按**四层**判定：① 调用方声明 `审查域: 治理面`；② 声明 `审查域: 其他审查`；③ 未声明但输入带 `~/.config/opencode/` 前缀**且按作用域表属治理面**的路径 ⇒ 治理面（可解析兜底，不是猜测；`~/.config/opencode/docs/adr/**` 属 ADR 行 ⇒ 落第 4 层）；④ 否则默认其他审查并**标注**（第 4 层标注，字面以 `prompts/oracle.md` 为真源）。声明与路径冲突按**更严者**（治理面）；非法取值视同未声明并回显原值。**漏声明不静默**：编辑治理面的调用方（build / architect）必须声明；被派发后端缺声明不 block 但要报告；front / plan 不需声明。判定行与四层表以 `prompts/oracle.md` 的「模式」段为单一真源；调用方义务与收口条件（治理面审查见到 `判定:` 或未声明标注 ⇒ **审查不成立**）见 `prompts/build.md` §审查配对（治理面行 + verdict 段）。
+
 **治理面作用域**（按字面执行，必须带前缀 —— 裸 `docs/MULTI-AGENT-DESIGN.md` 在项目 cwd 里解析不到 → 永不触发）：
 
 - **算**：`~/.config/opencode/prompts/**`、`~/.config/opencode/AGENTS.md`（注入所有 agent，影响力最大）、`~/.config/opencode/docs/{MULTI-AGENT-DESIGN,CHANGELOG}.md`、`~/.config/opencode/opencode.json(c)` 的 agent / permission / provider 段、`~/.config/opencode/commands/**`（slash command = agent 行为指令，与 prompt 同级）、`~/.config/opencode/scripts/**` 中**被治理面规则行为依赖**的脚本（如 `arch-docs-init.sh` —— 规则指示 agent 运行它、或规则语义依赖其输出 / 退出码；改其退出码 / 报错文案 / 落盘行为时）。
