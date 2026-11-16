@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "repos": [
+    {
+      "id": "opencode-config",
+      "url": "ssh://git@github.com/chisuhua/opencode-config.git",
+      "canonical_path": ".",
+      "required": true
+    },
+    {
+      "id": "rdd-workflow",
+      "url": "git@github.com:chisuhua/rdd-workflow.git",
+      "canonical_path": "/workspace/main/rdd-workflow",
+      "required": true
+    },
+    {
+      "id": "rdd-workflow-e2e",
+      "url": "git@github.com:chisuhua/rdd-workflow-e2e.git",
+      "canonical_path": "/workspace/main/rdd-workflow-e2e",
+      "required": false
+    }
+  ],
+  "checks": [
+    {
+      "id": "verifier-owns-parity",
+      "consumer": "opencode-config",
+      "producer": "rdd-workflow",
+      "consumer_cmd": [
+        "bun",
+        "-e",
+        "import {verifierWriteSetBlock} from \"./lib/delegate-core.ts\"; console.log(verifierWriteSetBlock())"
+      ],
+      "consumer_filter": "^owns:",
+      "producer_cmd": [
+        "python3",
+        "-B",
+        "-c",
+        "from _lib.verifier.state_paths import SKILL_OWNS_PATHS; print('owns: ' + ', '.join(SKILL_OWNS_PATHS))"
+      ],
+      "producer_filter": "^owns:"
+    }
+  ]
+}

@@ -225,11 +225,20 @@ bun test tests/ | tail -4 && git commit -q -m "…"   # ← && 看的是 tail �
 | 在本仓守卫里直接读另一仓的文件 | ❌ 另一仓在**用户 home** ⇒ CI 上必然 SKIP ⇒ **等于没有守卫** |
 | 只在本仓钉 | ✅ 覆盖「本仓常量 ↔ 投影」 |
 | 只在另一仓钉 | ✅ 覆盖「另一仓实现 ↔ 另一仓清单」 |
-| **两仓清单逐字一致 + 一条人工 `diff`** | ✅ 覆盖「两仓之间」—— 命令见 `.rddf/reviews/session-handoff-20261114.md` §7 |
+| **两仓清单逐字一致 + `scripts/cross-repo-check.sh`** | ✅ 覆盖「两仓之间」—— 脚本为准（清单：`.rddf/config/workspace.json`）；手工等价式见 §6.1 |
 
-⇒ **各自钉自己那半，跨仓靠逐字一致 + 人工 diff**。改动任一侧清单时**必须**跑那条 diff。
+⇒ **各自钉自己那半，跨仓靠逐字一致 + 核对脚本**。改动任一侧清单时**必须**跑 `scripts/cross-repo-check.sh`（退出码：`0` 一致 / `1` 清单坏 / `2` 漂移 / `3` 环境不满足 —— 与 `scripts/check-upstream-anchors.sh` 的 `2` 同义）。
 
 ### 6.1 跨仓核对命令（verifier owns 清单 —— 消费侧 ↔ 生产侧）
+
+**脚本为准**：`scripts/cross-repo-check.sh`（清单 `.rddf/config/workspace.json`）。它把「清单坏 / 仓缺 / 身份不符 / 命令失败 / 两侧不一致」拆成**互不混淆**的出口码 —— 手工 `diff` 做不到这点（缺仓时 `diff` 必然报差异 ⇒ 环境故障被读成业务结论）。
+
+```bash
+scripts/cross-repo-check.sh          # 用默认清单
+scripts/cross-repo-check.sh --workspace /path/to/other-workspace.json   # 换清单（多 checkout / 测试）
+```
+
+> 下面是**脚本不可用时**的等价手工式（脚本不可用 ⇒ 一律**不算通过**，按「取证不可用」处理）：
 
 ```bash
 # 消费侧（本仓）：真源 → 机读块渲染，取 owns 行
@@ -239,7 +248,7 @@ cd ~/.config/opencode && \
 
 # 生产侧（rdd-workflow 仓）：skill 的 owns 清单，经其 state_paths.py 渲染
 cd <rdd-workflow 仓> && \
-  python3 -c "from _lib.verifier.state_paths import SKILL_OWNS_PATHS; print('owns: ' + ', '.join(SKILL_OWNS_PATHS))" \
+  python3 -B -c "from _lib.verifier.state_paths import SKILL_OWNS_PATHS; print('owns: ' + ', '.join(SKILL_OWNS_PATHS))" \
   > /tmp/opencode/owns-product.txt
 
 # 比对
@@ -259,4 +268,4 @@ diff /tmp/opencode/owns-opencode.txt /tmp/opencode/owns-product.txt && echo "✔
 - [ ] 扫描集口径与**其它守卫一致**？`excluded` 同时判**目录与单文件**？
 - [ ] 新文档/注释里**引用判据形态** ⇒ 会被自己扫到 ⇒ 措辞是否触发？
 - [ ] 提交前**单独**校验测试退出码（不用管道串 `&& git commit`）？
-- [ ] 跨仓的那一半 ⇒ 跑过那条 `diff` 吗？
+- [ ] 跨仓的那一半 ⇒ 跑过 `scripts/cross-repo-check.sh` 吗？（退出码 `0` 才算一致；`2` = 漂移 / `3` = 环境不满足 ⇒ **都不算通过**）
