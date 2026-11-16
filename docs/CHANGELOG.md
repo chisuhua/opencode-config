@@ -10,6 +10,44 @@
 
 ---
 
+> **v2.39 变更摘要（2026-11-16，跨仓工作区清单与一致性核对器 —— 把「人工 diff」变成一条可判别的命令）**：
+> ① **缺口**：跨仓事实（本仓 `lib/delegate-core.ts::verifierWriteSetBlock()` 的 `owns:` 行 ↔ 产品仓
+>    `rdd-workflow` 的 `_lib/verifier/state_paths.py::SKILL_OWNS_PATHS`）**至今无守卫** ——
+>    `docs/guard-authoring.md` §6 已判定「另一仓在用户 home ⇒ CI 必然 SKIP ⇒ 等于没有守卫」，
+>    只剩人工 `diff`（§6.1）兜着；那条命令的两种失效模式都**无提示**：cwd 抄错 ⇒ 拿到另一个
+>    checkout 的清单；缺仓 / 命令失败 ⇒ 输出为空 ⇒ 与「两侧不一致」混同（假红 / 假绿同源）。
+> ② **本批改动**（4 处 + 立项验收工件）：新增 `.rddf/config/workspace.json`（仓清单：`id` /
+>    `url` / `canonical_path` / `required` + 核对项声明）；新增 `scripts/cross-repo-check.sh`
+>    —— **四档出口码**（`0` OK/SKIP、`1` CONFIG=清单本身坏、`2` DRIFT、`3` ENV=缺仓或依赖失败）+
+>    终行 `RESULT: <…>`（可 grep）+ 两个分支都打印两仓 `HEAD` sha + **只读**（python 侧 `-B` /
+>    `PYTHONDONTWRITEBYTECODE=1`，不写两仓任何文件）+ **身份校验**（`realpath(canonical_path) ==
+>    git --show-toplevel` **且** `remote.origin.url == url` ⇒ 指向仓内子目录或另一个 checkout 判红）；
+>    新增 `tests/verify_cross_repo_check.sh`（38 条断言，用 `/tmp/opencode` 里的**假 git 仓**跑五支）；
+>    `docs/guard-authoring.md` 三处指向（§6 表行 / §6.1 首句「脚本为准」/ §7 核对单）。
+>    立项与验收工件：`.rddf/improvements/cross-repo-workspace-check.md`、`.rddf/plans/` 同名计划、
+>    `.rddf/reviews/cross-repo-workspace-check-{planner,verify}.md`、`openspec/changes/cross-repo-workspace-check/`
+>    （proposal AC1–AC11 / design D1–D10 / tasks TDD 5 步）。
+> ③ **审查**：planner 起草（5 段 improvement + proposal + design + tasks），planner 固定审查者
+>    **metis 1 轮**（16 findings：P0×5 / P1×5 / P2×4 + 隐藏意图 / 歧义 / slop —— 采纳 14 /
+>    **部分采纳 1**（清单保留但补最小校验、删掉无消费者的 `role`）/ 不采纳 1（不顺手改
+>    `lib/delegate-core.ts` 的注释 —— 碰 `lib/**` 会把执行路径推高），逐条处置见
+>    `.rddf/reviews/cross-repo-workspace-check-planner-review.md`）；verifier 验收 **PASS**
+>    （AC1–AC11 = **11/11**，每条带工具证据，见 `.rddf/reviews/cross-repo-workspace-check-verify.md`）。
+>    **未触发 oracle → critic**：本批不碰 `lib/**`、不碰 `prompts/**`、无公开 API 与跨模块契约变化；
+>    `docs/guard-authoring.md` 不在治理面表内（治理面 = `prompts/**` / `AGENTS.md` / 三份 docs /
+>    守卫断言 / `opencode.json(c)` / `commands/**`）。
+> ④ **验证**：`bash tests/verify_cross_repo_check.sh` → **38 PASS / 0 FAIL**（OK / DRIFT / ENV /
+>    SKIP / CONFIG 五支 + 只读性）；`bash scripts/cross-repo-check.sh`（本机实跑）→ `RESULT: OK`
+>    + 三个仓的 `HEAD` sha；`bun test tests/` → **591 pass / 0 fail**。
+> ⑤ **残留（如实登记）**：① **「漏跑」未解** —— 脚本只在被调用时生效，「改了一侧清单忘了跑」仍是
+>    失效模式 ⇒ 已单独立项（`.rddf/improvements/cross-repo-check-trigger-in-agent-checklist.md`），
+>    落点 `prompts/build.md` 自查清单 ⇒ 属治理面，实施需 architect + oracle → critic；
+>    ② **不判 pin 陈旧**（不联网 ⇒ 只判「当下两侧一致」，一致**不蕴含**上游没漂）；
+>    ③ **CI 仍不可达**（另一仓在 home ⇒ 无 CI 守卫，是既有架构事实，非本 change 可解）；
+>    ④ 核对项目前**只有 `verifier-owns-parity` 一项**（产品仓无 allow 侧真源 ⇒ 不虚构第二项）。
+
+---
+
 > **v2.38 变更摘要（2026-11-16，oracle 意图闸门的静态守卫 —— v2.37 的新语义此前对守卫完全不可见）**：
 > ① **缺口**：v2.37 把「**可判定的意图陈述**」写在**三处**（`prompts/oracle.md` 意图前提表 = 真源 /
 >    `prompts/build.md` 检查点小节 / oracle `description`），critic 当时**逐字核对**过一致，但
