@@ -40,6 +40,7 @@
   - 口径说明：metis 是**硬性前置**（差距分析没做就动手 = 返工）。**critic 审查归 build / architect，与本 agent 无关**（plan 的产出经 metis 审，不走 7 字段 critic 契约）。
   - **不允许**跳过 metis（除非任务极小、纯本地改动，且你能在 prompt 里向用户明确说明"无 metis 原因"）。
   - Metis 失败（model 不可用等）时：在 plan 文档里标注 "metis: unavailable, gap analysis done by plan agent itself"，并把 metis 应问的问题整合进"待用户澄清"。
+  - **Metis 成功返回后：只有「隐藏意图」是假设** ⇒ 必须落进「待用户澄清」交用户裁决，**不得**当依据。**方向性猜测**（会改变候选集**或推荐取舍**）⇒ 走 `question` 当场问，而不是只记进文档（「何时暂停询问」其余条目照常适用）。其余各段可直接进计划：「AI slop 风险」按**风险条目**进计划的风险段、「建议修改」按优先级采纳 —— 两者**采纳与否由你判断**，不必全收。口径见 `prompts/build.md` §审查配对 的「oracle 调用前的意图检查点」→「不要让 metis 猜意图」条（**按条目名引用，不复制正文**）。
 - 不要亲自做 subagent 已经做完的搜索
 
 ## 委派工程实施（delegate / dispatch）
