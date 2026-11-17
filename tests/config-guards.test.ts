@@ -331,9 +331,17 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         if (!known.has(named) && !(isNoRole && named === "未设定")) {
           v.push(`${x.role} 的开场报告格式里的角色名「${named}」不在角色集合内`)
         }
-        // 非 no-role 行必须带**第二段**（`source:` 或 builder 的 `change:`）⇒ 防「整段删除」
+        // 非 no-role 行必须带**第二段** ⇒ 防「整段删除」
         if (!isNoRole && !/【角色: [^】]+\|/.test(x.format)) {
-          v.push(`${x.role} 的开场报告格式缺少第二段（source / change）—— 可能被整段删除`)
+          v.push(`${x.role} 的开场报告格式缺少第二段（source）—— 可能被整段删除`)
+        }
+        // ⚠ **第二段的字段名必须 pin 住**（值 pin）：此前只断「有第二段」⇒
+        //   矩阵表把 builder 写成 `| change: <名或无>`（**与全局 `source` 取值段冲突**）也照样绿
+        //   ⇒ 实测模型在两种形态间漂移（`【角色: builder | source: state-file】` vs
+        //   `【角色: builder | change: 无】`）⇒ **E-1 的 flaky 根因**。
+        //   ⇒ 现在 pin 成 `source:`（与 §开场报告的 source 取值段、其它 5 个角色一致）。
+        if (!isNoRole && !/【角色: [^】]+\|\s*source:/.test(x.format)) {
+          v.push(`${x.role} 的开场报告格式第二段必须是 \`source:\`（不是别的字段）—— 见 §开场报告的 source 取值`)
         }
       }
 
@@ -671,9 +679,11 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
       // ⑩-a2 点名条款 + 登记义务 + **不得**泛化措辞
       //   ⚠ 锚到**点名条款本身**：节标题在 juSeg 里出现多次（机读块 / 边界句 / 排除条款）
       //     ⇒ 全文 `includes` 会被它们满足 ⇒ 判据恒真（无判别力）。
-      const dnIdx = juSeg.indexOf("**点名的两个节**")
+      // ⚠ **不硬编码计数词**（「两个 / 三个」会随清单增长而变 —— 实测踩过一次）
+      const dnMatch = /\*\*点名的[^*]*节\*\*/.exec(juSeg)
+      const dnIdx = dnMatch ? dnMatch.index : -1
       if (dnIdx < 0) {
-        v.push("「需要用户裁决」节缺「**点名的两个节**」条款（覆盖面须显式点名，不靠措辞族泛化）")
+        v.push("「需要用户裁决」节缺「**点名的…节**」条款（覆盖面须显式点名，不靠措辞族泛化）")
       } else {
         // ⚠ 边界 = 下一条**加粗段标题**（`**登记义务**`），不是第一个 `\n\n` ——
         //   点名条款的列表项在空行**之后** ⇒ 按空行截断会把列表切掉（实测假红）。
@@ -789,12 +799,22 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
       const MUTATIONS: Array<{ name: string; apply: (b: string) => string; expect?: string }> = [
         {
           name: "开场报告：第二段（source / change）被整段删除",
-          apply: (b) => b.replace("【角色: builder \\| change: <名或无>】", "【角色: builder】"),
+          apply: (b) => b.replace("【角色: builder \\| source: <state-file\\|user\\|auto>】", "【角色: builder】"),
         expect: "第二段",
         },
         {
+          // ⚠ 值 pin 的判别力：矩阵表把第二段写成别的字段（如 `change:`）⇒ 必须红
+          name: "开场报告：第二段字段名被写成 `change:`（与全局 source 取值段冲突 ⇒ 模型形态漂移）",
+          apply: (b) =>
+            b.replace(
+              "【角色: builder \\| source: <state-file\\|user\\|auto>】",
+              "【角色: builder \\| change: <名或无>】",
+            ),
+          expect: "第二段必须是",
+        },
+        {
           name: "开场报告：角色名错成别的**合法**角色",
-          apply: (b) => b.replace("【角色: architect \\| source: <state-file\\|user>】", "【角色: planner \\| source: <state-file\\|user>】"),
+          apply: (b) => b.replace("【角色: architect \\| source: <state-file\\|user\\|auto>】", "【角色: planner \\| source: <state-file\\|user\\|auto>】"),
         expect: "≠ 本行角色",
         },
         {
@@ -884,8 +904,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         },
         {
           name: "需要用户裁决：点名条款被删（覆盖面退回靠措辞族泛化）",
-          apply: (b) => b.replace("**点名的两个节**（它们的「问用户」在**问不到时**也按本节形态兜底）：", "（略）"),
-          expect: "点名的两个节",
+          apply: (b) => b.replace("**点名的三个节**（它们的「问用户」在**问不到时**也按本节形态兜底）：", "（略）"),
+          expect: "点名的…节",
         },
         // ── 以下 18 条覆盖 v2.42「必须问用户」覆盖面族（⑩-a 清单 / ⑩-a2 点名 / ⑩-c 五句 / ⑩-d bullet / ⑩-e 自查清单）──
         {
@@ -897,7 +917,7 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
           name: "v2.42 覆盖面：出现「凡既有节…一律」的泛化措辞",
           apply: (b) =>
             b.replace(
-              "**点名的两个节**（它们的「问用户」在**问不到时**也按本节形态兜底）：",
+              "**点名的三个节**（它们的「问用户」在**问不到时**也按本节形态兜底）：",
               "**凡既有节声明「必须问用户」的场景一律**按本节形态兜底：",
             ),
           expect: "泛化措辞",
@@ -956,8 +976,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
           name: "v2.42 覆盖面：census 加第三项但**点名条款未同步**（两份口径分离）",
           apply: (b) =>
             b.replace(
-              "sec: #### oracle 调用前的意图检查点（architect 路径） | kind: halt\n-->",
-              "sec: #### oracle 调用前的意图检查点（architect 路径） | kind: halt\nsec: ### 自查清单 | kind: halt\n-->",
+              "sec: ## 输出 | kind: halt\n-->",
+              "sec: ## 输出 | kind: halt\nsec: ### 自查清单 | kind: halt\n-->",
             ),
           expect: "点名条款未点",
         },
@@ -1104,9 +1124,13 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
      *   ⚠ **状态更新（v2.42）**：①② 已由 `required-question-fallback` 覆盖（⑩ 族判据 + `E-6`/`E-7`）；
      *   **另 5 处**「必须问用户」声明**仍未覆盖** ⇒ 见下方 v2.42 条目。
      * - ⚠ **v2.42 未覆盖：另 5 处「必须问用户」声明**（protected by §需要用户裁决时的**机读清单**之外）：
-     *   ① 角色列表 `no-role` 行「**询问用户角色**」（非交互下同样会 `question` error ⇒ 有洞）；
-     *   ② §rdd-workflow 增强层的 `rdd-builder` **P0 / P2.5 HARD pause**（状态机协议，自己的 5 选项 + 落盘
-     *      ⇒ 兜底条款插进去**未设计**）⇒ 独立 change；
+     *   ① 角色列表 `no-role` 行「**询问用户角色**」—— ⚠ **2026-11-17 实测：已被 v2.42 覆盖**
+     *      （模型正确停机 + 候选路径 + 零写 ⇒ 不需要新 change；观察报告 §9 有原始输出）；
+     *   ② §rdd-workflow 增强层的 `rdd-builder` **P0 / P2.5 HARD pause** —— ⚠ **2026-11-17 读证：不是缺陷**
+     *      （`skill/rdd-builder/SKILL.md:158` 「**阶段 0.0.5 全自动决策 (默认 ON)**，按 planner advisory +
+     *      LLM assessment + AC count **自动选 1-5，不需要用户输入**」per ADR-0049）⇒
+     *      **残余缺口 = 低置信度时的「暂停问用户」**（非交互问不到）⇒ 但它在**产品仓 skill 层**
+     *      ⇒ **登记为产品侧议题**（本仓 prompt 层不管）；
      *   ③ 同上 commit 条 + §输出「不要主动 commit —— 等用户确认」（有**自己的既有形态**）⇒ 独立 change；
      *   ④ 角色矩阵 `planner` 行「停下请用户切 architect」—— ⚠ **已属 v2.41 触发面②**（需口令级授权）⇒ 无需新登记；
      *   ⑤ §授权窗口 / §角色切换「窗口外一律停下问用户」「等用户明说」—— ⚠ **已属触发面②** ⇒ 无需新登记。

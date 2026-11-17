@@ -111,3 +111,14 @@ AC15（CHANGELOG）与 bats 侧复核是**收口动作**而非实施缺陷。要
       E-1                        → 1 红 2 绿（既有 flaky，未放宽判据）
 突变  v2.41 19 条 + v2.42 18 条 = 37 条（全部被独立判据抓到）
 ```
+
+## 7. 后续议题台账（2026-11-17，本轮批量收尾时登记）
+
+| # | 议题 | 状态 | 落点 |
+|---|---|---|---|
+| 1 | **prompt 层与权限层冲突**：`git commit` 不在 `opencode.jsonc` 的 ask 档 ⇒ 模型据权限否定 prompt 的「等用户确认」⇒ **自行 commit 2/2 复现** | ❌ **未修**（架构级：要改权限或改立场） | 观察报告 §9.1；`required-question-commit-confirm` 的 AC5/AC6 已如实收窄 |
+| 2 | **e2e fixture 污染**：模型会 `ls ..` 并把同族 fixture 当先例（原文点名 `probeCommit`） | ⚠ `E-8` 已隔离；**`E-4`/`E-6`/`E-7` 仍共享 `IB_FIXTURE_ROOT`**（未观察到被利用，风险存在） | 观察报告 §9.1 根因 2 |
+| 3 | **`rdd-builder` 低置信度的「暂停问用户」**：非交互问不到（HARD pause 本身有 auto-decision ⇒ 非缺陷） | ⚠ **产品侧议题**（skill 层，不在本仓 prompt 层） | 观察报告 §9.2；守卫未覆盖清单已更新 |
+| 4 | **`no-role` 询问角色** | ✅ **已被 v2.42 覆盖**（实测），**不需要新 change** | 观察报告 §9 行 1 |
+| 5 | **`subagent-contract-critic-enforce` 复评**：门控 N **已从 112 → 326**（≥150 **已到**），但**时间门未到**（`t1−t0 ≥ 7 天` ⇒ 最早 **2026-11-21**） | ⏳ **等到 11-21**（⚠ 别提前跑 R1 —— 会把封闭窗终点钉死） | `openspec/changes/subagent-contract-critic-enforce/tasks.md` |
+| 6 | **角色矩阵「允许/禁止」列的判据形态**（层 1 最大缺口） | 📝 **设计草案已写**（不硬上弱断言） | `.rddf/improvements/role-matrix-allow-deny-guard-design.md` |
