@@ -101,9 +101,9 @@
 
 ## Task 6：审查与收口
 
-- [ ] **Step 1:** 治理面改动（`prompts/**` + 守卫断言 + `opencode.jsonc`）⇒ **oracle 1 轮 → critic 1 轮**（⚠ 调 oracle 必声明 `审查域: 治理面`）
-- [ ] **Step 2:** BLOCKER 全闭 ⇒ 复审 1 次只验闭合
-- [ ] **Step 3:** **变红演练记录**落 `.rddf/reviews/role-aware-permissions-mutations.md`：
+- [x] **Step 1:** 治理面改动（`prompts/**` + 守卫断言 + `opencode.jsonc`）⇒ **oracle 1 轮 → critic 1 轮**（⚠ 调 oracle 必声明 `审查域: 治理面`）
+- [x] **Step 2:** BLOCKER 全闭 ⇒ 复审 1 次只验闭合
+- [x] **Step 3:** **变红演练记录**落 `.rddf/reviews/role-aware-permissions-mutations.md`：
       **层 1a 判据每行一条**（破坏动作 / 期望红理由 / 实跑结果）；**层 1b 用例记「红→绿」记录**，
       **其中 AC7/AC16/AC22 另需「附加变异」行**（锁→no-op / 语料注入第二份策略表 / 嵌套 `withLock`）；层 2 记 skip/实跑
 - [ ] **Step 4:** 切 verifier 逐 AC 取证 ⇒ 按下方**取证表**填证据，报告落 `.rddf/reviews/role-aware-permissions-verify.md`

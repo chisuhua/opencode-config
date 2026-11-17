@@ -39,7 +39,7 @@ try {
   const [mode, ...rest] = positional
   if (!mode) fail("缺少子命令（<role> | --exit | --grant-window | --close-window | --reset-claims）")
   if (mode === "--exit") {
-    clearWindow({ stateRoot, sessionID, toNoRole: true })
+    clearWindow({ stateRoot, workRoot, sessionID, toNoRole: true, warnSink: (m: string) => console.error(m) })
     console.log("ok: 已切到 no-role 并清空授权窗口")
   } else if (mode === "--close-window") {
     clearWindow({ stateRoot, sessionID })

@@ -136,7 +136,13 @@ export function switchRole(input: SwitchRoleInput): Record<string, any> {
 
       // 顺序：**先占新**、再放旧（避免「旧已放、新被拒」的中间态）
       let acquired = false
+      // ⚠ 回滚**只撤「新占/接管」**：若本会话**已经持有**该角色租约（同角色重切 ⇒ acquire 只是续租），
+      //   role.json 写失败时**不得**把它释放（否则「角色未变却丢了租约」= 半状态，违 D6）。
+      let alreadyMine = false
       if (!isExemptRole(input.role)) {
+        const preClaims = readClaims(input.stateRoot)
+        const pre = preClaims.corrupt ? undefined : preClaims.file.claims[leaseKey(workRoot, input.role)]
+        alreadyMine = !!pre && pre.state === "active" && pre.session_id === input.sessionID
         const lease = acquireLeaseLocked({
           stateRoot: input.stateRoot,
           workRoot,
@@ -157,7 +163,9 @@ export function switchRole(input: SwitchRoleInput): Record<string, any> {
         writeJsonAtomic(file, written, { cleanupOnError: true })
       } catch (e) {
         // role.json 写失败 ⇒ **回滚 claims**（design D9.2「先写 claims、后写 role.json」）
-        if (acquired) releaseLeaseLocked({ stateRoot: input.stateRoot, workRoot, role: input.role, sessionID: input.sessionID })
+        if (acquired && !alreadyMine) {
+          releaseLeaseLocked({ stateRoot: input.stateRoot, workRoot, role: input.role, sessionID: input.sessionID })
+        }
         throw e
       }
       // 切走旧角色 ⇒ 释放它的租约
@@ -201,11 +209,23 @@ export function clearWindow(input: {
   stateRoot: string
   sessionID: string
   toNoRole?: boolean
+  /** ⚠ 必须透传（worktree 下 `stateRoot ≠ workRoot`，丢了就释放不掉旧角色租约） */
+  workRoot?: string
   now?: () => Date
   lock?: { staleMs?: number; deadlineMs?: number }
+  warnSink?: (message: string) => void
 }): Record<string, any> {
   if (input.toNoRole) {
-    return switchRole({ stateRoot: input.stateRoot, sessionID: input.sessionID, role: "no-role", by: "user", now: input.now, lock: input.lock })
+    return switchRole({
+      stateRoot: input.stateRoot,
+      workRoot: input.workRoot,
+      sessionID: input.sessionID,
+      role: "no-role",
+      by: "user",
+      now: input.now,
+      lock: input.lock,
+      warnSink: input.warnSink,
+    })
   }
   return mutatePartition(input, (prev, sessions) => {
     sessions[input.sessionID] = { ...prev, auto_switch_window: null }

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { claimSlot } from "../lib/delegate-async.ts"
-import { switchRole } from "../lib/role-lease.ts"
+import { clearWindow, leaseKey, switchRole } from "../lib/role-lease.ts"
 import { resolveRole } from "../lib/role-identity.ts"
 import {
   acquireLease,
@@ -391,5 +391,23 @@ describe("B2（critic BLOCKER）：切角色也占租约 —— 与活跃后端�
     acquireLease({ stateRoot: root, workRoot, role: "verifier", sessionID: BACK, kind: "backend" })
     const w = switchRole({ stateRoot: root, workRoot, sessionID: MAIN, role: "builder", by: "user" })
     expect(w.sessions[MAIN].current_role).toBe("builder")
+  })
+})
+
+describe("B2 闭合（复审 finding）：切角色/退出后**旧角色 claim 必须 released**（stateRoot ≠ workRoot）", () => {
+  test("A(builder) → B(architect)：builder claim 变 released，architect 变 active", () => {
+    const { root, workRoot } = makeState()
+    switchRole({ stateRoot: root, workRoot, sessionID: MAIN, role: "builder", by: "user" })
+    switchRole({ stateRoot: root, workRoot, sessionID: MAIN, role: "architect", by: "user" })
+    const claims = readClaims(root).file.claims
+    expect(claims[leaseKey(workRoot, "builder")]!.state).toBe("released")
+    expect(claims[leaseKey(workRoot, "architect")]!.state).toBe("active")
+  })
+
+  test("`clearWindow({toNoRole:true, workRoot})` ⇒ 旧角色 claim 释放（丢 workRoot 时本用例必红）", () => {
+    const { root, workRoot } = makeState()
+    switchRole({ stateRoot: root, workRoot, sessionID: MAIN, role: "builder", by: "user" })
+    clearWindow({ stateRoot: root, workRoot, sessionID: MAIN, toNoRole: true })
+    expect(readClaims(root).file.claims[leaseKey(workRoot, "builder")]!.state).toBe("released")
   })
 })
