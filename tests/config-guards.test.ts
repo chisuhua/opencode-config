@@ -463,13 +463,15 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
 
       // ── ⑨ 「需要用户裁决时（独立会话的通用兜底）」：四要素 + 内联句 + 边界句 + 停机标记 ──
       // ⚠ **全部段作用域**：§何时暂停询问 里合法地出现「最合理的默认值直接做」⇒ 全文判会误伤。
+      // ⚠ `juSeg` 提升到**函数级**（⑩ 也要用 ⇒ 块级作用域会 ReferenceError）。
+      let juSeg = ""
       const juStart = B.indexOf("### 需要用户裁决时")
       if (juStart < 0) {
         v.push("缺「### 需要用户裁决时（独立会话的通用兜底）」段")
       } else {
         const juRest = B.slice(juStart)
         const juNext = juRest.indexOf("\n### ")
-        const juSeg = juNext > 0 ? juRest.slice(0, juNext) : juRest.slice(0, 4000)
+        juSeg = juNext > 0 ? juRest.slice(0, juNext) : juRest.slice(0, 4000)
         if (juStart < ovStart) {
           v.push("「需要用户裁决」节应放在「### 越权处理」之后（它是越权处理的上界）")
         }
@@ -525,8 +527,10 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         if (!/HANDOFF: blocked/.test(juSeg)) {
           v.push("「需要用户裁决」节缺与后端兜底（`HANDOFF: blocked`）的对照")
         }
-        if (!/oracle 调用前的意图检查点/.test(juSeg)) {
-          v.push("「需要用户裁决」节未引用 §oracle 调用前的意图检查点（同一纪律的后端侧先例 ⇒ 防「第二套判据」）")
+        // ⚠ 判**语义标记**（不是节标题）—— 节标题在本节出现多次（点名条款 / 机读块 / 排除条款）
+        //   ⇒ 判标题会让「删掉引用那一句」的突变**抓不到**（实测）。
+        if (!/同一纪律的两侧形态/.test(juSeg)) {
+          v.push("「需要用户裁决」节未写「**同一纪律的两侧形态**」（§oracle 意图检查点 是后端侧先例）（防被读成「第二套判据」）")
         }
         // ⑨-e 停机标记（**纯 ASCII 的可 grep token**，**节内唯一**）+ **不占首行**
         // ⚠ 不能只查「需要用户裁决」五个字 —— 新节**标题**里就有 ⇒ 恒真 ⇒ 无判别力。
@@ -582,6 +586,183 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
             v.push("「需要用户裁决」节的排除条款未写「不要用本节停机标记标记那些情形」")
           }
         }
+      }
+
+      // ── ⑩ 「必须问用户」覆盖面（v2.42）：机读清单（**单源**）+ 点名 + 登记义务 + 五句 + 独立 bullet ──
+      //
+      // ⚠ **为什么是「机读清单」而不是「措辞族扫描」**：
+      //   若新节写「凡既有节声明『必须问用户』一律兜底」⇒ **模型会把它泛化**到
+      //   `rdd-builder` P0 HARD pause / commit 确认等**未设计的状态机交互** ⇒ 不可接受。
+      //   ⇒ 覆盖面由 build.md 里的**一个机读块**界定（单源，不是两份手抄互相漂），
+      //     守卫**读它**并逐项校验；新增「必须问」之节的**登记义务**由 §自查清单承载。
+      //
+      // ⚠ **段范围必须按标题层级截断**（固定窗口会溢出到下一节 ⇒ 假绿 —— v2.41 实测踩过：
+      //   新节里的「不许静默越权」曾让越权段的「禁止静默执行」判据假绿）。
+      // ⚠ **必须行首精确匹配**（不能用 `indexOf` 找子串）：机读块里写着 `sec: ## 何时暂停询问`
+      //   ⇒ 子串搜索会**先命中机读块**（在真标题之前）⇒ 判到了错的段（实测）。
+      const sectionOf = (title: string): string | null => {
+        const lines = B.split("\n")
+        let start = -1
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i]!.trim() === title) {
+            start = i
+            break
+          }
+        }
+        if (start < 0) return null
+        const level = (title.match(/^#+/) ?? [""])[0].length
+        const headRe = new RegExp(`^#{1,${level}}\\s`)
+        let end = lines.length
+        for (let i = start + 1; i < lines.length; i++) {
+          if (headRe.test(lines[i]!)) {
+            end = i
+            break
+          }
+        }
+        return lines.slice(start, end).join("\n")
+      }
+
+      // ⑩-a 机读清单：单源 + 恰好 1 处 + **逐项**校验
+      //   ⚠ **必须先解析清单**（⑩-a2 的点名与 ⑩-d 的 bullet 都**从它派生** ⇒ 不硬编码名单 ——
+      //     否则 census 加第三项而点名条款漏改时**两案全绿**，与 D1 的「单源」精神相悖）。
+      const censusEntries: Array<{ sec: string; kind: string }> = []
+      const CENSUS_MARK = "<!-- req-question-census"
+      const censusCount = B.split(CENSUS_MARK).length - 1
+      if (censusCount !== 1) {
+        v.push(`「必须问用户」机读清单应恰好 1 处（找到 ${censusCount} 处 ⇒ 缺失 / 陈旧副本）`)
+      } else {
+        const cStart = B.indexOf(CENSUS_MARK)
+        const cRest = B.slice(cStart)
+        const cEnd = cRest.indexOf("-->")
+        const cSeg = cEnd > 0 ? cRest.slice(0, cEnd) : cRest.slice(0, 2000)
+        for (const e of cSeg.matchAll(/sec:\s*(.+?)\s*\|\s*kind:\s*(\S+)/g)) {
+          censusEntries.push({ sec: (e[1] as string).trim(), kind: (e[2] as string).trim() })
+        }
+        // ⚠ N2：某行写了 `sec:` 却漏 `| kind:` ⇒ 上面的正则**静默跳过** ⇒ 「登记了却没校验」
+        //   ⇒ 数 `sec:` 行数与解析成功数比对（不等 ⇒ 红）。
+        const secLines = [...cSeg.matchAll(/^\s*sec:/gm)].length
+        if (secLines !== censusEntries.length) {
+          v.push(`机读清单有 ${secLines} 行 \`sec:\`，但只解析出 ${censusEntries.length} 条（缺 \`| kind:\` 注解？）`)
+        }
+        if (censusEntries.length === 0) {
+          v.push("「必须问用户」机读清单里没有任何条目（sec: … | kind: …）")
+        }
+        for (const { sec, kind } of censusEntries) {
+          const secSeg = sectionOf(sec)
+          if (secSeg === null) {
+            v.push(`机读清单的节「${sec}」在 build.md 里不存在（sec 必须与标题**逐字**一致）`)
+            continue
+          }
+          const hasHalt = /停机并交付裁决请求/.test(secSeg)
+          if (kind === "halt") {
+            if (!hasHalt) {
+              v.push(`机读清单的节「${sec}」（kind: halt）段内没有指向「需要用户裁决」的兜底句（停机并交付裁决请求）`)
+            }
+          } else if (kind === "existing-termination") {
+            if (hasHalt) {
+              v.push(`机读清单的节「${sec}」（kind: existing-termination）段内不应有本节的兜底句（它维持既有终止态）`)
+            }
+          } else {
+            v.push(`机读清单的节「${sec}」的 kind 注解「${kind}」不合法（应 halt | existing-termination）`)
+          }
+        }
+      }
+
+      // ⑩-a2 点名条款 + 登记义务 + **不得**泛化措辞
+      //   ⚠ 锚到**点名条款本身**：节标题在 juSeg 里出现多次（机读块 / 边界句 / 排除条款）
+      //     ⇒ 全文 `includes` 会被它们满足 ⇒ 判据恒真（无判别力）。
+      const dnIdx = juSeg.indexOf("**点名的两个节**")
+      if (dnIdx < 0) {
+        v.push("「需要用户裁决」节缺「**点名的两个节**」条款（覆盖面须显式点名，不靠措辞族泛化）")
+      } else {
+        // ⚠ 边界 = 下一条**加粗段标题**（`**登记义务**`），不是第一个 `\n\n` ——
+        //   点名条款的列表项在空行**之后** ⇒ 按空行截断会把列表切掉（实测假红）。
+        const dnEndRel = juSeg.slice(dnIdx).indexOf("**登记义务**")
+        const dnSeg = juSeg.slice(dnIdx, dnEndRel > 0 ? dnIdx + dnEndRel : dnIdx + 800)
+        // ⭐ **名单从机读清单派生**（N1）—— 不再硬编码
+        // ⚠ 判**点名条款的列表项**（`- ` 开头且含该节名）：点名块后面紧跟的
+        //   「仍按 §何时暂停询问 用默认值直接做」句含同名 ⇒ 按 `includes` 会**误满足**（实测）。
+        const dnItems = dnSeg.split("\n").filter((l) => l.trim().startsWith("- "))
+        if (censusEntries.length === 0) {
+          v.push("点名条款无法校验：机读清单为空（点名与清单必须同源）")
+        }
+        for (const { sec } of censusEntries) {
+          const name = sec.replace(/^#+\s*/, "")
+          if (!dnItems.some((l) => l.includes(name))) {
+            v.push(`点名条款未点「${name}」（机读清单已登记 ⇒ 点名条款须同步，两份口径不得分离）`)
+          }
+        }
+      }
+      // ⚠ 不能只查「登记」二字（「登记义务」标题本身就含它 ⇒ 恒真）⇒ 查**后果句**
+      if (!/登记义务/.test(juSeg)) {
+        v.push("「需要用户裁决」节缺**登记义务**（新增『必须问用户』之节须在本节登记）")
+      }
+      if (!/未登记[^。\n]{0,20}没有兜底/.test(juSeg)) {
+        v.push("「需要用户裁决」节的**登记义务**缺后果句（**未登记 ⇒ 该节没有兜底**）")
+      }
+      if (/凡[^。\n]{0,24}既有节[^。\n]{0,24}一律/.test(juSeg)) {
+        v.push("「需要用户裁决」节出现**泛化措辞**（「凡既有节…一律」）⇒ 会把兜底套到未设计的状态机交互")
+      }
+      if (!/闭合清单/.test(juSeg)) {
+        v.push("「需要用户裁决」节的触发面措辞应为「**闭合清单**」（两类触发面 + 两个点名节）")
+      }
+
+      // ⑩-c §何时暂停询问：**五句**（兜底 / 禁止放宽 / 不得以「已授权」豁免 / scratch 例外 / 用户工件定义）
+      const pqSeg = sectionOf("## 何时暂停询问")
+      if (pqSeg === null) {
+        v.push("缺「## 何时暂停询问」段")
+      } else {
+        if (!/停机并交付裁决请求/.test(pqSeg)) {
+          v.push("§何时暂停询问 缺兜底句（问不到 ⇒ 按「需要用户裁决」停机并交付裁决请求）")
+        }
+        if (!/不得[^。\n]{0,40}(可恢复|可回滚|git 历史|可重新生成)/.test(pqSeg)) {
+          v.push("§何时暂停询问 缺**禁止放宽句**（不得以可恢复 / 可回滚 / 有 git 历史 / 可重新生成 作为不必问的理由）")
+        }
+        if (!/不得[^。\n]{0,40}(已明确要求|已授权)/.test(pqSeg)) {
+          v.push("§何时暂停询问 缺**不得以『用户已明确要求』豁免**（问一次是确认，不是申请许可）")
+        }
+        if (!/例外/.test(pqSeg) || !/(临时文件|scratch)/.test(pqSeg)) {
+          v.push("§何时暂停询问 缺**scratch 例外**（本回合内自建且未被引用的临时文件删它不必问）")
+        }
+        if (!/用户工件/.test(pqSeg)) {
+          v.push("§何时暂停询问 缺「用户工件」的定义")
+        }
+        if (!/本回合之前/.test(pqSeg)) {
+          v.push("§何时暂停询问 的「用户工件」定义未**操作化**（本回合之前已存在的任何文件 ⇒ 零定义名词不可判）")
+        }
+      }
+
+      // ⑩-d §oracle 意图检查点：**独立 bullet**（行作用域 ⇒ 同节后端侧的「不得自行假设」不误伤）
+      //   ⚠ **从机读清单派生**（不硬编码标题 —— 清单是单源真源）
+      const oiTitle = censusEntries.find((e) => e.sec.includes("oracle 调用前的意图检查点"))?.sec
+      const oiSeg = oiTitle ? sectionOf(oiTitle) : null
+      if (oiSeg === null) {
+        v.push("机读清单缺「§oracle 调用前的意图检查点」项（或该项的 sec 指向不存在的节）")
+      } else {
+        const bullet = oiSeg
+          .split("\n")
+          .find((l) => l.trim().startsWith("- **主会话侧的非交互兜底**"))
+        if (!bullet) {
+          v.push("§oracle 意图检查点 缺**独立 bullet**（主会话侧的非交互兜底）—— 守卫须能精确锚定到它")
+        } else {
+          if (!/停机并交付裁决请求/.test(bullet)) {
+            v.push("§oracle 意图检查点 的「主会话侧的非交互兜底」bullet 缺「停机并交付裁决请求」")
+          }
+          // ⚠ **查肯定式用法**（不是「含这些词」）：文档要禁止某个措辞 ⇒ **必须引用它**
+          //   （「不得以『最合理默认…』替代」）⇒ 判「不含该词」会与文档**自相矛盾**。
+          //   ⇒ 只判**肯定式**形态（「按…推进」）—— 那才是实测里模型真的做的事。
+          if (/按[^。\n]{0,24}(最合理默认|自行假设)[^。\n]{0,12}推进/.test(bullet)) {
+            v.push("§oracle 意图检查点 的「主会话侧的非交互兜底」bullet 含**肯定式**的替代措辞（按…推进）")
+          }
+        }
+      }
+
+      // ⑩-e §自查清单：登记义务**要有执行者**（模型每回合读）
+      const scSeg = sectionOf("### 自查清单")
+      if (scSeg === null) {
+        v.push("缺「### 自查清单」段")
+      } else if (!/必须问用户/.test(scSeg) || !/登记/.test(scSeg)) {
+        v.push("§自查清单 缺「新增『必须问用户』之节 ⇒ 须在机读清单登记」这条义务（否则登记义务没有执行者）")
       }
 
       return v
@@ -665,7 +846,7 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
           apply: (b) => b.replace("**例外**：被派发后端的 ", "**例外**："),
         expect: "被派发后端",
         },
-        // ── 以下 19 条覆盖「需要用户裁决」族的新判据（含 ⑦ 内联句 / ⑧ 归属句扩面）（⑨ / ⑨-g / AC4 扩展）──
+        // ── 以下 19 条覆盖 v2.41「需要用户裁决」族的新判据（含 ⑦ 内联句 / ⑧ 归属句扩面）（⑨ / ⑨-g / AC4 扩展）──
         {
           name: "需要用户裁决：整节被删除",
           apply: (b) => b.replace(/### 需要用户裁决时[\s\S]*?(?=\n### )/, ""),
@@ -697,9 +878,114 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
           expect: "HANDOFF: blocked",
         },
         {
-          name: "需要用户裁决：删掉对既有同族先例的引用",
-          apply: (b) => b.replace("§oracle 调用前的意图检查点 已写", "§别处 已写"),
-          expect: "意图检查点",
+          name: "需要用户裁决：删掉对既有同族先例的**语义标记**（同一纪律的两侧形态）",
+          apply: (b) => b.replace("**同一纪律的两侧形态**", "**某个别的说法**"),
+          expect: "两侧形态",
+        },
+        {
+          name: "需要用户裁决：点名条款被删（覆盖面退回靠措辞族泛化）",
+          apply: (b) => b.replace("**点名的两个节**（它们的「问用户」在**问不到时**也按本节形态兜底）：", "（略）"),
+          expect: "点名的两个节",
+        },
+        // ── 以下 18 条覆盖 v2.42「必须问用户」覆盖面族（⑩-a 清单 / ⑩-a2 点名 / ⑩-c 五句 / ⑩-d bullet / ⑩-e 自查清单）──
+        {
+          name: "v2.42 覆盖面：登记义务被删（新增『必须问』之节无兜底）",
+          apply: (b) => b.replace("**未登记 ⇒ 该节没有兜底**。", "（略）"),
+          expect: "登记义务",
+        },
+        {
+          name: "v2.42 覆盖面：出现「凡既有节…一律」的泛化措辞",
+          apply: (b) =>
+            b.replace(
+              "**点名的两个节**（它们的「问用户」在**问不到时**也按本节形态兜底）：",
+              "**凡既有节声明「必须问用户」的场景一律**按本节形态兜底：",
+            ),
+          expect: "泛化措辞",
+        },
+        {
+          name: "v2.42 覆盖面：触发面措辞退回「闭合两类」（点名条款会被略过）",
+          apply: (b) => b.replace("闭合清单：两类触发面 + 两个点名节", "闭合两类"),
+          expect: "闭合清单",
+        },
+        {
+          name: "v2.42 覆盖面：机读清单整块被删",
+          apply: (b) => b.replace(/<!-- req-question-census[\s\S]*?-->\n/, ""),
+          expect: "机读清单",
+        },
+        {
+          name: "v2.42 覆盖面：机读清单的 sec 指向不存在的节（逐字比对）",
+          apply: (b) => b.replace("sec: ## 何时暂停询问 | kind: halt", "sec: ## 何时暂停问询 | kind: halt"),
+          expect: "不存在",
+        },
+        {
+          name: "v2.42 覆盖面：机读清单的 kind 注解非法",
+          apply: (b) => b.replace("sec: ## 何时暂停询问 | kind: halt", "sec: ## 何时暂停询问 | kind: maybe"),
+          expect: "不合法",
+        },
+        {
+          name: "v2.42 覆盖面：§何时暂停询问 的兜底句被删",
+          apply: (b) => b.replace("⇒ 按 §需要用户裁决时 **停机并交付裁决请求**\n（明确说「这需要你裁决」", "⇒（略）\n（明确说「这需要你裁决」"),
+          expect: "兜底句",
+        },
+        {
+          name: "v2.42 覆盖面：§何时暂停询问 的禁止放宽句被删",
+          apply: (b) => b.replace("- 判定「不可逆」时，**不得**以「可恢复 / 可回滚 / 有 git 历史 / 可重新生成」作为不必问的理由；\n", ""),
+          expect: "禁止放宽句",
+        },
+        {
+          name: "v2.42 覆盖面：§何时暂停询问 的「不得以已明确要求豁免」句被删",
+          apply: (b) => b.replace("- **不得**以「用户已明确要求该动作」作为免除本节「问一次」的理由 —— **问一次是确认，不是申请许可**；\n", ""),
+          expect: "已明确要求",
+        },
+        {
+          name: "v2.42 覆盖面：§何时暂停询问 的 scratch 例外被删",
+          apply: (b) => b.replace("- **例外**：本回合内由自己创建、且未被任何文件引用的**临时文件**，删它不必问。\n", ""),
+          expect: "scratch 例外",
+        },
+        {
+          name: "v2.42 覆盖面：§何时暂停询问 的「用户工件」定义被删",
+          apply: (b) => b.replace(/本节所称「\*\*用户工件\*\*」.*\n.*\n/, ""),
+          expect: "用户工件",
+        },
+        {
+          name: "v2.42 覆盖面：§oracle 意图检查点 的独立 bullet 被删",
+          apply: (b) => b.replace(/\n- \*\*主会话侧的非交互兜底\*\*：[^\n]*\n[^\n]*\n/, "\n"),
+          expect: "独立 bullet",
+        },
+        {
+          name: "v2.42 覆盖面：census 加第三项但**点名条款未同步**（两份口径分离）",
+          apply: (b) =>
+            b.replace(
+              "sec: #### oracle 调用前的意图检查点（architect 路径） | kind: halt\n-->",
+              "sec: #### oracle 调用前的意图检查点（architect 路径） | kind: halt\nsec: ### 自查清单 | kind: halt\n-->",
+            ),
+          expect: "点名条款未点",
+        },
+        {
+          name: "v2.42 覆盖面：点名条款**只摘掉一个节名**（不是整句删）",
+          apply: (b) => b.replace("- **§何时暂停询问**（不可逆改动 / 需要凭据 / 需求二义性 ⇒ **必须问一次**）；\n", ""),
+          expect: "点名条款未点",
+        },
+        {
+          name: "v2.42 覆盖面：kind 注解改成 existing-termination（但该节**仍有**兜底句）",
+          apply: (b) =>
+            b.replace("sec: ## 何时暂停询问 | kind: halt", "sec: ## 何时暂停询问 | kind: existing-termination"),
+          expect: "不应有本节的兜底句",
+        },
+        {
+          name: "v2.42 覆盖面：census 某行**漏 `| kind:`** 注解（静默跳过 ⇒ 登记了却没校验）",
+          apply: (b) => b.replace("sec: ## 何时暂停询问 | kind: halt", "sec: ## 何时暂停询问"),
+          expect: "缺 `| kind:`",
+        },
+        {
+          name: "v2.42 覆盖面：census **重复成 2 块**（陈旧副本）",
+          apply: (b) => b.replace("<!-- req-question-census", "<!-- req-question-census\n-->\n<!-- req-question-census"),
+          expect: "恰好 1 处",
+        },
+        {
+          name: "v2.42 覆盖面：§自查清单 的登记义务被删",
+          apply: (b) => b.replace(/\n- \[ \] 本回合\*\*改了 `prompts\/build\.md` 里「必须问用户」类的声明\*\*.*\n/, "\n"),
+          expect: "自查清单",
         },
         {
           name: "需要用户裁决：停机标记被删（只剩标题里的五个字）",
@@ -815,6 +1101,27 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
      *   ① §oracle 调用前的意图检查点 的主会话分支（「意图只有用户知道 ⇒ 用 `question` 问」）；
      *   ② §何时暂停询问 的「不可逆改动 / 需要凭据 ⇒ **必须问一次**」。
      *   ⇒ **如实登记**（不声称覆盖）⇒ 独立议题（扩触发面会引入「动辄停下」风险）。
+     *   ⚠ **状态更新（v2.42）**：①② 已由 `required-question-fallback` 覆盖（⑩ 族判据 + `E-6`/`E-7`）；
+     *   **另 5 处**「必须问用户」声明**仍未覆盖** ⇒ 见下方 v2.42 条目。
+     * - ⚠ **v2.42 未覆盖：另 5 处「必须问用户」声明**（protected by §需要用户裁决时的**机读清单**之外）：
+     *   ① 角色列表 `no-role` 行「**询问用户角色**」（非交互下同样会 `question` error ⇒ 有洞）；
+     *   ② §rdd-workflow 增强层的 `rdd-builder` **P0 / P2.5 HARD pause**（状态机协议，自己的 5 选项 + 落盘
+     *      ⇒ 兜底条款插进去**未设计**）⇒ 独立 change；
+     *   ③ 同上 commit 条 + §输出「不要主动 commit —— 等用户确认」（有**自己的既有形态**）⇒ 独立 change；
+     *   ④ 角色矩阵 `planner` 行「停下请用户切 architect」—— ⚠ **已属 v2.41 触发面②**（需口令级授权）⇒ 无需新登记；
+     *   ⑤ §授权窗口 / §角色切换「窗口外一律停下问用户」「等用户明说」—— ⚠ **已属触发面②** ⇒ 无需新登记。
+     *   ⇒ ①②③ **如实登记为未覆盖**（不声称覆盖）；④⑤ 已由既有触发面覆盖。
+     * - ⚠ **v2.42 未覆盖：「漏登记」不可机械核**：机读清单是**单源**（`build.md` 内一个块）⇒
+     *   新增「必须问用户」之节若**没进清单** ⇒ 该节无兜底，而守卫**查不出来**
+     *   （机械核 = 措辞族扫描 = 会把兜底条款泛化到未设计的状态机交互 ⇒ 被 oracle 否决）。
+     *   ⇒ 只能靠 **登记义务（§自查清单）+ 评审**；**粗扫 alarm 可延后**（backlog）。
+     * - ⚠ **v2.42 未覆盖：`E-7` 的语义负向**：判据只看「有无 `subagent`/写」⇒
+     *   **「在正文里给条件性默认」抓不到**（实测 G1：`E-7` 那轮就给了「默认答案暂时不该」，
+     *   但明确标注为评审意见 + 同时停机请求裁决）⇒ 如实登记。
+     * - ⚠ **v2.42 未覆盖：停机率只有 3 条窄用例**读数（`E-1` / `E-2` / `E-5` 各一条「不含停机标记」）
+     *   ⇒ 只能给**粗粒度**信号（`E-5` 自认测不到「推进了但附带裁决」）。
+     * - ⚠ **v2.42：`question` 的运行期失败形态不止 `status == "error"`**（宿主换一种表示时仍可判 ——
+     *   硬证据只留「零推进 + 停机标记」）⇒ 如实登记。
      */
   })
 
