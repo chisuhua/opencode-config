@@ -9,7 +9,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os"
 import path from "node:path"
 
-import { roleFilePath, roleLockDir, switchRole } from "../lib/role-lease.ts"
+import { clearWindow, grantWindow, roleFilePath, roleLockDir, switchRole } from "../lib/role-lease.ts"
 
 const SID = "ses_aaaaaaaaaaaaaaaaaaaaaaaa"
 const OTHER = "ses_bbbbbbbbbbbbbbbbbbbbbbbb"
@@ -72,6 +72,8 @@ describe("AC4 读-改-写：其余分区与 legacy 原样保留 + history 追加
 describe("AC8 --by auto：updated_by 与 history.by 同步", () => {
   test("by=auto ⇒ 顶层 updated_by=auto 且 history 末条 by=auto", () => {
     const { root } = makeState()
+    // ⚠ auto 切换必须有授权窗口（AC8 的窗口语义）⇒ 先授予
+    grantWindow({ stateRoot: root, sessionID: SID, roles: ["planner"], maxRounds: 2 })
     const w = switchRole({ stateRoot: root, sessionID: SID, role: "planner", by: "auto" })
     expect(w.updated_by).toBe("auto")
     expect(w.history.at(-1).by).toBe("auto")
@@ -114,5 +116,41 @@ describe("锁：switchRole 用 .role.lock 且锁会释放", () => {
     switchRole({ stateRoot: root, sessionID: SID, role: "builder", by: "user" })
     expect(existsSync(roleLockDir(root))).toBe(false)
     expect(() => JSON.parse(readFileSync(roleFilePath(root), "utf8"))).not.toThrow()
+  })
+})
+
+describe("AC8 授权窗口（层 1b）：授予 / 计数 / 超额 / 角色白名单 / 退出清空", () => {
+  test("grantWindow ⇒ used=0；两次 auto ⇒ used=2；第三次 auto 被拒", () => {
+    const { root } = makeState()
+    grantWindow({ stateRoot: root, sessionID: SID, roles: ["architect", "verifier"], maxRounds: 2 })
+    let w = switchRole({ stateRoot: root, sessionID: SID, role: "architect", by: "auto" })
+    expect(w.sessions[SID].auto_switch_window.used).toBe(1)
+    w = switchRole({ stateRoot: root, sessionID: SID, role: "verifier", by: "auto" })
+    expect(w.sessions[SID].auto_switch_window.used).toBe(2)
+    expect(() => switchRole({ stateRoot: root, sessionID: SID, role: "architect", by: "auto" })).toThrow(/用完/)
+  })
+
+  test("auto 切到窗口外的角色 ⇒ 被拒", () => {
+    const { root } = makeState()
+    grantWindow({ stateRoot: root, sessionID: SID, roles: ["verifier"], maxRounds: 3 })
+    expect(() => switchRole({ stateRoot: root, sessionID: SID, role: "architect", by: "auto" })).toThrow(/不在窗口/)
+  })
+
+  test("没有窗口时 auto 切换 ⇒ 被拒（不得静默降级为 user）", () => {
+    const { root } = makeState()
+    expect(() => switchRole({ stateRoot: root, sessionID: SID, role: "architect", by: "auto" })).toThrow(/没有授权窗口/)
+  })
+
+  test("--exit ⇒ 角色 no-role 且窗口清空；--close-window ⇒ 窗口清空但角色不变", () => {
+    const { root } = makeState()
+    grantWindow({ stateRoot: root, sessionID: SID, roles: ["verifier"], maxRounds: 1 })
+    const exited = clearWindow({ stateRoot: root, sessionID: SID, toNoRole: true })
+    expect(exited.sessions[SID].current_role).toBe("no-role")
+    expect(exited.sessions[SID].auto_switch_window).toBe(null)
+
+    grantWindow({ stateRoot: root, sessionID: SID, roles: ["verifier"], maxRounds: 1 })
+    const closed = clearWindow({ stateRoot: root, sessionID: SID })
+    expect(closed.sessions[SID].auto_switch_window).toBe(null)
+    expect(closed.sessions[SID].current_role).toBe("no-role") // 不变
   })
 })

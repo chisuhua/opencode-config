@@ -16,6 +16,14 @@ import path from "node:path"
 import { withLock, writeJsonAtomic } from "./delegate-core.ts"
 import { ROLES, type Role } from "./role-identity.ts"
 
+export interface Window {
+  roles: Role[]
+  max_rounds: number
+  used: number
+  granted_by: "user"
+  granted_at: string
+}
+
 export interface SwitchRoleInput {
   stateRoot: string
   sessionID: string
@@ -70,6 +78,28 @@ export function applyRoleSwitch(
   const history = Array.isArray(role.history) ? role.history : []
   history.push({ role: input.role, at: iso, by: input.by, reason: "" })
 
+  // `--exit`：切到 `no-role` 时窗口必须清空（退出角色即放弃授权窗口）
+  if (input.role === "no-role") {
+    sessions[input.sessionID] = { ...sessions[input.sessionID], auto_switch_window: null }
+  }
+
+  // ⚠ 授权窗口（AC8）：`by:"auto"` 的切换必须**在窗口内且未超额**，并原子 `used += 1`。
+  //   `by:"user"` 的切换不动窗口（用户手动切角色不受窗口约束）。
+  const window = prev.auto_switch_window ?? null
+  if (input.by === "auto") {
+    if (!window) throw new Error("auto 切换被拒：没有授权窗口")
+    if (!Array.isArray(window.roles) || !window.roles.includes(input.role)) {
+      throw new Error(`auto 切换被拒：目标角色 ${input.role} 不在窗口 roles 内`)
+    }
+    if (typeof window.used !== "number" || window.used >= window.max_rounds) {
+      throw new Error(`auto 切换被拒：窗口已用完（used=${window.used} / max=${window.max_rounds}）`)
+    }
+    sessions[input.sessionID] = {
+      ...sessions[input.sessionID],
+      auto_switch_window: { ...window, used: window.used + 1 },
+    }
+  }
+
   return {
     ...role, // ⚠ 保留 role.json 里的其它未知键（未来字段）
     current_role: input.role,
@@ -91,6 +121,71 @@ export function switchRole(input: SwitchRoleInput): Record<string, any> {
     () => {
       written = applyRoleSwitch(readRoleFile(file), input)
       writeJsonAtomic(file, written, { cleanupOnError: true })
+    },
+    input.lock,
+  )
+  return written
+}
+
+/** `--grant-window <roles,csv> <max>`：授予授权窗口（`granted_by:"user"`）。 */
+export function grantWindow(input: {
+  stateRoot: string
+  sessionID: string
+  roles: Role[]
+  maxRounds: number
+  now?: () => Date
+  lock?: { staleMs?: number; deadlineMs?: number }
+}): Record<string, any> {
+  if (input.roles.length === 0) throw new Error("roles 不能为空")
+  if (!Number.isInteger(input.maxRounds) || input.maxRounds <= 0) throw new Error("max_rounds 必须是正整数")
+  const iso = (input.now?.() ?? new Date()).toISOString()
+  return mutatePartition(input, (prev, sessions) => {
+    sessions[input.sessionID] = {
+      ...prev,
+      auto_switch_window: {
+        roles: input.roles,
+        max_rounds: input.maxRounds,
+        used: 0,
+        granted_by: "user",
+        granted_at: iso,
+      },
+    }
+  })
+}
+
+/** `--close-window` / `--exit`：清空窗口（`--exit` 同时把角色切到 `no-role`）。 */
+export function clearWindow(input: {
+  stateRoot: string
+  sessionID: string
+  toNoRole?: boolean
+  now?: () => Date
+  lock?: { staleMs?: number; deadlineMs?: number }
+}): Record<string, any> {
+  if (input.toNoRole) {
+    return switchRole({ stateRoot: input.stateRoot, sessionID: input.sessionID, role: "no-role", by: "user", now: input.now, lock: input.lock })
+  }
+  return mutatePartition(input, (prev, sessions) => {
+    sessions[input.sessionID] = { ...prev, auto_switch_window: null }
+  })
+}
+
+/** 公共的「锁内读-改-写分区」包装（不碰顶层镜像 / history —— 窗口操作不是角色切换）。 */
+function mutatePartition(
+  input: { stateRoot: string; sessionID: string; now?: () => Date; lock?: { staleMs?: number; deadlineMs?: number } },
+  fn: (prev: Record<string, any>, sessions: Record<string, any>) => void,
+): Record<string, any> {
+  mkdirSync(path.join(input.stateRoot, STATE_REL), { recursive: true })
+  const file = roleFilePath(input.stateRoot)
+  let written: Record<string, any> = {}
+  withLock(
+    roleLockDir(input.stateRoot),
+    () => {
+      const role = readRoleFile(file)
+      const sessions = role.sessions && typeof role.sessions === "object" ? role.sessions : {}
+      fn(sessions[input.sessionID] ?? {}, sessions)
+      role.sessions = sessions
+      written = role
+      writeJsonAtomic(file, role, { cleanupOnError: true })
     },
     input.lock,
   )

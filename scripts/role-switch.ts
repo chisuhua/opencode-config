@@ -1,0 +1,56 @@
+/**
+ * role-switch CLI —— 角色切换的唯一入口（**薄**：只解析参数 + 调 `lib/role-lease.ts`）
+ *
+ * ⚠ 语义全在 `lib/role-lease.ts`（单源）；本文件**不持锁、不写文件**。
+ */
+import { clearWindow, grantWindow, roleFilePath, switchRole } from "../lib/role-lease.ts"
+import { ROLES, type Role } from "../lib/role-identity.ts"
+
+const argv = process.argv.slice(2)
+const opts: { stateRoot?: string; session?: string; by?: "user" | "auto" } = {}
+const positional: string[] = []
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i]
+  if (a === "--state-root") opts.stateRoot = argv[++i]
+  else if (a === "--session") opts.session = argv[++i]
+  else if (a === "--by") opts.by = argv[++i] as "user" | "auto"
+  else positional.push(a)
+}
+
+const stateRoot = opts.stateRoot ?? process.cwd()
+const sessionID = opts.session ?? process.env.OPENCODE_SESSION_ID
+if (!sessionID) {
+  console.error("role-switch: 缺少会话 id（$OPENCODE_SESSION_ID 未设置且未传 --session）")
+  process.exit(2)
+}
+
+const fail = (msg: string): never => {
+  console.error(`role-switch: ${msg}`)
+  process.exit(1)
+}
+
+try {
+  const [mode, ...rest] = positional
+  if (!mode) fail("缺少子命令（<role> | --exit | --grant-window | --close-window | --reset-claims）")
+  if (mode === "--exit") {
+    clearWindow({ stateRoot, sessionID, toNoRole: true })
+    console.log("ok: 已切到 no-role 并清空授权窗口")
+  } else if (mode === "--close-window") {
+    clearWindow({ stateRoot, sessionID })
+    console.log("ok: 授权窗口已关闭")
+  } else if (mode === "--grant-window") {
+    const [csv, max] = rest
+    const roles = (csv ?? "").split(",").map((x) => x.trim()).filter(Boolean) as Role[]
+    for (const r of roles) if (!(ROLES as readonly string[]).includes(r)) fail(`非法角色: ${r}`)
+    grantWindow({ stateRoot, sessionID, roles, maxRounds: Number(max) })
+    console.log(`ok: 已授予窗口 roles=[${roles.join(",")}] max=${max}`)
+  } else if (mode === "--reset-claims") {
+    fail("--reset-claims 尚未实现（Task 4）")
+  } else {
+    if (!(ROLES as readonly string[]).includes(mode)) fail(`非法角色: ${mode}（允许：${ROLES.join(" / ")}）`)
+    switchRole({ stateRoot, sessionID, role: mode as Role, by: opts.by ?? "user" })
+    console.log(`ok: ${sessionID} → ${mode}（by=${opts.by ?? "user"}）；文件 ${roleFilePath(stateRoot)}`)
+  }
+} catch (e: any) {
+  fail(String(e?.message ?? e))
+}

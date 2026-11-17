@@ -1703,6 +1703,12 @@ export function writeJsonAtomic(file: string, value: any, opts: { cleanupOnError
  * 本函数 = 只写 role（供「槽位检查 + 登记 + role 分区」必须同处一个临界区的场景）。
  */
 export function writeRoleSession(root: string, sessionID: string, agent: string, roleClass?: RoleClass): void {
+  // ⚠ AC6（ADR-role-session-identity D2 / D4）：派发后端**恒为 `build` agent**。
+  //   非 build 会写进非法角色值（`current_role: "plan"`）⇒ 身份链读到未知值 ⇒ 静默落 default。
+  //   ⇒ 这里 fail-closed，不要「尽力而为」。
+  if (agent !== "build") {
+    throw fail(`writeRoleSession 只接受 agent="build"（收到 ${JSON.stringify(agent)}）：后端能力由 role_class 声明，不用 agent 名冒充角色`)
+  }
   const stateDir = path.join(root, ".rddf", "state")
   const roleFile = path.join(stateDir, "role.json")
   const role = readJson(roleFile) ?? {}
@@ -1717,8 +1723,8 @@ export function writeRoleSession(root: string, sessionID: string, agent: string,
     updated_at: new Date().toISOString(),
   }
   role.sessions = sessions
-  role.current_role = role.current_role ?? sessions[sessionID].current_role
-  role.updated_at = new Date().toISOString()
+  // ⚠ **不写顶层**（AC6 负向 / 身份 ADR D2）：顶层是「最近一次**角色切换**的镜像」，
+  //   派发动作不得改写它 —— 否则一次派发就把主会话身份抹成 builder（旧 `??` 回填正是这个洞）。
   writeJsonAtomic(roleFile, role)
 }
 
