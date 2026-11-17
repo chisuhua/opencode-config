@@ -96,8 +96,8 @@
 - [x] **Step 1:** 迁移脚本（先写分区再切读侧）⇒ 无孤儿分区；存量 `legacy` 键不被覆盖
 - [x] **Step 2:** AC23：免宣称**六项**三处各自命中（**MUTATIONS**：删一处 ⇒ 必红）
 - [x] **Step 3:** AC24：立场句 + 根口径同批；**既有守卫锚点保留**（`:391` 三步字面 / `:846` 突变锚点）
-- [ ] **Step 4:** **层 2（e2e 仓，8 条 representative）**—— ⚠ e2e 仓不可用时记「**不可判定**」并降级（**不阻塞 AC 判定**，skip ≠ pass）：同角色派发被拒 / 异角色并行 / 接管后旧持有者写被拒 / 两会话各读各分区 / linked worktree 根唯一 / architect×`src/**` 真 Tool.Error / 真后端不受门控 / 非 build 主会话跳过
-- [ ] **Step 5:** 回归：`bun test tests/` 退出码 0 + **回读实测 pass 数** + anchors 无 FAIL + `openspec validate --strict`
+- [x] **Step 4:** **层 2（e2e 仓，8 条 representative）**—— ⚠ e2e 仓不可用时记「**不可判定**」并降级（**不阻塞 AC 判定**，skip ≠ pass）：同角色派发被拒 / 异角色并行 / 接管后旧持有者写被拒 / 两会话各读各分区 / linked worktree 根唯一 / architect×`src/**` 真 Tool.Error / 真后端不受门控 / 非 build 主会话跳过
+- [x] **Step 5:** 回归：`bun test tests/` 退出码 0 + **回读实测 pass 数** + anchors 无 FAIL + `openspec validate --strict`
 
 ## Task 6：审查与收口
 
@@ -107,6 +107,35 @@
       **层 1a 判据每行一条**（破坏动作 / 期望红理由 / 实跑结果）；**层 1b 用例记「红→绿」记录**，
       **其中 AC7/AC16/AC22 另需「附加变异」行**（锁→no-op / 语料注入第二份策略表 / 嵌套 `withLock`）；层 2 记 skip/实跑
 - [ ] **Step 4:** 切 verifier 逐 AC 取证 ⇒ 按下方**取证表**填证据，报告落 `.rddf/reviews/role-aware-permissions-verify.md`
+
+### Task 5 Step 4 实跑结果（e2e 仓 `rdd-workflow-e2e`，2026-11-17）
+
+文件：`tests/integration/test_role_gate_runtime.bats`（8 例，`E2E_REAL_RUNTIME=1` 才跑）。
+
+```bash
+cd /workspace/main/rdd-workflow-e2e
+mkdir -p .tmp-rg
+# 默认模型即可：RG-5 / RG-7 用默认；其余用 RG_MAIN_MODEL 指定可用模型（本机 front 不支持 --model 覆盖）
+E2E_REAL_RUNTIME=1 TMPDIR="$PWD/.tmp-rg" RG_MAIN_MODEL=opencode-go/deepseek-v4.1-flash \
+  bats -f 'RG-N' tests/integration/test_role_gate_runtime.bats
+```
+
+| 例 | 判据 | 实跑 |
+|---|---|---|
+| RG-1 | AC18 同角色派发被拒 + 指名持有者 + 不产生新槽位 | ✅ 通过 |
+| RG-2 | AC19 异角色并行放行（`role_class` 沿登记值） | ✅ 通过 |
+| RG-3 | AC21 接管后旧持有者写被拒（指名现持有者） | ✅ 通过 |
+| RG-4 | AC1 两会话各读各分区（builder 写成功 / verifier 被拒） | ✅ 通过 |
+| RG-5 | AC10 linked worktree 根唯一（不驱动模型） | ✅ 通过 |
+| RG-6 | AC11 architect 写 `src/**` ⇒ 真 Tool.Error | ✅ 通过 |
+| RG-7 | AC17 真后端不受门控（后端写 scope 内文件成功） | ✅ 通过（front 用默认模型） |
+| RG-8 | AC17 非 build 主会话（plan）跳过门控 | ✅ 通过 |
+
+⚠ **层 2 抓出 4 个真 bug**（层 1a/1b 全绿时均未暴露）：
+1. 插件读 `input.filePath`，而本版宿主传 **`path`** ⇒ 取不到就 `return` ⇒ 门控**静默 fail-open**（真写盘成功、无错误）。
+2. `ctx.session.create` **不设 `parentID`** ⇒ 被派发后端被当成主会话门控（AC17 机制在真宿主不成立）；补「`pair.json` 登记 / 分区 `role_class`」两条判据。
+3. 门控跳过后端时**仍执行租约校验** ⇒ 用身份链角色（`builder`）而非 `role_class` 占错键 ⇒ 主会话假冲突。
+4. 同步 `delegate` 面：`registerSession` 按 **10 参**调用 8 参签名 ⇒ `work_root` / `state` / `bumpClaim` 被 JS **静默丢弃** ⇒ 租约检查与 `claim_gen` 围栏在同步面从未生效。
 
 ## verifier 取证表（Task 6 Step 4 的输入）
 

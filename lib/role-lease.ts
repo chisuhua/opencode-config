@@ -686,7 +686,7 @@ export function checkLeaseForWrite(input: {
   if (mine && mine.claim_gen !== claim.claim_gen) {
     return {
       ok: false,
-      message: `role-lease: claim_gen 不匹配（我持有 ${mine.claim_gen} ≠ 当前 ${claim.claim_gen}）⇒ 租约已被接管，拒绝写类工具`,
+      message: `role-lease: claim_gen 不匹配（我持有 ${mine.claim_gen} ≠ 当前 ${claim.claim_gen}）⇒ 租约已被接管（现持有者 ${claim.session_id}），拒绝写类工具`,
       holder: claim,
     }
   }

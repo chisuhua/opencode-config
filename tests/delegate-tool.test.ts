@@ -585,12 +585,23 @@ describe("失败与并发路径（补审计缺口）", () => {
     expect(rows.length).toBe(1)
   })
 
-  test("并发两次委托：pair/role/ledger 均无丢失", async () => {
+  test("并发两次委托（**异角色**）：pair/role/ledger 均无丢失", async () => {
     const project = fixtureProject()
+    // architect 类要求工程**有可写的架构文档目录**（`docs/adr` 命中 fallback 目录集）
+    mkdirSync(path.join(project, "docs", "adr"), { recursive: true })
+    writeFileSync(path.join(project, "docs", "adr", "ADR-x.md"), "# ADR\n")
     const { ctx, sessions } = createFakeCtx()
     const [a, b] = await Promise.all([
       runDelegate(ctx, { ...BASE, project_dir: project, goal: "并发 A" }),
-      runDelegate(ctx, { ...BASE, project_dir: project, goal: "并发 B" }),
+      // ⚠ **必须异角色**：`ADR-role-aware-permissions` D6 起「同 workRoot 同角色至多一个代表」
+      //   ⇒ 两个 builder 并发会被租约拒（那是 AC18 的判据，见下一条用例）。
+      runDelegate(ctx, {
+        ...BASE,
+        project_dir: project,
+        goal: "并发 B",
+        role_class: "architect",
+        scope: ["docs/adr"],
+      }),
     ])
     expect(a.session_id).not.toBe(b.session_id)
     expect(sessions.size).toBe(2)
@@ -607,6 +618,20 @@ describe("失败与并发路径（补审计缺口）", () => {
       .map((l) => JSON.parse(l))
     expect(rows.length).toBe(2)
     expect(rows.map((r) => r.backend_session_id).sort()).toEqual([a.session_id, b.session_id].sort())
+  })
+
+  test("并发两次**同角色**委托 ⇒ 恰好一个被租约拒（D6 执行点②·同步 delegate 面）", async () => {
+    const project = fixtureProject()
+    const { ctx } = createFakeCtx()
+    const results = await Promise.allSettled([
+      runDelegate(ctx, { ...BASE, project_dir: project, goal: "同角色 A" }),
+      runDelegate(ctx, { ...BASE, project_dir: project, goal: "同角色 B" }),
+    ])
+    const ok = results.filter((r) => r.status === "fulfilled")
+    const bad = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[]
+    expect(ok.length).toBe(1)
+    expect(bad.length).toBe(1)
+    expect(String((bad[0]!.reason as Error)?.message ?? bad[0]!.reason)).toContain("角色租约冲突")
   })
 })
 

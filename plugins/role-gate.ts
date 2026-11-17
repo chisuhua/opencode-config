@@ -9,17 +9,29 @@
  * ⚠ **执行点缺席**（D5⑥）：插件未激活 / `--standalone` / 改插件后未 `service restart` ⇒
  *   本门控**不生效**（D6 租约另有两个不随插件消失的执行点）。
  */
+import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 
 import { Plugin } from "@opencode/plugin"
 
 import { canonicalRoot } from "../lib/delegate-core.ts"
-import { resolveRole } from "../lib/role-identity.ts"
+import { readSessionPartition, resolveRole } from "../lib/role-identity.ts"
 import { checkLeaseForWrite } from "../lib/role-lease.ts"
-import { evaluateWrite } from "../lib/role-policy.ts"
+import { evaluateWrite, extractWriteTarget } from "../lib/role-policy.ts"
 
 const WRITE_TOOLS = new Set(["edit", "write"])
+
+/** 该会话是否在 `pair.json` 里登记过（派发面登记的权威标记；文件缺失/损坏 ⇒ false）。 */
+function isRegisteredBackend(stateRoot: string, sessionID: string): boolean {
+  try {
+    const raw = readFileSync(path.join(stateRoot, ".rddf", "state", "pair.json"), "utf8")
+    const doc = JSON.parse(raw) as { pairs?: Record<string, unknown> }
+    return !!(doc?.pairs && typeof doc.pairs === "object" && sessionID in doc.pairs)
+  } catch {
+    return false
+  }
+}
 
 export default Plugin.define({
   id: "role-gate",
@@ -29,14 +41,30 @@ export default Plugin.define({
       if (typeof tool !== "string" || !WRITE_TOOLS.has(tool)) return
 
       const input = event?.input ?? {}
-      const filePath = typeof input.filePath === "string" ? input.filePath : ""
-      if (!filePath) return
+      // ⚠ 宿主字段名是 `path`（层 2 e2e 实测）；取不到 ⇒ **fail-closed**
+      //   （旧实现 `if (!filePath) return` = 静默放行 ⇒ 门控形同不存在）
+      const filePath = extractWriteTarget(input)
+      if (!filePath) {
+        throw new Error(
+          `role-gate: 无法从 ${tool} 的参数解析目标路径（工具契约变更？）⇒ 拒绝写类调用（fail-closed）`,
+        )
+      }
 
+      // ⚠ 身份不可判定 ⇒ **fail-closed**（`design.md` D9.2 的 seam 契约），不得静默放行
       const sessionID = typeof event?.sessionID === "string" ? event.sessionID : ""
-      if (!sessionID) return
-
-      const session = await ctx.session.get({ sessionID })
+      if (!sessionID) {
+        throw new Error("role-gate: 无 sessionID ⇒ 身份不可判定 ⇒ 拒绝写类调用（fail-closed）")
+      }
+      let session: any
+      try {
+        session = await ctx.session.get({ sessionID })
+      } catch (e: any) {
+        throw new Error(`role-gate: 取会话失败（${e?.message ?? e}）⇒ 身份不可判定 ⇒ 拒绝写类调用（fail-closed）`)
+      }
       const agent = typeof session?.agent === "string" ? session.agent : ""
+      if (!agent) {
+        throw new Error("role-gate: 会话 agent 缺失 ⇒ 身份不可判定 ⇒ 拒绝写类调用（fail-closed）")
+      }
 
       // 身份解析的**单一落点**（AC16）：门控与租约都从这里取角色
       // ⚠ **不用 `process.cwd()`**（critic BLOCKER B4）：一个插件进程只有一个 cwd，而同进程可能服务
@@ -55,9 +83,13 @@ export default Plugin.define({
         agent,
       })
 
+      // 后端识别（AC17）：`parentID` 不可靠（`ctx.session.create` 不设）⇒ 补两条登记面判据
+      const partition = readSessionPartition(stateRoot, sessionID)
       const result = evaluateWrite({
         agent,
         parentID: session?.parentID ?? null,
+        registeredBackend: isRegisteredBackend(stateRoot, sessionID),
+        partitionRoleClass: partition?.roleClass ?? null,
         role: resolved.role,
         action: tool === "edit" ? "edit" : "write",
         filePath,
@@ -66,6 +98,13 @@ export default Plugin.define({
       })
 
       if (!result.allowed) throw new Error(result.message ?? "role-gate: 拒绝")
+
+      // ⚠ **门控跳过的会话**（被派发后端 / 非 build 主会话）**不参与租约校验**：
+      //   D6 规定「后端的工作角色 = 它的 `role_class`」，而后端租约由**派发临界区**
+      //   （`claimSlot`）按 `role_class` 占用；若这里再用**身份链解析出的角色**去查/占租约，
+      //   会给后端占一条**错的**角色键（层 2 实测：role_class=verifier 的后端占出了 `builder` 键
+      //   ⇒ 主会话之后想用 builder 就假冲突）。⇒ 只对 `gated === true` 的会话校验租约。
+      if (!result.gated) return
 
       // ② 角色租约围栏（**每次**写类工具调用都校验 —— ADR D6 执行点③）：
       //    持有者 + `claim_gen` 都要对得上；被接管 ⇒ 拒绝（模型只能读 + 报告）。

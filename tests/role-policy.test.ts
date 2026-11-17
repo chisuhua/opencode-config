@@ -257,6 +257,28 @@ describe("AC17 会话类型不相交：后端跳过 / 非 build 主会话跳过"
     expect(shouldGateSession({ agent: "front", parentID: null })).toBe(false)
     expect(shouldGateSession({ agent: "build", parentID: null })).toBe(true)
   })
+
+  // ⚠ 层 2 e2e 实测（2026-11-17）：`ctx.session.create` **不设** `parentID`
+  //   ⇒ 只靠 parentID 会把被派发后端当成主会话（后端被门控 + 用错角色键占租约）。
+  //   以下三条是**真实宿主**上的后端判据，各一例（成对：都不满足 ⇒ 仍门控）。
+  test("后端判据②：`pair.json` 有登记 ⇒ 跳过", () => {
+    expect(shouldGateSession({ agent: "build", parentID: null, registeredBackend: true })).toBe(false)
+    expect(shouldGateSession({ agent: "build", parentID: null, registeredBackend: false })).toBe(true)
+  })
+
+  test("后端判据③：分区带 `role_class` ⇒ 跳过（`writeRoleSession` 只给后端写它）", () => {
+    expect(
+      shouldGateSession({ agent: "build", parentID: null, partitionRoleClass: "verifier" }),
+    ).toBe(false)
+    expect(shouldGateSession({ agent: "build", parentID: null, partitionRoleClass: null })).toBe(true)
+  })
+
+  test("插件接线：三条判据都读（源码级锚点，防回退成只看 parentID）", () => {
+    const text = readFileSync(path.join(REPO, "plugins", "role-gate.ts"), "utf8")
+    expect(text).toContain("registeredBackend")
+    expect(text).toContain("partitionRoleClass")
+    expect(text).toContain("readSessionPartition")
+  })
 })
 
 describe("路径归一：相对 / ../ / symlink ⇒ 同一结论", () => {

@@ -36,6 +36,11 @@ import path from "node:path"
  *  - setup 阶段禁止写盘（全局插件目录对每个 location 各加载一次）。
  */
 
+// ⚠ 与 `lib/role-lease.ts` 存在**循环引用**（role-lease 反向 import 本文件的 withLock /
+//   writeJsonAtomic / appendLedgerLine）。两边都只在**函数体**内使用，不在模块顶层求值
+//   ⇒ ESM 循环安全（与 `delegate-async.ts` ↔ `role-lease.ts` 同形）。
+import { acquireLeaseLocked, releaseLeaseLocked } from "./role-lease.ts"
+
 const TOOL_NAME = "delegate"
 
 /** build agent 的 ask 类目 → session 级 deny（无人值守下 ask 会永久挂死）。 */
@@ -1811,6 +1816,26 @@ export function registerSession(
     const pair = readJson(pairFile) ?? {}
     const pairs = pair.pairs && typeof pair.pairs === "object" ? pair.pairs : {}
     const existing = pairs[sessionID]
+
+    // ⚠ **D6 执行点②（同步 `delegate` 面）**：与槽位登记**同一临界区**做角色租约检查
+    //   （异步面在 `delegate-async.ts::claimSlot`）。层 2 实测：只在异步面做 ⇒ 走同步
+    //   `delegate` 的派发**完全不查租约**（同角色可并存）。
+    if (opts?.bumpClaim && extra?.role_class && extra?.work_root) {
+      const lease = acquireLeaseLocked({
+        stateRoot: root,
+        workRoot: extra.work_root,
+        role: extra.role_class as any,
+        sessionID,
+        kind: "backend",
+        roleClass: extra.role_class,
+      })
+      if (!lease.ok) {
+        const who = lease.holder
+          ? `（持有者 session=${lease.holder.session_id}，workRoot=${lease.holder.work_root}）`
+          : ""
+        throw fail(`角色租约冲突：${lease.reason}${who}`)
+      }
+    }
     pairs[sessionID] = {
       front_session_id: frontSessionID ?? null,
       // 归属主体（`ADR-plan-delegate-engineering-session` D5）：front | plan；
@@ -1843,6 +1868,22 @@ export function registerSession(
     }
 
     if (ledgerRow) appendLedgerLine(root, ledgerRow)
+
+    // 收尾登记（非占槽）⇒ 释放该后端的角色租约（语义同 `claimSlot` 的「租约随槽位释放」）
+    if (
+      extra?.role_class &&
+      extra?.work_root &&
+      extra?.state !== undefined &&
+      extra.state !== "dispatching" &&
+      extra.state !== "active"
+    ) {
+      releaseLeaseLocked({
+        stateRoot: root,
+        workRoot: extra.work_root,
+        role: extra.role_class as any,
+        sessionID,
+      })
+    }
   })
 }
 
@@ -2410,6 +2451,9 @@ export function delegateToolDefinition(ctx: any): any {
           // 登记必须发生在 prompt 之前：工程 session 开局就要读自己的 role.json 分区，
           // 否则它会去找全局 fallback，而全局 fallback 属于 external_directory（默认 deny）。
           // 落盘根 = stateRoot（worktree 下是主仓——两份状态分裂会导致 resume 查无此条）。
+          // ⚠ 参数必须与签名对齐（8 参）。此前这里按 10 参传（`work_root` / `state` /
+          //   `bumpClaim` 都在第 9–10 位）⇒ JS **静默丢弃**多余实参 ⇒ 同步 `delegate` 从不
+          //   bump `claim_gen`、pair 条目也没写 `work_root`（归属围栏与租约检查因此全失效）。
           registerSession(
             stateRoot,
             sessionID,
@@ -2417,9 +2461,12 @@ export function delegateToolDefinition(ctx: any): any {
             effectiveAgent,
             kind,
             undefined,
-            { owner_agent: ownerAgent, role_class: effectiveRoleClass },
-            undefined,
-            { work_root: workRoot, state: "active" },
+            {
+              owner_agent: ownerAgent,
+              role_class: effectiveRoleClass,
+              work_root: workRoot,
+              state: "active",
+            },
             { bumpClaim: true }, // 认领 ⇒ 归属变更 ⇒ claim_gen +1
           )
           // 变更检测基准 = workRoot（在主仓跑 git status 数不到 worktree 的变更）。

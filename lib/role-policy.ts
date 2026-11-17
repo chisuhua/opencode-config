@@ -178,6 +178,25 @@ export function resolveArchPaths(repoRoot: string): string[] {
   return ARCH_FALLBACK_DIRS.filter((d) => existsSync(path.join(repoRoot, d)))
 }
 
+/**
+ * 从写类工具的 **input** 里取目标路径。
+ *
+ * ⚠ **宿主字段名是 `path`**（2026-11-17 层 2 e2e 实测：`write` 与 `edit` 的 input 均为
+ *   `{ path, content }` / `{ path, oldString, newString }`）。旧实现只读 `filePath` ⇒
+ *   取不到就提前 `return` ⇒ 门控**静默 fail-open**（真写盘成功、无任何错误）。
+ * ⇒ 这里**同时接受** `path` / `filePath` / `file_path`（宿主改名前后的两种形状），
+ *   取不到返回 `null` ⇒ 调用方必须 **fail-closed**（拒绝），不得放行。
+ */
+export function extractWriteTarget(input: unknown): string | null {
+  if (!input || typeof input !== "object") return null
+  const rec = input as Record<string, unknown>
+  for (const key of ["path", "filePath", "file_path"]) {
+    const v = rec[key]
+    if (typeof v === "string" && v.length > 0) return v
+  }
+  return null
+}
+
 export interface WriteCheckInput {
   role: Role
   action: WriteAction
@@ -254,12 +273,25 @@ function matchesAny(rel: string, patterns: string[]): boolean {
 export interface GateContext {
   /** 会话的 agent 名 */
   agent: string
-  /** 父会话 id；非空 ⇒ 这是**被派发后端** */
+  /** 父会话 id；非空 ⇒ 这是**被派发后端**（宿主会给 `subagent` 会话设，**但 `ctx.session.create` 不设**） */
   parentID?: string | null
+  /** 该会话在 `pair.json` 里有登记（派发面登记的权威标记） */
+  registeredBackend?: boolean
+  /** 该会话的角色分区带 `role_class`（`writeRoleSession` 只给后端写这一字段） */
+  partitionRoleClass?: string | null
 }
 
+/**
+ * 只门控 **build agent 的主会话**。
+ *
+ * ⚠ **后端识别有三条判据**（层 2 e2e 实测：`ctx.session.create` **不设** `parentID`，
+ *   只靠它会把握手后端当主会话 ⇒ 后端被门控 + 用错角色键占租约）：
+ *   ① `parentID != null`（`subagent` 会话）；② `pair.json` 有登记；③ 分区带 `role_class`。
+ */
 export function shouldGateSession(ctx: GateContext): boolean {
   if (ctx.parentID) return false // 后端 ⇒ 仍走 scopeEditRules（ADR D3）
+  if (ctx.registeredBackend) return false // 派发面登记过的后端
+  if (ctx.partitionRoleClass) return false // 后端分区（`role_class` 只由 writeRoleSession 写）
   if (ctx.agent !== "build") return false // 非 build 主会话 ⇒ 不参与（身份 ADR D3）
   return true
 }

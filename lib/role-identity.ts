@@ -76,6 +76,28 @@ function asRole(value: unknown): Role | null {
   return typeof value === "string" && (ROLES as readonly string[]).includes(value) ? (value as Role) : null
 }
 
+/**
+ * 读**某个 session 分区**的原始登记（不走身份链、不做 fallback）。
+ *
+ * 用途：门控要区分「被派发后端」与「主会话」—— 后端分区由 `writeRoleSession` 写入
+ * 并带 `role_class`（主会话分区不带）。⚠ 层 2 实测：`ctx.session.create` **不设**
+ * `parentID` ⇒ 只靠 `parentID` 会把后端误当成主会话。
+ */
+export function readSessionPartition(
+  stateRoot: string,
+  sessionID: string,
+): { role?: Role; roleClass?: string } | null {
+  if (!sessionID) return null
+  const read = readRoleFile(path.join(stateRoot, ROLE_REL))
+  if (read.corrupt || !read.value || typeof read.value !== "object") return null
+  const sessions = (read.value as { sessions?: Record<string, any> }).sessions
+  const part = sessions?.[sessionID]
+  if (!part || typeof part !== "object") return null
+  const role = asRole(part.current_role) ?? undefined
+  const roleClass = typeof part.role_class === "string" && part.role_class.length > 0 ? part.role_class : undefined
+  return { ...(role ? { role } : {}), ...(roleClass ? { roleClass } : {}) }
+}
+
 export function resolveRole(input: ResolveRoleInput): ResolvedRole {
   const sidWarning: "no-session-id" | undefined = input.sessionID ? undefined : "no-session-id"
   if (sidWarning && input.warnSink) {
