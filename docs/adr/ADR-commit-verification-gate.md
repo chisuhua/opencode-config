@@ -84,7 +84,7 @@
    （这些形态的**实际提交内容集 ≠ 暂存区** ⇒ 门禁不可判定 ⇒ fail-closed；错误文案须说明原因）：
    `-a` / `--all`（并入全部已跟踪文件的改动）/ `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file`
    / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`：git 手册明文其「忽略 index，改记所列文件的**当前内容**」）。
-8. **复合命令闭口**：命令串中出现 `&&` / `;` / `|` 且其中含 commit ⇒ **拒**（要求**分两次调用**：先 `git add`，再 `git commit`）
+8. **复合命令闭口**：命令串按 `;` / `&&` / `||` / `|` **分段**（元字符紧贴时也独立成 token）。**只有「commit 所在段之前存在改 index 的段」才拒**（`git add` / `rm` / `mv` / `restore` / `checkout` / `stash` / `apply` / `reset` / `update-index`）⇒ 保证「判定对象 = 执行前 index」这一前提始终成立；**尾随段无害**（`git commit -m x; echo "exit=$?"` ⇒ **放行**）—— ⚠ 层 2 实测的假阳性坑：一刀切拒绝复合命令会拦下模型最常见的写法 ⇒ 合法提交被拦 ⇒ 模型转去找绕路写法。
    ⇒ 保证「判定对象 = 执行前 index」这一前提始终成立（否则 `git add -A && git commit` 的实际内容集 ≠ 判定时的 index）。
 
 ⚠ **间接提交不在门禁内**（包装脚本 / `$(...)` / `bash x.sh` / `make commit` / `eval`）⇒ 见 D9③⑥。
@@ -195,7 +195,7 @@
 - [ ] **V4 暂存区为空 ⇒ 硬拒**；`git diff --cached --quiet` 退出码 ≥2（判定失败）⇒ **亦拒**。**变红**：把退出码 ≥2 当放行 ⇒ V4 红。
 - [ ] **V5 无声明仓库 ⇒ 放行**（其它仓库零影响）。**变红**：无声明时改为拒绝 ⇒ V5 红。
 - [ ] **V6 命令识别**：`git commit` / `git -c k=v commit` / `GIT_AUTHOR_NAME=x git commit` / `git -C dir commit` / `git commit --no-verify` / `git --git-dir <dir> commit`（分离值）被识别为 commit；**且** `git commit-tree` / `git log --grep commit` / `git config commit.gpgsign` **不**被误伤；**解析不出子命令 ⇒ 拒**（不静默放行）。**变红**：只认 `git commit ` 前缀 ⇒ V6 红；去掉 fail-closed 兜底 ⇒ V6 红。
-- [ ] **V7 提交形态闭口**：`git commit -a` / `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file` / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`）/ **复合命令**（`git add -A && git commit -m x`）⇒ **拒**（内容集不可判定）。**变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红。
+- [ ] **V7 提交形态闭口**：`git commit -a` / `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file` / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`）⇒ **拒**；**复合命令**里 **commit 之前**有改 index 的段（`git add -A && git commit -m x`）⇒ **拒**，而**尾随**段（`git commit -m x; echo "exit=$?"`）⇒ **放行**。**变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红。
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
 - [ ] **V10 免宣称九项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。

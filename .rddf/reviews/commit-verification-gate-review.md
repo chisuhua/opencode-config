@@ -85,6 +85,24 @@ openspec validate role-aware-permissions --strict  # valid
 | ④ | `opencode.jsonc` 的 `git commit *` 改回 `ask` | **1 fail**（档位守卫）⇒ V1 有判别力 |
 | ⑤ | MAD §2.8.7 的 D5② 措辞改回「不在范围」 | **1 fail**（落点完整性守卫）⇒ V9 有判别力 |
 
+## 4.2 层 2 实测（真宿主 `opencode run --standalone`，插件在实例内加载）
+
+| 探针 | 期望 | 实跑 |
+|---|---|---|
+| P1 `git push --force` | deny | ✅ `Permission denied: shell` |
+| P2 `git push origin main --force`（flag 末位） | deny | ✅ `Permission denied: shell` |
+| P3 `git push -f` | deny | ✅ `Permission denied: shell` |
+| P4 `git push origin main -f`（flag 末位） | deny | ✅ `Permission denied: shell` |
+| P5 `git push origin main` | **非 deny**（ask + `--auto` ⇒ 放行） | ✅ completed（git 自己报无 remote） |
+| P6 门禁：验证红（声明 `[["false"]]`）+ 已暂存 | 拒 | ✅ `commit-gate: 验证命令失败 ⇒ 拒绝提交：$ false`；HEAD **未推进** |
+| P7 门禁：暂存区为空 | 拒 | ✅ `commit-gate: 暂存区为空 ⇒ 请先 git add 再提交` |
+| P8 门禁：验证绿（声明 `[["true"]]`） | 放行 | ✅ commit completed；HEAD **推进**（`green probe`） |
+| P9 门禁：`git add -A && git commit` | 拒（前置段改 index） | ✅ 拒 |
+| P10 门禁：`git commit -m x; echo "exit=$?"` | **不拦**（尾随段无害） | ⚠ **首跑被误判成「位置 pathspec」⇒ 假阳性** ⇒ 已修（分词：元字符独立成 token；复合命令口径改为「前置段改 index 才拒」）⇒ 复跑通过 |
+
+⚠ P10 的假阳性是**层 2 才能发现的坑**（层 1b 用例当时按「复合命令一律拒」写 ⇒ 与实现同源 ⇒ 无判别力）。
+⇒ 口径修正后补了 4 条层 1b 用例（尾随段放行 / 前置 add 拒 / 元字符独立成 token / `&&` 形态）。
+
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）
