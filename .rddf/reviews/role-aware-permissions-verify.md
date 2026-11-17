@@ -1,23 +1,28 @@
 # 验收报告 — role-aware-permissions
 
-> **轮次**：第 1 轮（`verifier` 角色，2026-11-17）｜**上限** 3 轮（`RDDF_VERIFIER_MAX_LOOPS`）
+> **轮次**：**第 2 轮（终）**（`verifier` 角色，2026-11-17）｜**上限** 3 轮（`RDDF_VERIFIER_MAX_LOOPS`）
 > **判据来源**（按优先级）：`openspec/changes/role-aware-permissions/proposal.md` 的 `## 验收标准`（AC1–AC24）
 > ← 两份已签批 ADR 的 V 项（`ADR-role-session-identity` V1–V10 / `ADR-role-aware-permissions` V1–V14）。
 > 用户本次未口头追加验收条件。
 
-## 0. 结论
+## 0. 结论（**第 2 轮 · 最终**）
 
 | 项 | 结果 |
 |---|---|
 | 判据总数 | 24（AC1–AC24） |
-| 通过 | **23** |
-| 不通过 | **1**（AC16 的「单一真源」第三支） |
+| 通过 | **24** |
+| 不通过 | 0 |
 | 不可判定 | 0（层 2 的 8 条 representative **已实跑**，不是 skip） |
-| 判定 | `ac-fail` / `implementation_gap` ⇒ 路由回 **builder**（最小修：统一 arch 目录解析） |
+| 判定 | **PASS**（`ac-fail` 已闭合；轮 1 的 1 条已复验通过） |
 
-**分流**：`implementation_gap`（实现缺失可补齐，非提案错）—— 判据本身与已签批 ADR 不冲突，只是同一语义有两份实现。
+**轮次轨迹**：
+- **轮 1**：23/24 —— AC16 第三支不通过（`archRoots()` 与 `resolveArchPaths()` 是同一语义的两份实现）
+  ⇒ `implementation_gap` ⇒ 路由回 builder。
+- **轮 2**：24/24 —— builder 提交 `d396c08`（`archRoots()` 委托 `resolveArchPaths()` + 源码级/行为级守卫 +
+  变红演练）⇒ 本轮只复验 AC16 + 全量回归 + 层 2 `RG-1`/`RG-2`（arch 边界影响派发面）。
+
 （附注：AC16 措辞「spawn 规则构建器共用 `role-policy`」与 ADR D3「后端仍走 `scopeEditRules`」在**字面**上偏紧，
-本轮按「单一真源 = arch 目录解析单点」判定；措辞校准交 planner 择机处理，**不阻塞**本轮路由。）
+本轮按「单一真源 = arch 目录解析单点」判定；措辞校准交 planner 择机处理，**不阻塞**。）
 
 ## 1. 静态 / 单测（层 1a + 1b）
 
@@ -44,7 +49,7 @@ openspec validate role-aware-permissions --strict     # Change 'role-aware-permi
 | AC13 | `-t AC13` | 2 pass（`no-role` 连架构文档也拒；成对：角色切换仍能完成） | ✅ |
 | AC14 | `-t AC14` | 2 pass（architect 写 `<gov>/prompts/**` 放行；成对 planner 被拒） | ✅ |
 | AC15 | `-t AC15` | 3 pass（planner 写 `src/**` 拒 / roadmap・improvements 放行 / `design.md` 拒） | ✅ |
-| **AC16** | `-t AC16` | 3 pass（策略表定义点恰好 1 处；身份解析定义点恰好 1 处；插件不带自己的表）—— 但**只覆盖到「定义点唯一 + 插件消费」**，见 §3 | ❌ |
+| AC16 | `bun test tests/role-policy.test.ts -t AC16` | **4 pass / 0 fail**（策略表定义点唯一；身份解析定义点唯一；插件不带自己的表；**arch 目录解析单源**：源码级 + 三态行为级） | ✅（轮 1 曾 ❌，见 §3） |
 | AC17 | `-t AC17` | 6 pass（后端三判据：`parentID` / `pair.json` 登记 / 分区 `role_class`；成对 `parentID=null` 必拒；非 build 跳过） | ✅ |
 | AC18 | `bun test tests/role-lease-claims.test.ts -t AC18` | 3 pass（同角色冲突拒 + 指名 holder session/workRoot；`claimSlot` 结构化返回；调用方 `throw fail`） | ✅ |
 | AC19 | `-t AC19` | 2 pass（不同键互不冲突；主 architect + 后端 verifier 成功） | ✅ |
@@ -75,7 +80,7 @@ openspec validate role-aware-permissions --strict     # Change 'role-aware-permi
 ③ 门控跳过时仍做租约校验 ⇒ 用身份链角色而非 `role_class` 占错键；
 ④ 同步 `delegate` 面 `registerSession` 按 10 参调 8 参签名 ⇒ `work_root`/`state`/`bumpClaim` 被静默丢弃。
 
-## 3. 判据不通过项（1 条）
+## 3. 轮 1 的不通过项（已闭合）
 
 ### AC16 · 单一真源（第三支）
 
@@ -96,8 +101,19 @@ grep -n "ARCH_FALLBACK_DIRS\|resolveArchPaths" lib/role-policy.ts   # L41/L167�
 其余两支成立：身份解析定义点唯一（`role-identity`）、插件不带自己的策略表（用例已钉）。
 
 **分类**：`implementation_gap`（语义可收敛，不涉决策）。
-**最小修**：`archRoots()` 改为 `import { resolveArchPaths } from "./role-policy.ts"` 并直接返回其值
-（无循环引用：`role-policy` 只依赖 `role-identity` 的类型），随后复跑 `-t AC16` + 全量 + 层 2 RG-1/RG-2。
+**修复（builder，commit `d396c08`）**：`archRoots()` 改为委托 `resolveArchPaths()`
+（无循环引用：`role-policy` 只依赖 `role-identity` 的类型）；新增守卫（源码级：不得自己读
+`arch-docs.json` / 不得引用 `ARCH_FALLBACK_DIRS`；行为级：三态逐个同输出），并做**变红演练**
+（把 `archRoots` 改回自实现 ⇒ 该用例红，随后还原）。
+
+**轮 2 复验证据**：
+```bash
+bun test tests/role-policy.test.ts -t AC16     # 4 pass / 0 fail
+bun test tests/                              # 690 pass / 0 fail
+bash scripts/check-upstream-anchors.sh       # RESULT: OK（23/23）
+openspec validate role-aware-permissions --strict  # valid
+bats -f RG-1 / -f RG-2（E2E_REAL_RUNTIME=1）  # 两条均 ok（arch 边界影响派发面）
+```
 
 ## 4. 遗留清扫（本次范围内）
 
@@ -112,12 +128,12 @@ grep -n "ARCH_FALLBACK_DIRS\|resolveArchPaths" lib/role-policy.ts   # L41/L167�
 
 ## 5. 观察项（不阻塞，登记备查）
 
-1. **`role-claims.json` 未进 git 排除**：`.git/info/exclude` 只排了 `role.json`，`.gitignore` 只排了 `pair.json`
-   ⇒ 每次切角色后工作树出现未跟踪的运行时状态，有误提交风险（建议 builder 补一行）。
+1. ~~`role-claims.json` 未进 git 排除~~ ⇒ **已在 `d396c08` 修**（`.gitignore` 补 `.rddf/state/role-claims.json`）。
 2. **`checkLeaseForWrite` 命中自己租约不刷新 `heartbeat_at`**：长会话 >30 min 且无写类调用时可被 TTL 接管（已在 backlog）。
 3. **verifier 写集与矩阵措辞**：`ROLE_WRITE_POLICY.verifier` 允许 `.rddf/state/verifier/**`，而角色矩阵写「**手工**写」禁止 —— 措辞差，行为一致（已在 backlog）。
 4. **ask 档 + `--auto`**：层 2 用 `--auto` 跑，故 e2e **不证明** ask 档有效；ask 档由层 1a 守卫单独钉住。
 
 ## 6. 已用轮次
 
-- 本 change 验收：**第 1 轮**（未打回过；AC16 修复后需第 2 轮复验，复验只验 AC16 + 全量回归）。
+- 本 change 验收：**第 2 轮（终）** —— 轮 1 判 1 条不通过（AC16）⇒ 修复后轮 2 只验 AC16 + 全量回归 + 层 2 RG-1/RG-2，
+  24/24 通过。累计打回 1 次（上限 3 次，未耗尽）。
