@@ -14,7 +14,10 @@
  *   ⑦ **提交形态闭口**：`-a` / `--all` / `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file`
  *      / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`）⇒ **拒**
  *      （这些形态的**实际提交内容集 ≠ 暂存区** ⇒ 门禁不可判定）；
- *   ⑧ **复合命令**（`&&` / `;` / `||` / `|`）中含 commit ⇒ **拒**（要求分两次调用：先 add，再 commit）。
+ *   ⑧ **复合命令**：只要出现 commit，**其余每一段**都必须是「纯报告命令」或「只读 git」（`git push` / `rm` / `git add`
+ *      等一律拒）。两个理由：① shell 权限是**整串前缀匹配** ⇒ 整串以 `git commit ` 开头会让 push 的 `ask` /
+ *      force-push 的 `deny` 同时失效（**搭便车**）；② `git add && git commit` 的改动序使「判定对象 = 执行前 index」不成立。
+ *      而**尾随的报告段**（`git commit -m x; echo "exit=$?"`）与**重定向**（`> /dev/null 2>&1`）**放行**（层 2 实测的假阳性坑）。
  *
  * 已知盲区（登记于 ADR D9⑥）：别名 / 函数 / `eval` / `xargs` 等把 `git` 包起来的形态。
  */
@@ -64,33 +67,81 @@ const COMMIT_CLOSED_SHORT = new Set(["a", "o", "i"])
 /** 可以出现在 `git` 之前的包装命令（`sudo git commit` / `env X=1 git commit`）。 */
 const WRAPPERS = new Set(["sudo", "env", "nohup", "time", "command", "nice", "ionice", "stdbuf"])
 
+/** 包装命令（`sudo` / `env`）自己带值选项 ⇒ 跳过它们（`sudo -u u git commit`）。 */
+const WRAPPER_VALUE_OPTIONS = new Set(["-u", "--user", "-g", "--group", "-p", "--prompt", "-C", "-D", "-r", "-t"])
+
 /** 复合命令的分隔符（出现在 token 层面）。 */
 const COMPOUND_TOKENS = new Set(["&&", "||", ";", "|", "&"])
 
-/** 会改 index / 工作区的 git 子命令（出现在 commit **之前** ⇒ 提交内容集不可判定）。 */
-export const INDEX_MUTATING_SUBCOMMANDS = new Set([
-  "add",
-  "rm",
-  "mv",
-  "restore",
-  "checkout",
-  "stash",
-  "apply",
-  "reset",
-  "update-index",
+/** **纯报告**命令（复合命令里的非 commit 段只允许这些 ⇒ 防「`git commit …; <危险命令>`」搭便车）。 */
+export const REPORTING_COMMANDS = new Set([
+  "echo",
+  "printf",
+  "true",
+  ":",
+  "exit",
+  "cat",
+  "ls",
+  "pwd",
+  "head",
+  "tail",
+  "wc",
+  "date",
+  "sleep",
+  "test",
+  "[",
+  "false",
+  "cd",
+  "export",
+  "set",
+  "unset",
+  "umask",
 ])
 
-/** 取一段里的 git 子命令（非 git 段 ⇒ null）。 */
-export function gitSubcommandOf(tokens: Token[]): string | null {
+/** **只读** git 子命令（同上：复合命令里的非 commit git 段只允许这些）。 */
+export const HARMLESS_GIT_SUBCOMMANDS = new Set([
+  "status",
+  "log",
+  "diff",
+  "show",
+  "rev-parse",
+  "describe",
+  "remote",
+  "config",
+  "branch",
+  "ls-files",
+  "blame",
+  "cat-file",
+  "shortlog",
+])
+
+/**
+ * `git` **命令词**在一段 token 里的下标（`VAR=val` 前缀 / 包装命令及其带值选项 / 子 shell 前缀都跳过）。
+ * 单一真源：`gitSubcommandOf` 与 `commitInSegment` 都走它（避免两套前缀扫描漂移）。
+ */
+function gitWordIndex(tokens: Token[]): number {
   let i = 0
   while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
   while (i < tokens.length && WRAPPERS.has(tokens[i]!.value) && !tokens[i]!.quoted) {
     i++
     while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
+    // 包装命令自己的带值选项（`sudo -u u` / `env -i`）
+    while (i < tokens.length && !tokens[i]!.quoted && tokens[i]!.value.startsWith("-") && tokens[i]!.value !== "--") {
+      const opt = tokens[i]!.value
+      i++
+      if (WRAPPER_VALUE_OPTIONS.has(opt)) i++
+    }
   }
+  // 前缀 `(` / `{` 已被 stripShellPrefix 处理；这里只剥独立成 token 的 `(` / `{` / `!`
+  while (i < tokens.length && ["(", "{", "!"].includes(tokens[i]!.value)) i++
+  return i
+}
+
+/** 取一段里的 git 子命令（非 git 段 ⇒ null）。 */
+export function gitSubcommandOf(tokens: Token[]): string | null {
+  const i = gitWordIndex(tokens)
   if (i >= tokens.length || !isGitCommandWord(tokens[i]!)) return null
-  const sub = parseGitSubcommand(tokens, i + 1)
-  return sub
+  return parseGitSubcommand(tokens, i + 1)
 }
 
 export interface Token {
@@ -124,6 +175,32 @@ export function tokenizeCommand(command: string): Token[] {
     // ⚠ shell 元字符**独立成 token**（即使紧贴其它字符：`x;` ⇒ [x][;]）
     //   —— 否则 `git commit -m x; echo "..."` 会被当成**一个**命令段 ⇒ 尾随的 `echo` 被误判成
     //   「位置 pathspec」⇒ 合法提交被假阳性拦下（层 2 实测抓到的坑）。
+    // ⚠ 重定向**剥离**（`git commit -m x > /dev/null` / `2>&1`）：否则 `>` 及其目标会变成
+    //   普通 token ⇒ 被 `checkCommitForm` 判成「位置 pathspec」⇒ 合法提交被假阳性拦下。
+    if (ch === ">" || ch === "<") {
+      // `2>`/`2>>` 的 `2` 是 **fd 前缀**（紧贴操作符）⇒ 丢弃，否则会被判成位置 pathspec（假阳性）
+      if (has && !quoted && /^[0-9]+$/.test(cur)) {
+        cur = ""
+        has = false
+      } else if (has) {
+        out.push({ value: cur, quoted })
+        cur = ""
+        quoted = false
+        has = false
+      }
+      // 跳过操作符本体与其目标（`>f` / `> f` / `2>&1` / `>>f` / `&>f`）
+      i++
+      while (i < command.length && /[0-9&>]/.test(command[i]!) && command[i] !== "&") i++
+      if (command[i] === "&") {
+        i++
+        while (i < command.length && /[0-9]/.test(command[i]!)) i++
+      }
+      while (i < command.length && /\s/.test(command[i]!)) i++
+      const start = i
+      while (i < command.length && !/\s/.test(command[i]!) && command[i] !== ";" && command[i] !== "|" && command[i] !== "&") i++
+      if (i === start) i-- // 无目标（如 `>&2` 已在上一步吃掉）⇒ 回退一格，避免跳过下一个字符
+      continue
+    }
     if (ch === ";" || ch === "&" || ch === "|") {
       if (has) {
         out.push({ value: cur, quoted })
@@ -161,17 +238,23 @@ function isVarAssignment(token: Token): boolean {
   return !token.quoted && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token.value)
 }
 
+/** 剥掉 shell 前缀（`(git` / `{` / `!`）⇒ 首 token 仍可判成 git 命令词。 */
+function stripShellPrefix(value: string): string {
+  return value.replace(/^[({!]+/, "")
+}
+
 function isGitCommandWord(token: Token): boolean {
   if (token.quoted) return false
-  if (!token.value.includes("/") && token.value !== "git") return false
-  return path.basename(token.value) === "git"
+  const v = stripShellPrefix(token.value)
+  if (!v.includes("/") && v !== "git") return false
+  return path.basename(v) === "git"
 }
 
 /**
  * 从 `git` 之后解析**子命令**。
  * @returns 子命令名；解析不出 ⇒ `null`（⇒ 调用方 fail-closed）
  */
-export function parseGitSubcommand(tokens: Token[], start: number): string | null {
+function parseGitSubcommandIndex(tokens: Token[], start: number): number | null {
   let i = start
   while (i < tokens.length) {
     const t = tokens[i]!
@@ -184,7 +267,12 @@ export function parseGitSubcommand(tokens: Token[], start: number): string | nul
   }
   const sub = tokens[i]
   if (!sub || sub.quoted) return null
-  return sub.value
+  return i
+}
+
+export function parseGitSubcommand(tokens: Token[], start: number): string | null {
+  const idx = parseGitSubcommandIndex(tokens, start)
+  return idx === null ? null : tokens[idx]!.value
 }
 
 /**
@@ -240,9 +328,9 @@ export function detectCommitInvocation(command: string): CommitInvocation {
     return { isCommit: false, block: "commit-gate: shell 命令为空 ⇒ 拒绝（fail-closed）" }
   }
 
-  // ⑧ 复合命令：**只有「commit 之前的段改过 index」才拒**
-  //   （`git add -A && git commit` ⇒ 判定对象不可判定 ⇒ 拒；
-  //     而 `git commit -m x; echo "exit=$?"` 的**尾随**段无害 ⇒ 放行 —— 层 2 实测的假阳性坑）。
+  // ⑧ 复合命令：出现 commit 时，**其余每一段**必须是「纯报告命令」或「只读 git」
+  //   （`git add -A && git commit` / `git commit; git push --force` ⇒ 拒：前者判定对象不可判定，
+  //     后者靠整串前缀搭便车；而 `git commit -m x; echo "exit=$?"` 的尾随段无害 ⇒ 放行）。
   const segments: Token[][] = [[]]
   for (const t of tokens) {
     if (!t.quoted && COMPOUND_TOKENS.has(t.value)) {
@@ -252,31 +340,43 @@ export function detectCommitInvocation(command: string): CommitInvocation {
     segments[segments.length - 1]!.push(t)
   }
   if (segments.length > 1) {
-    // ⚠ 逐段推进：**自上一个 commit 段以来**若发生过 index 改动 ⇒ 该 commit 的内容集不可判定 ⇒ 拒
-    //   （覆盖 `git commit -m x; git add -A; git commit -m y` 这种**多 commit 段**的写法）
-    let mutated: string | null = null
-    let commitSeen = false
-    for (const seg of segments) {
+    const hits = segments.map((seg) => commitInSegment(seg))
+    if (!hits.some((h) => h.isCommit)) return { isCommit: false }
+    const blocked = hits.find((h) => h.block)
+    if (blocked) return { isCommit: true, block: blocked.block, detail: blocked.detail }
+
+    // ⚠ **复合命令的搭便车防护**：shell 权限是**整串前缀匹配** ⇒ `git commit -m x; git push --force`
+    //   整串以 `git commit ` 开头 ⇒ 命中 `"git commit *": "allow"` ⇒ **push 的 ask / force-push 的 deny 同时失效**。
+    //   ⇒ 只要 commit 存在，**其余每一段**都必须是「纯报告命令」或「只读 git」，否则拒。
+    for (let k = 0; k < segments.length; k++) {
+      if (hits[k]!.isCommit) continue
+      const seg = segments[k]!
+      if (seg.length === 0) continue
       const sub = gitSubcommandOf(seg)
-      if (sub === "commit") {
-        const hit = commitInSegment(seg)
-        if (hit.block) return { isCommit: true, block: hit.block, detail: hit.detail }
-        if (mutated) {
+      if (sub) {
+        if (!HARMLESS_GIT_SUBCOMMANDS.has(sub)) {
           return {
             isCommit: true,
             block:
-              `commit-gate: 复合命令中 \`git ${mutated}\` 出现在本次 commit **之前** ⇒ 提交内容集不可判定 ⇒ 拒绝` +
-              `（要求**分两次调用**：先 add，再 commit）`,
-            detail: "compound-index-mutation",
+              `commit-gate: 复合命令中的 \`git ${sub}\` 段不在「只读 git」清单 ⇒ 拒绝` +
+              `（整串以 \`git commit \` 开头会让 permission 的 ask / deny 全部失效 ⇒ 必须分两次调用）`,
+            detail: "compound-segment",
           }
         }
-        commitSeen = true
         continue
       }
-      if (sub && INDEX_MUTATING_SUBCOMMANDS.has(sub)) mutated = sub
+      const first = stripShellPrefix(seg[0]!.value)
+      if (!REPORTING_COMMANDS.has(first)) {
+        return {
+          isCommit: true,
+          block:
+            `commit-gate: 复合命令中的 \`${first}\` 段不在「纯报告」清单 ⇒ 拒绝` +
+            `（同上：整串前缀会让 permission 的 ask / deny 失效）`,
+          detail: "compound-segment",
+        }
+      }
     }
-    if (commitSeen) return { isCommit: true, detail: "compound-tail" }
-    return { isCommit: false }
+    return { isCommit: true, detail: "compound" }
   }
 
   const hit = commitInSegment(tokens)
@@ -286,18 +386,13 @@ export function detectCommitInvocation(command: string): CommitInvocation {
 
 /** 单段（无复合分隔符）里是否有 commit 调用。 */
 function commitInSegment(tokens: Token[]): CommitInvocation {
-  // ③ 定位 `git` **命令词**：允许 `VAR=val` 前缀与已知包装命令
-  let i = 0
-  while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
-  while (i < tokens.length && WRAPPERS.has(tokens[i]!.value) && !tokens[i]!.quoted) {
-    i++
-    while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
-  }
+  // ③ 定位 `git` **命令词**（`VAR=val` / 包装命令及其选项 / 子 shell 前缀都跳过）
+  const i = gitWordIndex(tokens)
   if (i >= tokens.length || !isGitCommandWord(tokens[i]!)) {
     return { isCommit: false }
   }
-  const sub = parseGitSubcommand(tokens, i + 1)
-  if (sub === null) {
+  const subIndex = parseGitSubcommandIndex(tokens, i + 1)
+  if (subIndex === null) {
     // ⑥ 解析不出子命令 ⇒ fail-closed（不得默认「不是 commit」而放行）
     return {
       isCommit: true,
@@ -305,10 +400,10 @@ function commitInSegment(tokens: Token[]): CommitInvocation {
       detail: "unparsable",
     }
   }
+  const sub = tokens[subIndex]!.value
   if (sub !== "commit") {
     return { isCommit: false, detail: `subcommand=${sub}` }
   }
-  const subIndex = tokens.findIndex((t, idx) => idx > i && t.value === "commit")
   const form = checkCommitForm(tokens, subIndex)
   if (form) {
     return { isCommit: true, block: `commit-gate: ${form} ⇒ 拒绝（门禁不可判定）`, detail: "closed-form" }

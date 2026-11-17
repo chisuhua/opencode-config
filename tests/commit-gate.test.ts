@@ -94,11 +94,11 @@ describe("D5⑦ 提交形态闭口（实际内容集 ≠ 暂存区 ⇒ 拒）", 
   }
 })
 
-describe("D5⑧ 复合命令闭口（**只有 commit 之前改过 index 的段**才拒）", () => {
+describe("D5⑧ 复合命令闭口（其余段必须是纯报告命令 / 只读 git）", () => {
   test("`git add -A && git commit -m x` ⇒ 拒（前置段改了 index ⇒ 内容集不可判定）", () => {
     const r = detectCommitInvocation("git add -A && git commit -m 'x'")
     expect(r.isCommit).toBe(true)
-    expect(r.block).toContain("之前")
+    expect(r.block).toContain("git add")
   })
   test("`git status && ls` ⇒ 不命中", () => {
     expect(detectCommitInvocation("git status && ls").isCommit).toBe(false)
@@ -126,6 +126,40 @@ describe("D5⑧ 复合命令闭口（**只有 commit 之前改过 index 的段**
   })
   test("`git commit -m x; echo done; git commit --amend` ⇒ 不拦（两段都没改 index）", () => {
     const r = detectCommitInvocation("git commit -m x; echo done; git commit --amend")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
+  test("`git commit -m x && git status` ⇒ 不拦（只读 git 段）", () => {
+    expect(detectCommitInvocation("git commit -m x && git status").block).toBeUndefined()
+  })
+
+  // ⚠ **搭便车**：shell 权限是整串前缀匹配 ⇒ `git commit *` = allow 会把后面的段一起放行
+  test("`git commit -m x; git push --force origin main` ⇒ 拒（否则 force-push 的 deny 失效）", () => {
+    const r = detectCommitInvocation("git commit -m x; git push --force origin main")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("只读 git")
+  })
+  test("`git commit -m x && git push origin main` ⇒ 拒（push 必须留在自己的 ask 档）", () => {
+    expect(detectCommitInvocation("git commit -m x && git push origin main").block).toBeTruthy()
+  })
+  test("`git commit -m x; rm -rf /tmp/x` ⇒ 拒（非报告命令段）", () => {
+    const r = detectCommitInvocation("git commit -m x; rm -rf /tmp/x")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("纯报告")
+  })
+  test("`git commit -m x > /dev/null 2>&1` ⇒ 不拦（重定向被剥离）", () => {
+    expect(detectCommitInvocation("git commit -m x > /dev/null 2>&1").block).toBeUndefined()
+  })
+  test("`git commit -m x 2>/dev/null` ⇒ 不拦（`2` 是 fd 前缀，不算 pathspec）", () => {
+    expect(detectCommitInvocation("git commit -m x 2>/dev/null").block).toBeUndefined()
+  })
+  test("`(git commit -m x)` ⇒ 识别为 commit（子 shell 前缀被剥）", () => {
+    const r = detectCommitInvocation("(git commit -m x)")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
+  test("`sudo -u u git commit -m x` ⇒ 识别为 commit（包装命令带值选项被跳过）", () => {
+    const r = detectCommitInvocation("sudo -u u git commit -m x")
     expect(r.isCommit).toBe(true)
     expect(r.block).toBeUndefined()
   })
