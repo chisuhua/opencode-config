@@ -1,0 +1,63 @@
+/**
+ * role-gate —— **角色感知写门**的宿主接线（ADR-role-aware-permissions D2 / D3）
+ *
+ * 纯逻辑在 `../lib/role-policy.ts`（角色→写根的**单一真源**）+ `../lib/role-identity.ts`
+ * （身份解析的**单一落点**）—— 本文件**只做接线**：取会话 → 取角色 → 判定 → 拒绝时抛错。
+ *
+ * 门控面（ADR D2）：`edit` / `write` 两个工具；`shell` 写盘**不在**门控内（D5① 免宣称）。
+ *
+ * ⚠ **执行点缺席**（D5⑥）：插件未激活 / `--standalone` / 改插件后未 `service restart` ⇒
+ *   本门控**不生效**（D6 租约另有两个不随插件消失的执行点）。
+ */
+import { homedir } from "node:os"
+import path from "node:path"
+
+import { Plugin } from "@opencode/plugin"
+
+import { canonicalRoot } from "../lib/delegate-core.ts"
+import { resolveRole } from "../lib/role-identity.ts"
+import { evaluateWrite } from "../lib/role-policy.ts"
+
+const WRITE_TOOLS = new Set(["edit", "write"])
+
+export default Plugin.define({
+  id: "role-gate",
+  async setup(ctx) {
+    await ctx.tool.hook("execute.before", async (event: any) => {
+      const tool = event?.tool
+      if (typeof tool !== "string" || !WRITE_TOOLS.has(tool)) return
+
+      const input = event?.input ?? {}
+      const filePath = typeof input.filePath === "string" ? input.filePath : ""
+      if (!filePath) return
+
+      const sessionID = typeof event?.sessionID === "string" ? event.sessionID : ""
+      if (!sessionID) return
+
+      const session = await ctx.session.get({ sessionID })
+      const agent = typeof session?.agent === "string" ? session.agent : ""
+
+      // 身份解析的**单一落点**（AC16）：门控与租约都从这里取角色
+      const cwd = process.cwd()
+      const { stateRoot, workRoot } = canonicalRoot(cwd)
+      const resolved = resolveRole({
+        stateRoot,
+        globalRoot: path.join(homedir(), ".rddf", "state"),
+        sessionID,
+        agent,
+      })
+
+      const result = evaluateWrite({
+        agent,
+        parentID: session?.parentID ?? null,
+        role: resolved.role,
+        action: tool === "edit" ? "edit" : "write",
+        filePath,
+        cwd,
+        repoRoot: workRoot,
+      })
+
+      if (!result.allowed) throw new Error(result.message ?? "role-gate: 拒绝")
+    })
+  },
+})

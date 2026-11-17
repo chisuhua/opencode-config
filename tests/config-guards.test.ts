@@ -1341,6 +1341,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "role-identity.ts",
         // v2.46（Task 2）：角色切换唯一写入口 + 租约落点（ADR-role-session-identity D2）
         "role-lease.ts",
+        // v2.46（Task 3）：角色→写根的**单一真源**（ADR-role-aware-permissions D3 / AC16）
+        "role-policy.ts",
       ],
     }
     for (const [dir, expected] of Object.entries(EXPECTED)) {

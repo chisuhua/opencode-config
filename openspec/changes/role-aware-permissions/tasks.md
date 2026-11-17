@@ -74,11 +74,11 @@
 
 ## Task 3：写门（AC11–AC17）
 
-- [ ] **Step 1:** `lib/role-policy.ts`（角色 → 写根）+ 插件 `tool.execute.before` ⇒ 先写会失败的 1b 用例
-- [ ] **Step 2:** AC11–AC15 各一条「拒/放行**成对**」用例；message 含**角色 + 路径 + 动作**三要素
-- [ ] **Step 3:** AC16：**同一函数引用**断言（**MUTATIONS**：语料注入第二份策略表 ⇒ 必红）
-- [ ] **Step 4:** AC17：后端跳过 + **成对** `parentID=null` 必拒 + 非 build 主会话跳过
-- [ ] **Step 5:** 路径归一（相对 / `../` / symlink）
+- [x] **Step 1:** `lib/role-policy.ts`（角色 → 写根）+ 插件 `tool.execute.before` ⇒ 先写会失败的 1b 用例
+- [x] **Step 2:** AC11–AC15 各一条「拒/放行**成对**」用例；message 含**角色 + 路径 + 动作**三要素
+- [x] **Step 3:** AC16：**同一函数引用**断言（**MUTATIONS**：语料注入第二份策略表 ⇒ 必红）
+- [x] **Step 4:** AC17：后端跳过 + **成对** `parentID=null` 必拒 + 非 build 主会话跳过
+- [x] **Step 5:** 路径归一（相对 / `../` / symlink）
 - [ ] **Step 6:** 接入**每次写类工具调用的租约校验**（holder + `claim_gen`）—— 与 Task 4 同批
 
 ## Task 4：角色租约（AC18–AC22）
