@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os"
 import path from "node:path"
 
+import { archRoots } from "../lib/delegate-core.ts"
 import { switchRole } from "../lib/role-lease.ts"
 import {
   ROLE_WRITE_POLICY,
@@ -208,6 +209,24 @@ describe("AC16 单一真源：策略表与身份解析各只有一处定义", ()
       .filter(([, t]) => /(?:export\s+)?(?:const|let|var)\s+ROLE_WRITE_POLICY\b/.test(t))
       .map(([f]) => f)
     expect(defs.length, "注入第二份策略表 ⇒ 守卫必须抓到").toBe(2)
+  })
+
+  test("AC16 第三支：spawn 规则构建器的 arch 目录解析**收敛**到 role-policy（不得有第二份实现）", () => {
+    const core = readFileSync(path.join(REPO, "lib", "delegate-core.ts"), "utf8")
+    const start = core.indexOf("export function archRoots(")
+    expect(start, "archRoots 不存在").toBeGreaterThan(-1)
+    const body = core.slice(start, core.indexOf("\n}\n", start))
+    // ① 源码级：必须是**委托**，不得自己读配置 / 自己筛 fallback
+    expect(body).toContain("resolveArchPaths(")
+    expect(body).not.toContain("arch-docs.json")
+    expect(body).not.toContain("ARCH_FALLBACK_DIRS")
+    // ② 行为级：三态逐个与 role-policy 一致（同输入同输出）
+    const fx = makeFixture()
+    expect(archRoots(fx.repo)).toEqual(resolveArchPaths(fx.repo))
+    rmSync(path.join(fx.repo, ".rddf", "config", "arch-docs.json"))
+    expect(archRoots(fx.repo)).toEqual(resolveArchPaths(fx.repo))
+    rmSync(path.join(fx.repo, "docs", "adr"), { recursive: true })
+    expect(archRoots(fx.repo)).toEqual(resolveArchPaths(fx.repo))
   })
 
   test("插件消费单源：调用 resolveRole（身份）与 evaluateWrite（策略），不自带表", () => {

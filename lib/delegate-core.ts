@@ -40,6 +40,7 @@ import path from "node:path"
 //   writeJsonAtomic / appendLedgerLine）。两边都只在**函数体**内使用，不在模块顶层求值
 //   ⇒ ESM 循环安全（与 `delegate-async.ts` ↔ `role-lease.ts` 同形）。
 import { acquireLeaseLocked, releaseLeaseLocked } from "./role-lease.ts"
+import { resolveArchPaths } from "./role-policy.ts"
 
 const TOOL_NAME = "delegate"
 
@@ -819,23 +820,10 @@ export const ARCH_FALLBACK_DIRS = [
 ] as const
 
 export function archRoots(projectRoot: string): string[] {
-  const configPath = path.join(projectRoot, ".rddf", "config", "arch-docs.json")
-  let configured: string[] = []
-  try {
-    const raw = readJson(configPath)
-    const paths = raw && typeof raw === "object" ? (raw as any).arch_paths : undefined
-    if (Array.isArray(paths)) {
-      configured = paths
-        .map((item) => String(item ?? "").trim().replace(/^\.\//, "").replace(/\/+$/, ""))
-        .filter((item) => item.length > 0)
-    }
-  } catch {
-    configured = [] // 配置损坏 ⇒ 落回态 2
-  }
-  const existing = configured.filter((item) => existsSync(path.resolve(projectRoot, item)))
-  if (existing.length > 0) return existing
-  // 态 2/3：fallback 目录集中**实际存在**的那些（闭合清单，不扫目录树）
-  return ARCH_FALLBACK_DIRS.filter((item) => existsSync(path.resolve(projectRoot, item)))
+  // ⚠ **单一真源**（AC16）：arch 目录解析只有一份实现 —— `lib/role-policy.ts::resolveArchPaths`
+  //   （配置命中 ⇒ 用配置；否则 fallback 目录集中实际存在者）。
+  //   此处曾有一份逐条同构的副本 ⇒ 「同一语义两份实现」⇒ 任何一侧改规则都会静默漂移。
+  return resolveArchPaths(projectRoot)
 }
 
 /** 解析到最近的**存在**祖先再 realpath（目标不存在时也要能判软链）。 */
