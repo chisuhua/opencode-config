@@ -6,7 +6,9 @@
  *
  * **六项（D5①–D5⑥）—— 门控「防事故，不防绕过」**：
  *   - **D5①** `shell` 写盘（`sed -i` / `tee` / `>` / `cp`）**不在**门控内。
- *   - **D5②** shell 层 **pattern 盲区**（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）不在范围。
+ *   - **D5②** shell 层 **pattern 盲区**（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）—— 已由
+ *     `docs/adr/ADR-commit-verification-gate.md` D5 **部分闭合**（限顶层命令串的 `git commit` 子命令识别）；
+ *     残余：间接提交 / 解析盲区 / 插件缺席（见该 ADR 的 D9）。
  *   - **D5③** `role.json` / `role-claims.json` **可被改写**（`shell` 或 `edit`）⇒ 身份与租约都可被伪造。
  *   - **D5④** **saved approval**（宿主「Allow always」）会覆盖配置，层 1 看不见。
  *   - **D5⑤** **非 build agent 主会话**不参与（`plan` / `front` 等）⇒ 它们与 build 主会话并发时不受本 ADR 保护。

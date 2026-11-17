@@ -1599,7 +1599,7 @@ export function buildBrief(
     } else {
       lines.push("2. 按 acceptance 自行验证，报告实际执行的命令与结果。")
     }
-    lines.push("3. 不要 git commit / git push —— 提交由用户确认后另行发起。")
+    lines.push("3. `git commit` 由工具层验证门决定（验证绿即可提交，不必问用户）；`git push` —— 提交由用户确认后另行发起。")
     lines.push("4. 遇到权限被拒（Permission denied）不要换写法绕过，直接说明被拒的操作并停下。")
     lines.push("5. 交回（HANDOFF）：需要改 plan / AC / tasks、改已签批 ADR、换类、或缺外部信息 ⇒")
     lines.push(

@@ -12,7 +12,7 @@
 | 关联 change | `openspec/changes/role-aware-permissions/`（**已立项 2026-11-17**；与身份 ADR 同一 change 同批落地） |
 | AC 映射 | 本文 **V1–V14 ↔ AC11–AC24**（change 的验收标准表） |
 | 审稿报告 | `.rddf/reviews/role-aware-permissions-consultation.md`（oracle **2 轮** + critic **1 轮**；逐条闭合见 §8.3/§8.4） |
-| 修订 | **2026-11-17（签批后）**：D6 陈旧根口径 → 两文件均恒 `stateRoot`；D5「五项」→**六项**（含顺序修正）与 V13 同步；风险表「五项」→六项；D5⑥ 改为「租约仍剩 `role-switch.sh` + 派发临界区」。**事实性修正，不改决策** |
+| 修订 | **2026-11-17（签批后）**：D6 陈旧根口径 → 两文件均恒 `stateRoot`；D5「五项」→**六项**（含顺序修正）与 V13 同步；风险表「五项」→六项；D5⑥ 改为「租约仍剩 `role-switch.sh` + 派发临界区」。**事实性修正，不改决策** |；**2026-11-18**：`:43` 的执行点由「权限层 ask」改为「工具层验证门」（`docs/adr/ADR-commit-verification-gate.md`）
 
 ## 背景与问题
 
@@ -40,7 +40,7 @@
 | 禁写 `design.md` / `tasks.md` / `.rddf/plans/**` | ✅ | 同为路径集 |
 | 禁创建 `openspec/changes/**` | ✅ **仅 edit/write 工具路径** | ⚠ 经 `shell` 创建（`openspec new` / `mkdir`+重定向）不在门控内 |
 | 禁调写类 `subagent` | ✅ | `subagent` 是独立 action，按 agent 名判 |
-| 禁 `git commit`（实施类） | ✅ | 已由权限层 ask 覆盖（v2.44） |
+| 禁 `git commit`（实施类） | ✅ | 已由**工具层验证门**覆盖（`docs/adr/ADR-commit-verification-gate.md` D2③：暂存内容须落在角色写集内）；原「权限层 ask 覆盖」已于 2026-11-18 退役 |
 | 禁「会改仓库状态的 `shell`」 | ❌ **不在** | 已登记盲区（`sed -i` / `tee` / `>`） |
 
 写集判定以**归一绝对路径**为根（相对 cwd 先归一）。

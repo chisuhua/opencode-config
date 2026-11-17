@@ -28,7 +28,7 @@
 | 读工程代码（`read`/`grep`/`glob`） | ✅（受 `external_directory` 约束） | ✅ |
 | 只读 shell（`ls`/`rg`/`git log`…） | ✅（仅 cwd 相对路径） | ✅（build 自身规则） |
 | 改工程文件 | ❌（`edit: deny`） | ✅（scope 内） |
-| 提交 / 推送 | ❌ | ❌（等用户确认后另行发起） |
+| 提交 / 推送 | ❌ | 提交：`git commit` 由工具层验证门决定（验证绿即可提交）；推送：`git push` 等用户确认后另行发起 |
 | 调 subagent / skill | ❌ | ✅ |
 | 发起工程任务 | 经 `delegate` | — |
 

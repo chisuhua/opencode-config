@@ -1,0 +1,7 @@
+{
+  "verify_commands": [
+    ["bun", "test", "tests/"],
+    ["bash", "scripts/check-upstream-anchors.sh"]
+  ],
+  "timeout_ms": 600000
+}

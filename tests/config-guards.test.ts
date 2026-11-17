@@ -75,20 +75,74 @@ describe("守卫漂移检测：配置 == 规则真源", () => {
     })
   }
 
-  // ⚠ **build 的 `git commit` 必须是 ask 档**（v2.43）：prompt 层说「不要主动 commit —— 等用户确认」，
-  //   而实测（2026-11-17，2/2 复现）模型**自行 commit** 并自述
-  //   「`git commit` **在本仓权限配置里不属于 ask 档**」⇒ **prompt 与权限层冲突**，
-  //   模型优先信权限配置 ⇒ prompt 规则被否决。
-  //   ⇒ 权限层把它列为 ask（**唯一能真正生效的一层**）⇒ 非交互环境被拒 / 交互环境走确认。
-  //   ⚠ build **不在** `GUARDED_AGENTS` 里（那六个是只读 subagent，`git commit` 对它们是 **deny**）
-  //     ⇒ 它的 shell 是手写在配置里的 ⇒ 用本判据钉住，防止将来被人删掉。
-  test("build 的 shell：`git commit` / `git commit *` 必须是 ask 档（prompt 的「等用户确认」要靠它生效）", () => {
+  // ⚠ **2026-11-18（`ADR-commit-verification-gate` D1）**：`git commit` 的审批点已从**权限弹窗（ask）**
+  //   搬到**工具层验证门**（`plugins/commit-gate.ts`）⇒ 档位改为 `allow`；
+  //   **publish 维持人工**（用户裁决：push 一律严格），**force-push 四形态收紧为 `deny`**
+  //   （shell 是整串前缀匹配 ⇒ flag 在末位的形态也必须显式列出）。
+  //   ⚠ build **不在** `GUARDED_AGENTS` 里 ⇒ 它的 shell 是手写在配置里的 ⇒ 用本判据钉住。
+  test("build 的 shell：`git commit` ⇒ allow（验证门接管）；`git push` ⇒ ask；force-push 四形态 ⇒ deny", () => {
     const shell = config.agent.build.permission.shell as Record<string, string>
-    expect(shell["git commit *"], "缺 `git commit *` 的 ask 规则").toBe("ask")
-    expect(shell["git commit"], "缺裸 `git commit` 的 ask 规则").toBe("ask")
-    // ⚠ 与 `git push` 同档（两条规则成对 ⇒ 防止只加一条）
-    expect(shell["git push *"]).toBe("ask")
-    expect(shell["git push"]).toBe("ask")
+    expect(shell["git commit *"], "`git commit *` 应为 allow（审批点已搬到工具层验证门）").toBe("allow")
+    expect(shell["git commit"], "裸 `git commit` 应为 allow").toBe("allow")
+    // ⚠ publish 仍需人工确认（两条规则成对 ⇒ 防止只加一条）
+    expect(shell["git push *"], "`git push *` 仍应是 ask").toBe("ask")
+    expect(shell["git push"], "`git push` 仍应是 ask").toBe("ask")
+    // ⚠ force-push 四形态（含 flag 在末位者）必须 deny
+    for (const pat of ["git push --force*", "git push -f*", "git push * --force*", "git push * -f*"]) {
+      expect(shell[pat], `缺 force-push deny 规则「${pat}」`).toBe("deny")
+    }
+  })
+
+  /**
+   * **治理面落点完整性守卫**（`ADR-commit-verification-gate` D8 的 20 点逐点清单 —— 摘要版）。
+   *
+   * ⚠ 为什么要有：ADR D8 的「逐点清单」若只存在于文档里，实施方漏落一处 ⇒ **双真源残留**而守卫照样绿
+   * （critic 的 B3 原话）。⇒ 这里把**内容锚点**（不是行号 —— 行号会漂）钉成断言。
+   */
+  test("治理面落点完整性：`git commit` 验证门改造的每个落点都已落地（内容锚点）", () => {
+    const ROOT = path.join(import.meta.dir, "..")
+    const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8")
+    const build = read(path.join("prompts", "build.md"))
+    const mad = read(path.join("docs", "MULTI-AGENT-DESIGN.md"))
+    const anchors: Array<[string, string, string]> = [
+      ["prompts/build.md §输出", build, "由工具层验证门决定"],
+      ["prompts/build.md 点名条款", build, "`git commit` 由工具层验证门决定；`git push`"],
+      ["prompts/build.md 增强层 commit 契约", build, "commit 由全局规则约束"],
+      ["MAD §3.4 标题（纪律对象收窄为 push）", mad, "现仅适用 `git push`"],
+      ["MAD §3.4 历史残留处置", mad, "历史残留处置"],
+      ["MAD §2.6 pause/commit 契约", mad, "工具层验证门决定、`git push` 等用户确认"],
+      ["MAD §2.8.7 D5②（部分闭合）", mad, "已由 `docs/adr/ADR-commit-verification-gate.md` D5 部分闭合"],
+      ["MAD §4.4.1（commit 段退役 + force-push deny）", mad, "`git commit` 段已退役"],
+      ["MAD §4.4.3（前缀匹配 ⇒ 四形态）", mad, "force-push `deny` 必须列全**四种形态**"],
+      ["MAD 版本摘要", mad, "2026-11-18 变更"],
+      ["lib/delegate-core.ts 后端 brief", read(path.join("lib", "delegate-core.ts")), "`git commit` 由工具层验证门决定"],
+      ["docs/dual-session-delegation.md", read(path.join("docs", "dual-session-delegation.md")), "由工具层验证门决定"],
+      ["父篇 ADR :43（执行点改写）", read(path.join("docs", "adr", "ADR-role-aware-permissions.md")), "已由**工具层验证门**覆盖"],
+      ["tests/role-exemptions.test.ts D5②（部分闭合）", read(path.join("tests", "role-exemptions.test.ts")), "D5 **部分闭合**"],
+    ]
+    for (const [label, text, needle] of anchors) {
+      expect(text, `落点未落地：${label}（缺「${needle}」）`).toContain(needle)
+    }
+    // ⚠ 负向：旧措辞不得残留（防回退）
+    expect(build, "prompts/build.md 仍残留旧措辞「不要主动 `git commit`」").not.toContain("不要主动 `git commit`")
+    expect(mad, "MAD 仍残留旧措辞「`git commit` 之所以是 `ask`」").not.toContain("`git commit` 之所以是 `ask`")
+  })
+
+  /**
+   * **门禁声明的最小内容守卫**（ADR D9① 的缓解）：声明被改弱（空壳命令）⇒ 门禁静默失效 ⇒ 必须先红。
+   */
+  test("门禁声明 `.rddf/commit-gate.json`：存在 + verify_commands 逐条相等（防被改弱）", () => {
+    const ROOT = path.join(import.meta.dir, "..")
+    const declPath = path.join(ROOT, ".rddf", "commit-gate.json")
+    expect(existsSync(declPath), "缺门禁声明（未声明的仓库不设门禁 ⇒ 本仓会失去 commit 闸门）").toBe(true)
+    const decl = JSON.parse(readFileSync(declPath, "utf8"))
+    expect(
+      decl.verify_commands,
+      "verify_commands 必须逐条相等（不是「非空」—— 否则可被改成 `[[\"true\"]]` 拆掉闸门）",
+    ).toEqual([
+      ["bun", "test", "tests/"],
+      ["bash", "scripts/check-upstream-anchors.sh"],
+    ])
   })
 
   test("每个受管 agent（front + 五个 subagent）的守卫都含 ADR D3.1 的首参数形态（且都是 deny）", () => {
@@ -1376,6 +1430,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "role-lease.ts",
         // v2.46（Task 3）：角色→写根的**单一真源**（ADR-role-aware-permissions D3 / AC16）
         "role-policy.ts",
+        // v2.47（ADR-commit-verification-gate D2/D5）：commit 验证门的纯逻辑（命令识别 + 三判据）
+        "commit-gate.ts",
       ],
     }
     for (const [dir, expected] of Object.entries(EXPECTED)) {

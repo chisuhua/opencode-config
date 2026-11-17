@@ -1021,6 +1021,27 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 
 ---
 
+### 4.7 v2.47 权限加固：commit 审批点搬到工具层验证门（2026-11-18）
+
+见 `docs/adr/ADR-commit-verification-gate.md`（oracle 1 轮 BLOCK → 修；critic 2 轮 REJECT → 修）。
+
+#### 4.7.1 `git commit`：`ask` ⇒ `allow`，闸门改由插件承担
+
+**问题**：`ask` 在**非交互场景 = 硬拒**（v2.44 实测：模型被工具层拦住、HEAD 未变）⇒ 被派发后端 / `opencode run`
+这类无人值守路径**提交能力为零**；交互场景是否拦**机制未查明**（见 §「权限加固记录」里 v2.44 的实测）。
+且拦截是**前缀匹配** ⇒ `git -c user.name=x commit` / `GIT_AUTHOR_NAME=x git commit` **不匹配** `git commit *`
+⇒ 软约束可被写法绕过。
+
+**修复**：新增 `plugins/commit-gate.ts`（纯逻辑 `lib/commit-gate.ts`）——
+`git commit` 的审批点从**权限弹窗**搬到**工具层验证门**（仓库声明的验证命令全绿 + 暂存区非空 + 暂存内容落在当前角色的写集内 ⇒ 放行；
+否则抛错 ⇒ 受控 Tool.Error，模型看到缺项并自行修正）。配置侧 `git commit` / `git commit *` ⇒ `allow`。
+
+#### 4.7.2 force push 收紧为 `deny`
+
+`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*` ⇒ `deny`
+（shell 是**整串前缀匹配** ⇒ flag 在末位的形态也必须显式列出；`deny` 不会被宿主的 Allow always 放行）。
+`git push` 仍 `ask` ⇒ **publish 一律维持人工确认**。
+
 ## 各版本验证记录
 
 > 原 `MULTI-AGENT-DESIGN.md` §7.1 / §7.2 / §7.3 / §7.3.1。当前态汇总见该文档 §7.1。
