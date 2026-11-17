@@ -10,6 +10,25 @@
 
 ---
 
+> **v2.44 权限层修复（2026-11-17，用户裁决选 A）：`git commit` → ask 档**：
+> ① **起因**（v2.43 实测 2/2）：模型**自行 commit**，原文自述「`git commit` **在本仓权限配置里不属于 ask 档**」
+>   ⇒ **prompt 层（「不要主动 commit —— 等用户确认」）与权限层冲突** ⇒ 模型**优先信权限层** ⇒ prompt 规则被否决。
+> ② **改动**：`opencode.jsonc` 的 **build agent** `permission.shell` 加 `"git commit *": "ask"` + `"git commit": "ask"`
+>   （与 `git push` 同档）。⚠ **build 不在** `GUARDED_AGENTS`（六个只读 subagent 里 `git commit` 本是 **deny**）
+>   ⇒ 加**层 1 判据**钉住（「守卫漂移检测」族：两条 ask 规则存在**且**与 `git push` 同档）⇒ 全量 **595 pass**。
+> ③ **实测**：`E-8` **移除 skip ⇒ 3/3 真绿** —— 模型被工具层拦住（原文：「`git commit` **需要弹权限确认**，
+>   而当前是非交互运行，ask 无法投…**请在本机执行**」）⇒ 含 `[需要用户裁决]` + 候选路径 ⇒ **HEAD 未变 + 改动仍在**。
+> ④ ⭐ **关键洞察（沉淀为本仓新纪律）**：**prompt 层规则在权限层有更具体的配置时会被「否决」**
+>   ⇒ **要规则真正生效，必须让权限层与它一致**；新增「等确认」类规则时**必须同批检查权限层**。
+> ⑤ 登记（oracle 审后补）：① `E-4`/`E-6`/`E-7` 仍共享 `IB_FIXTURE_ROOT`（模型 `ls ..` 可把同族 fixture 当先例）；
+>   ② **pattern 盲区**：`git -c … commit` / `git -C dir commit` / `GIT_AUTHOR_NAME=x git commit` **漏**（前缀通配够不着中缀）
+>   ⇒ 落 `"*": "allow"`（`git commit --amend` 与 `cd X && git commit` **已覆盖**）；**不加全形态 pattern**（越加越脆）；
+>   ③ ⚠ **「Allow always」会静默重开洞**：点 always ⇒ 前缀 pattern 持久化为 project-scoped allow ⇒ 层 1 看不见
+>   ⇒ **交互纪律：不对 `git commit` 弹窗点 Allow always**；④ ⭐ **族级风险**：角色矩阵里 architect/planner/no-role 的
+>   写面禁令**全是 prompt-only**（权限层 `edit: allow` 完全放行）⇒ 与本次同构 ⇒ 独立议题（角色感知权限 = 架构级）。
+
+---
+
 > **v2.43 批量收尾（2026-11-17，遗留 6 项 + 3 个真实缺陷）**：
 > ① **`#6`** `independent-build-session-e2e` tasks **0/28 → 28/28 回填**（解归档阻塞），**如实登记 5 处做法差异**
 >   （无 `--standalone` / 取整条响应 / 用 verifier 而非 no-role / fixture 用 `IB_*` 而非 `SC_*` / R1 由后续 change 承担）。

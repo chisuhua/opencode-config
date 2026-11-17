@@ -46,3 +46,14 @@
 - `bash` 写盘盲区、「漏登记」不可机械核 ⇒ 沿用 v2.42 的登记（不重复论证）。
 - 「等用户确认」在**交互**环境照常问 ⇒ 兜底只在「问不到时」触发（措辞已限定）。
 - 本仓 prompt 的行号会随其它 change 漂移 ⇒ 一律按**节标题 + 定位语**引用。
+
+---
+
+## 追加（2026-11-17，用户裁决选 **A**）：靠**权限层**让规则真正生效
+
+- [x] **Step 1:** `opencode.jsonc` 的 **build agent** `permission.shell` 加 `"git commit *": "ask"` + `"git commit": "ask"`
+      （外科插入，不做 JSON 往返）；⚠ **build 不在** `GUARDED_AGENTS`（那六个只读 subagent 里 `git commit` 是 **deny**）
+      ⇒ 它的 shell 手写在配置里 ⇒ 用判据钉住
+- [x] **Step 2:** 层 1 判据 `tests/config-guards.test.ts`（「守卫漂移检测」族）：断言这两条 ask 规则存在 **且**与 `git push` 同档
+- [x] **Step 3:** `E-8` **移除 skip** ⇒ 实测 ⇒ **3/3 真绿**（模型被工具层拦住 + 停机标记 + 候选路径 + HEAD 未变 + 改动仍在）
+- [x] **Step 4:** 本仓全量回归（`bun test tests/` exit=0）

@@ -55,6 +55,8 @@
           "*": "allow",
           "git push *": "ask",
           "git push": "ask",
+          "git commit *": "ask",
+          "git commit": "ask",
           "git reset --hard *": "ask",
           "git reset --hard": "ask",
           "git clean -fd *": "ask",

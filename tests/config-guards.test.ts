@@ -75,6 +75,22 @@ describe("守卫漂移检测：配置 == 规则真源", () => {
     })
   }
 
+  // ⚠ **build 的 `git commit` 必须是 ask 档**（v2.43）：prompt 层说「不要主动 commit —— 等用户确认」，
+  //   而实测（2026-11-17，2/2 复现）模型**自行 commit** 并自述
+  //   「`git commit` **在本仓权限配置里不属于 ask 档**」⇒ **prompt 与权限层冲突**，
+  //   模型优先信权限配置 ⇒ prompt 规则被否决。
+  //   ⇒ 权限层把它列为 ask（**唯一能真正生效的一层**）⇒ 非交互环境被拒 / 交互环境走确认。
+  //   ⚠ build **不在** `GUARDED_AGENTS` 里（那六个是只读 subagent，`git commit` 对它们是 **deny**）
+  //     ⇒ 它的 shell 是手写在配置里的 ⇒ 用本判据钉住，防止将来被人删掉。
+  test("build 的 shell：`git commit` / `git commit *` 必须是 ask 档（prompt 的「等用户确认」要靠它生效）", () => {
+    const shell = config.agent.build.permission.shell as Record<string, string>
+    expect(shell["git commit *"], "缺 `git commit *` 的 ask 规则").toBe("ask")
+    expect(shell["git commit"], "缺裸 `git commit` 的 ask 规则").toBe("ask")
+    // ⚠ 与 `git push` 同档（两条规则成对 ⇒ 防止只加一条）
+    expect(shell["git push *"]).toBe("ask")
+    expect(shell["git push"]).toBe("ask")
+  })
+
   test("每个受管 agent（front + 五个 subagent）的守卫都含 ADR D3.1 的首参数形态（且都是 deny）", () => {
     for (const agent of GUARDED_AGENTS) {
       const shell = config.agent[agent].permission.shell as Record<string, string>
@@ -1123,6 +1139,11 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
      *   ⇒ **如实登记**（不声称覆盖）⇒ 独立议题（扩触发面会引入「动辄停下」风险）。
      *   ⚠ **状态更新（v2.42）**：①② 已由 `required-question-fallback` 覆盖（⑩ 族判据 + `E-6`/`E-7`）；
      *   **另 5 处**「必须问用户」声明**仍未覆盖** ⇒ 见下方 v2.42 条目。
+     * - ✅ **已修（2026-11-17）**：`git commit` 的「等用户确认」此前**被权限层否决**
+     *   （模型据「不在 ask 档」推断「不必确认」⇒ 自行 commit）⇒ 已在 `opencode.jsonc` 的
+     *   build agent `permission.shell` 加 ask + 「守卫漂移检测」族加判据钉住 ⇒ `E-8` 3/3 真绿。
+     *   ⚠ **教训**：prompt 层规则若与权限层更具体的配置冲突，**模型信权限层**
+     *   ⇒ 新增「等确认」类规则时**必须同批检查权限层**。
      * - ⚠ **v2.42 未覆盖：另 5 处「必须问用户」声明**（protected by §需要用户裁决时的**机读清单**之外）：
      *   ① 角色列表 `no-role` 行「**询问用户角色**」—— ⚠ **2026-11-17 实测：已被 v2.42 覆盖**
      *      （模型正确停机 + 候选路径 + 零写 ⇒ 不需要新 change；观察报告 §9 有原始输出）；
