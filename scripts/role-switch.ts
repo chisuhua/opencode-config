@@ -3,7 +3,7 @@
  *
  * ⚠ 语义全在 `lib/role-lease.ts`（单源）；本文件**不持锁、不写文件**。
  */
-import { clearWindow, grantWindow, roleFilePath, switchRole } from "../lib/role-lease.ts"
+import { claimsPath, clearWindow, grantWindow, resetClaims, roleFilePath, switchRole } from "../lib/role-lease.ts"
 import { ROLES, type Role } from "../lib/role-identity.ts"
 
 const argv = process.argv.slice(2)
@@ -45,7 +45,10 @@ try {
     grantWindow({ stateRoot, sessionID, roles, maxRounds: Number(max) })
     console.log(`ok: 已授予窗口 roles=[${roles.join(",")}] max=${max}`)
   } else if (mode === "--reset-claims") {
-    fail("--reset-claims 尚未实现（Task 4）")
+    // 损坏恢复入口（**显式用户动作** ⇒ gen 重置；ledger 留痕）
+    const res = resetClaims({ stateRoot, sessionID })
+    if (!res.ok) fail(res.reason ?? "重置失败")
+    console.log(`ok: 已重置 ${claimsPath(stateRoot)}（ledger 已留痕；claim_gen 重新计数）`)
   } else {
     if (!(ROLES as readonly string[]).includes(mode)) fail(`非法角色: ${mode}（允许：${ROLES.join(" / ")}）`)
     switchRole({ stateRoot, sessionID, role: mode as Role, by: opts.by ?? "user" })

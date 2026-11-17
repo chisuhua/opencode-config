@@ -13,7 +13,7 @@
 import { mkdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 
-import { withLock, writeJsonAtomic } from "./delegate-core.ts"
+import { appendLedgerLine, withLock, writeJsonAtomic } from "./delegate-core.ts"
 import { ROLES, type Role } from "./role-identity.ts"
 
 export interface Window {
@@ -190,4 +190,472 @@ function mutatePartition(
     input.lock,
   )
   return written
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 角色租约（ADR-role-aware-permissions D6；proposal AC18–AC22）
+//
+// 键 = `(workRoot, 工作角色)`；工作角色：主会话 = 身份链解析结果；后端 = `role_class`。
+// 独占集 = {architect, planner, builder, verifier, general}；豁免 = {no-role}。
+// 围栏：`claim_gen` **单调递增**；**旧 gen 的持有者**此后任何租约写与写类工具调用一律拒绝。
+// 判活：宿主探活优先（`hostProbe`）⇒ `heartbeat_at` TTL 只作兜底；**接管前必须先探活**。
+// ⚠ **不按 pid 判活**（pid 会复用）⇒ 存活判定只看 sessionID 探活 + TTL。
+// ⚠ **锁内不得再取锁** ⇒ 提供 `*Locked` 变体（调用方已持 `.role.lock` 时使用）。
+// ════════════════════════════════════════════════════════════════════════
+
+
+export const LEASE_TTL_MS = 30 * 60 * 1000
+/** 独占集（同角色至多一个代表） */
+export const EXCLUSIVE_ROLES = ["architect", "planner", "builder", "verifier", "general"] as const
+/** 豁免集（只读，不冲突） */
+export const EXEMPT_ROLES = ["no-role"] as const
+
+export interface LeaseClaim {
+  work_root: string
+  role: string
+  session_id: string
+  kind: "main" | "backend"
+  role_class?: string
+  claim_gen: number
+  state: "active" | "released"
+  acquired_at: string
+  heartbeat_at: string
+  released_at?: string
+}
+
+export interface LeaseFile {
+  schema_version: string
+  /** 键 = `${workRoot}|${role}` */
+  claims: Record<string, LeaseClaim>
+  /** 每个持有者自己拿到的 gen（围栏比对的一方；接管后旧持有者的记录**不变** ⇒ gen 不匹配） */
+  holders: Record<string, { work_root: string; role: string; claim_gen: number }>
+}
+
+export function isExemptRole(role: string): boolean {
+  return (EXEMPT_ROLES as readonly string[]).includes(role)
+}
+
+export function leaseKey(workRoot: string, role: string): string {
+  // ⚠ 归一（`path.resolve`）：同 worktree 的不同写法（尾斜杠 / `..` / 相对路径）⇒ **同一键**
+  //   （否则「同 worktree 两写法」会各占一格 ⇒ 独占静默失效）。
+  return `${path.resolve(workRoot)}|${role}`
+}
+
+export function claimsPath(stateRoot: string): string {
+  return path.join(stateRoot, ".rddf", "state", "role-claims.json")
+}
+
+function emptyLeaseFile(): LeaseFile {
+  return { schema_version: "role-claims-v1", claims: {}, holders: {} }
+}
+
+export interface ClaimsRead {
+  file: LeaseFile
+  /** 损坏 ⇒ **保守拒绝**（AC21 四种形态） */
+  corrupt: boolean
+  reason?: string
+}
+
+/**
+ * 读 claims；**四种损坏形态**（截断 / 空 / 数组 / 缺字段）⇒ `corrupt: true` ⇒ 保守拒绝。
+ * ⚠ 文件**不存在**不是损坏（首次使用 ⇒ 空）。
+ */
+export function readClaims(stateRoot: string): ClaimsRead {
+  const file = claimsPath(stateRoot)
+  let raw: string
+  try {
+    raw = readFileSync(file, "utf8")
+  } catch {
+    return { file: emptyLeaseFile(), corrupt: false }
+  }
+  let parsed: any
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return { file: emptyLeaseFile(), corrupt: true, reason: "JSON 解析失败（截断 / 非法 JSON / 空文件）" }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { file: emptyLeaseFile(), corrupt: true, reason: "顶层不是对象（数组 / 标量）" }
+  }
+  for (const key of ["claims", "holders"]) {
+    const v = parsed[key]
+    if (v !== undefined && (typeof v !== "object" || v === null || Array.isArray(v))) {
+      return { file: emptyLeaseFile(), corrupt: true, reason: `${key} 字段不是对象` }
+    }
+  }
+  for (const [key, c] of Object.entries(parsed.claims ?? {})) {
+    if (!c || typeof c !== "object" || Array.isArray(c)) {
+      return { file: emptyLeaseFile(), corrupt: true, reason: `claim「${key}」不是对象` }
+    }
+    for (const f of ["work_root", "role", "session_id", "claim_gen", "state"]) {
+      if (!(f in c)) {
+        return { file: emptyLeaseFile(), corrupt: true, reason: `claim「${key}」缺字段 ${f}` }
+      }
+    }
+    if (typeof c.claim_gen !== "number" || !Number.isFinite(c.claim_gen)) {
+      return { file: emptyLeaseFile(), corrupt: true, reason: `claim「${key}」的 claim_gen 非数字` }
+    }
+  }
+  return {
+    file: {
+      schema_version: typeof parsed.schema_version === "string" ? parsed.schema_version : "role-claims-v1",
+      claims: parsed.claims ?? {},
+      holders: parsed.holders ?? {},
+    },
+    corrupt: false,
+  }
+}
+
+function writeClaims(stateRoot: string, file: LeaseFile): void {
+  mkdirSync(path.join(stateRoot, ".rddf", "state"), { recursive: true })
+  writeJsonAtomic(claimsPath(stateRoot), file, { cleanupOnError: true })
+}
+
+export interface LeaseInput {
+  stateRoot: string
+  workRoot: string
+  role: Role
+  sessionID: string
+  kind: "main" | "backend"
+  roleClass?: string
+  /** 注入时钟（测试用） */
+  now?: () => Date
+  /** TTL 兜底（默认 30 min） */
+  ttlMs?: number
+  /** 宿主探活（注入）：返回 true = 存活 */
+  hostProbe?: (sessionID: string) => boolean
+  /** 告警出口（注入） */
+  warnSink?: (message: string) => void
+  /** 锁参数（AC22 的两条边界） */
+  lock?: { staleMs?: number; deadlineMs?: number }
+}
+
+export type LeaseResult =
+  | { ok: true; claim: LeaseClaim; exempt: boolean }
+  | { ok: false; reason: string; holder?: LeaseClaim }
+
+/**
+ * 存活判定：**宿主探活优先 ⇒ TTL 兜底**。
+ * ⚠ **不按 pid 判活**（pid 会复用）—— 判据只有 sessionID 探活 + `heartbeat_at`。
+ */
+export function isHolderAlive(
+  claim: LeaseClaim,
+  opts: { now: Date; ttlMs: number; hostProbe?: (sessionID: string) => boolean },
+): boolean {
+  if (opts.hostProbe) {
+    try {
+      if (opts.hostProbe(claim.session_id) === true) return true
+    } catch {
+      /* 探活异常 ⇒ 不可判 ⇒ 落 TTL */
+    }
+  }
+  const hb = Date.parse(claim.heartbeat_at ?? "")
+  if (Number.isFinite(hb) && opts.now.getTime() - hb <= opts.ttlMs) return true
+  return false
+}
+
+/**
+ * 占租约（**调用方必须已持有 `.role.lock`** ⇒ 锁内不得再取锁）。
+ * 返回 `ok:false` 时**不写任何文件**（保守拒绝 ⇒ gen 不回退）。
+ */
+export function acquireLeaseLocked(input: LeaseInput): LeaseResult {
+  const now = input.now?.() ?? new Date()
+  const iso = now.toISOString()
+  const ttlMs = input.ttlMs ?? LEASE_TTL_MS
+
+  if (isExemptRole(input.role)) {
+    // 豁免：不占租约（两个 no-role 可并存）
+    return {
+      ok: true,
+      exempt: true,
+      claim: {
+        work_root: path.resolve(input.workRoot),
+        role: input.role,
+        session_id: input.sessionID,
+        kind: input.kind,
+        claim_gen: 0,
+        state: "released",
+        acquired_at: iso,
+        heartbeat_at: iso,
+      },
+    }
+  }
+
+  const read = readClaims(input.stateRoot)
+  if (read.corrupt) {
+    const reason = `role-lease: role-claims.json 损坏（${read.reason}）⇒ 保守拒绝；请先跑 scripts/role-switch.sh --reset-claims`
+    input.warnSink?.(reason)
+    return { ok: false, reason }
+  }
+
+  const file = read.file
+  const key = leaseKey(input.workRoot, input.role)
+  const existing = file.claims[key]
+  const active = existing !== undefined && existing.state === "active"
+
+  // ① 同一持有者 ⇒ 续租（gen 不变，只刷新心跳）
+  if (active && existing!.session_id === input.sessionID) {
+    const renewed: LeaseClaim = { ...existing!, heartbeat_at: iso }
+    file.claims[key] = renewed
+    file.holders[input.sessionID] = { work_root: input.workRoot, role: input.role, claim_gen: renewed.claim_gen }
+    writeClaims(input.stateRoot, file)
+    return { ok: true, claim: renewed, exempt: false }
+  }
+
+  // ② 他人持有 ⇒ 判活（探活优先 ⇒ TTL 兜底）
+  if (active) {
+    if (isHolderAlive(existing!, { now, ttlMs, hostProbe: input.hostProbe })) {
+      return {
+        ok: false,
+        reason: `role-lease: 角色「${input.role}」的租约已被会话 ${existing!.session_id} 持有（workRoot=${existing!.work_root}）`,
+        holder: existing,
+      }
+    }
+    // ③ 接管：gen 单调 +1
+    const gen = (existing!.claim_gen ?? 0) + 1
+    const claim: LeaseClaim = {
+      work_root: path.resolve(input.workRoot),
+      role: input.role,
+      session_id: input.sessionID,
+      kind: input.kind,
+      ...(input.roleClass ? { role_class: input.roleClass } : {}),
+      claim_gen: gen,
+      state: "active",
+      acquired_at: iso,
+      heartbeat_at: iso,
+    }
+    file.claims[key] = claim
+    file.holders[input.sessionID] = { work_root: input.workRoot, role: input.role, claim_gen: gen }
+    writeClaims(input.stateRoot, file)
+    const warn = `role-lease: 接管角色「${input.role}」的租约（原持有者 ${existing!.session_id} 已不存活）⇒ claim_gen=${gen}`
+    input.warnSink?.(warn)
+    try {
+      appendLedgerLine(input.stateRoot, {
+        event: "role_lease_takeover",
+        role: input.role,
+        work_root: path.resolve(input.workRoot),
+        previous_session_id: existing!.session_id,
+        session_id: input.sessionID,
+        claim_gen: gen,
+        at: iso,
+      })
+    } catch {
+      /* ledger 追加失败不阻塞接管 */
+    }
+    return { ok: true, claim, exempt: false }
+  }
+
+  // ④ 新占：gen = 既有 gen + 1（**释放后也不归零** ⇒ 单调不减）
+  const gen = (existing?.claim_gen ?? 0) + 1
+  const claim: LeaseClaim = {
+    work_root: path.resolve(input.workRoot),
+    role: input.role,
+    session_id: input.sessionID,
+    kind: input.kind,
+    ...(input.roleClass ? { role_class: input.roleClass } : {}),
+    claim_gen: gen,
+    state: "active",
+    acquired_at: iso,
+    heartbeat_at: iso,
+  }
+  file.claims[key] = claim
+  file.holders[input.sessionID] = { work_root: input.workRoot, role: input.role, claim_gen: gen }
+  writeClaims(input.stateRoot, file)
+  return { ok: true, claim, exempt: false }
+}
+
+/** 占租约（自取 `.role.lock`）。 */
+export function acquireLease(input: LeaseInput): LeaseResult {
+  mkdirSync(path.join(input.stateRoot, ".rddf", "state"), { recursive: true })
+  let result!: LeaseResult
+  withLock(
+    roleLockDir(input.stateRoot),
+    () => {
+      result = acquireLeaseLocked(input)
+    },
+    input.lock,
+  )
+  return result
+}
+
+/** 释放（**调用方必须已持锁**）：标记 released + **保留 gen**（⇒ 下次占用的 gen 继续递增）。 */
+export function releaseLeaseLocked(input: {
+  stateRoot: string
+  workRoot: string
+  role: Role
+  sessionID: string
+  now?: () => Date
+}): { ok: boolean; reason?: string } {
+  const now = input.now?.() ?? new Date()
+  const iso = now.toISOString()
+  const read = readClaims(input.stateRoot)
+  if (read.corrupt) return { ok: false, reason: `role-lease: role-claims.json 损坏（${read.reason}）` }
+  const file = read.file
+  const key = leaseKey(input.workRoot, input.role)
+  const claim = file.claims[key]
+  if (!claim || claim.state !== "active") return { ok: false, reason: "role-lease: 无可释放的活动租约" }
+  if (claim.session_id !== input.sessionID) {
+    return { ok: false, reason: `role-lease: 租约持有者是 ${claim.session_id}，不是 ${input.sessionID}` }
+  }
+  file.claims[key] = { ...claim, state: "released", released_at: iso }
+  writeClaims(input.stateRoot, file)
+  return { ok: true }
+}
+
+/** 释放（自取锁）。 */
+export function releaseLease(input: {
+  stateRoot: string
+  workRoot: string
+  role: Role
+  sessionID: string
+  now?: () => Date
+  lock?: { staleMs?: number; deadlineMs?: number }
+}): { ok: boolean; reason?: string } {
+  let result!: { ok: boolean; reason?: string }
+  withLock(
+    roleLockDir(input.stateRoot),
+    () => {
+      result = releaseLeaseLocked(input)
+    },
+    input.lock,
+  )
+  return result
+}
+
+/**
+ * 续租（**调用方必须已持锁**）：持有者 + `claim_gen` **都要匹配** ⇒ 否则拒（围栏）。
+ * ⚠ 与 `acquireLeaseLocked` 的区别：续租**不**做「接管」判定 —— 已被接管者续租必须**失败**
+ *   （而不是把租约抢回来）。
+ */
+export function renewLeaseLocked(input: {
+  stateRoot: string
+  workRoot: string
+  role: Role
+  sessionID: string
+  now?: () => Date
+}): { ok: boolean; reason?: string } {
+  const iso = (input.now?.() ?? new Date()).toISOString()
+  const read = readClaims(input.stateRoot)
+  if (read.corrupt) return { ok: false, reason: `role-lease: role-claims.json 损坏（${read.reason}）` }
+  const file = read.file
+  const key = leaseKey(input.workRoot, input.role)
+  const claim = file.claims[key]
+  if (!claim || claim.state !== "active") return { ok: false, reason: "role-lease: 无可续租的活动租约" }
+  // ⚠ **围栏优先于持有者比对**（与 `checkLeaseForWrite` 同口径）：gen 不匹配 = 「已被接管」。
+  const mine = file.holders[input.sessionID]
+  if (mine && mine.claim_gen !== claim.claim_gen) {
+    return {
+      ok: false,
+      reason: `role-lease: claim_gen 不匹配（我持有 ${mine.claim_gen} ≠ 当前 ${claim.claim_gen}）⇒ 已被接管`,
+    }
+  }
+  if (claim.session_id !== input.sessionID) {
+    return { ok: false, reason: `role-lease: 租约持有者是 ${claim.session_id}，不是 ${input.sessionID}` }
+  }
+  if (!mine) {
+    return { ok: false, reason: `role-lease: 找不到我（${input.sessionID}）的持有记录 ⇒ 围栏不通过` }
+  }
+  file.claims[key] = { ...claim, heartbeat_at: iso }
+  writeClaims(input.stateRoot, file)
+  return { ok: true }
+}
+
+/** 续租（自取锁）。 */
+export function renewLease(input: {
+  stateRoot: string
+  workRoot: string
+  role: Role
+  sessionID: string
+  now?: () => Date
+  lock?: { staleMs?: number; deadlineMs?: number }
+}): { ok: boolean; reason?: string } {
+  let result!: { ok: boolean; reason?: string }
+  withLock(
+    roleLockDir(input.stateRoot),
+    () => {
+      result = renewLeaseLocked(input)
+    },
+    input.lock,
+  )
+  return result
+}
+
+/**
+ * 写类工具调用的**围栏校验**（ADR D6 执行点③）：
+ *   ① 无租约 ⇒ **尝试占租约**（开局；冲突则拒）—— 无租约且占不到 ⇒ 拒绝写类工具；
+ *   ② 持有者不是我 ⇒ 拒绝（指名持有者）；
+ *   ③ `claim_gen` **!= 即拒**（已被接管）⇒ 拒绝。
+ */
+export function checkLeaseForWrite(input: {
+  stateRoot: string
+  workRoot: string
+  role: Role
+  sessionID: string
+  now?: () => Date
+  ttlMs?: number
+  hostProbe?: (sessionID: string) => boolean
+  lock?: { staleMs?: number; deadlineMs?: number }
+}): { ok: boolean; message?: string; holder?: LeaseClaim } {
+  if (isExemptRole(input.role)) return { ok: true }
+
+  const read = readClaims(input.stateRoot)
+  if (read.corrupt) {
+    return {
+      ok: false,
+      message: `role-lease: role-claims.json 损坏（${read.reason}）⇒ 保守拒绝写类工具；请先跑 scripts/role-switch.sh --reset-claims`,
+    }
+  }
+  const key = leaseKey(input.workRoot, input.role)
+  const claim = read.file.claims[key]
+  if (!claim || claim.state !== "active") {
+    // 开局：无租约 ⇒ 尝试占（冲突 ⇒ 拒）
+    const res = acquireLease(input)
+    if (res.ok) return { ok: true }
+    return {
+      ok: false,
+      message: `${res.reason} ⇒ 无租约，拒绝写类工具（模型只能读 + 报告）`,
+      holder: res.holder,
+    }
+  }
+  // ⚠ **围栏优先于持有者比对**：`claim_gen` 不匹配 = 「我这条租约已被接管」
+  //   （更强的信号）⇒ 先报它，避免把「已被接管」误报成「别人持有」。
+  const mine = read.file.holders[input.sessionID]
+  if (mine && mine.claim_gen !== claim.claim_gen) {
+    return {
+      ok: false,
+      message: `role-lease: claim_gen 不匹配（我持有 ${mine.claim_gen} ≠ 当前 ${claim.claim_gen}）⇒ 租约已被接管，拒绝写类工具`,
+      holder: claim,
+    }
+  }
+  if (claim.session_id !== input.sessionID) {
+    return {
+      ok: false,
+      message: `role-lease: 角色「${input.role}」的租约由 ${claim.session_id} 持有（workRoot=${claim.work_root}）⇒ 拒绝写类工具`,
+      holder: claim,
+    }
+  }
+  return { ok: true }
+}
+
+/** `--reset-claims`：损坏恢复入口（**显式用户动作** ⇒ gen 重置；留 ledger 痕迹）。 */
+export function resetClaims(input: {
+  stateRoot: string
+  sessionID: string
+  now?: () => Date
+}): { ok: boolean; reason?: string } {
+  const iso = (input.now?.() ?? new Date()).toISOString()
+  const before = readClaims(input.stateRoot)
+  writeClaims(input.stateRoot, emptyLeaseFile())
+  try {
+    appendLedgerLine(input.stateRoot, {
+      event: "role_claims_reset",
+      session_id: input.sessionID,
+      corrupted: before.corrupt,
+      reason: before.reason,
+      at: iso,
+    })
+  } catch {
+    /* ledger 追加失败不阻塞恢复 */
+  }
+  return { ok: true }
 }

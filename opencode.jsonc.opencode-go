@@ -79,7 +79,10 @@
           "head *.env": "ask",
           "head *.env.*": "ask",
           "tail *.env": "ask",
-          "tail *.env.*": "ask"
+          "tail *.env.*": "ask",
+          "*role.json*": "ask",
+          "*role-claims.json*": "ask",
+          "scripts/role-switch.sh --reset-claims*": "ask"
         },
         "subagent": "allow",
         "external_directory": "ask",

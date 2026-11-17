@@ -79,17 +79,17 @@
 - [x] **Step 3:** AC16：**同一函数引用**断言（**MUTATIONS**：语料注入第二份策略表 ⇒ 必红）
 - [x] **Step 4:** AC17：后端跳过 + **成对** `parentID=null` 必拒 + 非 build 主会话跳过
 - [x] **Step 5:** 路径归一（相对 / `../` / symlink）
-- [ ] **Step 6:** 接入**每次写类工具调用的租约校验**（holder + `claim_gen`）—— 与 Task 4 同批
+- [x] **Step 6:** 接入**每次写类工具调用的租约校验**（holder + `claim_gen`）—— 与 Task 4 同批
 
 ## Task 4：角色租约（AC18–AC22）
 
-- [ ] **Step 1:** `lib/role-lease.ts`（acquire/release/renew + `claim_gen` **`!=` 即拒** + 单调不减）⇒ 先写会失败的 1b 用例
-- [ ] **Step 2:** 派发临界区接入（**与槽位检查同一临界区**）⇒ AC18（throw 通道 + sid + workRoot）
-- [ ] **Step 3:** AC19 异角色并行；AC20 豁免/独占/无分区 general
-- [ ] **Step 4:** AC21：探活优先 → TTL 兜底 → 接管前探活；告警 + ledger；**两条独立围栏用例**（租约写 / 写类工具调用）；**claims 四种损坏形态**
-- [ ] **Step 5:** AC22：两子进程并发（恰好一方成功）+ 陈旧锁两条边界 + **不按 pid 判活** + 锁内不再取锁（1a + MUTATIONS）
-- [ ] **Step 6:** 跨 worktree（同角色不同 workRoot 不冲突）/ 同 worktree 两写法同键
-- [ ] **Step 7:** `role-switch.sh --reset-claims`（损坏恢复入口；`ask` 档 + ledger 留痕）
+- [x] **Step 1:** `lib/role-lease.ts`（acquire/release/renew + `claim_gen` **`!=` 即拒** + 单调不减）⇒ 先写会失败的 1b 用例
+- [x] **Step 2:** 派发临界区接入（**与槽位检查同一临界区**）⇒ AC18（throw 通道 + sid + workRoot）
+- [x] **Step 3:** AC19 异角色并行；AC20 豁免/独占/无分区 general
+- [x] **Step 4:** AC21：探活优先 → TTL 兜底 → 接管前探活；告警 + ledger；**两条独立围栏用例**（租约写 / 写类工具调用）；**claims 四种损坏形态**
+- [x] **Step 5:** AC22：两子进程并发（恰好一方成功）+ 陈旧锁两条边界 + **不按 pid 判活** + 锁内不再取锁（1a + MUTATIONS）
+- [x] **Step 6:** 跨 worktree（同角色不同 workRoot 不冲突）/ 同 worktree 两写法同键
+- [x] **Step 7:** `role-switch.sh --reset-claims`（损坏恢复入口；`ask` 档 + ledger 留痕）
 
 ## Task 5：迁移 / 登记 / 层 2（AC9 / AC23 / AC24）
 

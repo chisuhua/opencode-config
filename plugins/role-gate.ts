@@ -16,6 +16,7 @@ import { Plugin } from "@opencode/plugin"
 
 import { canonicalRoot } from "../lib/delegate-core.ts"
 import { resolveRole } from "../lib/role-identity.ts"
+import { checkLeaseForWrite } from "../lib/role-lease.ts"
 import { evaluateWrite } from "../lib/role-policy.ts"
 
 const WRITE_TOOLS = new Set(["edit", "write"])
@@ -58,6 +59,16 @@ export default Plugin.define({
       })
 
       if (!result.allowed) throw new Error(result.message ?? "role-gate: 拒绝")
+
+      // ② 角色租约围栏（**每次**写类工具调用都校验 —— ADR D6 执行点③）：
+      //    持有者 + `claim_gen` 都要对得上；被接管 ⇒ 拒绝（模型只能读 + 报告）。
+      const lease = checkLeaseForWrite({
+        stateRoot,
+        workRoot,
+        role: resolved.role,
+        sessionID,
+      })
+      if (!lease.ok) throw new Error(lease.message ?? "role-gate: 租约校验失败")
     })
   },
 })

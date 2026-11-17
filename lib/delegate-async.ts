@@ -19,6 +19,7 @@
 import { mkdirSync } from "node:fs"
 import path from "node:path"
 
+import { acquireLeaseLocked, releaseLeaseLocked } from "./role-lease.ts"
 import {
   appendLedger,
   appendLedgerLine,
@@ -569,6 +570,11 @@ export interface SlotClaim {
   released?: string[]
   /** 命中「该工作树正在停机」的进程内守卫（`ADR-front-stop-confirmation` D2）。 */
   stopping?: { backend_session_id: string; front_session_id?: string }
+  /**
+   * 角色租约拒绝（ADR-role-aware-permissions D6 / AC18）：**指名持有者**。
+   * 键 = `(workRoot, 工作角色)`；后端的工作角色 = 它的 `role_class`。
+   */
+  lease?: { reason: string; holder_session_id?: string; holder_work_root?: string }
 }
 
 /** 停机守卫命中时的拒绝文案（**不得**含「请先 suspend」，否则模型会循环重试）。 */
@@ -631,6 +637,46 @@ export function claimSlot(input: {
       if (released.length > 0) writePairs(stateRoot, pairs)
       result = { ok: false, holder, released }
       return
+    }
+    // ②'0 租约随槽位释放：槽位**不占位**（idle / suspended / 已被 reconcile 翻 idle）
+    //      ⇒ 其角色租约一并释放（**同临界区** ⇒ 用 `*Locked` 变体，锁内不得再取锁）。
+    //      语义：租约 = 槽位在 `(workRoot, 角色)` 上的投影 ⇒ 槽位放了，租约也放。
+    for (const [sid, entry] of Object.entries(pairs)) {
+      if (!entry || typeof entry !== "object") continue
+      const e = entry as any
+      if (e.work_root !== workRoot) continue
+      if (e.state === "dispatching" || e.state === "active") continue // 仍占槽 ⇒ 租约保留
+      if (!e.role_class) continue
+      releaseLeaseLocked({
+        stateRoot,
+        workRoot: e.work_root,
+        role: e.role_class,
+        sessionID: sid,
+      })
+    }
+    // ②' 角色租约（**同一临界区** ⇒ 不得另取锁 ⇒ 用 `acquireLeaseLocked`）
+    //     主会话 ↔ 后端**同角色** ⇒ 拒绝（ADR-role-aware-permissions D6 / AC18）。
+    //     键 = `(workRoot, 工作角色)`；后端的工作角色 = `role_class`（不是 `current_role`）。
+    if (input.roleClass) {
+      const lease = acquireLeaseLocked({
+        stateRoot,
+        workRoot,
+        role: input.roleClass as any,
+        sessionID,
+        kind: "backend",
+        roleClass: input.roleClass,
+      })
+      if (!lease.ok) {
+        result = {
+          ok: false,
+          lease: {
+            reason: lease.reason,
+            holder_session_id: lease.holder?.session_id,
+            holder_work_root: lease.holder?.work_root,
+          },
+        }
+        return
+      }
     }
     // ③ 登记（state=dispatching：简报尚未确认消费）
     if (input.register !== false) {
@@ -1361,6 +1407,20 @@ export function dispatchToolDefinition(ctx: any): any {
             }
           }
           throw fail(stopBlockedMessage(claim.stopping))
+        }
+        // 角色租约拒绝 ⇒ **回到调用方**（AC18）：工具错误直接抛出，并指名持有者 + workRoot
+        if (claim.lease) {
+          if (created) {
+            try {
+              await ctx.session.remove({ sessionID })
+            } catch {
+              /* 清理失败不掩盖主错误 */
+            }
+          }
+          const who = claim.lease.holder_session_id
+            ? `（持有者 session=${claim.lease.holder_session_id}，workRoot=${claim.lease.holder_work_root}）`
+            : ""
+          throw fail(`角色租约冲突：${claim.lease.reason}${who}`)
         }
         // 互斥拒绝 ⇒ 不得留下已创建的 session（AC26③）
         if (created) {
