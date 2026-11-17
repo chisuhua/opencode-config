@@ -1625,9 +1625,16 @@ export function buildBrief(
 }
 
 /** 目录锁（原子 mkdir），用于 role.json / pair.json 的跨写入方互斥。 */
-export function withLock(lockDir: string, fn: () => void): void {
-  const staleMs = 30_000
-  const deadline = Date.now() + 10_000
+export function withLock(
+  lockDir: string,
+  fn: () => void,
+  opts: { staleMs?: number; deadlineMs?: number } = {},
+): void {
+  // ⚠ 默认值即既有语义（30 s 陈旧 / 10 s 硬超时）⇒ 8 处既有调用（delegate-core 1735/1781、
+  //    delegate-async 605/737/798/905/916/1579）行为不变；AC22 的「== 阈值阻塞 / +1 回收」
+  //    两条边界靠这里注入（`design.md` D9.2「锁单源」）。
+  const staleMs = opts.staleMs ?? 30_000
+  const deadline = Date.now() + (opts.deadlineMs ?? 10_000)
   for (;;) {
     try {
       mkdirSync(lockDir, { recursive: false })
@@ -1670,10 +1677,23 @@ export function readJson(file: string): any {
   }
 }
 
-export function writeJsonAtomic(file: string, value: any): void {
+export function writeJsonAtomic(file: string, value: any, opts: { cleanupOnError?: boolean } = {}): void {
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`
-  writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n")
-  renameSync(tmp, file)
+  try {
+    writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n")
+    renameSync(tmp, file)
+  } catch (e) {
+    // ⚠ 默认 **不** 清理（保持既有 pair.json / ledger.jsonl 写入方行为不变）；
+    //    role.json / role-claims.json 的写入方显式传 true（AC5：无 `.tmp-*` 残留）。
+    if (opts.cleanupOnError) {
+      try {
+        rmSync(tmp, { force: true })
+      } catch {
+        /* 清理失败不掩盖原始错误 */
+      }
+    }
+    throw e
+  }
 }
 
 /**

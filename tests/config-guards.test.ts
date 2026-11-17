@@ -1270,6 +1270,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "delegate-core.ts", "delegate-async.ts", "model-fallback-core.ts", "subagent-contract-core.ts",
         // v2.46（role-aware-permissions Task 1）：唯一身份解析器（ADR-role-session-identity D1）
         "role-identity.ts",
+        // v2.46（Task 2）：角色切换唯一写入口 + 租约落点（ADR-role-session-identity D2）
+        "role-lease.ts",
       ],
     }
     for (const [dir, expected] of Object.entries(EXPECTED)) {
