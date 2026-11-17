@@ -252,28 +252,28 @@ export function detectCommitInvocation(command: string): CommitInvocation {
     segments[segments.length - 1]!.push(t)
   }
   if (segments.length > 1) {
+    // ⚠ 逐段推进：**自上一个 commit 段以来**若发生过 index 改动 ⇒ 该 commit 的内容集不可判定 ⇒ 拒
+    //   （覆盖 `git commit -m x; git add -A; git commit -m y` 这种**多 commit 段**的写法）
+    let mutated: string | null = null
     let commitSeen = false
     for (const seg of segments) {
-      const hit = commitInSegment(seg)
-      if (hit.isCommit) {
+      const sub = gitSubcommandOf(seg)
+      if (sub === "commit") {
+        const hit = commitInSegment(seg)
         if (hit.block) return { isCommit: true, block: hit.block, detail: hit.detail }
-        if (!commitSeen) {
-          commitSeen = true
-          // 前置段里若有人改过 index ⇒ 判定对象不可判定 ⇒ 拒
-          for (const prev of segments.slice(0, segments.indexOf(seg))) {
-            const prevSub = gitSubcommandOf(prev)
-            if (prevSub && INDEX_MUTATING_SUBCOMMANDS.has(prevSub)) {
-              return {
-                isCommit: true,
-                block:
-                  `commit-gate: 复合命令中 \`git ${prevSub}\` 出现在 commit **之前** ⇒ 提交内容集不可判定 ⇒ 拒绝` +
-                  `（要求**分两次调用**：先 add，再 commit）`,
-                detail: "compound-index-mutation",
-              }
-            }
+        if (mutated) {
+          return {
+            isCommit: true,
+            block:
+              `commit-gate: 复合命令中 \`git ${mutated}\` 出现在本次 commit **之前** ⇒ 提交内容集不可判定 ⇒ 拒绝` +
+              `（要求**分两次调用**：先 add，再 commit）`,
+            detail: "compound-index-mutation",
           }
         }
+        commitSeen = true
+        continue
       }
+      if (sub && INDEX_MUTATING_SUBCOMMANDS.has(sub)) mutated = sub
     }
     if (commitSeen) return { isCommit: true, detail: "compound-tail" }
     return { isCommit: false }

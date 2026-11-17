@@ -119,6 +119,16 @@ describe("D5⑧ 复合命令闭口（**只有 commit 之前改过 index 的段**
   test("`git add . && git commit` ⇒ 拒（前置 add 改了 index）", () => {
     expect(detectCommitInvocation("git add . && git commit").block).toBeTruthy()
   })
+  test("`git commit -m x; git add -A; git commit -m y` ⇒ 拒（**第二个** commit 段之前改过 index）", () => {
+    const r = detectCommitInvocation("git commit -m x; git add -A; git commit -m y")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeTruthy()
+  })
+  test("`git commit -m x; echo done; git commit --amend` ⇒ 不拦（两段都没改 index）", () => {
+    const r = detectCommitInvocation("git commit -m x; echo done; git commit --amend")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
   test("元字符紧贴时也要独立成 token（`x;` ⇒ [x][;]）", () => {
     const toks = tokenizeCommand("git commit -m x; echo hi").map((t) => t.value)
     expect(toks).toEqual(["git", "commit", "-m", "x", ";", "echo", "hi"])
