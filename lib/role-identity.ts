@@ -30,6 +30,11 @@ export interface ResolveRoleInput {
   sessionID?: string
   /** 会话的 agent 名；身份域只对 `build` 生效（判定在门控侧，这里只做解析） */
   agent: string
+  /**
+   * 告警出口（注入）：身份 ADR D4 要求 `sid` 缺失时 **stderr + ledger 各一条** ——
+   * 由调用方把同一个 sink 接到两处（本模块不直接写 stderr / ledger，否则不可测）。
+   */
+  warnSink?: (message: string) => void
 }
 
 export interface ResolvedRole {
@@ -54,6 +59,11 @@ function asRole(value: unknown): Role | null {
 
 export function resolveRole(input: ResolveRoleInput): ResolvedRole {
   const warning: "no-session-id" | undefined = input.sessionID ? undefined : "no-session-id"
+  if (warning && input.warnSink) {
+    input.warnSink(
+      `[role-identity] warning=no-session-id：$OPENCODE_SESSION_ID 缺失 ⇒ 跳过镜像步（落全局/缺省），身份可能不准`,
+    )
+  }
   const wrap = (role: Role, source: RoleSource): ResolvedRole =>
     warning ? { role, source, warning } : { role, source }
 

@@ -11,11 +11,13 @@
  *   ③ **禁读真实 HOME** —— 全局根一律由 `globalRoot` 注入。
  */
 import { describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import fs, { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
 // ⚠ 本文件在实现之前**必然红**（TDD Step 1）：`lib/role-identity.ts` 尚不存在。
+import { canonicalRoot } from "../lib/delegate-core.ts"
 import { resolveRole } from "../lib/role-identity.ts"
 
 const SID_A = "ses_aaaaaaaaaaaaaaaaaaaaaaaa"
@@ -106,5 +108,99 @@ describe("AC2 三分支：镜像 / 全局 / default（断言 source，不只断 
     expect(r.role).toBe("planner")
     expect(r.source).toBe("global")
     expect(r.warning).toBe("no-session-id")
+  })
+})
+
+describe("AC10 文件根唯一（linked worktree + symlink）—— ⚠ 禁把 stateRoot 注入成常量", () => {
+  const git = (cwd: string, args: string[]) =>
+    execFileSync("git", args, { cwd, stdio: "pipe" }).toString()
+
+  /** 真主仓（含 role.json + 一次提交） */
+  function makeRepo(): string {
+    const repo = mkdtempSync(path.join(tmpdir(), "ri-repo-"))
+    git(repo, ["init", "-q"])
+    git(repo, ["config", "user.email", "t@t.local"])
+    git(repo, ["config", "user.name", "T"])
+    writeFileSync(path.join(repo, "a.txt"), "a\n")
+    git(repo, ["add", "-A"])
+    git(repo, ["commit", "-q", "-m", "init"])
+    const dir = path.join(repo, ".rddf", "state")
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      path.join(dir, "role.json"),
+      JSON.stringify(
+        {
+          current_role: "builder",
+          session_id: SID_A,
+          schema_version: "role-v2",
+          sessions: { [SID_A]: { current_role: "architect" } },
+        },
+        null,
+        2,
+      ) + "\n",
+    )
+    return repo
+  }
+
+  test("linked worktree：真实 canonicalRoot ⇒ stateRoot 仍是主仓；三次读同一文件同一分区", () => {
+    const repo = makeRepo()
+    const wt = path.join(mkdtempSync(path.join(tmpdir(), "ri-wt-")), "linked")
+    git(repo, ["worktree", "add", "-q", wt, "-b", "wt-branch"])
+
+    // 诱饵：worktree 自带一份**不同**的 role.json —— 若实现按 cwd 读会读到它（必红）
+    const decoyDir = path.join(wt, ".rddf", "state")
+    mkdirSync(decoyDir, { recursive: true })
+    // ⚠ 诱饵必须能被**镜像步**命中（带本会话 sid）—— 否则它只落到 default，判别力自证就失效
+    writeFileSync(
+      path.join(decoyDir, "role.json"),
+      JSON.stringify({ current_role: "no-role", session_id: SID_A }) + "\n",
+    )
+
+    const { stateRoot, workRoot } = canonicalRoot(wt)
+    expect(fs.realpathSync(stateRoot)).toBe(fs.realpathSync(repo))
+    expect(fs.realpathSync(workRoot)).toBe(fs.realpathSync(wt))
+
+    for (let i = 0; i < 3; i++) {
+      const r = resolveRole({ stateRoot, globalRoot: makeGlobal(null), sessionID: SID_A, agent: "build" })
+      expect(r).toEqual({ role: "architect", source: "partition" }) // 诱饵未被读到
+    }
+
+    // 判别力自证：若把 worktree 当根（= 旧口径「否则 cwd」的实现）⇒ 读到诱饵 no-role
+    // ⇒ 上面三条断言不是恒真（proof: 同一函数、同一 sid、仅换根即得不同结论）
+    expect(
+      resolveRole({ stateRoot: wt, globalRoot: makeGlobal(null), sessionID: SID_A, agent: "build" }).role,
+    ).toBe("no-role")
+  })
+
+  test("symlink 变体：链接路径与真实路径解析到同一 stateRoot（同键）", () => {
+    const repo = makeRepo()
+    const linkParent = mkdtempSync(path.join(tmpdir(), "ri-link-"))
+    const link = path.join(linkParent, "via-link")
+    symlinkSync(repo, link)
+
+    const a = canonicalRoot(link).stateRoot
+    const b = canonicalRoot(repo).stateRoot
+    expect(fs.realpathSync(a)).toBe(fs.realpathSync(b))
+    expect(resolveRole({ stateRoot: a, globalRoot: makeGlobal(null), sessionID: SID_A, agent: "build" })).toEqual({
+      role: "architect",
+      source: "partition",
+    })
+  })
+})
+
+describe("Task 1 Step 4：sid 缺失的告警出口（AC2 补充）", () => {
+  test("warnSink 恰好被调用 1 次且含 no-session-id；解析结果不得来自镜像", () => {
+    const stateRoot = makeState({ mirrorRole: "architect", mirrorSid: SID_A })
+    const calls: string[] = []
+    const r = resolveRole({
+      stateRoot,
+      globalRoot: makeGlobal("planner"),
+      sessionID: undefined,
+      agent: "build",
+      warnSink: (m) => calls.push(m),
+    })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toContain("no-session-id")
+    expect(r).toEqual({ role: "planner", source: "global", warning: "no-session-id" })
   })
 })
