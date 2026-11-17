@@ -1,11 +1,13 @@
 # Multi-Agent 系统设计参考
 
-> **状态**: v2.3.0 (2026-11-11)
+> **状态**: v2.3.1 (2026-11-17)
 > **范围**: `~/.config/opencode/` 用户配置级 multi-agent orchestration
 > **下游**: `opencode.jsonc`（符号链接 → `opencode.jsonc.opencode-go`）+ `prompts/*.md` + `commands/*.md` + `scripts/*.sh`
 
 本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
 
+> **本版（v2.3.1）变更**：新增 §3.4「用户侧的批准纪律（宿主『Allow always』的边界）」+ §4.4.1 补 `git commit` ask（v2.44 已生效但当前态缺载）
+>
 > **本版（v2.3.0）变更**：新增 §2.9「subagent 输入契约」—— 把 `prompts/build.md` 里「7 字段上下文契约」从**散文**变成**可判定的门**：规则真源 `lib/subagent-contract-core.ts`、宿主接线 `plugins/subagent-contract.ts`（L3 `session.hook("context")` 生成前告知 / **L1 `tool.hook("execute.before")` 硬门** / L2 `session.hook("prompt")` 检测）、审计 CLI `scripts/audit-subagent-prompts.ts`。默认 **warn**（灰度），逐 agent 可切 `enforce`；豁免 = 关键词（限任务陈述区 400 字符）+ 结构前置（缺失 ≥4/7）+ 状态继承（继承"复审模式"且本轮自证引用上一轮，续接轮不清零）。
 >
 > **本版（v2.2.3）变更**：运行环境修复（非规则变更）—— `kimi-code` provider 迁到 V2 包名 `@opencode/ai/providers/openai-compatible`，并为 `kimi-for-coding` / `k3-256k` 补 `variants`（`reasoning_effort` 映射），修复 oracle 的 `Variant unavailable`。
@@ -691,6 +693,26 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 ---
 
+### 3.4 用户侧的批准纪律（宿主「Allow always」的边界）
+
+§4.4.1 里 `git commit` / `git commit *` 之所以是 `ask`，是因为 `prompts/build.md` §输出 的「不要主动 commit —— 等用户确认」**只有在权限层有执行点时才可执行**（v2.44 实测：prompt 规则被权限层更具体的配置否决，模型自行 commit）。
+
+**不掩盖的边界**：宿主权限弹窗的「Allow always」会把该 pattern 持久化为 **project-scoped allow**。此后——
+
+- `opencode.jsonc` 里的 `ask` 规则**仍然在**，所以层 1 守卫（`tests/config-guards.test.ts` 的「守卫漂移检测」族）**照样绿**；
+- 但实际执行时**不再询问** ⇒ 洞静默重开，而配置看起来与实态一致。
+
+**纪律（读者是「人」，不是 agent）**：不要对 `git commit` / `git push` 的权限弹窗点 **Allow always**。若已点过，需手工清除该持久化批准（落点在宿主状态库，不在本仓）。
+
+**为什么这条纪律不写进 `prompts/**`**：`prompts/<id>.md` 的唯一消费者是模型——模型看不见宿主弹窗、控制不了点击、也感知不到持久化。写进去只会产生「每会话重复提醒」「在 ask 通过后怀疑用户点了 always 而拒绝继续」一类噪音，并制造「系统在 enforce 什么」的假信心。`prompts/**` 只承载**模型可执行的规则**。
+
+**守卫形态（单向真源路由）**：本节是该纪律的**唯一真源**；`tests/config-guards.test.ts` 断言 `prompts/**` **不得承载**本节措辞（与「判定词表单一真源」同型：正向钉真源 + 负向排他）。
+⚠ **判别力天花板（如实登记）**：负向断言按宿主 UI **字面**判别（`Allow always`），换词复述（「全部允许」「总是允许」）不在机读范围 ——与判定词表守卫同属**闭集字面守卫**，靠评审兜底。
+
+**已知残留（不可机械核）**：saved approval 的**存在性**不在只读测试范围内——读用户级 `~/.local/share/opencode/*.db` 属环境耦合（干净机器上恒绿 = 假信心），且「always」的落表形态未核实。⇒ 如实登记；核对只能人工一次性（2026-11-17 核查：`permission` 表 230 行无 `git commit`）。
+
+---
+
 ## 4. 权限模型
 
 ### 4.1 权限体系（v2 真实语义）
@@ -791,6 +813,8 @@ bash 采 `* + 危险命令 ask` 模式（catch-all 在前、具体规则在后�
 | git 丢分支/栈 | `git branch -D *` / `git stash drop *` / `git stash clear *` |
 | 删文件 | `rm -rf *` / `rm -fr *` / `rm -r *` / `rm -f *` |
 | 提权 | `sudo *` |
+
+另有一条**不属「不可逆」类**的 `ask`：`git commit` / `git commit *`（v2.44）。它的目的不是拦破坏，而是让 `prompts/build.md` §输出 的「不要主动 commit —— 等用户确认」**有可执行点**（此前 prompt 规则被权限层否决，模型自行 commit）。⚠ 它**有用户侧的批准纪律与不可机械核的残留**，见 §3.4。
 
 #### 4.4.2 MCP 工具权限
 

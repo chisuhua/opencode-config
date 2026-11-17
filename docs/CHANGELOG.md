@@ -10,6 +10,26 @@
 
 ---
 
+> **v2.45 决策收口（2026-11-17，metis → oracle → critic 链的两问裁决）**：
+> ① **「不对 `git commit` 弹窗点 Allow always」不写进 `prompts/**`** —— 读者错配（`prompts/<id>.md` 的
+>   唯一消费者是模型：看不见宿主弹窗、控制不了点击、感知不到持久化）。改落 **`MULTI-AGENT-DESIGN.md` §3.4**
+>   （当前态；`CHANGELOG` 只记历史）+ **单向真源路由守卫**（正向钉真源 / 负向断言 `prompts/**` 不得承载，
+>   与「判定词表单一真源」同型）+ 未覆盖清单登记「saved approval 不可机械核」。**不立 openspec change**。
+>   ⚠ **否决了 oracle 的 `bun:sqlite` 探针建议**（critic 判 BLOCKER、已复核成立）：本仓测试零读用户级状态、
+>   `~` 路径**刻意排除**出守卫面 ⇒ 探针在干净机器上恒绿 = 假信心。首次核查仍作**人工一次性**证据
+>   （`permission` 表 230 行无 `git commit`）。
+>   顺带修两处**现存漂移**：`§4.4.1` 补 `git commit` ask（v2.44 起生效但当前态文档缺载）；未覆盖清单里
+>   「commit 条 ⇒ 独立 change」的陈述按 v2.44 事实更正。
+> ② **「角色感知权限」不直接立 change** —— 依 `no-self-adjudication` 的「不做什么」表，把权限层改成
+>   **硬 deny** 属**架构级** ⇒ **ADR 先行**。草案见 `docs/adr/ADR-role-aware-permissions.md`（Status: **Draft**）：
+>   身份真源（顶层 `current_role` vs 本 session 分区，两份文档指向相反）+ 档位与宣称边界 + 与派发后端
+>   机制的「会话类型不相交」+ 口令锚定的**收窄形态**（宣称「防事故，不防绕过」）+ P3 入 backlog。
+>
+> **验证**：`bun test tests/` 全量回归 + 两条**变红演练**（删 §3.4 标题 ⇒ 红；把措辞抄进 `prompts/build.md` ⇒ 红）
+> + anchors 无 FAIL。判定链报告：`.rddf/reviews/role-aware-permissions-consultation.md`。
+
+---
+
 > **v2.44 权限层修复（2026-11-17，用户裁决选 A）：`git commit` → ask 档**：
 > ① **起因**（v2.43 实测 2/2）：模型**自行 commit**，原文自述「`git commit` **在本仓权限配置里不属于 ask 档**」
 >   ⇒ **prompt 层（「不要主动 commit —— 等用户确认」）与权限层冲突** ⇒ 模型**优先信权限层** ⇒ prompt 规则被否决。

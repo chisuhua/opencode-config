@@ -1144,6 +1144,11 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
      *   build agent `permission.shell` 加 ask + 「守卫漂移检测」族加判据钉住 ⇒ `E-8` 3/3 真绿。
      *   ⚠ **教训**：prompt 层规则若与权限层更具体的配置冲突，**模型信权限层**
      *   ⇒ 新增「等确认」类规则时**必须同批检查权限层**。
+     * - ⚠ **用户侧批准纪律（§3.4）不可机械核**：saved approval 的**存在性**不在只读测试范围内
+     *   （不读用户级 `~/.local/share/opencode/*.db` —— 环境耦合 + 干净机器恒绿 = 假信心；
+     *   oracle 曾建议加 `bun:sqlite` 探针，critic 判 BLOCKER 并采纳）⇒
+     *   本仓只钉「真源在 `MULTI-AGENT-DESIGN.md` §3.4 + `prompts/**` 不得承载」，
+     *   **不钉**「用户没点过 Allow always」。
      * - ⚠ **v2.42 未覆盖：另 5 处「必须问用户」声明**（protected by §需要用户裁决时的**机读清单**之外）：
      *   ① 角色列表 `no-role` 行「**询问用户角色**」—— ⚠ **2026-11-17 实测：已被 v2.42 覆盖**
      *      （模型正确停机 + 候选路径 + 零写 ⇒ 不需要新 change；观察报告 §9 有原始输出）；
@@ -1152,7 +1157,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
      *      LLM assessment + AC count **自动选 1-5，不需要用户输入**」per ADR-0049）⇒
      *      **残余缺口 = 低置信度时的「暂停问用户」**（非交互问不到）⇒ 但它在**产品仓 skill 层**
      *      ⇒ **登记为产品侧议题**（本仓 prompt 层不管）；
-     *   ③ 同上 commit 条 + §输出「不要主动 commit —— 等用户确认」（有**自己的既有形态**）⇒ 独立 change；
+     *   ③ 同上 commit 条 + §输出「不要主动 commit —— 等用户确认」—— ✅ **已修（v2.44）**
+     *      （权限层 ask，见上方条目）⇒ **无需独立 change**；用户侧纪律见 §3.4；
      *   ④ 角色矩阵 `planner` 行「停下请用户切 architect」—— ⚠ **已属 v2.41 触发面②**（需口令级授权）⇒ 无需新登记；
      *   ⑤ §授权窗口 / §角色切换「窗口外一律停下问用户」「等用户明说」—— ⚠ **已属触发面②** ⇒ 无需新登记。
      *   ⇒ ①②③ **如实登记为未覆盖**（不声称覆盖）；④⑤ 已由既有触发面覆盖。
@@ -1773,6 +1779,56 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
       const first = readFileSync(abs, "utf8").split("\n")[0] ?? ""
       expect(first, `${file![1]} 首行未含 agent id「${id}」`).toContain(id)
     }
+  })
+})
+
+describe("用户侧批准纪律：真源在 docs/MULTI-AGENT-DESIGN.md §3.4，prompts/** 不得承载", () => {
+  // 背景（v2.45）：宿主权限弹窗的「Allow always」会把 pattern 持久化为 project-scoped allow
+  // ⇒ 配置里的 `ask` 仍在（层 1 照样绿），但执行时不再询问 ⇒ 洞静默重开。
+  // 该纪律的**读者是人**，而 `prompts/<id>.md` 的唯一消费者是模型（看不见弹窗、控制不了点击）
+  // ⇒ 写进 prompts = 给错误读者写规则。本 describe 钉的就是这条边界：
+  //   正向 = 真源在 MULTI-AGENT-DESIGN.md §3.4；负向 = prompts/** 不得承载该措辞。
+  const ROOT = path.join(import.meta.dir, "..")
+  const DESIGN = readFileSync(path.join(ROOT, "docs", "MULTI-AGENT-DESIGN.md"), "utf8")
+  const SECTION_TITLE = "### 3.4 用户侧的批准纪律"
+  const PROMPTS_DIR = path.join(ROOT, "prompts")
+
+  /** 取节体：从标题后到下一个同级/更高级标题（`## ` / `### `）之前。 */
+  function sectionBody(md: string, title: string): string | null {
+    const start = md.indexOf(title)
+    if (start < 0) return null
+    const rest = md.slice(start + title.length)
+    const next = /\n#{2,3} /.exec(rest)
+    return next ? rest.slice(0, next.index) : rest
+  }
+
+  /** 措辞族：只认宿主 UI 文案「Allow always」。⚠ 天花板已登记在 `MULTI-AGENT-DESIGN.md` §3.4（闭集字面守卫，换词复述不在机读范围）。 */
+  const carriesDiscipline = (text: string) => /allow\s+always/i.test(text)
+
+  test("真源侧：§3.4 存在，且写明纪律 / 为什么不能进 prompts / 不可机械核残留 / 守卫落点", () => {
+    const body = sectionBody(DESIGN, SECTION_TITLE)
+    expect(body, `MULTI-AGENT-DESIGN.md 缺「${SECTION_TITLE}」（该纪律的唯一真源）`).toBeTruthy()
+    expect(carriesDiscipline(body!), "§3.4 未写出宿主措辞「Allow always」").toBe(true)
+    expect(body!, "§3.4 缺「为什么不能进 prompts/**」的说明").toContain("prompts/**")
+    expect(body!, "§3.4 缺「saved approval 不可机械核」的登记").toMatch(/不可机械核|不在只读测试范围内/)
+    expect(body!, "§3.4 未指向守卫落点").toContain("config-guards.test.ts")
+  })
+
+  test("负向：prompts/** 不得承载该纪律（读者是模型，不是人）", () => {
+    // ⚠ 递归扫描：`prompts/` 今天是扁平目录，但若将来出现子目录，只扫顶层会让守卫**静默缩窄**
+    const hits = (readdirSync(PROMPTS_DIR, { recursive: true }) as string[])
+      .filter((f) => f.endsWith(".md"))
+      .filter((f) => carriesDiscipline(readFileSync(path.join(PROMPTS_DIR, f), "utf8")))
+    expect(
+      hits,
+      `prompts/** 出现宿主 UI 措辞「Allow always」——该纪律的读者是人，应只留在 MULTI-AGENT-DESIGN.md §3.4：${hits.join(", ")}`,
+    ).toEqual([])
+  })
+
+  test("判别力：谓词对「含该措辞」的文本为真（防恒假空转）", () => {
+    expect(carriesDiscipline("不要对 git commit 弹窗点 Allow always")).toBe(true)
+    expect(carriesDiscipline("allow ALWAYS")).toBe(true)
+    expect(carriesDiscipline("不要主动 commit —— 等用户确认")).toBe(false)
   })
 })
 
