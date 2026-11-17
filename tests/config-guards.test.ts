@@ -1266,7 +1266,11 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "front-delegate-testing.md", "front-delegate-usage.md", "dual-session-delegation.md",
         "model-fallback-usage.md", "review-automation-backlog.md", "rdd-workflow-product-issues.md",
       ],
-      lib: ["delegate-core.ts", "delegate-async.ts", "model-fallback-core.ts", "subagent-contract-core.ts"],
+      lib: [
+        "delegate-core.ts", "delegate-async.ts", "model-fallback-core.ts", "subagent-contract-core.ts",
+        // v2.46（role-aware-permissions Task 1）：唯一身份解析器（ADR-role-session-identity D1）
+        "role-identity.ts",
+      ],
     }
     for (const [dir, expected] of Object.entries(EXPECTED)) {
       // ⚠ **已知边界（fail-closed 的反面，必须如实登记）**：`readdirSync` 是**平铺**的 ⇒
