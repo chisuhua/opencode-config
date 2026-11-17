@@ -409,11 +409,11 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 #### 2.8.3 切换策略（默认用户驱动）
 
 - **触发口令**：「切换到 X」「进入 X 阶段」「以 X 角色工作」「set role to X」；合法值仅上表 6 个，其它值拒绝并列出合法值。
-- **收到口令后**：校验合法性 → 更新项目级 `role.json`（`updated_by: "user"`，追加 `history`）→ **先输出新角色的开场报告**，再处理用户请求。
+- **收到口令后**：校验合法性 → 更新项目级 `role.json`（经 `scripts/role-switch.sh`；`updated_by: "user"`，追加 `history`）→ **先输出新角色的开场报告**，再处理用户请求。
 - **窗口内自动切换的回合**：开场报告标 `【角色: X | source: auto | window: <used>/<max_rounds>】`，让人一眼看出是窗口内自动切的。
 - **默认不自动切换**：无窗口时**不得根据上下文推测切换**（即使上下文强烈暗示是 builder 阶段）；可以**提议**（"验收发现 3 项失败，需回 builder 修复，是否切换？"），但不能直接切。
 - **切换不追溯**：已完成的动作不回滚；跨角色任务在响应里说明「接下来以 X 角色继续」。
-- **退出**：「退出角色」「reset role」「no role」→ 切回 `no-role` 并清空 `auto_switch_window`。
+- **退出**：「退出角色」「reset role」「no role」→ 经 `scripts/role-switch.sh --exit` 切回 `no-role` 并清空 `auto_switch_window`。
 
 #### 2.8.4 授权窗口（用户显式授权后才有的窗口内自治）
 
@@ -423,7 +423,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 切换到 builder，允许在 builder ↔ verifier 之间自动切换，最多 3 轮
 ```
 
-写入 `role.json` 的 `auto_switch_window`：
+写入 `role.json` 的 `auto_switch_window`（经 `scripts/role-switch.sh --grant-window <roles-csv> <max>`）：
 
 ```json
 {

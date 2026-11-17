@@ -791,6 +791,60 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         v.push("§自查清单 缺「新增『必须问用户』之节 ⇒ 须在机读清单登记」这条义务（否则登记义务没有执行者）")
       }
 
+      // ── ⑪ 角色切换的写入口（AC8 / ADR-role-session-identity D2）──
+      //   **唯一写入口 = `scripts/role-switch.sh`**（薄壳 ⇒ 语义单源在 `lib/role-lease.ts`）：
+      //   直写 role.json 会绕过「单锁 + 读-改-写 + 原子写」⇒ 身份/租约可被无声改写。
+      //   ⚠ **白名单**：三步字面「更新项目级 `role.json`」必须保留**恰好 1 次**（它是顺序锚点）——
+      //     它所在的 step ② 行同时含脚本路径 ⇒ 天然豁免于「直接写」判定（不得被判红）。
+      {
+        const SCRIPT = "scripts/role-switch.sh"
+        const ROLE = "role.json"
+        const WRITE_VERB = /(写入|更新|改写|落盘|写回|保存|写)/
+        // (a) 禁止形态：直接写 role.json 的指令（shell 重定向 / tee / jq / 写动词动作句）
+        for (let i = 0; i < L.length; i++) {
+          const line = L[i]!
+          if (!line.includes(ROLE)) continue
+          if (line.includes(SCRIPT)) continue // 经脚本 ⇒ 放行
+          const shell =
+            /(?:^|\s)>\s*[^\s]*role\.json/.test(line) ||
+            /\btee\b[^\n]*role\.json/.test(line) ||
+            /\bjq\b[^\n]*role\.json/.test(line)
+          if (shell || WRITE_VERB.test(line)) {
+            v.push(`「直接写 role.json」：第 ${i + 1} 行出现直接写 role.json 的指令（须经 ${SCRIPT}）`)
+          }
+        }
+        // (b) **五个写点**必须各自走脚本（锚点缺失也算违规 —— 写点被删 ⇒ 判据失效）
+        const WRITE_POINTS: Array<[string, string]> = [
+          ["② 更新项目级 `role.json`", "step②"],
+          ["- **退出**：「退出角色」", "退出"],
+          ["写入 `role.json` 的 `auto_switch_window`", "授予窗口"],
+          ["每次自动切换", "自动切换"],
+          ["**关闭窗口**", "关闭窗口"],
+        ]
+        WRITE_POINTS.forEach(([a, label], idx) => {
+          const hit = L.findIndex((l) => l.includes(a))
+          if (hit < 0) {
+            v.push(`写入口 #${idx + 1}（${label}）：锚点「${a}」在 build.md 里不存在 ⇒ 写点被删`)
+            return
+          }
+          if (!L[hit]!.includes(SCRIPT)) {
+            v.push(`写入口 #${idx + 1}（${label}）：未走 ${SCRIPT}（第 ${hit + 1} 行）`)
+          }
+        })
+        // (c) 非写点确认：「窗口耗尽」是 halted 报告 ⇒ **不得**带脚本（否则写点计数失真）
+        const halted = L.findIndex((l) => l.includes("**窗口耗尽**"))
+        if (halted < 0) v.push("写入口：缺「窗口耗尽」段（非写点锚点丢失）")
+        else if (L[halted]!.includes(SCRIPT)) {
+          v.push(`写入口：「窗口耗尽」是 halted 报告（非写点），不应出现 ${SCRIPT}（第 ${halted + 1} 行）`)
+        }
+        // (d) 白名单：三步字面「更新项目级 `role.json`」恰好 1 次
+        const literal = "更新项目级 `role.json`"
+        const cnt = B.split(literal).length - 1
+        if (cnt !== 1) {
+          v.push(`写入口白名单：「${literal}」全文出现 ${cnt} 次（应恰好 1 次 ⇒ 顺序判定的锚必须唯一）`)
+        }
+      }
+
       return v
     }
 
@@ -1093,6 +1147,21 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
           name: "HANDOFF 契约段：删掉「仅适用于被派发后端」的归属句",
           apply: (b) => b.replace("⚠ **本节仅适用于被派发后端**", "⚠ **本节说明**"),
           expect: "HANDOFF 契约段",
+        },
+        {
+          // ⚠ 变红演练：把写入口改回**直接写** role.json ⇒ 必须被抓到（否则守卫恒真）
+          name: "角色切换写入口：step ② 被改回「直接写 role.json」（去掉脚本路径）",
+          apply: (b) => b.replace("② 更新项目级 `role.json`（经 `scripts/role-switch.sh`", "② 直接写 `role.json`"),
+          expect: "直接写 role.json",
+        },
+        {
+          name: "角色切换写入口：授予窗口被改回 `jq` 直写",
+          apply: (b) =>
+            b.replace(
+              "收到后经 `scripts/role-switch.sh --grant-window <roles-csv> <max>` 写入 `role.json`",
+              "收到后用 `jq` 直接写入 `role.json`",
+            ),
+          expect: "写入口 #3",
         },
       ]
       for (const m of MUTATIONS) {

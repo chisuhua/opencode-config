@@ -56,21 +56,21 @@
 
 ## Task 1：身份落点（AC1–AC3 / AC10）
 
-- [ ] **Step 1:** 写 `resolveRole({stateRoot, globalRoot, sessionID, agent}) → {role, source, warning?}`（**全注入、不读 env**）⇒ 先写会失败的 1b 用例
-- [ ] **Step 2:** AC1（两会话各读各）/ AC2（三分支 + `source`）/ AC3（非 build 成对）
-- [ ] **Step 3:** AC10：linked worktree 三次读同一文件同分区 + symlink 变体
-- [ ] **Step 4:** `$OPENCODE_SESSION_ID` 缺失 ⇒ **跳过镜像步** ⇒ 全局 ⇒ `general` + stderr/ledger 双告警（1b 一条）
+- [x] **Step 1:** 写 `resolveRole({stateRoot, globalRoot, sessionID, agent}) → {role, source, warning?}`（**全注入、不读 env**）⇒ 先写会失败的 1b 用例
+- [x] **Step 2:** AC1（两会话各读各）/ AC2（三分支 + `source`）/ AC3（非 build 成对）
+- [x] **Step 3:** AC10：linked worktree 三次读同一文件同分区 + symlink 变体
+- [x] **Step 4:** `$OPENCODE_SESSION_ID` 缺失 ⇒ **跳过镜像步** ⇒ 全局 ⇒ `general` + stderr/ledger 双告警（1b 一条）
 
 ## Task 2：写入口收敛（AC4–AC8）
 
-- [ ] **Step 1:** `withRoleLock(fn)`（**一次锁内完成 claims + role.json**）+ `scripts/role-switch.sh`（薄壳、不持锁）⇒ 先写会失败的 1b 用例
-- [ ] **Step 2:** AC4：**其余分区 + `legacy` 逐字节相等** + `history` 追加；**中途失败 ⇒ 双未变 + 非 0 退出**
-- [ ] **Step 3:** AC5：注入 rename/write 失败 ⇒ 原文件不变 + 无 `.tmp-*`（`role.json` 与 `role-claims.json` 各一条）
-- [ ] **Step 4:** AC7：**20 次两进程交替 RMW** 无丢失
-- [ ] **Step 5:** AC6：正向 + **负向（顶层未被回填）** + `agent:"plan"` 抛错
-- [ ] **Step 6:** AC8：`--by auto`（`used+1`、`used == max` 拒绝）+ 四个子命令（切换/退出/授予窗口/关闭窗口）各写对字段
-- [ ] **Step 7:** build.md 的 5 个写点全走脚本（`:593`/`:596`/`:668`/`:694`/`:700`）；`:696` 确认非写点
-- [ ] **Step 8:** **1a**：`build.md` 内不得出现直接写 `role.json` 的指令（检测形态：`>` / `tee` / `jq` / 「写入 role.json」动作句；⚠ **白名单**：必须保留的三步字面「更新项目级 `role.json`」恰好 1 次，不得被判红）（**MUTATIONS**：改回直写 ⇒ 必红）
+- [x] **Step 1:** `withRoleLock(fn)`（**一次锁内完成 claims + role.json**）+ `scripts/role-switch.sh`（薄壳、不持锁）⇒ 先写会失败的 1b 用例
+- [x] **Step 2:** AC4：**其余分区 + `legacy` 逐字节相等** + `history` 追加；**中途失败 ⇒ 双未变 + 非 0 退出**
+- [x] **Step 3:** AC5：注入 rename/write 失败 ⇒ 原文件不变 + 无 `.tmp-*`（`role.json` 与 `role-claims.json` 各一条）
+- [x] **Step 4:** AC7：**20 次两进程交替 RMW** 无丢失
+- [x] **Step 5:** AC6：正向 + **负向（顶层未被回填）** + `agent:"plan"` 抛错
+- [x] **Step 6:** AC8：`--by auto`（`used+1`、`used == max` 拒绝）+ 四个子命令（切换/退出/授予窗口/关闭窗口）各写对字段
+- [x] **Step 7:** build.md 的 5 个写点全走脚本（`:593`/`:596`/`:668`/`:694`/`:700`）；`:696` 确认非写点
+- [x] **Step 8:** **1a**：`build.md` 内不得出现直接写 `role.json` 的指令（检测形态：`>` / `tee` / `jq` / 「写入 role.json」动作句；⚠ **白名单**：必须保留的三步字面「更新项目级 `role.json`」恰好 1 次，不得被判红）（**MUTATIONS**：改回直写 ⇒ 必红）
 
 ## Task 3：写门（AC11–AC17）
 

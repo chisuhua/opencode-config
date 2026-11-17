@@ -212,7 +212,7 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 - **异常值**：`current_role` 不在合法集合内，或 JSON 解析失败 → 按 `no-role` 处理并提示修复，**不要**静默 fallback 到 `general`（会放大权限）
 - **history 上限**：只保留最近 20 条，避免文件无限增长
 - **初始化**：`/role-init`（幂等）；**查看**：`/role-show`
-- **写入**：角色切换时写 **stateRoot** 路径 `<stateRoot>/.rddf/state/role.json`（双 session pair 已登记时）；**全局路径只读，仅作 fallback**；单 session 场景维持 `<cwd>/.rddf/state/role.json`。
+- **写入**：角色切换时经 `scripts/role-switch.sh` 写 **stateRoot** 路径 `<stateRoot>/.rddf/state/role.json`（双 session pair 已登记时）；**全局路径只读，仅作 fallback**；单 session 场景维持 `<cwd>/.rddf/state/role.json`。
 - **`role_class`（被派发后端的能力类，不是治理身份）**：派发时由派发方声明，登记在状态文件的 session 分区（`role_class`）与派发登记条目里。**它只决定「能做什么」，不改变治理身份** —— `current_role` 仍按本节语义解释（后端恒为 `builder`）。后端以**简报的运行身份段**为准（简报由持久化值生成），两者一致；**不一致 ⇒ 停下交回主会话**，不要自行择一。**两者皆无该字段 ⇒ 视为缺省 `builder`，不得因字段缺失停下拒活。**
 
 ### 架构文档范围（arch-docs.json）
@@ -590,10 +590,10 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 
 - **触发口令**：「切换到 X」「进入 X 阶段」「以 X 角色工作」「set role to X」
 - **合法值**：`architect` / `planner` / `builder` / `verifier` / `no-role` / `general`；其它值拒绝并列出合法值
-- **收到口令后**：① 校验目标角色合法 → ② 更新项目级 `role.json`（`current_role` / `updated_at` / `updated_by: "user"` / `session_id`，追加 `history`）→ ③ **先输出新角色的开场报告**，再处理用户请求
+- **收到口令后**：① 校验目标角色合法 → ② 更新项目级 `role.json`（经 `scripts/role-switch.sh`；`current_role` / `updated_at` / `updated_by: "user"` / `session_id`，追加 `history`）→ ③ **先输出新角色的开场报告**，再处理用户请求
 - **默认不自动切换**：无窗口时不得根据上下文推测切换；即使上下文强烈暗示是 builder 阶段，也要等用户明说。可以**提议**（"验收发现 3 项失败，需回 builder 修复，是否切换？"），但不能直接切
 - **切换不追溯**：已完成的动作不回滚；跨角色任务在响应里说明「接下来以 X 角色继续」，不要静默改变行为
-- **退出**：「退出角色」「reset role」「no role」→ 切回 `no-role`，并清空 `auto_switch_window`
+- **退出**：「退出角色」「reset role」「no role」→ 经 `scripts/role-switch.sh --exit` 切回 `no-role`，并清空 `auto_switch_window`
 
 #### 实施阶段的新发现（builder 发现问题时的处置）
 
@@ -665,7 +665,7 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 切换到 builder，允许在 builder ↔ verifier 之间自动切换，最多 3 轮
 ```
 
-收到后写入 `role.json` 的 `auto_switch_window`：
+收到后经 `scripts/role-switch.sh --grant-window <roles-csv> <max>` 写入 `role.json` 的 `auto_switch_window`：
 
 ```json
 {
@@ -691,13 +691,13 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
    - `verifier → planner`：验收失败且分类为 `proposal_drift`（planner 须在窗口内）
    - 任意 → `no-role`：任务结束，同时清空窗口（**不计入 `used`** —— 窗口随即清空）
    - **每一次窗口内的角色间自动切换都计入 `used += 1`**（不含 → `no-role`，它随即清空窗口）—— 否则窗口上限形同虚设
-4. 每次自动切换写 `updated_by: "auto"`，`history` 追加 `{role, at, by: "auto", reason}`
+4. 每次自动切换经 `scripts/role-switch.sh <role> --by auto` 写 `updated_by: "auto"`，`history` 追加 `{role, at, by: "auto", reason}`
 
 **窗口耗尽**（`used >= max_rounds`）：不再自动切回，输出 halted 报告（失败项 + 证据 + 已用轮次）交用户裁决。
 
 **开场报告带来源标记**：自动切换后的第一个回合写 `【角色: X | source: auto | window: <used>/<max_rounds>】...`，让人一眼看出是窗口内自动切的、用了几轮。用户口令触发的仍写 `source: user`（或 `state-file`）。角色列表的 `source` 取值因此新增 `auto`。
 
-**关闭窗口**：「关闭窗口」「取消自动切换」→ `auto_switch_window: null`，回到完全用户驱动。
+**关闭窗口**：「关闭窗口」「取消自动切换」→ 经 `scripts/role-switch.sh --close-window` 置 `auto_switch_window: null`，回到完全用户驱动。
 
 ### 越权处理（显式拒绝 + 解释）
 
@@ -778,7 +778,7 @@ sec: ## 输出 | kind: halt
 
 - [ ] 回合开始前读了一次 `role.json`？（cwd 变更后重新解析）
 - [ ] 开场报告格式正确（`【角色: <X> | source: <...>】...`）？
-- [ ] 角色切换后立即更新了 `role.json`，且只保留最近 20 条 history？
+- [ ] 角色切换后立即经 `scripts/role-switch.sh` 更新了 `role.json`，且只保留最近 20 条 history？
 - [ ] 自动切换是否满足窗口三条件（角色在 `roles` 内 / `used < max_rounds` / 有明确触发）？是否记了 `updated_by: "auto"` + reason？
 - [ ] 越权请求被显式拒绝并引导？
 - [ ] no-role 状态下没有 edit / 改仓库状态的 shell / 创建 openspec？
