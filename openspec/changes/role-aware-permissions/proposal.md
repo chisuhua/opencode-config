@@ -1,10 +1,10 @@
 # role-aware-permissions — 角色写门从 prompt 软约束变为工具层保证 + 会话身份落点改造
 
-> 判据真源：**两份 ADR 草案**（`docs/adr/ADR-role-session-identity.md` / `docs/adr/ADR-role-aware-permissions.md`，
-> Status 均 **Draft**，待签批）—— 本 change 是它们的**实施**载体，**不新增任何决策**。
+> 判据真源：**两份 ADR**（`docs/adr/ADR-role-session-identity.md` / `docs/adr/ADR-role-aware-permissions.md`）
+> —— 本 change 是它们的**实施**载体，**不新增任何决策**。
 > 决策取舍：见两份 ADR（身份源 / 档位 / 门控面 / 破例 / 宣称边界 / 角色租约）。
 > ⚠ **本 change 的 AC 表就是两份 ADR 的 V 项逐条映射**（身份 V1–V10 → AC1–AC10；门控+租约 V1–V14 → AC11–AC24）。
-> ⚠ **两份 ADR 未签批前，本 change 不开工**（先签 ADR，再实施）。
+> ✅ **两份 ADR 已签批**（Status **Accepted**，2026-11-17 用户签批；D6 工作流同批确认）⇒ 本 change 可开工。
 
 ## Why
 
@@ -40,7 +40,7 @@
 1. `prompts/build.md:593` 的切换写规格 ⇒ 改为**调用 `scripts/role-switch.sh`**（禁止模型手写 `role.json`）
 2. **写入口收敛**：build.md 的 **5 个** role.json 写点（`:593` / `:596` / `:668` / `:694` / `:700`）全部经脚本
    （`:696` 不是写点）；`writeRoleSession` 只写**后端 sid** 的分区、**不写顶层**（去掉 `delegate-core:1700` 的回填）
-3. **文件根恒 `stateRoot`**（取代「双 session ⇒ stateRoot，否则 cwd」——后者会随一次派发翻转）
+3. **文件根恒 `stateRoot`**（取代「双 session ⇒ stateRoot，否则 cwd」——后者会随一次派发翻转）；⚠ AC10 的取证**禁把 `stateRoot` 注入成常量**
 4. 读侧：分区 → 同 sid 镜像 → 全局 → `general`；身份域只对 `build` agent 生效
 5. 迁移：先写分区再切读侧（避免中间态全锁）
 
@@ -51,7 +51,7 @@
    同角色冲突 ⇒ 拒绝并**指名持有者**、**回到调用方**；不同角色 ⇒ 并行
 8. **每次写类工具调用校验租约**（holder + `claim_gen`）——否则接管后旧持有者仍能写工作树
 9. 破例通道 = **切角色**（唯一逃生口，可观测）；口令锚定收窄（排除 `question` 回答等）
-10. **五项免宣称** + 非 build 域不参与（第 ⑥ 项）
+10. **六项免宣称**（含非 build 域不参与 / 执行点缺席）
 
 ### C. 守卫与文档
 
@@ -79,13 +79,13 @@
 | AC1 | 同一 worktree 两个会话各读各的分区，互不影响 | 行为 | 身份 V1 |
 | AC2 | 分区缺失时：`session_id` 匹配 ⇒ 用镜像；不匹配 ⇒ 全局 ⇒ `general`（三分支各一例） | 行为 | 身份 V2 |
 | AC3 | `front` / `plan` 会话**不参与**角色解析（镜像为 `architect` 时它们仍不获得该写集） | 行为 | 身份 V3 |
-| AC4 | `role-switch.sh` **读-改-写**：切换后其它分区与 `legacy` 键原样保留 | 结构 | 身份 V4 |
-| AC5 | 写入原子性：模拟中断后文件仍可解析，无半截 JSON | 结构 | 身份 V5 |
+| AC4 | `role-switch.sh` **读-改-写**：切换后其它分区与 `legacy` 键**逐字节**保留、`history` 追加；**切换中途失败 ⇒ `role-claims.json` 与 `role.json` 均未变 + 非 0 退出 + 指名原因** | 结构 | 身份 V4 |
+| AC5 | 写入原子性：注入 `rename`/`write` 失败 ⇒ **原文件逐字节不变 + 无 `.tmp-*` 残留**（`role.json` **与** `role-claims.json` 各一条） | 结构 | 身份 V5 |
 | AC6 | `writeRoleSession` 仍写后端分区（`current_role:"builder"` + `role_class`）、**不写顶层**；`agent !== "build"` **抛错** | 结构 | 身份 V6 |
-| AC7 | 分区写 + 镜像写在**同一临界区**完成（无 check-then-act） | 结构 | 身份 V7 |
+| AC7 | **无丢失更新 + 同临界区**：20 轮**强制交错**（barrier；A 的完成标记 = **读完成**；A 等 B 就绪设超时 T，超时即视为已串行）⇒ 两分区（含镜像）都在、计数无损；**分区写与镜像写在同一临界区**（无 check-then-act）；**必红证据：锁→no-op ⇒ 100% 红** | 结构+行为 | 身份 V7 |
 | AC8 | 授权窗口自动切换走 `role-switch.sh --by auto`（`updated_by:"auto"`、`used+1`、超限拒绝） | 行为 | 身份 V8 |
 | AC9 | 回归绿 + **既有守卫锚点未被破坏**（三步字面 + 突变锚点保留） | 结构 | 身份 V9 |
-| AC10 | **文件根唯一**：linked worktree 里「切角色 → 派发（登记 pair）→ 再读」三次**同一文件、同一分区可见、解析角色不变** | 行为 | 身份 V10 |
+| AC10 | **文件根唯一**：linked worktree 里「切角色 → 派发（登记 pair）→ 再读」三次**读到同一文件路径、同一分区可见、解析角色不变**；另加 symlink 变体（两写法同键） | 行为 | 身份 V10 |
 | AC11 | `architect` 会话对 `src/**` 的 `edit`/`write` **返回工具错误** | 行为 | 门控 V1 |
 | AC12 | `builder` 会话写 `docs/adr/**`（`arch_paths` 命中）**成功** | 行为 | 门控 V2 |
 | AC13 | `no-role` 会话对任意仓库文件 `edit` **被拒**，但**能完成角色切换** | 行为 | 门控 V3 |
@@ -96,8 +96,8 @@
 | AC18 | **租约拒绝**：主会话 `builder` 活跃时派 `builder` 类后端 ⇒ **拒绝**，错误含 holder `session_id` + workRoot，且**回到调用方** | 行为 | 门控 V8 |
 | AC19 | **异角色并行**：主 `architect` + 后端 `verifier` 同 worktree ⇒ 两者都成功 | 行为 | 门控 V9 |
 | AC20 | **豁免与独占**：两个 `no-role` 可并存；第二个 `general` 被拒；**无分区**的新主会话（链落 `general`）与另一个 `general` 同样冲突 | 行为 | 门控 V10 |
-| AC21 | **判活与接管围栏**：宿主探活失败 + TTL 超时 ⇒ 接管成功且告警；**旧持有者下一次租约写与写类工具调用都必须失败**（`claim_gen` 不匹配） | 行为 | 门控 V11 |
-| AC22 | **锁协议**：并发 acquire 只有一方成功；`mkdir` 不带 `-p`；陈旧回收 30 s；硬超时 10 s；**锁内不得再取锁** | 结构 | 门控 V12 |
+| AC21 | **判活与接管围栏**：宿主探活失败 + TTL 超时 ⇒ 接管成功且告警；**旧持有者「租约写」与「写类工具调用」两条独立用例都必须失败**；`claim_gen` 比较语义为 **`!=` 即拒**且**单调不减**；`role-claims.json` **四种损坏形态**（截断/空/数组/缺字段）⇒ **保守拒绝**、gen 不回退 | 行为 | 门控 V11 |
+| AC22 | **持锁互斥**：A 持锁并写标记 ⇒ B **等标记可见后** acquire **必须失败**（失败原因 = 锁占用/超时）；A 释放后 B 必须成功；**「两进程同时起跑」不作判据**；`mkdir` 不带 `-p`；陈旧回收 30 s（两条边界：`== 阈值` 阻塞 / `+1` 回收）；硬超时 10 s；**不按 pid 判活**；锁内不得再取锁 | 结构 | 门控 V12 |
 | AC23 | **免宣称六项**在 AC + 测试注释 + 主题文档**三处**登记 | 结构 | 门控 V13 |
 | AC24 | 回归绿 + anchors 无 FAIL；立场句（`:196` / `:706` / `:202` / `:210` / `:215`）与 `MULTI-AGENT-DESIGN.md:404-405` 同批落地 | 结构 | 门控 V14 |
 

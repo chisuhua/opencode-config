@@ -4,13 +4,15 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | **Draft**（2026-11-17 起草；**D6 角色租约须用户签批**）。**可独立否决 D6** —— 但否决时须同步修订 D1（T2 定义去掉「+ D6 租约」）与 D5（③ 去掉 `role-claims.json`、⑤ 改为「仅 D2 门控不生效」） |
+| Status | **Accepted**（2026-11-17 用户签批 —— 会话内明确「切 architect 确认」）。**D6 角色租约同批确认** ⇒
+按 D6 的签批语义，「主会话处于某角色时派同名类后端会被拒」这一工作流**已确认**（主会话须先切到不冲突角色再派发） |
 | Date | 2026-11-17 |
 | Author | architect（主会话） |
 | Parent | **`ADR-role-session-identity`（依赖：身份来源 —— 本文的租约键依赖它）**；`ADR-front-multi-backend`（D6.1 槽位键 = `workRoot`；D6.2 同 `workRoot` 同时一个后端）；`no-self-adjudication`（「不做什么」表第 3 行：硬 deny 属架构级 ⇒ 由本文承担） |
 | 关联 change | `openspec/changes/role-aware-permissions/`（**已立项 2026-11-17**；与身份 ADR 同一 change 同批落地） |
 | AC 映射 | 本文 **V1–V14 ↔ AC11–AC24**（change 的验收标准表） |
-| 前置报告 | `.rddf/reviews/role-aware-permissions-consultation.md` |
+| 审稿报告 | `.rddf/reviews/role-aware-permissions-consultation.md`（oracle **2 轮** + critic **1 轮**；逐条闭合见 §8.3/§8.4） |
+| 修订 | **2026-11-17（签批后）**：D6 陈旧根口径 → 两文件均恒 `stateRoot`；D5「五项」→**六项**（含顺序修正）与 V13 同步；风险表「五项」→六项；D5⑥ 改为「租约仍剩 `role-switch.sh` + 派发临界区」。**事实性修正，不改决策** |
 
 ## 背景与问题
 
@@ -63,7 +65,7 @@
   窗口内自动切换按机械可验条件放行（目标 ∈ `window.roles`、`used < max`、`used += 1`、`updated_by: "auto"`）。
 - ⚠ **必须显式排除 `question` 回答**（选项文案是模型写的）、tool content、程序化注入、compaction 摘要。
 
-### D5 宣称边界：**防事故，不防绕过** —— 五项免宣称
+### D5 宣称边界：**防事故，不防绕过** —— 六项免宣称
 
 须写进 change 的 AC / 测试注释 / 主题文档三处：
 
@@ -71,10 +73,11 @@
 2. shell 层 pattern 盲区（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）不在范围；
 3. **`role.json` / `role-claims.json` 可被 `shell` 或 `edit` 改写** ⇒ 身份与租约都可被伪造（处置：写盘进 `ask`；仍可绕过）；
 4. saved approval（宿主「Allow always」）会覆盖配置，层 1 看不见（`MULTI-AGENT-DESIGN.md` §3.4）；
-6. ⭐ **非 build agent 主会话不参与**：`plan` / `front` 等主会话不参与门控与租约（身份域见身份 ADR D3）⇒
+5. ⭐ **非 build agent 主会话不参与**：`plan` / `front` 等主会话不参与门控与租约（身份域见身份 ADR D3）⇒
    它们与 build 主会话在同一 worktree 并发时**不受本 ADR 保护**（worktree 互踩风险仍在）。
-5. ⭐ **执行点缺席**：插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/` ⇒ **D2 的门控不生效**；
-   D6 的租约**只剩 `role-switch.sh` 一个执行点**（派发面随插件一并消失，开局/写时校验也随插件消失）⇒ 「至多一个活跃 session」在插件缺席时不可保证。
+6. ⭐ **执行点缺席**：插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/` ⇒ **D2 的门控不生效**；
+   D6 的租约**仍剩两个执行点**：`role-switch.sh` 与**派发临界区**（后者属 `delegate` 路径，
+   **不随门控插件消失**）；**开局 / 每次写类调用的校验随插件消失** ⇒ 「至多一个活跃 session」在插件缺席时**部分**不可保证。
 
 ### D6 角色租约：**build 域内**同一 worktree 同一角色至多一个活跃 session
 
@@ -94,7 +97,8 @@
 
 **状态与锁**
 
-- 文件：`<stateRoot>/.rddf/state/role-claims.json`（**恒 stateRoot**；与 `role.json` 的解析根分别声明 —— 后者沿用「双 session ⇒ stateRoot，否则 cwd」）。
+- 文件：`<stateRoot>/.rddf/state/role-claims.json`（**恒 stateRoot**）；`role.json` **也恒 `<stateRoot>`** ——
+  旧口径「双 session ⇒ stateRoot，否则 cwd」**已被 `ADR-role-session-identity` D1 取代**（它会随一次派发翻转读根）。
 - 锁：复用 **`.role.lock`**，须逐条遵守既有协议 —— **`mkdir` 独占（禁 `-p`）/ 陈旧回收 30 s / 硬超时 10 s**（`lib/delegate-core.ts:1627-1646`）；
   **锁内不得再取锁**（`lib/delegate-async.ts:15-16`：不变式 4 / D7.1 —— 锁是同步不可重入，锁内不得 await、不得调自取锁的函数）。
 - **单一实现**：租约算法收敛到 `lib/role-lease.ts`；`scripts/role-switch.sh` 只是**薄壳**（解析参数后调它），不在 shell 里重写一套。
@@ -142,13 +146,13 @@
 - ⚠ **同角色组合一律冲突**（不只 builder）：凡「主会话治理角色名 == 后端能力类名」——`builder`/`builder`、`architect`/`architect`、
   `verifier`/`verifier` 等 ⇒ **派发被拒**（需先把主会话切到不冲突的角色，如 `no-role`）。这是用户规则的直接后果，
   **签批 D6 即视为对该工作流的确认**；若用户否决该工作流 ⇒ **D6 不签、本 ADR 保持 Draft**，并按 Status 行的联动要求同步修订 D1 与 D5；
-- 插件缺席时门控与租约**一起失效**（D5⑤）。
+- 插件缺席 ⇒ 门控与**每次写调用**的租约校验消失；租约仍剩两个执行点（`role-switch.sh` + 派发临界区，D5⑥）。
 
 **风险与缓解**
 
 | 风险 | 缓解 |
 |---|---|
-| 宣称硬保证而可绕过 | D5 五项 + 三处登记 |
+| 宣称硬保证而可绕过 | D5 六项 + 三处登记 |
 | 插件与 spawn 规则漂移 | `lib/role-policy.ts` 单源 + V6 |
 | 门控误伤（architect 写治理面 / `arch_paths` 为空） | 写集显式含治理面（V4）+ `arch_paths` 三态口径 |
 | 接管制造双写 | `claim_gen` 围栏（V11） |
@@ -169,5 +173,5 @@
       与另一个 `general` 会话**同样冲突**（前提：全局 `~/.rddf/state/role.json` 不存在或其 `current_role` 亦为 `general`）；证明租约键走身份链、不依赖分区存在
 - [ ] **V11** **判活与接管围栏**：宿主探活失败 + TTL 超时 ⇒ 接管成功且告警；**旧持有者下一次租约写必须失败**（`claim_gen` 不匹配）
 - [ ] **V12** **锁协议**：并发 `acquire` 只有一方成功；`mkdir` 不带 `-p`；陈旧回收 30 s；硬超时 10 s
-- [ ] **V13** **免宣称五项**在 AC + 测试注释 + 主题文档三处登记
+- [ ] **V13** **免宣称六项**在 AC + 测试注释 + 主题文档三处登记
 - [ ] **V14** 回归：`bun test tests/` 全绿、anchors 无 FAIL；立场句（`:196` 软约束→混合、`:706` 破例→切角色）同批落地

@@ -4,13 +4,14 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | **Draft**（2026-11-17 起草；待用户签） |
+| Status | **Accepted**（2026-11-17 用户签批 —— 会话内明确「切 architect 确认」） |
 | Date | 2026-11-17 |
 | Author | architect（主会话） |
 | Parent | `ADR-backend-handoff-role-class`（D2：**能力类 vs 治理身份分离** —— 本文不改）；`ADR-canonical-root-normalization`（`workRoot` / `stateRoot` 分工）；**前向依赖** `ADR-role-aware-permissions`（其 D1/T1 的 `ask` 档是本文「模型绕过脚本直写 `role.json`」的缓解手段） |
 | 关联 change | `openspec/changes/role-aware-permissions/`（**已立项 2026-11-17**；与门控/租约同一 change 同批落地） |
 | AC 映射 | 本文 **V1–V10 ↔ AC1–AC10**（change 的验收标准表） |
-| 前置报告 | `.rddf/reviews/role-aware-permissions-consultation.md` |
+| 审稿报告 | `.rddf/reviews/role-aware-permissions-consultation.md`（oracle **2 轮** + critic **1 轮**；逐条闭合见 §8.3/§8.4） |
+| 修订 | **2026-11-17（签批后）**：D4 第 3 步补「sid 缺失 ⇒ 跳过镜像步」+ 后果章同步；D2 锁归属补「`role.json` 读写在同一锁内」。**均为与 D1 对齐的事实性修正，不改决策** |
 
 ## 背景与问题
 
@@ -57,7 +58,7 @@
 
 | 写入方 | 写什么 | 锁 | 原子性 | 约束 |
 |---|---|---|---|---|
-| **`scripts/role-switch.sh`**（新：主会话**唯一**写入口，支持 `--by user\|auto` / `--exit` / `--grant-window`） | 本 session 分区（`current_role`/`updated_at`/`updated_by`/`session_id`/`auto_switch_window`/**`auto_answer`**）+ 顶层镜像 + `history` | **由 `lib/role-lease.ts` 自己取**（脚本**不持锁**，避免锁内再取锁） | `tmp + rename`；**读-改-写保留其它分区** | `prompts/build.md:593` 改为调用它；**禁止模型手写 JSON** |
+| **`scripts/role-switch.sh`**（新：主会话**唯一**写入口，支持 `--by user\|auto` / `--exit` / `--grant-window`） | 本 session 分区（`current_role`/`updated_at`/`updated_by`/`session_id`/`auto_switch_window`/**`auto_answer`**）+ 顶层镜像 + `history` | **由 `lib/role-lease.ts` 自己取**（脚本不持锁）；**`role.json` 的读-改-写也在同一锁内完成**（由该模块回调写入）——否则与 `writeRoleSession` 并发互踩 | `tmp + rename`；**读-改-写保留其它分区** | `prompts/build.md:593` 改为调用它；**禁止模型手写 JSON** |
 | `lib/delegate-core.ts` `writeRoleSession` | **仅后端 sid 的分区**，**整对象覆盖**（`current_role:"builder"` + `role_class`） | 调用方已持锁 | `writeJsonAtomic` | **不得写顶层**（去掉 `:1700` 回填）；`agent === "build"` 须**断言**（否则非 build agent 会写入非法角色值） |
 | `scripts/role-init.sh` | 缺失时创建 | **无锁** | 非原子（`cat >`） | 只在缺失时跑；**登记为残留** |
 | `scripts/role-migrate-v2.sh` | 一次性迁移 | 无锁 | jq + mv | 迁移完成后退役 |
@@ -74,7 +75,9 @@
 
 1. 先为现存会话写分区（依据：顶层镜像 + `history`；来源不可考的实例标 `legacy`）
 2. 再把读侧判据切到 D1 的链
-3. 顶层保留为镜像；`$OPENCODE_SESSION_ID` 缺失时（如老脚本环境）**退化为只读镜像路径并告警**
+3. 顶层保留为镜像；⚠ `$OPENCODE_SESSION_ID` 缺失时**跳过镜像步**（无 sid 可比 ⇒ sid 守卫不可能成立）
+   ⇒ 落到「全局 ⇒ `general`」，并**告警**（stderr + `ledger.jsonl` 各一条）——
+   不得按 D1 第 2 步「用镜像」处理（那会与 sid 守卫自相矛盾）
 
 ## 选项对比表
 
@@ -93,7 +96,7 @@
 **负面**：
 - 角色切换多了两处写（分区 + 镜像）与一次锁竞争；
 - `role-init.sh` 的无锁非原子写成为**已知残留**（只在首次初始化时触发）；
-- `$OPENCODE_SESSION_ID` 缺失的环境退化为镜像路径（需告警）。
+- `$OPENCODE_SESSION_ID` 缺失 ⇒ **跳过镜像步**（sid 守卫不可能成立）⇒ 落「全局 ⇒ `general`」+ **stderr 与 ledger 双告警**（不得按「用镜像」处理 —— 与 D1 第 2 步的 sid 守卫冲突）。
 
 **风险与缓解**
 
