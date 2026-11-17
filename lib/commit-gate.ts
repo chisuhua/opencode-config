@@ -67,6 +67,32 @@ const WRAPPERS = new Set(["sudo", "env", "nohup", "time", "command", "nice", "io
 /** 复合命令的分隔符（出现在 token 层面）。 */
 const COMPOUND_TOKENS = new Set(["&&", "||", ";", "|", "&"])
 
+/** 会改 index / 工作区的 git 子命令（出现在 commit **之前** ⇒ 提交内容集不可判定）。 */
+export const INDEX_MUTATING_SUBCOMMANDS = new Set([
+  "add",
+  "rm",
+  "mv",
+  "restore",
+  "checkout",
+  "stash",
+  "apply",
+  "reset",
+  "update-index",
+])
+
+/** 取一段里的 git 子命令（非 git 段 ⇒ null）。 */
+export function gitSubcommandOf(tokens: Token[]): string | null {
+  let i = 0
+  while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
+  while (i < tokens.length && WRAPPERS.has(tokens[i]!.value) && !tokens[i]!.quoted) {
+    i++
+    while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
+  }
+  if (i >= tokens.length || !isGitCommandWord(tokens[i]!)) return null
+  const sub = parseGitSubcommand(tokens, i + 1)
+  return sub
+}
+
 export interface Token {
   value: string
   quoted: boolean
@@ -93,6 +119,26 @@ export function tokenizeCommand(command: string): Token[] {
       quoteChar = ch
       quoted = true
       has = true
+      continue
+    }
+    // ⚠ shell 元字符**独立成 token**（即使紧贴其它字符：`x;` ⇒ [x][;]）
+    //   —— 否则 `git commit -m x; echo "..."` 会被当成**一个**命令段 ⇒ 尾随的 `echo` 被误判成
+    //   「位置 pathspec」⇒ 合法提交被假阳性拦下（层 2 实测抓到的坑）。
+    if (ch === ";" || ch === "&" || ch === "|") {
+      if (has) {
+        out.push({ value: cur, quoted })
+        cur = ""
+        quoted = false
+        has = false
+      }
+      let meta = ch
+      if ((ch === "&" || ch === "|") && command[i + 1] === ch) {
+        meta = ch + ch
+        i++
+      }
+      out.push({ value: meta, quoted: false })
+      has = false // 元字符**自带**一个 token ⇒ 不要再让随后的空白 flush 出一个空 token
+      cur = ""
       continue
     }
     if (/\s/.test(ch)) {
@@ -194,7 +240,9 @@ export function detectCommitInvocation(command: string): CommitInvocation {
     return { isCommit: false, block: "commit-gate: shell 命令为空 ⇒ 拒绝（fail-closed）" }
   }
 
-  // ⑧ 复合命令：分段看；任一段是 commit ⇒ 闭口（要求分两次调用）
+  // ⑧ 复合命令：**只有「commit 之前的段改过 index」才拒**
+  //   （`git add -A && git commit` ⇒ 判定对象不可判定 ⇒ 拒；
+  //     而 `git commit -m x; echo "exit=$?"` 的**尾随**段无害 ⇒ 放行 —— 层 2 实测的假阳性坑）。
   const segments: Token[][] = [[]]
   for (const t of tokens) {
     if (!t.quoted && COMPOUND_TOKENS.has(t.value)) {
@@ -204,18 +252,30 @@ export function detectCommitInvocation(command: string): CommitInvocation {
     segments[segments.length - 1]!.push(t)
   }
   if (segments.length > 1) {
+    let commitSeen = false
     for (const seg of segments) {
       const hit = commitInSegment(seg)
-      if (hit.isCommit || hit.block) {
-        return {
-          isCommit: true,
-          block:
-            hit.block ??
-            "commit-gate: 复合命令中含 `git commit` ⇒ 拒绝（要求**分两次调用**：先 `git add`，再 `git commit`）",
-          detail: "compound",
+      if (hit.isCommit) {
+        if (hit.block) return { isCommit: true, block: hit.block, detail: hit.detail }
+        if (!commitSeen) {
+          commitSeen = true
+          // 前置段里若有人改过 index ⇒ 判定对象不可判定 ⇒ 拒
+          for (const prev of segments.slice(0, segments.indexOf(seg))) {
+            const prevSub = gitSubcommandOf(prev)
+            if (prevSub && INDEX_MUTATING_SUBCOMMANDS.has(prevSub)) {
+              return {
+                isCommit: true,
+                block:
+                  `commit-gate: 复合命令中 \`git ${prevSub}\` 出现在 commit **之前** ⇒ 提交内容集不可判定 ⇒ 拒绝` +
+                  `（要求**分两次调用**：先 add，再 commit）`,
+                detail: "compound-index-mutation",
+              }
+            }
+          }
         }
       }
     }
+    if (commitSeen) return { isCommit: true, detail: "compound-tail" }
     return { isCommit: false }
   }
 

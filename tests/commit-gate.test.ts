@@ -94,14 +94,34 @@ describe("D5⑦ 提交形态闭口（实际内容集 ≠ 暂存区 ⇒ 拒）", 
   }
 })
 
-describe("D5⑧ 复合命令闭口（要求分两次调用）", () => {
-  test("`git add -A && git commit -m x` ⇒ 拒（内容集不可判定）", () => {
+describe("D5⑧ 复合命令闭口（**只有 commit 之前改过 index 的段**才拒）", () => {
+  test("`git add -A && git commit -m x` ⇒ 拒（前置段改了 index ⇒ 内容集不可判定）", () => {
     const r = detectCommitInvocation("git add -A && git commit -m 'x'")
     expect(r.isCommit).toBe(true)
-    expect(r.block).toContain("复合命令")
+    expect(r.block).toContain("之前")
   })
   test("`git status && ls` ⇒ 不命中", () => {
     expect(detectCommitInvocation("git status && ls").isCommit).toBe(false)
+  })
+
+  // ⚠ 层 2 实测的**假阳性**坑：模型最常见的写法是 `git commit -m x; echo "exit=$?"`
+  //   ⇒ 尾随段**无害**（不改 index）⇒ 不得拦（否则合法提交被拦，模型会去找绕路写法）。
+  test("`git commit -m x; echo \"exit=$?\"` ⇒ 命中 commit 但**不拦**（尾随段无害）", () => {
+    const r = detectCommitInvocation('git commit -m x; echo "exit=$?"')
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
+  test("`git commit -m x && echo done` ⇒ 命中 commit 但**不拦**", () => {
+    const r = detectCommitInvocation("git commit -m x && echo done")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
+  test("`git add . && git commit` ⇒ 拒（前置 add 改了 index）", () => {
+    expect(detectCommitInvocation("git add . && git commit").block).toBeTruthy()
+  })
+  test("元字符紧贴时也要独立成 token（`x;` ⇒ [x][;]）", () => {
+    const toks = tokenizeCommand("git commit -m x; echo hi").map((t) => t.value)
+    expect(toks).toEqual(["git", "commit", "-m", "x", ";", "echo", "hi"])
   })
 })
 
