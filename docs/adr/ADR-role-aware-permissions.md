@@ -8,8 +8,8 @@
 | Date | 2026-11-17 |
 | Author | architect（主会话） |
 | Parent | **`ADR-role-session-identity`（依赖：身份来源 —— 本文的租约键依赖它）**；`ADR-front-multi-backend`（D6.1 槽位键 = `workRoot`；D6.2 同 `workRoot` 同时一个后端）；`no-self-adjudication`（「不做什么」表第 3 行：硬 deny 属架构级 ⇒ 由本文承担） |
-| 关联 change | `backlog: role-aware-permissions`（**未立项**；立项后回填） |
-| AC 映射 | 本文 V1–V14 ↔ 立项后 change 的 AC |
+| 关联 change | `openspec/changes/role-aware-permissions/`（**已立项 2026-11-17**；与身份 ADR 同一 change 同批落地） |
+| AC 映射 | 本文 **V1–V14 ↔ AC11–AC24**（change 的验收标准表） |
 | 前置报告 | `.rddf/reviews/role-aware-permissions-consultation.md` |
 
 ## 背景与问题

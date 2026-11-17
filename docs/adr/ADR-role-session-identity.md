@@ -8,8 +8,8 @@
 | Date | 2026-11-17 |
 | Author | architect（主会话） |
 | Parent | `ADR-backend-handoff-role-class`（D2：**能力类 vs 治理身份分离** —— 本文不改）；`ADR-canonical-root-normalization`（`workRoot` / `stateRoot` 分工）；**前向依赖** `ADR-role-aware-permissions`（其 D1/T1 的 `ask` 档是本文「模型绕过脚本直写 `role.json`」的缓解手段） |
-| 关联 change | `backlog: role-session-identity`（**未立项**；立项后回填路径与 AC 编号） |
-| AC 映射 | 本文 V1–V9 ↔ 立项后 change 的 AC |
+| 关联 change | `openspec/changes/role-aware-permissions/`（**已立项 2026-11-17**；与门控/租约同一 change 同批落地） |
+| AC 映射 | 本文 **V1–V10 ↔ AC1–AC10**（change 的验收标准表） |
 | 前置报告 | `.rddf/reviews/role-aware-permissions-consultation.md` |
 
 ## 背景与问题
