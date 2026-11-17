@@ -21,7 +21,9 @@ for (let i = 0; i < argv.length; i++) {
 // ⚠ 默认根 = **canonical stateRoot**（与读侧 `lib/role-identity.ts` / `plugins/role-gate.ts` 同源）。
 //   旧口径用 cwd ⇒ 仓库子目录 / linked worktree / submodule 三种情形下**写读不同根**
 //   ⇒ 切换「成功」但角色不变 ⇒ 身份跌 general（ADR-role-session-identity D1 要杀掉的失败模式）。
-const stateRoot = opts.stateRoot ?? canonicalRoot(process.cwd()).stateRoot
+const roots = canonicalRoot(process.cwd())
+const stateRoot = opts.stateRoot ?? roots.stateRoot
+const workRoot = roots.workRoot
 const sessionID = opts.session ?? process.env.OPENCODE_SESSION_ID
 if (!sessionID) {
   console.error("role-switch: 缺少会话 id（$OPENCODE_SESSION_ID 未设置且未传 --session）")
@@ -55,7 +57,14 @@ try {
     console.log(`ok: 已重置 ${claimsPath(stateRoot)}（ledger 已留痕；claim_gen 重新计数）`)
   } else {
     if (!(ROLES as readonly string[]).includes(mode)) fail(`非法角色: ${mode}（允许：${ROLES.join(" / ")}）`)
-    switchRole({ stateRoot, sessionID, role: mode as Role, by: opts.by ?? "user" })
+    switchRole({
+      stateRoot,
+      workRoot,
+      sessionID,
+      role: mode as Role,
+      by: opts.by ?? "user",
+      warnSink: (m: string) => console.error(m),
+    })
     console.log(`ok: ${sessionID} → ${mode}（by=${opts.by ?? "user"}）；文件 ${roleFilePath(stateRoot)}`)
   }
 } catch (e: any) {

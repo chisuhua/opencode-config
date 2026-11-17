@@ -399,9 +399,9 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 | `session_id` | 会话标识 |
 | `auto_switch_window` | 授权窗口（见 2.8.4），无窗口时为 `null` |
 | `history[]` | 切换历史（**上限 20 条**，超出丢最旧） |
-| `sessions` | **role-v2**：`{ <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区，顶层 `current_role` 降级为展示镜像，不作权限判据 |
+| `sessions` | **role-v2**：`{ <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区，顶层 `current_role` 降级为展示镜像 —— **不作跨会话判据**；**同 sid 时**用于重建本会话身份 |
 
-- **项目级优先**：**恒 `<stateRoot>/.rddf/state/role.json`**（`stateRoot` = canonical 仓库根，见 §2.8.1）；**取代**旧的「双 session pair ⇒ stateRoot，否则 cwd」—— 旧口径让**读根随一次派发翻转** ⇒ 同一会话分区不可见 ⇒ 身份跌 `general`。不存在时读全局 `~/.rddf/state/role.json`（**只作 fallback**）；两者都没有 → `general`。
+- **项目级优先**：**恒 `<stateRoot>/.rddf/state/role.json`**（`stateRoot` = canonical 仓库根；判别式见 `prompts/build.md` 的「canonical 归一判别式」）；**取代**旧的「双 session pair ⇒ stateRoot，否则 cwd」—— 旧口径让**读根随一次派发翻转** ⇒ 同一会话分区不可见 ⇒ 身份跌 `general`。不存在时读全局 `~/.rddf/state/role.json`（**只作 fallback**）；两者都没有 → `general`。
 - **cwd 变更必须重解析**（进 worktree / `session_move` / 换仓 → 项目级文件可能不同，不得沿用上一轮缓存）。**恒 stateRoot 口径**：worktree → canonical 归一（`git rev-parse --git-common-dir` 归一）⇒ 读根不随 cwd 漂移。
 - **异常值处理**：`current_role` 不在合法集合内或 JSON 解析失败 → 按 `no-role` 处理并提示修复（**不静默降级为 `general`**，那会放大权限）。
 - `role.json` 是**个人状态**，不应进版本库（本仓用 `.git/info/exclude` 排除）。
@@ -482,16 +482,6 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 `resume_session` 的访问控制 = **pair 登记表 + `canonical_root` 一致**。不硬校验 `front_session_id`
 （每次新对话都是新 front session，硬校验会让"隔天回来继续"失效），改为返回软信号 `resumed_by_other_front`。
 
-### 2.9 subagent 输入契约（v2.3.0 新增）
-
-**要解决的问题**：`subagent` 工具的 `prompt` 声明为 `string` —— 无 schema、无模板、无校验。
-父模型写什么，子 agent 就收到什么。「7 字段上下文契约」原本只写在 `prompts/build.md` 的散文里，
-对模型只是建议；缺字段时 critic 自己的规范是「只看显式契约冲突，不评估设计取舍」⇒ **评审质量静默下降**。
-
-实测（`scripts/audit-subagent-prompts.ts` 扫真实库 330 次 critic 调用）：同一个 critic 子会话的输入
-出现三种形态（编号版 `## 1. changes_summary` / 加粗版 `**changes_summary**` / 复审版只有闭合证据），
-合规率约 71%。
-
 #### 2.8.7 免宣称六项（**防事故，不防绕过**）
 
 > 判据真源：`docs/adr/ADR-role-aware-permissions.md` D5；登记要求 = AC23（AC + 测试注释 + 本主题文档**三处**）。
@@ -502,6 +492,16 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 - **D5④** **saved approval**（宿主「Allow always」）会覆盖配置，层 1 看不见（`§3.4`）。
 - **D5⑤** **非 build agent 主会话**不参与（`plan` / `front` 等）⇒ 它们与 build 主会话并发时**不受**本 ADR 保护。
 - **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。
+
+### 2.9 subagent 输入契约（v2.3.0 新增）
+
+**要解决的问题**：`subagent` 工具的 `prompt` 声明为 `string` —— 无 schema、无模板、无校验。
+父模型写什么，子 agent 就收到什么。「7 字段上下文契约」原本只写在 `prompts/build.md` 的散文里，
+对模型只是建议；缺字段时 critic 自己的规范是「只看显式契约冲突，不评估设计取舍」⇒ **评审质量静默下降**。
+
+实测（`scripts/audit-subagent-prompts.ts` 扫真实库 330 次 critic 调用）：同一个 critic 子会话的输入
+出现三种形态（编号版 `## 1. changes_summary` / 加粗版 `**changes_summary**` / 复审版只有闭合证据），
+合规率约 71%。
 
 #### 三个执行点（宿主契约决定分层）
 

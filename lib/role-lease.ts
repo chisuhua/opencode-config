@@ -1,8 +1,8 @@
 /**
  * role-lease —— 角色切换的**唯一写入口**与（后续）角色租约（ADR-role-session-identity D2 / ADR-role-aware-permissions D6）
  *
- * 当前实现范围：**Task 2**（切换写盘 + 单临界区 + 原子性）。
- * 租约（claims / claim_gen / 接管）在 Task 4 追加 —— 本文件即其落点（`design.md` D1）。
+ * 内容：**切换写盘**（单临界区 + 读-改-写 + 原子写）与**角色租约**（claims / `claim_gen` 围栏 / 判活接管）。
+ * 本文件即 `design.md` D1 的落点：租约算法收敛于此，`scripts/role-switch.sh` 只是薄壳。
  *
  * 硬约束：
  *   - 身份文件**恒 `<stateRoot>/.rddf/state/role.json`**；
@@ -29,10 +29,14 @@ export interface SwitchRoleInput {
   sessionID: string
   role: Role
   by: "user" | "auto"
+  /** 工作树根（租约键的一半）；缺省 ⇒ 用 `stateRoot`（非 worktree 场景两者恒等） */
+  workRoot?: string
   /** 注入时钟（测试用） */
   now?: () => Date
   /** 注入锁参数（AC22 的两条边界） */
   lock?: { staleMs?: number; deadlineMs?: number }
+  /** 告警出口（接管 / 损坏） */
+  warnSink?: (message: string) => void
 }
 
 const STATE_REL = path.join(".rddf", "state")
@@ -115,12 +119,51 @@ export function applyRoleSwitch(
 export function switchRole(input: SwitchRoleInput): Record<string, any> {
   mkdirSync(path.join(input.stateRoot, STATE_REL), { recursive: true })
   const file = roleFilePath(input.stateRoot)
+  const workRoot = input.workRoot ?? input.stateRoot
   let written: Record<string, any> = {}
   withLock(
     roleLockDir(input.stateRoot),
     () => {
-      written = applyRoleSwitch(readRoleFile(file), input)
-      writeJsonAtomic(file, written, { cleanupOnError: true })
+      const before = readRoleFile(file)
+      // ⚠ **D6 的第二执行点**（critic BLOCKER B2）：切角色也要占职责角色的租约
+      //   —— 否则「主会话切到已被同 worktree 后端持有的角色」会**静默成功**，
+      //   直到第一次写类调用才被拒（D6「三处执行点，缺一就有漏」）。
+      const prevRaw =
+        before?.sessions?.[input.sessionID]?.current_role ??
+        (before?.session_id === input.sessionID ? before?.current_role : undefined)
+      const prevRole =
+        typeof prevRaw === "string" && (ROLES as readonly string[]).includes(prevRaw) ? (prevRaw as Role) : null
+
+      // 顺序：**先占新**、再放旧（避免「旧已放、新被拒」的中间态）
+      let acquired = false
+      if (!isExemptRole(input.role)) {
+        const lease = acquireLeaseLocked({
+          stateRoot: input.stateRoot,
+          workRoot,
+          role: input.role,
+          sessionID: input.sessionID,
+          kind: "main",
+          now: input.now,
+          warnSink: input.warnSink,
+        })
+        if (!lease.ok) {
+          // 冲突 ⇒ 抛错（脚本非零退出）+ **不写 role.json**（回滚天然成立：旧角色与旧租约都未动）
+          throw new Error(`切换被拒：${lease.reason}`)
+        }
+        acquired = true
+      }
+      try {
+        written = applyRoleSwitch(before, input)
+        writeJsonAtomic(file, written, { cleanupOnError: true })
+      } catch (e) {
+        // role.json 写失败 ⇒ **回滚 claims**（design D9.2「先写 claims、后写 role.json」）
+        if (acquired) releaseLeaseLocked({ stateRoot: input.stateRoot, workRoot, role: input.role, sessionID: input.sessionID })
+        throw e
+      }
+      // 切走旧角色 ⇒ 释放它的租约
+      if (prevRole && prevRole !== input.role && !isExemptRole(prevRole)) {
+        releaseLeaseLocked({ stateRoot: input.stateRoot, workRoot, role: prevRole, sessionID: input.sessionID })
+      }
     },
     input.lock,
   )

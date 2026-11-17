@@ -11,6 +11,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { claimSlot } from "../lib/delegate-async.ts"
+import { switchRole } from "../lib/role-lease.ts"
 import { resolveRole } from "../lib/role-identity.ts"
 import {
   acquireLease,
@@ -369,5 +370,26 @@ describe("跨 worktree / 同 worktree 键", () => {
     const same = path.join(root, "repo") // 与 workRoot 同（不同写法：尾斜杠）
     expect(acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main" }).ok).toBe(true)
     expect(acquireLease({ stateRoot: root, workRoot: same + "/", role: "builder", sessionID: BACK, kind: "backend" }).ok).toBe(false)
+  })
+})
+
+describe("B2（critic BLOCKER）：切角色也占租约 —— 与活跃后端同角色 ⇒ 切换被拒 + role.json 不变", () => {
+  test("主会话 builder 后端活跃 ⇒ switchRole(builder) 抛错，且 role.json 逐字节不变", () => {
+    const { root, workRoot } = makeState()
+    // 后端先占 (workRoot, builder)
+    expect(acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: BACK, kind: "backend" }).ok).toBe(true)
+    const file = path.join(root, ".rddf", "state", "role.json")
+    const before = readFileSync(file, "utf8")
+
+    expect(() => switchRole({ stateRoot: root, workRoot, sessionID: MAIN, role: "builder", by: "user" })).toThrow(/租约/)
+
+    expect(readFileSync(file, "utf8"), "切换失败 ⇒ role.json 必须原样（回滚）").toBe(before)
+  })
+
+  test("成对：后端是**异角色** ⇒ 切换成功", () => {
+    const { root, workRoot } = makeState()
+    acquireLease({ stateRoot: root, workRoot, role: "verifier", sessionID: BACK, kind: "backend" })
+    const w = switchRole({ stateRoot: root, workRoot, sessionID: MAIN, role: "builder", by: "user" })
+    expect(w.sessions[MAIN].current_role).toBe("builder")
   })
 })

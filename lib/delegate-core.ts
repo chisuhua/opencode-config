@@ -603,7 +603,9 @@ export function capabilityBlock(agentId: string, perm: any): string {
         .filter(([k, v]) => k !== "*" && v === "allow")
         .map(([k]) => k)
         .sort()
-  const edit = editList.length === 0 ? "none" : editList.join(", ")
+  // ⚠ 通配 allow ⇒ 语义就是「全部可写」（逐路径 ask/deny 只是**附加约束**）⇒ 渲染成 `all`，
+  //   否则 `{ "*": "allow", "x": "ask" }` 会被渲染成 `none`（语义错，且与投影块漂移）。
+  const edit = editWildcard === "allow" ? "all" : editList.length === 0 ? "none" : editList.join(", ")
 
   const shellRaw = perm?.shell
   const shellEntries = typeof shellRaw === "string" || !shellRaw ? [] : Object.entries(shellRaw)

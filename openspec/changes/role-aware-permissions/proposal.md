@@ -112,7 +112,7 @@
 
 ## 免宣称六项（AC23 的登记面）
 
-> 判据真源：`docs/adr/ADR-role-aware-permissions.md` D5。**三处登记**：本节（AC）+ `tests/role-exemptions.test.ts` 的文件头（测试注释）+ `docs/MULTI-AGENT-DESIGN.md` §2.8.6（主题文档）。
+> 判据真源：`docs/adr/ADR-role-aware-permissions.md` D5。**三处登记**：本节（AC）+ `tests/role-exemptions.test.ts` 的文件头（测试注释）+ `docs/MULTI-AGENT-DESIGN.md` §2.8.7（主题文档）。
 > 语义：**防事故，不防绕过** —— 六项之下，门控**不保证**拦住越权动作。
 
 - **D5①** `shell` 写盘（`sed -i` / `tee` / `>` / `cp`）**不在**门控内。

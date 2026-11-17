@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import fs, { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
+import fs, { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -214,5 +214,35 @@ describe("真实接线形状（oracle finding ③）：globalRoot = **home** ⇒
     const stateRoot = mkdtempSync(path.join(tmpdir(), "ri-nop-"))
     const r = resolveRole({ stateRoot, globalRoot: home, sessionID: SID_A, agent: "build" })
     expect(r).toEqual({ role: "planner", source: "global" })
+  })
+})
+
+describe("B5（critic BLOCKER）：损坏 / 非法角色值 ⇒ **no-role**（不得静默降级 general）", () => {
+  test("role.json 解析失败 ⇒ no-role + 告警（corrupt-role-file）", () => {
+    const stateRoot = mkdtempSync(path.join(tmpdir(), "ri-corrupt-"))
+    mkdirSync(path.join(stateRoot, ".rddf", "state"), { recursive: true })
+    writeFileSync(path.join(stateRoot, ".rddf", "state", "role.json"), '{"current_role": "builder"')
+    const warns: string[] = []
+    const r = resolveRole({
+      stateRoot,
+      globalRoot: makeGlobal("architect"), // 即使全局是 architect 也不得采用
+      sessionID: SID_A,
+      agent: "build",
+      warnSink: (m) => warns.push(m),
+    })
+    expect(r.role).toBe("no-role")
+    expect(r.warning).toBe("corrupt-role-file")
+    expect(warns.join("\n")).toContain("no-role")
+  })
+
+  test("本 session 分区的 current_role 非法 ⇒ no-role（不得落到全局 / general）", () => {
+    const stateRoot = makeState({ mirrorRole: "architect", mirrorSid: SID_A })
+    const file = path.join(stateRoot, ".rddf", "state", "role.json")
+    const doc = JSON.parse(readFileSync(file, "utf8"))
+    doc.sessions[SID_A].current_role = "typo-role"
+    writeFileSync(file, JSON.stringify(doc, null, 2) + "\n")
+    const r = resolveRole({ stateRoot, globalRoot: makeGlobal("architect"), sessionID: SID_A, agent: "build" })
+    expect(r.role).toBe("no-role")
+    expect(r.warning).toBe("invalid-role")
   })
 })

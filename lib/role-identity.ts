@@ -20,6 +20,8 @@ import path from "node:path"
 export const ROLES = ["architect", "planner", "builder", "verifier", "no-role", "general"] as const
 export type Role = (typeof ROLES)[number]
 export type RoleSource = "partition" | "mirror" | "global" | "default"
+/** 告警种类（`no-session-id` 之外，新增两种**保守**信号：损坏 / 非法角色值） */
+export type RoleWarningKind = "no-session-id" | "corrupt-role-file" | "invalid-role"
 
 export interface ResolveRoleInput {
   /** 状态文件根（`<stateRoot>/.rddf/state/role.json`） */
@@ -45,11 +47,28 @@ export interface ResolvedRole {
 
 const ROLE_REL = path.join(".rddf", "state", "role.json")
 
-function readJsonFile(file: string): unknown {
+interface RoleFileRead {
+  value: any | null
+  corrupt: boolean
+}
+
+/**
+ * 读角色文件：**区分「缺失」与「损坏」**。
+ * ⚠ 缺口（critic BLOCKER B5）：损坏**不得**按「不存在」处理 —— 那会静默落到 `general`
+ *   （`allow: ["**"]`）⇒ **放权**。治理面 `prompts/build.md:212` 明确要求「JSON 解析失败
+ *   或 `current_role` 不在合法集合内 ⇒ 按 **`no-role`** 处理并提示修复，**不要**静默 fallback」。
+ */
+function readRoleFile(file: string): RoleFileRead {
+  let raw: string
   try {
-    return JSON.parse(readFileSync(file, "utf8"))
+    raw = readFileSync(file, "utf8")
   } catch {
-    return null // 缺失 / 损坏 ⇒ 按「不存在」处理（ADR: 损坏按 no-role 的判定在门控侧）
+    return { value: null, corrupt: false } // 缺失 ⇒ 继续走 fallback 链
+  }
+  try {
+    return { value: JSON.parse(raw), corrupt: false }
+  } catch {
+    return { value: null, corrupt: true } // 损坏 ⇒ 保守（no-role）
   }
 }
 
@@ -58,35 +77,59 @@ function asRole(value: unknown): Role | null {
 }
 
 export function resolveRole(input: ResolveRoleInput): ResolvedRole {
-  const warning: "no-session-id" | undefined = input.sessionID ? undefined : "no-session-id"
-  if (warning && input.warnSink) {
+  const sidWarning: "no-session-id" | undefined = input.sessionID ? undefined : "no-session-id"
+  if (sidWarning && input.warnSink) {
     input.warnSink(
       `[role-identity] warning=no-session-id：$OPENCODE_SESSION_ID 缺失 ⇒ 跳过镜像步（落全局/缺省），身份可能不准`,
     )
   }
-  const wrap = (role: Role, source: RoleSource): ResolvedRole =>
-    warning ? { role, source, warning } : { role, source }
+  const wrap = (role: Role, source: RoleSource, warn = sidWarning): ResolvedRole =>
+    warn ? { role, source, warning: warn } : { role, source }
+  /** 损坏 / 非法 ⇒ **no-role**（保守：no-role 一切 edit 拒）—— 绝不静默降级到 general（会放大权限） */
+  const conservative = (warning: RoleWarningKind, detail: string): ResolvedRole => {
+    input.warnSink?.(`[role-identity] warning=${warning}：${detail} ⇒ 按 no-role 处理（请修复，或经 scripts/role-switch.sh 重写）`)
+    return wrap("no-role", "default", warning)
+  }
 
-  const state = readJsonFile(path.join(input.stateRoot, ROLE_REL)) as
+  const stateRead = readRoleFile(path.join(input.stateRoot, ROLE_REL))
+  if (stateRead.corrupt) {
+    return conservative("corrupt-role-file", `角色文件 JSON 解析失败（${path.join(input.stateRoot, ROLE_REL)}）`)
+  }
+  const state = stateRead.value as
     | { current_role?: unknown; session_id?: unknown; sessions?: Record<string, { current_role?: unknown }> }
     | null
 
   // ① 本 session 分区
   if (input.sessionID && state && state.sessions && typeof state.sessions === "object") {
-    const partition = asRole(state.sessions[input.sessionID]?.current_role)
+    const raw = state.sessions[input.sessionID]?.current_role
+    const partition = asRole(raw)
     if (partition) return wrap(partition, "partition")
+    if (raw !== undefined) {
+      return conservative("invalid-role", `本 session 分区的 current_role=${JSON.stringify(raw)} 不在合法集合内`)
+    }
   }
 
   // ② 顶层镜像 —— **仅当**它属于本会话（sid 守卫）
   if (input.sessionID && state && state.session_id === input.sessionID) {
-    const mirror = asRole(state.current_role)
+    const raw = state.current_role
+    const mirror = asRole(raw)
     if (mirror) return wrap(mirror, "mirror")
+    if (raw !== undefined) {
+      return conservative("invalid-role", `顶层镜像 current_role=${JSON.stringify(raw)} 不在合法集合内`)
+    }
   }
 
   // ③ 全局兜底
-  const global = readJsonFile(path.join(input.globalRoot, ROLE_REL)) as { current_role?: unknown } | null
-  const globalRole = asRole(global?.current_role)
+  const globalRead = readRoleFile(path.join(input.globalRoot, ROLE_REL))
+  if (globalRead.corrupt) {
+    return conservative("corrupt-role-file", `全局角色文件 JSON 解析失败（${path.join(input.globalRoot, ROLE_REL)}）`)
+  }
+  const globalRaw = (globalRead.value as { current_role?: unknown } | null)?.current_role
+  const globalRole = asRole(globalRaw)
   if (globalRole) return wrap(globalRole, "global")
+  if (globalRaw !== undefined) {
+    return conservative("invalid-role", `全局 current_role=${JSON.stringify(globalRaw)} 不在合法集合内`)
+  }
 
   // ④ 缺省
   return wrap("general", "default")

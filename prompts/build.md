@@ -193,7 +193,7 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 
 > 本段只约束 build agent。其它 agent（explore / librarian / oracle / metis / general / critic / context-builder）**完全忽略**本段——它们的输出必须严格遵守各自 prompt 里的「固定小节」格式，不加开场白。
 >
-> **约束性质**：**混合** —— ① 角色**写集**在**工具层**生效：`edit`/`write` 走插件门控（`lib/role-policy.ts` 定写集 + `lib/role-lease.ts` 校验租约 ⇒ 同一 worktree 同角色至多一个活跃 session；**无租约 ⇒ 只能读 + 报告**）；② 其余面（`shell` 写盘、状态文件被改写、saved approval、**非 build agent 主会话**、**插件缺席**）**仍是软约束** ⇒ **防事故，不防绕过**（六项免宣称见 `docs/MULTI-AGENT-DESIGN.md` §2.8.7 与 `docs/adr/ADR-role-aware-permissions.md` D5）。不要因为读到了角色就假定**全部**危险动作都会被工具层拦住。
+> **约束性质**：**混合** —— ① 角色**写集**在**工具层**生效：`edit`/`write` 走插件门控（`lib/role-policy.ts` 定写集 + `lib/role-lease.ts` 校验租约 ⇒ 同一 worktree 同角色至多一个活跃 session；**无租约 ⇒ 只能读 + 报告**）；② 其余面（六项：`shell` 写盘、shell pattern 盲区、状态文件被改写、saved approval、**非 build agent 主会话**、**插件缺席**）**仍是软约束** ⇒ **防事故，不防绕过**（六项免宣称见 `docs/MULTI-AGENT-DESIGN.md` §2.8.7 与 `docs/adr/ADR-role-aware-permissions.md` D5）。不要因为读到了角色就假定**全部**危险动作都会被工具层拦住。
 >
 > **与 `review_profile` 无关**：critic 的审稿档位按**产物路径**判定（口径见 §档位选择 的路径映射表），不要用当前角色去推档位。
 
@@ -206,7 +206,7 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
   - **必须先判 superproject**：submodule 下 `--git-common-dir` 指向 `.git/modules/…`（非工作区路径），直接用会写到 git 内部。
   - **两个根分工不可混**：role.json / pair.json 等**状态文件落 stateRoot**（worktree 下是主仓——落 worktree 副本会导致主仓读不到）；`git status` 差集与 scope 相对解析用 **workRoot**（在主仓跑数不到 worktree 的变更）。非 worktree 场景两者恒等，即现行行为。
 - **fallback**：项目级不存在时读 `~/.rddf/state/role.json`（全局）；两个都没有则视为 `general`（等价默认 build 行为）
-- **字段**：`current_role` / `updated_at` / `updated_by` / `session_id` / `history[]` / `auto_switch_window`（可选，无窗口时为 `null`）；**role-v2**：新增 `sessions: { <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区，顶层 `current_role` 降级为展示镜像，不作权限判据。
+- **字段**：`current_role` / `updated_at` / `updated_by` / `session_id` / `history[]` / `auto_switch_window`（可选，无窗口时为 `null`）；**role-v2**：新增 `sessions: { <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区，顶层 `current_role` 降级为展示镜像 —— ⚠ **不作跨会话判据**；**同 sid 时**用于重建本会话身份（身份链第 2 步）。
 - **读取时机**：每回合开始时先确认 cwd，再按「**本 session 分区 → 同 sid 镜像 → 全局 fallback → `general`**」解析 `current_role`（唯一落点 = `lib/role-identity.ts::resolveRole`；⚠ `$OPENCODE_SESSION_ID` 缺失 ⇒ **跳过镜像步** ⇒ stderr + ledger 各一条告警）
 - **cwd 变更必须重解析**：进入 worktree、`session_move`、切换仓库目录后，项目级 `role.json` 可能不同，不得沿用上一轮的缓存值。**恒 stateRoot 口径**：worktree → canonical 归一 ⇒ 读根不随 cwd 漂移（⚠ 旧的「双 session pair 已登记时」限定**已废止**）。
 - **异常值**：`current_role` 不在合法集合内，或 JSON 解析失败 → 按 `no-role` 处理并提示修复，**不要**静默 fallback 到 `general`（会放大权限）

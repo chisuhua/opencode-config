@@ -47,7 +47,11 @@
           "*.env.*": "ask",
           "*.env.example": "allow"
         },
-        "edit": "allow",
+        "edit": {
+          "*": "allow",
+          "*.rddf/state/role.json": "ask",
+          "*.rddf/state/role-claims.json": "ask"
+        },
         "grep": "allow",
         "glob": "allow",
         "list": "allow",

@@ -39,7 +39,12 @@ export default Plugin.define({
       const agent = typeof session?.agent === "string" ? session.agent : ""
 
       // 身份解析的**单一落点**（AC16）：门控与租约都从这里取角色
-      const cwd = process.cwd()
+      // ⚠ **不用 `process.cwd()`**（critic BLOCKER B4）：一个插件进程只有一个 cwd，而同进程可能服务
+      //   多个 location（多仓 / worktree）⇒ 用进程 cwd 会把 `repoRoot` 取成**另一个仓**的根，
+      //   目标文件落进「④ 仓库外 ⇒ 不限制」分支 ⇒ 门控整条 **fail-open**。
+      //   会话自己的目录在 `session.location.directory`（与 `lib/delegate-async.ts` 同源取法）。
+      const loc = (session as any)?.location?.directory
+      const cwd = typeof loc === "string" && loc.length > 0 ? loc : process.cwd()
       const { stateRoot, workRoot } = canonicalRoot(cwd)
       const resolved = resolveRole({
         stateRoot,

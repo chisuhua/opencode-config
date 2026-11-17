@@ -1411,6 +1411,13 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     for (const pat of ["cat *role.json*", "head *role.json*", "tail *role.json*"]) {
       expect(shell[pat], `只读形态「${pat}」应显式 allow`).toBe("allow")
     }
+    // ⚠ **edit 形态也要 ask**（critic BLOCKER B3）：只加 shell ⇒ builder 用 `edit` 直写状态文件无 ask
+    const edit = CFG.agent?.build?.permission?.edit
+    expect(typeof edit, "build 的 edit 必须是**路径 map**（否则无法给状态文件单独设 ask）").toBe("object")
+    for (const pat of ["*.rddf/state/role.json", "*.rddf/state/role-claims.json"]) {
+      expect(edit[pat], `edit 档缺「${pat}」⇒ 直写角色状态文件不弹窗`).toBe("ask")
+    }
+    expect(edit["*"], "edit 的通配仍须 allow（否则实施面全被拦）").toBe("allow")
   })
 
   test("只读 subagent 的输出节数与名单：prompt 自述 / build.md / design 卡片 三处有序全等", () => {
