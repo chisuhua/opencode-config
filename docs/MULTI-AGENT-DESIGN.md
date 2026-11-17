@@ -390,7 +390,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 
 #### 2.8.2 状态文件
 
-`<cwd>/.rddf/state/role.json`（schema `role-v2`，兼容 `role-v1`）：
+`<stateRoot>/.rddf/state/role.json`（schema `role-v2`，兼容 `role-v1`；⚠ **恒 stateRoot** —— 取代旧的「双 session pair ⇒ stateRoot，否则 cwd」）：
 
 | 字段 | 含义 |
 |---|---|
@@ -405,17 +405,6 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 - **cwd 变更必须重解析**（进 worktree / `session_move` / 换仓 → 项目级文件可能不同，不得沿用上一轮缓存）。**恒 stateRoot 口径**：worktree → canonical 归一（`git rev-parse --git-common-dir` 归一）⇒ 读根不随 cwd 漂移。
 - **异常值处理**：`current_role` 不在合法集合内或 JSON 解析失败 → 按 `no-role` 处理并提示修复（**不静默降级为 `general`**，那会放大权限）。
 - `role.json` 是**个人状态**，不应进版本库（本仓用 `.git/info/exclude` 排除）。
-
-#### 2.8.6 免宣称六项（**防事故，不防绕过**）
-
-> 判据真源：`docs/adr/ADR-role-aware-permissions.md` D5；登记要求 = AC23（AC + 测试注释 + 本主题文档**三处**）。
-
-- **D5①** `shell` 写盘（`sed -i` / `tee` / `>` / `cp`）**不在**门控内。
-- **D5②** shell 层 **pattern 盲区**（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）不在范围。
-- **D5③** `role.json` / `role-claims.json` **可被改写**（`shell` 或 `edit`）⇒ 身份与租约都可被伪造（写盘已进 `ask` 档，但**仍可绕过**）。
-- **D5④** **saved approval**（宿主「Allow always」）会覆盖配置，层 1 看不见（`§3.4`）。
-- **D5⑤** **非 build agent 主会话**不参与（`plan` / `front` 等）⇒ 它们与 build 主会话并发时**不受**本 ADR 保护。
-- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。
 
 #### 2.8.3 切换策略（默认用户驱动）
 
@@ -485,7 +474,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 | 文件 | 位置 | 内容 |
 |---|---|---|
 | `pair.json`（pair-v2）| `<stateRoot>/.rddf/state/pair.json` | `pairs: { <engineering_session_id>: { front_session_id, canonical_root, work_root, state, goal_key, kind, agent, registered_at, last_used_at, suspended_at_message_id?, steer_residue? } }`（`work_root`/`state`/`goal_key` 为 2026-11-09 增补，见 `ADR-front-multi-backend` D2.3/D6/D3）|
-| `role.json` | `<工程根>/.rddf/state/role.json` | `sessions: { <engineering_session_id>: { current_role, auto_switch_window: null, auto_answer: null, updated_at } }` |
+| `role.json` | `<stateRoot>/.rddf/state/role.json` | `sessions: { <engineering_session_id>: { current_role, auto_switch_window: null, auto_answer: null, updated_at } }` |
 
 为什么**必须在 prompt 之前写**：工程 session 开局就要读自己的 `role.json` 分区；若登记晚于 prompt，
 它会去找全局 fallback，而全局 fallback 属于 `external_directory`（工程 session 默认 deny）→ 角色退化为 `general`。
@@ -502,6 +491,17 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 实测（`scripts/audit-subagent-prompts.ts` 扫真实库 330 次 critic 调用）：同一个 critic 子会话的输入
 出现三种形态（编号版 `## 1. changes_summary` / 加粗版 `**changes_summary**` / 复审版只有闭合证据），
 合规率约 71%。
+
+#### 2.8.7 免宣称六项（**防事故，不防绕过**）
+
+> 判据真源：`docs/adr/ADR-role-aware-permissions.md` D5；登记要求 = AC23（AC + 测试注释 + 本主题文档**三处**）。
+
+- **D5①** `shell` 写盘（`sed -i` / `tee` / `>` / `cp`）**不在**门控内。
+- **D5②** shell 层 **pattern 盲区**（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）不在范围。
+- **D5③** `role.json` / `role-claims.json` **可被改写**（`shell` 或 `edit`）⇒ 身份与租约都可被伪造（写盘已进 `ask` 档，但**仍可绕过**）。
+- **D5④** **saved approval**（宿主「Allow always」）会覆盖配置，层 1 看不见（`§3.4`）。
+- **D5⑤** **非 build agent 主会话**不参与（`plan` / `front` 等）⇒ 它们与 build 主会话并发时**不受**本 ADR 保护。
+- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。
 
 #### 三个执行点（宿主契约决定分层）
 

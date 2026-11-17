@@ -3,6 +3,7 @@
  *
  * ⚠ 语义全在 `lib/role-lease.ts`（单源）；本文件**不持锁、不写文件**。
  */
+import { canonicalRoot } from "../lib/delegate-core.ts"
 import { claimsPath, clearWindow, grantWindow, resetClaims, roleFilePath, switchRole } from "../lib/role-lease.ts"
 import { ROLES, type Role } from "../lib/role-identity.ts"
 
@@ -17,7 +18,10 @@ for (let i = 0; i < argv.length; i++) {
   else positional.push(a)
 }
 
-const stateRoot = opts.stateRoot ?? process.cwd()
+// ⚠ 默认根 = **canonical stateRoot**（与读侧 `lib/role-identity.ts` / `plugins/role-gate.ts` 同源）。
+//   旧口径用 cwd ⇒ 仓库子目录 / linked worktree / submodule 三种情形下**写读不同根**
+//   ⇒ 切换「成功」但角色不变 ⇒ 身份跌 general（ADR-role-session-identity D1 要杀掉的失败模式）。
+const stateRoot = opts.stateRoot ?? canonicalRoot(process.cwd()).stateRoot
 const sessionID = opts.session ?? process.env.OPENCODE_SESSION_ID
 if (!sessionID) {
   console.error("role-switch: 缺少会话 id（$OPENCODE_SESSION_ID 未设置且未传 --session）")

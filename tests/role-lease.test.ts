@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -152,5 +153,23 @@ describe("AC8 授权窗口（层 1b）：授予 / 计数 / 超额 / 角色白名
     const closed = clearWindow({ stateRoot: root, sessionID: SID })
     expect(closed.sessions[SID].auto_switch_window).toBe(null)
     expect(closed.sessions[SID].current_role).toBe("no-role") // 不变
+  })
+})
+
+describe("脚本默认根 = canonicalRoot（写读同源）", () => {
+  test("在**仓库子目录**里跑不带 --state-root ⇒ 写到**仓根**，不写子目录", () => {
+    const repo = mkdtempSync(path.join(tmpdir(), "rl-repo-"))
+    execFileSync("git", ["init", "-q"], { cwd: repo })
+    const sub = path.join(repo, "sub")
+    mkdirSync(sub, { recursive: true })
+
+    execFileSync("bash", [path.join(import.meta.dir, "..", "scripts", "role-switch.sh"), "builder"], {
+      cwd: sub,
+      env: { ...process.env, OPENCODE_SESSION_ID: SID },
+      stdio: "pipe",
+    })
+
+    expect(existsSync(path.join(repo, ".rddf", "state", "role.json")), "应写到仓根").toBe(true)
+    expect(existsSync(path.join(sub, ".rddf", "state", "role.json")), "不得写到子目录（旧 cwd 口径的失败模式）").toBe(false)
   })
 })

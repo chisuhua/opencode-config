@@ -799,17 +799,24 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
       {
         const SCRIPT = "scripts/role-switch.sh"
         const ROLE = "role.json"
-        const WRITE_VERB = /(写入|更新|改写|落盘|写回|保存|写)/
-        // (a) 禁止形态：直接写 role.json 的指令（shell 重定向 / tee / jq / 写动词动作句）
+        // ⚠ **动作形态枚举**（不是裸「写」）：裸「写」会把「直写（残留登记）」「写入 ask 档」这类
+        //   **描述句**判红（假红面）。枚举里的每一项都是**祈使动作**。
+        const ACTION = /(直接写|写到|写进|写入|更新|改写|落盘|写回|保存)/
+        // 否定 / 描述标记 ⇒ 该行不是「指示去写」，是**说明现状或禁令** ⇒ 不判红
+        const DESC = /(不要|不得|禁止|勿|不作为|已废止|残留|须进|进 `ask`|直写|非原子|旁路)/
+        // (a) 禁止形态：直接写 role.json 的指令（shell 重定向 / tee / jq / 祈使动作句）
         for (let i = 0; i < L.length; i++) {
           const line = L[i]!
           if (!line.includes(ROLE)) continue
-          if (line.includes(SCRIPT)) continue // 经脚本 ⇒ 放行
+          if (DESC.test(line)) continue // 禁令 / 描述句 ⇒ 不是写指令
           const shell =
             /(?:^|\s)>\s*[^\s]*role\.json/.test(line) ||
             /\btee\b[^\n]*role\.json/.test(line) ||
             /\bjq\b[^\n]*role\.json/.test(line)
-          if (shell || WRITE_VERB.test(line)) {
+          // ⚠ **含脚本 ≠ 整行放行**：同句若再出现一种**写形态**（shell 直写）⇒ 仍判红
+          const hasShellForm = shell
+          const viaScript = line.includes(SCRIPT) && !hasShellForm
+          if (hasShellForm || (ACTION.test(line) && !viaScript)) {
             v.push(`「直接写 role.json」：第 ${i + 1} 行出现直接写 role.json 的指令（须经 ${SCRIPT}）`)
           }
         }
@@ -822,13 +829,13 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
           ["**关闭窗口**", "关闭窗口"],
         ]
         WRITE_POINTS.forEach(([a, label], idx) => {
-          const hit = L.findIndex((l) => l.includes(a))
-          if (hit < 0) {
-            v.push(`写入口 #${idx + 1}（${label}）：锚点「${a}」在 build.md 里不存在 ⇒ 写点被删`)
+          const hits = L.map((l, i) => (l.includes(a) ? i : -1)).filter((i) => i >= 0)
+          if (hits.length !== 1) {
+            v.push(`写入口 #${idx + 1}（${label}）：锚点「${a}」命中 ${hits.length} 次（应恰好 1 次 ⇒ 命中数错位会让判据恒真）`)
             return
           }
-          if (!L[hit]!.includes(SCRIPT)) {
-            v.push(`写入口 #${idx + 1}（${label}）：未走 ${SCRIPT}（第 ${hit + 1} 行）`)
+          if (!L[hits[0]!]!.includes(SCRIPT)) {
+            v.push(`写入口 #${idx + 1}（${label}）：未走 ${SCRIPT}（第 ${hits[0]! + 1} 行）`)
           }
         })
         // (c) 非写点确认：「窗口耗尽」是 halted 报告 ⇒ **不得**带脚本（否则写点计数失真）
@@ -838,6 +845,16 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
           v.push(`写入口：「窗口耗尽」是 halted 报告（非写点），不应出现 ${SCRIPT}（第 ${halted + 1} 行）`)
         }
         // (d) 白名单：三步字面「更新项目级 `role.json`」恰好 1 次
+        // (e) **立场句**（AC24 / ADR V14）：`:196` 软约束→混合、`:706` 破例→切角色
+        if (!/\*\*约束性质\*\*：\*\*混合\*\*/.test(B)) {
+          v.push("立场句：`:196` 的「约束性质」必须写成「**混合**」（软约束→混合，AC24/ADR V14）")
+        }
+        if (/选项 B[^\n]*破例[^\n]*才放行/.test(B) && !/已废止/.test(B)) {
+          v.push("立场句：`:706` 的「选项 B 用户明说『破例 X』才放行」必须标为**已废止**（ADR D4）")
+        }
+        if (!/唯一逃生口 = 切角色/.test(B)) {
+          v.push("立场句：`:706` 必须写「唯一逃生口 = 切角色」（ADR D4）")
+        }
         const literal = "更新项目级 `role.json`"
         const cnt = B.split(literal).length - 1
         if (cnt !== 1) {
@@ -1155,6 +1172,22 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
           expect: "直接写 role.json",
         },
         {
+          // ⚠ 立场句的回归保护（AC24 / ADR V14）：`:196` 退回「软约束」⇒ 必须红
+          name: "立场句：`:196` 的「约束性质」被改回「软约束」",
+          apply: (b) => b.replace("**约束性质**：**混合**", "**约束性质**：软约束"),
+          expect: "约束性质",
+        },
+        {
+          // ⚠ 立场句的回归保护：`:706` 重新引入「破例才放行」⇒ 必须红
+          name: "立场句：`:706` 重新引入「选项 B 用户明说『破例 X』才放行」",
+          apply: (b) =>
+            b.replace(
+              "**唯一逃生口 = 切角色**",
+              "选项 A 切换到正确角色；选项 B 用户明说「破例 X」才放行",
+            ),
+          expect: "唯一逃生口",
+        },
+        {
           name: "角色切换写入口：授予窗口被改回 `jq` 直写",
           apply: (b) =>
             b.replace(
@@ -1360,6 +1393,23 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
       const gone = expected.filter((f) => !actual.includes(f))
       expect(missing, `${dir}/ 新增了文件但没进清单 —— 必须做一次决定（建守卫 / 登记已知盲区 / 明确排除）：${missing.join(", ")}`).toEqual([])
       expect(gone, `${dir}/ 清单里的文件不存在了（删了还是改名？）—— 同步清单：${gone.join(", ")}`).toEqual([])
+    }
+  })
+
+  /**
+   * **角色状态文件的 ask 档守卫**（ADR-role-aware-permissions D5③ 的唯一现存缓解；
+   * oracle 审查 finding ⑪：ask 档只覆盖**写动作**，只读形态显式 allow ⇒ 不断打断「每回合读一次角色」）。
+   */
+  test("ask 档：role.json / role-claims.json / role-switch.sh ⇒ ask；只读形态 ⇒ allow", () => {
+    const CFG = JSON.parse(readFileSync(path.join(ROOT, "opencode.jsonc"), "utf8"))
+    const shell = CFG.agent?.build?.permission?.shell
+    expect(shell, "build agent 的 shell 权限档缺失").toBeTruthy()
+    for (const pat of ["*role.json*", "*role-claims.json*", "*role-switch.sh*"]) {
+      expect(shell[pat], `ask 档缺「${pat}」⇒ 直写角色状态文件不会被拦`).toBe("ask")
+    }
+    // 只读形态显式 allow（否则每回合读一次角色都要弹窗 ⇒ 诱导用户点 Allow always ⇒ 反向拆掉 D5③）
+    for (const pat of ["cat *role.json*", "head *role.json*", "tail *role.json*"]) {
+      expect(shell[pat], `只读形态「${pat}」应显式 allow`).toBe("allow")
     }
   })
 

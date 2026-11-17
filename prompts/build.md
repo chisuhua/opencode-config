@@ -193,7 +193,7 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 
 > 本段只约束 build agent。其它 agent（explore / librarian / oracle / metis / general / critic / context-builder）**完全忽略**本段——它们的输出必须严格遵守各自 prompt 里的「固定小节」格式，不加开场白。
 >
-> **约束性质**：**混合** —— ① 角色**写集**在**工具层**生效：`edit`/`write` 走插件门控（`lib/role-policy.ts` 定写集 + `lib/role-lease.ts` 校验租约 ⇒ 同一 worktree 同角色至多一个活跃 session）；② 其余面（`shell` 写盘、状态文件被改写、saved approval、**非 build agent 主会话**、**插件缺席**）**仍是软约束** ⇒ **防事故，不防绕过**（六项免宣称见 §审查配对 与 `docs/adr/ADR-role-aware-permissions.md` D5）。不要因为读到了角色就假定**全部**危险动作都会被工具层拦住。
+> **约束性质**：**混合** —— ① 角色**写集**在**工具层**生效：`edit`/`write` 走插件门控（`lib/role-policy.ts` 定写集 + `lib/role-lease.ts` 校验租约 ⇒ 同一 worktree 同角色至多一个活跃 session；**无租约 ⇒ 只能读 + 报告**）；② 其余面（`shell` 写盘、状态文件被改写、saved approval、**非 build agent 主会话**、**插件缺席**）**仍是软约束** ⇒ **防事故，不防绕过**（六项免宣称见 `docs/MULTI-AGENT-DESIGN.md` §2.8.7 与 `docs/adr/ADR-role-aware-permissions.md` D5）。不要因为读到了角色就假定**全部**危险动作都会被工具层拦住。
 >
 > **与 `review_profile` 无关**：critic 的审稿档位按**产物路径**判定（口径见 §档位选择 的路径映射表），不要用当前角色去推档位。
 
@@ -208,11 +208,11 @@ scripts/build_critic_prompt.sh main           # 与 main 对比
 - **fallback**：项目级不存在时读 `~/.rddf/state/role.json`（全局）；两个都没有则视为 `general`（等价默认 build 行为）
 - **字段**：`current_role` / `updated_at` / `updated_by` / `session_id` / `history[]` / `auto_switch_window`（可选，无窗口时为 `null`）；**role-v2**：新增 `sessions: { <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区，顶层 `current_role` 降级为展示镜像，不作权限判据。
 - **读取时机**：每回合开始时先确认 cwd，再按「**本 session 分区 → 同 sid 镜像 → 全局 fallback → `general`**」解析 `current_role`（唯一落点 = `lib/role-identity.ts::resolveRole`；⚠ `$OPENCODE_SESSION_ID` 缺失 ⇒ **跳过镜像步** ⇒ stderr + ledger 各一条告警）
-- **cwd 变更必须重解析**：进入 worktree、`session_move`、切换仓库目录后，项目级 `role.json` 可能不同，不得沿用上一轮的缓存值；**双 session pair 已登记时**，worktree → stateRoot 归一，不重解析。
+- **cwd 变更必须重解析**：进入 worktree、`session_move`、切换仓库目录后，项目级 `role.json` 可能不同，不得沿用上一轮的缓存值。**恒 stateRoot 口径**：worktree → canonical 归一 ⇒ 读根不随 cwd 漂移（⚠ 旧的「双 session pair 已登记时」限定**已废止**）。
 - **异常值**：`current_role` 不在合法集合内，或 JSON 解析失败 → 按 `no-role` 处理并提示修复，**不要**静默 fallback 到 `general`（会放大权限）
 - **history 上限**：只保留最近 20 条，避免文件无限增长
-- **初始化**：`/role-init`（幂等）；**查看**：`/role-show`
-- **写入**：角色切换时经 `scripts/role-switch.sh` 写 **恒 `<stateRoot>/.rddf/state/role.json`**（**唯一写入口**；直写会绕过「单锁 + 读-改-写 + 原子写」⇒ 身份/租约可被无声改写）。
+- **初始化**：`/role-init`（幂等；⚠ **残留**：它直写 `<cwd>/.rddf/state/role.json`（无锁 / 非原子 / 根未 canonical 化）⇒ **不作为写入口**，已登记于 `docs/adr/ADR-role-session-identity.md` D2 表）；**查看**：`/role-show`
+- **写入**：角色切换时经 `scripts/role-switch.sh` 写 **恒 `<stateRoot>/.rddf/state/role.json`**（**唯一写入口**；⚠ `/role-init` 是唯一例外（仅首次创建，残留已登记）；直写会绕过「单锁 + 读-改-写 + 原子写」⇒ 身份/租约可被无声改写）。
 - **`role_class`（被派发后端的能力类，不是治理身份）**：派发时由派发方声明，登记在状态文件的 session 分区（`role_class`）与派发登记条目里。**它只决定「能做什么」，不改变治理身份** —— `current_role` 仍按本节语义解释（后端恒为 `builder`）。后端以**简报的运行身份段**为准（简报由持久化值生成），两者一致；**不一致 ⇒ 停下交回主会话**，不要自行择一。**两者皆无该字段 ⇒ 视为缺省 `builder`，不得因字段缺失停下拒活。**
 
 ### 架构文档范围（arch-docs.json）
@@ -703,7 +703,7 @@ subagent 调用可能失败（额度上限 / 网络 / 权限拒绝）。任一�
 
 1. **先拒绝**：明确说「当前角色是 X，该动作属于 Y 角色职责」
 2. **再解释**：一行说明为什么被禁（引用上表）
-3. **后引导**：**唯一逃生口 = 切角色**（经 `scripts/role-switch.sh <role>` —— 可观测、可审计）；⚠ 选项 B「用户明说『破例 X』才放行」**已废止**（破例不可观测 ⇒ 与工具层硬门冲突；见 `docs/adr/ADR-role-aware-permissions.md` D4）⇒ **不得**用它绕过被禁动作
+3. **后引导**：**唯一逃生口 = 切角色**（经 `scripts/role-switch.sh <role>` —— 可观测、可审计）；⚠ 选项 B「用户明说『破例 X』才放行」**已废止**（破例不可观测 ⇒ 与工具层硬门冲突；见 `docs/adr/ADR-role-aware-permissions.md` D4）⇒ **不得**用它绕过被禁动作；⚠ 切角色**须用户口令**（窗口外不得自切）⇒ 无口令 ⇒ 按 §需要用户裁决时 **停机并交付裁决请求**；用户明说「破例」时 ⇒ 明确告知平台已不支持破例，并请其改用口令「切换到 X」
    ⇒ **若引导无法执行**（非交互环境 / `question` 工具被拒 / 用户不答）⇒ 按下一节
    「需要用户裁决时」**停机并交付裁决请求**：明确说「这需要你裁决」+ **列出候选路径** + **结束回合**，
    **不得**自行选择候选路径、**不得**以「最合理的假设」推进、**不得**执行被禁动作。

@@ -204,3 +204,15 @@ describe("Task 1 Step 4：sid 缺失的告警出口（AC2 补充）", () => {
     expect(r).toEqual({ role: "planner", source: "global", warning: "no-session-id" })
   })
 })
+
+describe("真实接线形状（oracle finding ③）：globalRoot = **home** ⇒ 解析 `~/.rddf/state/role.json`", () => {
+  test("globalRoot 传 home（不是 home/.rddf/state）⇒ 全局步真的命中", () => {
+    const home = mkdtempSync(path.join(tmpdir(), "ri-home-"))
+    mkdirSync(path.join(home, ".rddf", "state"), { recursive: true })
+    writeFileSync(path.join(home, ".rddf", "state", "role.json"), JSON.stringify({ current_role: "planner" }) + "\n")
+    // stateRoot 里没有分区 ⇒ 链走到全局步
+    const stateRoot = mkdtempSync(path.join(tmpdir(), "ri-nop-"))
+    const r = resolveRole({ stateRoot, globalRoot: home, sessionID: SID_A, agent: "build" })
+    expect(r).toEqual({ role: "planner", source: "global" })
+  })
+})

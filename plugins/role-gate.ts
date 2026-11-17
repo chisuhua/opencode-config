@@ -43,7 +43,9 @@ export default Plugin.define({
       const { stateRoot, workRoot } = canonicalRoot(cwd)
       const resolved = resolveRole({
         stateRoot,
-        globalRoot: path.join(homedir(), ".rddf", "state"),
+        // ⚠ `globalRoot` 是**仓根**语义（`resolveRole` 内部拼 `.rddf/state/role.json`）
+        //   ⇒ 传 `~/.rddf/state` 会查成 `~/.rddf/state/.rddf/state/role.json` ⇒ 全局步恒空 ⇒ 恒落 general。
+        globalRoot: homedir(),
         sessionID,
         agent,
       })
