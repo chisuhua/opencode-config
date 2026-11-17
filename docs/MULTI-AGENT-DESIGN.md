@@ -401,10 +401,21 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 | `history[]` | 切换历史（**上限 20 条**，超出丢最旧） |
 | `sessions` | **role-v2**：`{ <session_id>: { current_role, auto_switch_window, auto_answer, updated_at } }` 分区，顶层 `current_role` 降级为展示镜像，不作权限判据 |
 
-- **项目级优先**：`<cwd>/.rddf/state/role.json`；不存在时读全局 `~/.rddf/state/role.json`（**只作 fallback**）；两者都没有 → `general`。**双 session pair 已登记时**，按 canonical 仓库路径解析（`git rev-parse --git-common-dir` 归一）；单 session 场景维持 cwd 相对解析。
-- **cwd 变更必须重解析**（进 worktree / `session_move` / 换仓 → 项目级文件可能不同，不得沿用上一轮缓存）。**双 session pair 已登记时**，worktree → canonical 归一，不重解析。
+- **项目级优先**：**恒 `<stateRoot>/.rddf/state/role.json`**（`stateRoot` = canonical 仓库根，见 §2.8.1）；**取代**旧的「双 session pair ⇒ stateRoot，否则 cwd」—— 旧口径让**读根随一次派发翻转** ⇒ 同一会话分区不可见 ⇒ 身份跌 `general`。不存在时读全局 `~/.rddf/state/role.json`（**只作 fallback**）；两者都没有 → `general`。
+- **cwd 变更必须重解析**（进 worktree / `session_move` / 换仓 → 项目级文件可能不同，不得沿用上一轮缓存）。**恒 stateRoot 口径**：worktree → canonical 归一（`git rev-parse --git-common-dir` 归一）⇒ 读根不随 cwd 漂移。
 - **异常值处理**：`current_role` 不在合法集合内或 JSON 解析失败 → 按 `no-role` 处理并提示修复（**不静默降级为 `general`**，那会放大权限）。
 - `role.json` 是**个人状态**，不应进版本库（本仓用 `.git/info/exclude` 排除）。
+
+#### 2.8.6 免宣称六项（**防事故，不防绕过**）
+
+> 判据真源：`docs/adr/ADR-role-aware-permissions.md` D5；登记要求 = AC23（AC + 测试注释 + 本主题文档**三处**）。
+
+- **D5①** `shell` 写盘（`sed -i` / `tee` / `>` / `cp`）**不在**门控内。
+- **D5②** shell 层 **pattern 盲区**（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）不在范围。
+- **D5③** `role.json` / `role-claims.json` **可被改写**（`shell` 或 `edit`）⇒ 身份与租约都可被伪造（写盘已进 `ask` 档，但**仍可绕过**）。
+- **D5④** **saved approval**（宿主「Allow always」）会覆盖配置，层 1 看不见（`§3.4`）。
+- **D5⑤** **非 build agent 主会话**不参与（`plan` / `front` 等）⇒ 它们与 build 主会话并发时**不受**本 ADR 保护。
+- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。
 
 #### 2.8.3 切换策略（默认用户驱动）
 

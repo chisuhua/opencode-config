@@ -53,30 +53,41 @@ migrate_file() {
   fi
 
   # 构建 v2 结构（使用 --argjson 传递 session_id，保持 JSON null 类型）
+  # ⚠ `--arg`（**不是** `--argjson`）：session_id 是**裸字符串**，用 `--argjson` 会让 jq
+  #   报 "invalid JSON text passed to --argjson" ⇒ 迁移**静默不生效**（文件原样不动）。
+  #   JSON null 的语义改在过滤器里用 `"" / "null"` ⇒ null 还原。
   jq \
-    --argjson session_id "$session_id" \
+    --arg session_id "$session_id" \
     --arg current_role "$current_role" \
     --arg updated_at "$updated_at" \
     --arg updated_by "$updated_by" \
     --arg legacy_key "$legacy_key" \
     --argjson history "$history" \
     '
+    def nul: if . == "" or . == "null" then null else . end;
     {
       schema_version: "role-v2",
       current_role: $current_role,
-      updated_at: ($updated_at // null),
-      updated_by: ($updated_by // null),
-      session_id: $session_id,
+      updated_at: ($updated_at | nul),
+      updated_by: ($updated_by | nul),
+      session_id: ($session_id | nul),
       auto_switch_window: null,
       history: $history,
-      sessions: {
-        ($legacy_key): {
-          current_role: $current_role,
-          auto_switch_window: null,
-          auto_answer: null,
-          updated_at: ($updated_at // null)
-        }
-      }
+      sessions: (
+        # ⚠ **存量分区与 `legacy` 键一律保留**（AC：迁移不得覆盖它们，也不得制造孤儿分区）：
+        #   `//` 取「已存在则用已存在的」⇒ 已有 legacy 分区的 current_role 不被顶层镜像改写。
+        (.sessions // {}) as $s
+        | $s + {
+            ($legacy_key): (
+              $s[$legacy_key] // {
+                current_role: $current_role,
+                auto_switch_window: null,
+                auto_answer: null,
+                updated_at: ($updated_at | nul)
+              }
+            )
+          }
+      )
     }
     ' "$file" > "${MIGRATE_DIR}/.migrate.tmp" && mv "${MIGRATE_DIR}/.migrate.tmp" "$file"
 

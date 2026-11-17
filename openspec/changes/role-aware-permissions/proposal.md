@@ -109,3 +109,15 @@
 - [ ] AC11–AC17（写门：门控面 / 单一真源 / 会话类型不相交）
 - [ ] AC18–AC22（角色租约：拒绝 / 并行 / 豁免独占 / 判活围栏 / 锁协议）
 - [ ] AC23–AC24（免宣称登记 + 回归与立场句同批）
+
+## 免宣称六项（AC23 的登记面）
+
+> 判据真源：`docs/adr/ADR-role-aware-permissions.md` D5。**三处登记**：本节（AC）+ `tests/role-exemptions.test.ts` 的文件头（测试注释）+ `docs/MULTI-AGENT-DESIGN.md` §2.8.6（主题文档）。
+> 语义：**防事故，不防绕过** —— 六项之下，门控**不保证**拦住越权动作。
+
+- **D5①** `shell` 写盘（`sed -i` / `tee` / `>` / `cp`）**不在**门控内。
+- **D5②** shell 层 **pattern 盲区**（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）不在范围。
+- **D5③** `role.json` / `role-claims.json` **可被改写**（`shell` 或 `edit`）⇒ 身份与租约都可被伪造（写盘已进 `ask` 档，但**仍可绕过**）。
+- **D5④** **saved approval**（宿主「Allow always」）会覆盖配置，层 1 看不见。
+- **D5⑤** **非 build agent 主会话**不参与（`plan` / `front` 等）⇒ 它们与 build 主会话并发时**不受**本 ADR 保护。
+- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。
