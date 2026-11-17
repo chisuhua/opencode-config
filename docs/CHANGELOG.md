@@ -26,6 +26,10 @@
 >   ③ ⚠ **「Allow always」会静默重开洞**：点 always ⇒ 前缀 pattern 持久化为 project-scoped allow ⇒ 层 1 看不见
 >   ⇒ **交互纪律：不对 `git commit` 弹窗点 Allow always**；④ ⭐ **族级风险**：角色矩阵里 architect/planner/no-role 的
 >   写面禁令**全是 prompt-only**（权限层 `edit: allow` 完全放行）⇒ 与本次同构 ⇒ 独立议题（角色感知权限 = 架构级）。
+>   ⑤ ⚠ **ask 只在非交互场景生效（实测边界）**：`opencode run`（`E-8`）**被拒** ✓ 3/3；
+>   **但 build agent 的主会话里 `git commit` 未被拦**（v2.44 收尾提交 + `--dry-run` 都未被 ask），
+>   且**已排除 saved approvals**（`opencode.db` 的 `permission` 表 230 行无 `git commit`）⇒ 机制**未查明**
+>   ⇒ **宣称边界：只证明「非交互被拦」（= 原缺陷的场景），不宣称「所有场景都拦」**。
 
 ---
 
