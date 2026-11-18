@@ -8,11 +8,11 @@
 | Date | 2026-11-18 |
 | Author | architect（主会话） |
 | Parent | `ADR-role-aware-permissions`（其 D5② 免宣称由本文**部分**闭合；其 `:43` 的执行点表述由本文改写）＋ `ADR-class-write-scope-alignment`（能力面投影纪律，引用点 = `lib/delegate-core.ts:619-627` 的 ask/deny 计数派生） |
-| 关联 change | **未立项** ⇒ 登记 `backlog: commit-verification-gate`（立项后回填本行 + AC 映射 + `design.md` 的变红演练条款） |
+| 关联 change | **未立项** ⇒ 登记 `backlog: commit-verification-gate`（立项后回填本行 + AC 映射 + `design.md` 的变红演练条款；**Rev 2 的 D4 / D5 增量亦须一并纳入 AC**，勿只收 Rev 1） |
 | 关联 backlog | ① `openspec/changes/required-question-commit-confirm/proposal.md` 的 AC5/AC6 以「权限层加 ask」为机制结论（已勾未归档）⇒ **本文反转该档位** ⇒ 该 change 待归档时须按本文改写；② `prompts/front.md` 的「提交由用户在确认后另行发起」措辞会陈旧（front 的 commit 本就 deny ⇒ 行为不变）|
-| AC 映射 | 待立项后回填（本文 Verification 的 V1–V12 → change AC 编号） |
+| AC 映射 | 待立项后回填（本文 Verification 的 V1–V17 → change AC 编号） |
 | 审稿报告 | `.rddf/reviews/commit-verification-gate-review.md`（oracle → critic 输出誊写；oracle 轮逐条应答在同文件，**不进正文**） |
-| 修订 | 2026-11-18：oracle / critic 的逐轮处置见审稿报告（§1–§2.4）；本文只保留**结论** |
+| 修订 | 2026-11-18：oracle / critic 的逐轮处置见审稿报告（§1–§2.4）；本文只保留**结论**。**Rev 2（2026-11-18，用户裁决）**：强推形状补 `+refspec` / `--mirror`（D4 / D9⑬）；heredoc 预处理改单遍跨行引号感知（D5 第 0 步 / D9⑫）；新增 D9⑭（删除类未纳入）；计数以 D4 为**唯一定义处**。Rev 2 的审查与逐条处置见审稿报告 §7（**不进正文**）|
 
 ## 背景与问题
 
@@ -70,14 +70,38 @@
 **新增 deny**：`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*`。
 ⚠ **理由更正**（`docs/CHANGELOG.md:44-45`「前缀通配够不着中缀」+ `docs/MULTI-AGENT-DESIGN.md:844`「shell 是整串前缀匹配」）：
 `git push origin main --force`（flag 在末位）**会**命中已有的 `git push *` ⇒ 落点是 **ask**、不是 catch-all allow；
-⇒ 四形态 deny 的真实价值是 **「ask ⇒ deny」的收紧**（交互会话里 `ask` 可被宿主「Allow always」放行，**`deny` 不会**）。
+⇒ `deny` 形态（条数见下文 D4 的唯一计数定义处）的真实价值是 **「ask ⇒ deny」的收紧**（交互会话里 `ask` 可被宿主「Allow always」放行，**`deny` 不会**）。
 ⇒ **本文不豁免任何 publish 动作的人工确认**（saved approval 能否越过 `deny` 见 D9⑧）。
 
 **工具层兜底**（D9⑧ 的缓解）：同一个插件在 `tool.execute.before` 里对 force push **直接抛错**
 （`lib/push-gate.ts`：`git push` 之后出现任一强推标志 ⇒ 拒）⇒ 不管权限层怎么合并「Allow always」与 `deny`，
-工具层都拒。⚠ 该兜底是 **config 四形态的严格超集**：短选项簇（`git push -uf origin main`）config 的 glob
-表达不了 ⇒ 由工具层补齐（这是**收紧**，不是放松）。⚠ **已知差异**：`git push origin +main`（`+refspec` 强推）
-两层都不覆盖 ⇒ 登记 D9⑬。
+工具层都拒。
+
+**强推形状（Rev 2 / 2.1：四形态 ⇒ 8 条 `deny` / 6 种形状 —— 计数以本段为唯一定义处，他处只引用）**
+- **config `deny`（8 条）**：`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*`
+  ＋ **`git push +*` / `git push * +*` / `git push --mirror*` / `git push * --mirror*`**。
+  **6 种形状** = ① `--force*` ② `-f*` ③ `+refspec` ④ `--mirror*` ⑤ 短选项簇 `-uf`（config 的 glob 表达不了 ⇒ 只有工具层）
+  ⑥ 带引号形态（`git push "--force"`，config 一般匹配不到 ⇒ 工具层兜住）。
+  理由：`+refspec` = 强制更新该 ref；`--mirror` = 推送全部 ref 并删掉远端多出的 ref ⇒ 同属「重写远端历史」。
+- **工具层谓词**（`lib/commit-gate.ts`；`lib/push-gate.ts` 与 D5⑪ 的字符串侧调用**同一个 helper** ⇒ 单一真源）：
+  - **长选项按前缀匹配**：`--force*` / `--mirror*`。⚠ git 允许**长选项缩写**（实测 `git push --mirro` 被接受为 `--mirror`）
+    ⇒ 精确名集合会漏；前缀匹配覆盖它。`--no-*` 形态天然不匹配 ⇒ `--no-force-with-lease` **不**误拒；
+    ⚠ **代价的另一面**：`--force-with-lease` / `--force-if-includes`（相对更安全的强推变体）同样被拒 ⇒ 本口径
+    是「凡重写远端历史即拒」，不区分 lease 与否（收紧，有意为之）；
+  - **短选项簇**含 `f`（`-f` / `-uf`）；
+  - **前导 `+` 的 refspec**；
+  - ⚠ **quoted token 不跳过**：`git push "+main"` / `git push "--force"` 经 shell 去引号后就是真强推
+    （与 D5③「引号包住也算命令词」同一立场）⇒ 调用侧**删掉** `if (t.quoted) continue`；
+  - ⚠ **必须跳过 `push` 的带值选项的值**（`-o` / `--push-option` / `--receive-pack` / `--exec` / `--repo`；
+    **分离值与等号形态都要覆盖**，同 D5④ 的口径）——等号形态（`--push-option=+ci`）不以 `+` 开头 ⇒ 天然安全，
+    但「安全」来自 token 形状而非跳过逻辑 ⇒ 仍按同一规则处理，避免实施者误以为可以省掉跳过；
+    否则 `git push -o +ci origin main`（合法、非强推）会被误拒（V16 反向判据）。
+  - ⚠ 「跳带值」与「不跳 quoted」两条规则必须写在**同一个 helper** 里 ⇒ `detectForcePush` 与
+    `mentionsCommitOrForcePush` 两个调用点自动一致（否则 `bash -c "git push -o +ci …"` 会被解释器闭口误拒）。
+- ⚠ **证据缺口（如实登记）**：宿主 shell 权限的 glob 能否用 `*` **跨空格**匹配中缀（`git push * +*`）**无源码锚点**
+  ⇒ config 那一层属 **best-effort**（带引号形态更匹配不到）；工具层才是权威。V17 要求层 2 记录「是哪一层拒的」。
+- ⚠ **删除类不入本口径**（`--delete` / `-d` / `:refspec` / `--prune`）：它们删远端 ref，是「不可逆」但**不是重写历史**
+  ⇒ 仍落 `git push *` = `ask`（人工确认在）⇒ 登记 D9⑭。
 
 ### D5 命令识别（窄口径，避免误伤）+ 提交形态闭口
 
@@ -85,7 +109,12 @@
 
 0. **heredoc 预处理**：识别前把 heredoc 的**标记 + 正文 + 结束标记**整段剥离（**正文是数据**，不是命令；否则正文会被当成位置 pathspec、正文里的 `git commit` 字面量会被当成命令）。
    ⚠ **只删标记本身**（`<<` / `<<-` / 结束标记词）⇒ **标记行尾部仍是命令**（`git commit -F - <<'MSG' && git push --force …` 的尾部必须保留，否则搭便车打穿 D4 的 `deny`）。
-   ⚠ 已知解析边界：**逐行**状态机（跨行引号串不跨行跟踪）⇒ 见 D9⑫。
+   ⚠ **单遍扫描 + 引号状态跨行**（Rev 2）：`<<` 只在**引号外**才算 heredoc 标记；引号 / 转义规则与第 1 步分词器
+   **同一套**（双引号内 `\"` `\\` 转义、单引号全字面）。理由：`bash -c "a` / `<<'EOF'` / `" ; git commit -m x` 里
+   那个 `<<'EOF'` 在**跨行引号内**（是数据），逐行状态机会把它当真标记 ⇒ 剥到串尾 ⇒ 吞掉真正的第二段命令
+   （**实测 fail-open**：真实 shell 执行了第二段，门禁判 `isCommit: false`；见 V13）。
+   `<<<`（herestring）**不算** heredoc；`<<-` 允许终止行带前导 tab；正文**不做**引号跟踪（正文是数据）。
+   残余：同一行多个 heredoc（`cat <<A <<B`）只处理第一个 ⇒ D9⑫。
 1. 按**引号感知**分词；
 2. 跳过 `VAR=val` 前缀（如 `GIT_AUTHOR_NAME=x`）；
 3. 定位 `git` token（允许带路径，**basename 必须是 `git`**；⚠ **引号包住也算命令词** —— `"git" commit -m x` 照样会执行 git，
@@ -136,7 +165,7 @@
 
 | 面 | 落点 |
 |---|---|
-| 权限档位 | `opencode.jsonc`（build agent shell 段：`git commit*` ⇒ allow；force-push 四形态 ⇒ deny，置于 `git push *` 之后 ⇒ last-match-wins） |
+| 权限档位 | `opencode.jsonc`（build agent shell 段：`git commit*` ⇒ allow；force-push **8 条** ⇒ deny（计数定义见 D4），置于 `git push *` 之后 ⇒ last-match-wins） |
 | agent 行为规则 | `prompts/build.md` §输出（commit 改写为「由验证门决定」；**push 仍须用户确认** + **保留**「停机并交付裁决请求」兜底句） |
 | 用户侧纪律（唯一真源） | `docs/MULTI-AGENT-DESIGN.md` §3.4（收窄为「**只针对 push**」+ 历史残留处置条）+ §4.4.1 |
 | 漂移守卫 | `tests/config-guards.test.ts`（档位断言**替换**「commit=ask」那条；§3.4 措辞不得进 `prompts/**`） |
@@ -153,25 +182,25 @@
 | 5 | MAD §3.4 **纪律句**（「不要对 `git commit` / `git push` 的权限弹窗点 **Allow always**」） | 含 commit | 收窄为 **push** + 新增「历史残留处置」条（曾对 commit 点过 Always 的持久化批准需清除） |
 | 6 | MAD §3.4 其余残留句（`:711-714`、`:723` 一带） | 提及 commit 弹窗 | 同批改 |
 | 7 | MAD §4.4.1 「另有一条**不属「不可逆」类**的 `ask`：`git commit` / `git commit *`（v2.44）」整段 | commit = ask | 退役 ⇒ 换成本文门禁说明 + force-push deny 一行 |
-| 8 | MAD §4.4.3 尾（「shell 是整串前缀匹配」的已知残留） | 泛指 | 补「本文的 force-push deny 因此**必须列全四种形态**」 |
+| 8 | MAD §4.4.3 尾（「shell 是整串前缀匹配」的已知残留） | 泛指 | 补「本文的 force-push deny 因此**必须列全 D4 定义的全部形态**（Rev 2 起 8 条，计数见 D4）」 |
 | 9 | `prompts/build.md` 角色表 builder 行（「commit（先确认）」） | 先确认 | 「commit（工具层验证门）」 |
 | 10 | `prompts/build.md` 增强层「**commit 仍受全局规则约束**……先向用户确认 → commit → 再继续」 | 等用户确认 | 「commit 由验证门决定（红 ⇒ 工具层拒绝）；**push 仍须确认**」 |
 | 11 | `prompts/build.md` **§角色列表**四行（architect / planner / builder / no-role；⚠ 不是「§角色矩阵」） | 旧措辞 | 与 9 同口径（architect/planner/verifier 的提交**受限** ⇒ 写进「禁止」列） |
 | 12 | `prompts/build.md` 点名条款括注（「不要主动 `git commit` / `git push` —— **等用户确认**」） | 旧措辞 | 同步改写（守卫只查节名 ⇒ 矛盾查不出，只能显式改） |
 | 13 | `prompts/build.md` 机读清单 `sec: ## 输出 \| kind: halt` | 登记 | **保留**（push 仍走停机兜底） |
 | 14 | `prompts/build.md` §输出 三行 | 「不要主动 commit / push —— 等用户确认」 | 改写（commit 由门禁决定 / push 仍确认 / **保留停机兜底句**） |
-| 15 | `opencode.jsonc` build shell 段（`git commit *` / `git commit`） | ask | ⇒ allow；新增 force-push 四形态 = deny |
-| 16 | `tests/config-guards.test.ts`（「`git commit` 必须是 ask 档」那条） | 断言 ask | **替换**为「= allow」+「force-push 四形态 = deny」+「push 仍 ask」（旧断言与新决策**互斥** ⇒ 不是「同步」而是替换） |
+| 15 | `opencode.jsonc` build shell 段（`git commit *` / `git commit`） | ask | ⇒ allow；新增 force-push **8 条** = deny（D4 定义） |
+| 16 | `tests/config-guards.test.ts`（「`git commit` 必须是 ask 档」那条） | 断言 ask | **替换**为「= allow」+「force-push **8 条** = deny」+「push 仍 ask」（旧断言与新决策**互斥** ⇒ 不是「同步」而是替换） |
 | 17 | `tests/role-exemptions.test.ts` 文件头 **D5②** 条 | 「不在范围」 | 「已由本文 D5 部分闭合；残余见 D9」 |
 | 18 | `docs/adr/ADR-role-aware-permissions.md` **父篇**：`:15` 修订行 + `:43` 表格行 | 「已由权限层 ask 覆盖（v2.44）」 | 修订行加指针；`:43` 改指本文（**父篇本体必须落改** —— 子篇宣告 ≠ 父篇已改，实施方会读父篇） |
 | 19 | `lib/delegate-core.ts` **后端 brief 规则第 3 条**（「不要 git commit / git push —— 提交由用户确认后另行发起」） | 后端模型被禁止 commit ⇒ 与 D3「后端也能 commit」**直接冲突** | 改写为「commit 由工具层验证门决定；**push 仍由用户发起**」 |
 | 20 | `docs/dual-session-delegation.md`（提交 / 推送 一栏） | 「❌（等用户确认后另行发起）」 | 同上改写（与点 19 同族残留） |
 
 ⚠ 另需（同批）：`docs/CHANGELOG.md`「权限加固记录」留史；`tests/config-guards.test.ts` 中叙述性注释（「已修（v2.44）」）会陈旧 ⇒ 同批改；
-能力面投影：`capabilityBlock()`（`lib/delegate-core.ts:619-627`）按 ask/deny **计数**派生 ⇒ 新增 4 条 deny ⇒ build 的 shell 分类由 `allow-ask` 变 `allow-ask-and-deny`
+能力面投影：`capabilityBlock()`（`lib/delegate-core.ts:619-627`）按 ask/deny **计数**派生 ⇒ Rev 1 新增 4 条 deny 使分类由 `allow-ask` 变 `allow-ask-and-deny`；Rev 2 再增 4 条（合计 8 条）**不改分类**（派生规则是定性判定：ask>0 且 deny>0）
 ⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。
 
-### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十三项）
+### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十四项）
 
 > 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。
 
@@ -188,8 +217,9 @@
 | ⑨ | **后端的提交面宽于其 edit 面** | 门禁按 `decideWrite`（architect 类含治理面）；后端 edit 上限（`classAllowRoots`）不含治理面 ⇒ 治理面可被后端**提交**（但写不了）；缓解：scope 派生仍限制其写盘面 |
 | ⑩ | **字符串级判定的残余面** | 防顶层 `git commit` 的复合 / 替换 / 换仓 / 包装形态（D5⑧⑨⑩）+ 解释器形态（D5⑪）；**不防**别名 / 函数 / **脚本文件内容**（`bash x.sh` 里的 `git commit`）⇒ 未验证提交可能落地；缓解：无（与 ③ 同源，登记为已知面） |
 | ⑪ | **判定对象以 shell 的 `workdir` 为准**（`workdir` 缺失时回退会话目录） | 防「在别的仓提交却按会话目录判暂存区」；**不防**命令**内部**再换目录（`cd … && git commit` 已被 D5⑧ 拒）；⚠ **行为反转**：`workdir` 指向**无声明**的仓 ⇒ D2 三判据不设门禁 ⇒ **放行**（旧口径按会话目录判 ⇒ fail-closed 拒）；这是 D9④ 口径的推导结果，**有意为之**；缓解：`workRoot` 取 `workdir`、角色身份（`stateRoot`）仍取会话 ⇒ 两个根不混用 |
-| ⑫ | **heredoc 预处理是逐行状态机** | 防「正文被当成命令 / 位置 pathspec」；**不防**跨行引号串（引号状态不跨行跟踪）导致的误剥离 ⇒ 极端形态下可能**漏判**（过度剥离会隐藏真实命令段 ⇒ fail-open 方向）；缓解：形态极罕见；⚠ 另：**赋值名字带引号**（`"GIT_AUTHOR_NAME"="x" git commit`）按 shell 语义**不是赋值前缀**（实测 bash 报 `command not found` ⇒ 该命令根本不会执行 ⇒ 无绕过） |
-| ⑬ | **`git push origin +main`（`+refspec` 强推）两层都不拦** | D4 的 config 四形态与 `lib/push-gate.ts` 都只认**标志**（`--force*` / `-f*`）⇒ `+refspec` 落 `git push *: ask` ⇒ 交互会话可被 Allow always 放行；缓解：无（登记为已知口；补法 = 两层同时加 `+refspec` 识别，需另立 change） |
+| ⑫ | **同一行多个 heredoc 只处理第一个** | Rev 2 已把「逐行状态机 / 跨行引号」**闭合**（D5 第 0 步，V13–V15）；残余 = `cat <<A <<B` 的第二个正文会被当命令文本 ⇒ 方向是**误拒**（不是放行）；缓解：形态罕见，登记；⚠ 另：**赋值名字带引号**（`"GIT_AUTHOR_NAME"="x" git commit`）按 shell 语义**不是赋值前缀**（实测 bash 报 `command not found` ⇒ 该命令根本不会执行 ⇒ 无绕过） |
+| ⑬ | **命令行之外的强推不可见** | Rev 2 已把 `+refspec` / `--mirror`（含 git 长选项缩写）与带引号形态纳入口径（D4，V16）；残余 = 强推由 **git 配置**驱动时命令行里没有强推 token（`remote.<n>.push` 的 refspec 里带 `+`、`remote.<n>.mirror=true`；`push.default` 只选 refspec、本身不产生 `+`）⇒ 门禁看不到 refspec；缓解：无（要读仓库 git 配置才能判，且配置本身不受门禁约束；登记为已知面） |
+| ⑭ | **删除类 push 未纳入强推口径**（`--delete` / `-d` / `:refspec` / `--prune`） | 它们**删除**远端 ref（不可逆，但不是「重写历史」）⇒ 落在 `git push *` = `ask` ⇒ 人工确认仍在；**不防** saved approval 越过 ask（与 D9⑧ 同一机制）⇒ 同一风险面、不同语义；缓解：无（用户裁决本批只收 `+refspec` / `--mirror`） |
 
 ## 选项对比表
 
@@ -199,6 +229,10 @@
 | **B 工具层验证门（本文）** | ✅ 采纳 | 判定**确定性**（红 ⇒ 拒）；闭 D5② 的**顶层**盲区；补上「角色 ⇒ 提交写集」的工具层执行点；publish 仍人工 |
 | **C 无条件 `allow` + 只靠 prompt** | ❌ 否决 | 重蹈 v2.44：prompt 说「等确认」被更具体的配置压过；未验证的提交被固化 |
 | **D 只对「归档类 commit」放行** | ❌ 否决 | 「归档类」不可机判；复杂度换不到确定性 |
+| **E 强推口径只认标志（Rev 1）** | ❌ 修正为 E′ | `+refspec` / `--mirror` 都是强推 ⇒ 只认 `--force*` / `-f*` 会留下**可执行**的强推形态 |
+| **E′ 标志 + `+refspec` + `--mirror`（Rev 2，本文推荐）** | ✅ 采纳 | 三种都是「重写远端历史」；删除类（`--delete` 等）语义不同 ⇒ 分开登记（D9⑭） |
+| **F heredoc 预处理器保守拒（正文含命令词即拒）** | ❌ 否决 | 误伤「写文档时正文提到 `git commit`」（现明确放行且有用例）|
+| **G heredoc 预处理改单遍跨行引号感知（Rev 2，本文推荐）** | ✅ 采纳 | `tokenizeCommand` 本就整串单遍、引号可跨行 ⇒ 只有预处理器逐行 ⇒ 同一输入被两套引号规则解释（根因）；修法即对齐 |
 
 ## 后果 / 代价
 
@@ -216,7 +250,7 @@
 - 取代了 `ADR-role-aware-permissions.md:43` 的执行点表述 ⇒ 父篇须记**修订指针**（避免两份真源）。
 
 **回滚路径（三步，**不可只退一半**）**
-1. `opencode.jsonc`：build shell 的 `git commit*` ⇒ 改回 `ask`；force-push 四形态 deny 移除（恢复原状）；
+1. `opencode.jsonc`：build shell 的 `git commit*` ⇒ 改回 `ask`；force-push **8 条** deny 移除（Rev 1 + Rev 2 同批，恢复原状）；
 2. `prompts/build.md` §输出 + 点名条款 + 角色表/矩阵 ⇒ 改回「不要主动 commit —— 等用户确认」；`docs/MULTI-AGENT-DESIGN.md` §3.4 / §4.4.1 ⇒ 改回原措辞；
 3. `plugins/commit-gate.ts` / `lib/commit-gate.ts` ⇒ 删除或停用（插件缺席 ⇒ 门禁不存在，与 D9② 一致）。
 ⚠ **只退一半 ⇒ 复现 v2.44**（`docs/CHANGELOG.md:41-42`）：若只把配置改回 `ask`、而 §输出仍写「commit 由验证门决定」⇒ prompt 与权限层**互相矛盾**，模型信更具体的配置 ⇒ 行为退化成「不 commit」（与原状语义相近，但文档不一致 ⇒ 守卫会红）。
@@ -231,7 +265,7 @@
 > 形态：层 1a 静态契约（配置档位 + 治理面措辞）/ 层 1b 纯逻辑单测（门禁判定）/ 层 2（真宿主）。
 > ⚠ **关键判据必须配变红演练**（立项后写入 change 的 `design.md`；本文直接内联各条的突变动作）。
 
-- [ ] **V1 档位**：`build` 的 `git commit` / `git commit *` = `allow`；`git push *` = `ask`；force-push **四形态** = `deny`。**变红**：把 `git commit *` 改回 `ask` ⇒ V1 红。
+- [ ] **V1 档位**：`build` 的 `git commit` / `git commit *` = `allow`；`git push *` = `ask`；force-push **8 条**（D4 定义，含 `+refspec` / `--mirror`）= `deny`。**变红**：把 `git commit *` 改回 `ask` ⇒ V1 红；少写 Rev 2 的四条 ⇒ V1 红（否则 D9⑬ 在 config 层仍开着）。
 - [ ] **V2 验证红 ⇒ 硬拒**：Tool.Error 含失败命令 + 输出尾部；不得静默放行。**变红**：门禁改成恒放行 ⇒ V2 红。
 - [ ] **V3 暂存内容越角色写集 ⇒ 硬拒**：错误指名角色 + 越界文件。**变红**：去掉 ③ ⇒ V3 红。
 - [ ] **V4 暂存区为空 ⇒ 硬拒**；`git diff --cached --quiet` 退出码 ≥2（判定失败）⇒ **亦拒**。**变红**：把退出码 ≥2 当放行 ⇒ V4 红。
@@ -246,6 +280,11 @@
   **变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红；放行 `git commit …; git push --force …` ⇒ V7 红；放行 `git commit -m "$(…)"` ⇒ V7 红；放行 `git commit …; cat .env` ⇒ V7 红。
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
-- [ ] **V10 免宣称十三项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
-- [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 四形态命中 `deny`、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
+- [ ] **V10 免宣称十四项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
+- [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [ ] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。
+- [ ] **V13 heredoc 跨行引号 ⇒ 不得漏判**：`bash -c "line1\n<<'EOF'\n" ; git commit -m x` ⇒ **拒**（理由应为「单独成段」/解释器闭口，**不是**「暂存区为空」）。**变红**：退回逐行 `stripHeredocs` ⇒ V13 红。
+- [ ] **V14 heredoc 正文仍是数据 ⇒ 不得误拒**：`git commit -F - <<'MSG' … MSG` ⇒ **放行**；标记行尾部保留（`… <<'MSG'` 之后的 `&& …` 仍参与判定）；正文含 `git commit` 且段首 `bash x.sh` ⇒ **不拦**。**变红**：不剥离正文 ⇒ V14 红。
+- [ ] **V15 跨行引号合法提交 ⇒ 放行**：`git commit -m "a\nb"` ⇒ 放行；`"bash" -c …`（引号包住的解释器名）⇒ 仍拒。
+- [ ] **V16 强推形状 + 反向判据**：`git push origin +main` / `+a:b` / `--mirror` / `--mirro`（长选项缩写）/ `"+main"` / `"--force"`（带引号）/ `bash -c "git push -uf origin main"` ⇒ **拒**；`git push -o +ci origin main` / `bash -c "git push -o +ci origin main"` / `--no-force-with-lease` / `--tags` / `-u origin main` / `origin main` ⇒ **放行**。**变红**：删掉「带值选项跳过」⇒ V16 红（`-o +ci` 被误拒）；删掉 `+refspec` 分支 / 改回精确名匹配 / 保留 `if (t.quoted) continue` ⇒ V16 红。
+- [ ] **V17 层 2 归因**：`git push origin +main` 在真宿主上被拒时，**记录是哪一层**（宿主权限错 / `push-gate:` 文案），并如实写进报告 —— 不得把「工具层命中」写成「config 生效」。

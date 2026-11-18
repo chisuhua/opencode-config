@@ -230,9 +230,42 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 
 **层 2（本会话）**：P23 `bash -c 'git commit'` ⇒ 拒；**P27** `bash -c 'git push -uf origin main'` ⇒ 拒（修复前**三层全通**）；P24 `git push -uf` ⇒ 拒；P25/P26 workdir 红/绿仓判定。
 
+## 7. Rev 2（D9⑫ / D9⑬）—— 审查与逐条处置
+
+> 触发：ADR 收口后 D9 表里仍留两个「无缓解」项，用户裁决处理（**范围**：只收 `+refspec` + `--mirror`；heredoc 只改「单遍 + 跨行引号」；删除类登记 D9⑭）。本轮**只改 ADR 文本**，代码与 `opencode.jsonc` 属下一批（builder），治理面审查随那一批单独走。
+
+### 7.1 实证（先摆证据，再改决策）
+
+| # | 命令 | 结果 |
+|---|---|---|
+| E1 | `detectForcePush` 对 `git push origin +main` / `+refs/heads/x:refs/heads/y` / `--mirror` / `'+main'`（带引号）/ `"--force"` / `'--mirror'` | **全 `false`**（漏判）；`git push --force` ⇒ `true` |
+| E2 | `bash -c "line1⏎<<'EOF'⏎" ; echo "SECOND-COMMAND-EXECUTED"` 交真实 bash | **第二段真的执行**（stdout 含 `SECOND-COMMAND-EXECUTED`） |
+| E3 | 同一串交 `detectCommitInvocation` | `isCommit: false`（**fail-open 确认**） |
+| E4 | 合法路径未回归 | `git commit -F - <<'MSG' ⏎ subject ⏎ MSG` ⇒ `isCommit: true` |
+| E5 | 长选项缩写（scratch 仓） | `git push --mirro` ⇒ git **接受**（只报 "No configured push destination"）；`git push --forc` ⇒ git 自判 `ambiguous option` |
+
+⇒ E3 与 E2 的对照是本轮 D9⑫ 的**判别力依据**（真实执行 vs 门禁判定不一致）。
+
+### 7.2 逐轮处置
+
+| 轮 | 审查者 | 判定 | 处置 |
+|---|---|---|---|
+| R1 | oracle（`审查域: 其他审查`） | **REJECT**（3 高优 + 1 中优） | ① 形态计数文内矛盾（D4 写 8 条、V1/D7/D8/后果/回滚仍写四形态 ⇒ 实施者照 V1 只写 4 条，**验收层面闭合、config 层面仍开着**）⇒ D4 立「计数唯一定义处」，他处全改引用，V1 变红条款加「少写 Rev 2 四条 ⇒ V1 红」；② `isForcePushToken` 未裁决 quoted token（`push-gate.ts:71` 的 `if (t.quoted) continue` 使 `git push "+main"` 放行）⇒ 裁决「quoted 不跳过」；③ 带值跳过是**调用侧**行为，`mentionsCommitOrForcePush` 未同步 ⇒ 两规则收进**同一 helper**；④ 匹配规则未钉死 ⇒ 长选项改**前缀**匹配（E5 依据），`--no-*` 天然不匹配 |
+| R2 | oracle（复审，只验闭合） | **BLOCK**（仅剩 1 处） | D8 落点 #8 仍写「必须列全**四种形态**」⇒ 照此写进 MAD 会把 4-vs-8 矛盾外置。**已改引用 D4**（oracle 自己给出的验收口径），并顺手把 `:73` 改成引用（兑现「他处只引用」的字面纪律） |
+| R3 | critic（`profile: arch`） | **APPROVE**（`mergeable: yes`，`scope_exceeded: false`） | 无 BLOCKER。1 SHOULD_FIX：修订行承载 Rev 2 摘要 + oracle REJECT 理由清单 ⇒ **过程日志混入决策文档**（与本文「只保留结论」自相抵）⇒ 已瘦身为结论 + `§7` 指针。3 NIT：① `push.default` 不产生 `+`（举例不精确）⇒ 已改写；② 带值选项未声明等号形态 ⇒ 已补（并写明「等号形态天然安全」的依据）；③ `--force-with-lease` **也**会被拒是「代价的另一面」⇒ 已登记（收紧，有意为之） |
+
+**预算**：oracle 1 + 复审 1 + critic 1，**在 ADR 行额度内**（BLOCKER 允许 1 次复审；critic 仅 1 轮）。
+
+⚠ **一处如实记录**：R2 的残留（D8 #8）是**我在 R1 修复时漏掉的同类项**（R1 已点名「D8 `:179-180`」，我改了两行却漏了同节的 `:181`）⇒ 说明「按 oracle 列表逐条改」比「按语义自己找全」可靠。
+
+### 7.3 本轮**未做**代码/配置（一行说明，免得误读成已完成）
+
+`lib/commit-gate.ts`（`stripHeredocs` 单遍重写 + 谓词升级）、`lib/push-gate.ts`（删 `if (t.quoted) continue` + 复用 helper）、`opencode.jsonc`（4 条 deny）、`tests/**`（V13–V16 对应用例、`tests/push-gate.test.ts:39` 的 `+main` 允许用例需**翻转**）**全部未动** ⇒ 由 builder 实施，并随实施批走 `审查域: 治理面`。
+
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）
 - critic：**7 轮**（REJECT ×6 + `APPROVE_WITH_CONDITIONS` ×1；末轮**无 BLOCKER** ⇒ 满足「BLOCKER 全闭 + 复审确认闭合」）
 - 复审额度：轮 3 – 轮 7 均经**用户明确批准**
 - ⚠ **规律**（已登记）：每轮都能抓到**新引入**的绕过面 ⇒ 收紧口径的每一步都带来新的解析边界 ⇒ 收口前**必须**有一轮「只验闭合」确认；本 change 共 7 轮（远超 ADR 行的 1+1 额度，**全部经用户逐轮批准**）
+- **Rev 2 批次**（D9⑫⑬，见 §7）：oracle **1 轮**（REJECT）+ 复审 **1 次**（BLOCK，1 处残留）+ critic **1 轮**（APPROVE）⇒ 在 ADR 行额度内
