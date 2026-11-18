@@ -1057,6 +1057,17 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 ② 提交消息里出现 `$(` 被拒（改用 `-F <file>`）；③ 形态闭口对**所有仓**生效（封的是宿主的整串前缀漏洞），D2 的三判据仍只对**声明仓**生效；
 ④ 门禁按**会话所在目录**判定（不是 shell 的 `workdir`）⇒ 跨仓提交一律拒。
 
+#### 4.7.4 遗留面收口：force-push 工具层兜底 / workdir 判定 / 解释器闭口（2026-11-18 续）
+
+- **force push 工具层兜底**（`lib/push-gate.ts`）：config 的 `deny` 与宿主「Allow always」持久化授权优先级未知
+  ⇒ 同一插件在 `execute.before` 直接拒（`git push` 后出现任一强推标志）。是 config 四形态的**严格超集**
+  （短选项簇 `git push -uf` config 的 glob 表达不了）。
+- **判定对象改用 shell 的 `workdir`**（回退会话目录）：跨仓提交不再被误判「暂存区为空」；角色身份仍按会话（`stateRoot`）。
+- **解释器闭口**（ADR D5⑪）：段首是 `bash -c` / `sh -c` / `eval` / `xargs` / `ssh` / `docker exec` / `kubectl exec`
+  且串内（含引号内）提到 `git commit` 或 force push ⇒ 拒（被解释的字符串对门禁不可见）。完整包装清单与残余面见 ADR D5⑪ / D9③⑩（`zsh`/`dash`/`ksh`/`fish`/`scp`/`rsync`/`podman`/`nsenter`/`expect` 等同属闭口范围）。
+- **仍登记不做的**：`git push origin +main`（`+refspec`，两层都不拦，D9⑬）、**脚本文件内容**里的提交（D9③⑥⑩）、
+  heredoc 逐行解析边界（D9⑫）。
+
 ## 各版本验证记录
 
 > 原 `MULTI-AGENT-DESIGN.md` §7.1 / §7.2 / §7.3 / §7.3.1。当前态汇总见该文档 §7.1。

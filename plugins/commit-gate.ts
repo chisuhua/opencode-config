@@ -16,6 +16,7 @@ import { Plugin } from "@opencode/plugin"
 
 import { canonicalRoot } from "../lib/delegate-core.ts"
 import { detectCommitInvocation, evaluateCommitGate, readDeclaration } from "../lib/commit-gate.ts"
+import { detectForcePush } from "../lib/push-gate.ts"
 import { readSessionPartition, resolveRole } from "../lib/role-identity.ts"
 import { decideWrite } from "../lib/role-policy.ts"
 
@@ -54,6 +55,13 @@ export default Plugin.define({
         // ⚠ fail-closed：取不到命令 ⇒ 判定不可判定（ADR D6）
         throw new Error("commit-gate: 取不到 shell 命令 ⇒ 拒绝（fail-closed）")
       }
+      // ① **force push 的工具层兜底**（ADR D4 / D9⑧）：config 的 `deny` 与宿主「Allow always」持久化授权
+      //   的优先级未知 ⇒ 曾点过 Always 的用户可能连 force push 也不再被问 ⇒ 工具层直接硬拒。
+      const force = detectForcePush(command)
+      if (force.isForcePush) {
+        throw new Error(force.reason ?? "push-gate: 检测到 force push ⇒ 拒绝")
+      }
+
       const invocation = detectCommitInvocation(command)
       if (!invocation.isCommit) {
         if (invocation.block) throw new Error(invocation.block)
@@ -69,8 +77,14 @@ export default Plugin.define({
       const agent = typeof (session as any)?.agent === "string" ? (session as any).agent : ""
       // ⚠ **不用 `process.cwd()`**（同 role-gate 的既有教训：进程 cwd 会取到另一个仓的根 ⇒ 整条 fail-open）
       const loc = (session as any)?.location?.directory
-      const cwd = typeof loc === "string" && loc.length > 0 ? loc : process.cwd()
-      const { stateRoot, workRoot } = canonicalRoot(cwd)
+      const sessionCwd = typeof loc === "string" && loc.length > 0 ? loc : process.cwd()
+      // ⚠ **判定对象以 shell 的 `workdir` 为准**（ADR D9⑪ 的缓解）：命令就在那儿执行 ⇒ 暂存区 / 写集 / 验证命令
+      //   必须按同一个目录算；`workdir` 缺失时回退**会话目录**。
+      const wd = input.workdir
+      const workCwd = typeof wd === "string" && wd.length > 0 ? wd : sessionCwd
+      // ⚠ **两个根不混用**：角色身份（`stateRoot`）按**会话**算；判定对象（`workRoot`）按 **workdir** 算。
+      const { stateRoot } = canonicalRoot(sessionCwd)
+      const { workRoot } = canonicalRoot(workCwd)
 
       // ① 声明（未声明 ⇒ **不设门禁** ⇒ 放行）
       const { decl, error } = readDeclaration(workRoot)

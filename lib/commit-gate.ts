@@ -22,6 +22,8 @@
  *      fd 前缀 `2>`）不是段分隔符 ⇒ `git commit -m x > /dev/null 2>&1` 照常放行。
  *   ⑨ **命令替换**（`$(…)` / 反引号 / 进程替换 `<(...)` `>(...)`，**单引号外**）⇒ **拒**：内容不在静态可见范围，
  *      而 `git commit *: allow` 会把它们一起放行。
+ *   ⑪ **解释器闭口**：段首是 `bash -c` / `sh -c` / `eval` / `xargs` / `ssh` / `docker exec` / `kubectl exec` …
+ *      且整串（**含引号内**）提到 `git commit` 或 force push ⇒ **拒**（被解释的字符串对门禁不可见）。
  *   ⑩ **判定对象可定位**：`git -C` / `--git-dir` / `--work-tree` / `GIT_DIR=` / `GIT_WORK_TREE=` / `GIT_INDEX_FILE=` /
  *      `GIT_COMMON_DIR=` ⇒ **拒**；`git` 之前有**包装命令**（`sudo` / `env` / `nohup` / `time` / `timeout` / `exec` …）⇒ **拒**
  *      （门禁只能判**会话所在仓**；换仓后暂存区 / 写集 / 验证命令全部错位）。
@@ -71,6 +73,31 @@ const COMMIT_VALUE_OPTIONS = new Set([
 /** `git commit` 的**短选项簇**里必须闭口的字母（`-am` / `-ao` 这类组合写法也要抓到）。 */
 const COMMIT_CLOSED_SHORT = new Set(["a", "o", "i"])
 
+/**
+ * **解释器 / 远程执行包装**（`bash -c` / `sh -c` / `eval` / `xargs` / `ssh` / `docker exec` / `kubectl exec` …）。
+ * ⚠ 用于 ADR D5⑪：这类命令把**另一个字符串**交给另一个解释器 ⇒ 门禁看不到里面的 `git`。
+ * ⚠ `scp` / `rsync` 在列按「它们能指定**远端 shell / 传输程序**」算（`scp -S` / `rsync -e/--rsh`）：
+ *   该参数值同样是**交给另一个程序执行的字符串**。
+ */
+const INTERPRETER_WRAPPERS = new Set([
+  "bash",
+  "sh",
+  "zsh",
+  "dash",
+  "ksh",
+  "fish",
+  "eval",
+  "xargs",
+  "ssh",
+  "scp",
+  "rsync",
+  "docker",
+  "podman",
+  "kubectl",
+  "nsenter",
+  "expect",
+])
+
 /** 可以出现在 `git` 之前的包装命令（`sudo git commit` / `env X=1 git commit`）。 */
 const WRAPPERS = new Set([
   "sudo",
@@ -96,6 +123,47 @@ const WRAPPER_VALUE_OPTIONS = new Set(["-u", "--user", "-g", "--group", "-p", "-
  * ⚠ 出现任何一个且任一段是 commit ⇒ **拒**（整串前缀匹配 ⇒ 其余段搭便车）。
  */
 const COMPOUND_TOKENS = new Set(["&&", "||", ";", "|", "&", "\n"])
+
+/** 这一段是否**以解释器 / 远程执行包装开头**（`bash -c` / `sudo bash -c` / `ssh host` …）。 */
+function segmentStartsWithInterpreter(seg: Token[]): boolean {
+  let i = 0
+  while (i < seg.length && isVarAssignment(seg[i]!)) i++
+  while (i < seg.length && WRAPPERS.has(seg[i]!.value)) {
+    i++
+    while (i < seg.length && isVarAssignment(seg[i]!)) i++
+    while (i < seg.length && !seg[i]!.quoted && seg[i]!.value.startsWith("-") && seg[i]!.value !== "--") {
+      const opt = seg[i]!.value
+      i++
+      if (WRAPPER_VALUE_OPTIONS.has(opt)) i++
+    }
+  }
+  const t = seg[i]
+  // ⚠ **引号包住也算**（`"bash" -c 'git push --force …'` 照样执行 bash）—— 与 `isGitCommandWord` 同一立场
+  return !!t && INTERPRETER_WRAPPERS.has(t.value)
+}
+
+/**
+ * 整串（**含引号内**）是否提到 `git commit` 或 force push。
+ * ⚠ 归一化空白后再匹配 ⇒ 换行 / 多空格 / 引号包裹都算。
+ */
+export function mentionsCommitOrForcePush(raw: string): boolean {
+  // 去掉引号 ⇒ 被解释的字符串内容对分词可见（`bash -c "git push -uf origin main"`）
+  const flat = raw.replace(/["'`]/g, " ")
+  const tokens = tokenizeCommand(flat)
+  for (let i = 0; i < tokens.length; i++) {
+    if (!isGitCommandWord(tokens[i]!)) continue
+    const subIndex = parseGitSubcommandIndex(tokens, i + 1)
+    if (subIndex === null) continue
+    const sub = tokens[subIndex]!.value
+    if (sub === "commit") return true
+    if (sub === "push") {
+      for (let k = subIndex + 1; k < tokens.length; k++) {
+        if (isForceFlagToken(tokens[k]!)) return true
+      }
+    }
+  }
+  return false
+}
 
 /** 整串是否以**后台执行**（`&`）收尾（尾部可跟纯分隔符 `\n` / `;`）。 */
 function endsWithBackgroundAmp(tokens: Token[]): boolean {
@@ -400,6 +468,19 @@ export function containsCommandSubstitution(command: string): boolean {
   return false
 }
 
+/**
+ * 强推标志（`--force` / `--force=…` / `-f` / **短选项簇里含 `f`**）—— **单一真源**：
+ * `lib/push-gate.ts` 与 D5⑪ 的字符串侧判定都调它（避免「顶层拒 `-uf`、包进 bash 就放行」）。
+ */
+export function isForceFlagToken(token: Token): boolean {
+  const value = token.value
+  if (value.startsWith("--")) {
+    return value.split("=")[0] === "--force" || value.split("=")[0] === "--force-with-lease" || value.split("=")[0] === "--force-if-includes"
+  }
+  if (value.startsWith("-") && value.length > 1) return value.slice(1).includes("f")
+  return false
+}
+
 /** 会让「判定对象」换仓的 git 全局选项（ADR D5⑩）。 */
 const RELOCATING_GIT_OPTIONS = ["-C", "--git-dir", "--work-tree"]
 
@@ -525,6 +606,23 @@ export function detectCommitInvocation(command: string): CommitInvocation {
     segments[segments.length - 1]!.push(t)
   }
   const nonEmpty = segments.filter((seg) => seg.length > 0)
+
+  // ⑪ **解释器闭口**：段首是 `bash -c` / `eval` / `ssh` / `xargs` / `docker exec` … 且整串（**含引号内**）
+  //   提到 `git commit` 或 force push ⇒ 拒：这类命令把**另一个字符串**交给另一个解释器 ⇒ 门禁看不到里面的 git。
+  for (const seg of nonEmpty) {
+    // ⚠ 只喂**本段**的 token 文本：跨段的字面量（`bash lint.sh && echo "git commit done"`）不算
+    const segText = seg.map((t) => t.value).join(" ")
+    if (segmentStartsWithInterpreter(seg) && mentionsCommitOrForcePush(segText)) {
+      return {
+        isCommit: true,
+        block:
+          "commit-gate: 命令把 `git` 交给**另一个解释器**（`bash -c` / `eval` / `xargs` / `ssh` / `docker exec` …）⇒ 拒绝" +
+          "（门禁看不到被解释的字符串；请直接调用 `git commit` / `git push`）",
+        detail: "interpreter",
+      }
+    }
+  }
+
   if (nonEmpty.length > 1) {
     const hits = nonEmpty.map((seg) => commitInSegment(seg))
     if (!hits.some((h) => h.isCommit)) return { isCommit: false }

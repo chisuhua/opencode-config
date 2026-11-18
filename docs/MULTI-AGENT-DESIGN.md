@@ -723,7 +723,8 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 ⇒ 若将来恢复 `ask` 档，它会**立即命中**（即恢复弹窗但不再询问）⇒ 一次性清除该批准。
 
 **`git push --force` 的额外一层**：`opencode.jsonc` 已把 force-push **四形态**设为 `deny`（`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*`）
-⇒ `deny` **不会**被 Allow always 放行（这是它相对 `ask` 的价值）；⚠ 但「持久化 allow 与 config `deny` 的优先级」**无源码锚点**（宿主合并算法未查明）⇒ 如实登记为该 ADR 的 D9⑧，须人工实测。
+⇒ `deny` **不会**被 Allow always 放行（这是它相对 `ask` 的价值）；⚠ 但「持久化 allow 与 config `deny` 的优先级」**无源码锚点**（宿主合并算法未查明）⇒ 如实登记为该 ADR 的 D9⑧。
+**缓解已落地**：同一插件在工具层对 force push **再兜一层**（`lib/push-gate.ts`：`git push` 之后出现任一强推标志 ⇒ 拒）⇒ 权限层怎么合并都不影响结果；该兜底是 config 四形态的**严格超集**（短选项簇 `git push -uf` config 的 glob 表达不了）。
 
 **为什么这条纪律不写进 `prompts/**`**：`prompts/<id>.md` 的唯一消费者是模型——模型看不见宿主弹窗、控制不了点击、也感知不到持久化。写进去只会产生「每会话重复提醒」「在 ask 通过后怀疑用户点了 always 而拒绝继续」一类噪音，并制造「系统在 enforce 什么」的假信心。`prompts/**` 只承载**模型可执行的规则**。
 
@@ -841,6 +842,7 @@ bash 采 `* + 危险命令 ask` 模式（catch-all 在前、具体规则在后�
 **新增 `deny`（force push）**：`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*`
 —— shell 是**整串前缀匹配** ⇒ flag 在末位的形态也必须显式列出，否则落 catch-all `*: allow`（⇒ 无人值守时直接推出去）；
 且 `deny` **不会**被宿主的 Allow always 放行（这是它相对 `ask` 的价值）。
+**工具层兜底**：`lib/push-gate.ts` 对同一组形态（含短选项簇）在 `tool.execute.before` 再拒一次 ⇒ 不依赖宿主的授权合并顺序（ADR D4 / D9⑧）。⚠ 该兜底**不进** capability 投影（投影按 config 的 ask/deny 计数派生）⇒ 投影说「可以」而工具层拒的情形会有**带指引的错误文案**，方向 fail-safe。
 
 #### 4.4.2 MCP 工具权限
 

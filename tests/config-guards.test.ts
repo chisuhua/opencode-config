@@ -1432,6 +1432,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "role-policy.ts",
         // v2.47（ADR-commit-verification-gate D2/D5）：commit 验证门的纯逻辑（命令识别 + 三判据）
         "commit-gate.ts",
+        // v2.47（ADR-commit-verification-gate D4/D9⑧）：force push 的工具层兜底（纯逻辑）
+        "push-gate.ts",
       ],
     }
     for (const [dir, expected] of Object.entries(EXPECTED)) {

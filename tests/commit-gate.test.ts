@@ -104,6 +104,66 @@ describe("D5 命令词与兜底扫描（引号命令词 / 不把字面量当命�
   })
 })
 
+describe("D5⑪ 解释器闭口（把 git 交给另一个解释器 ⇒ 拒）", () => {
+  const interpreters = [
+    'bash -c "git commit -m x"',
+    "sh -c 'git commit -m x'",
+    'eval "git commit -m x"',
+    'ssh host "git commit -m x"',
+    "docker exec ctr git commit -m x",
+    "xargs git commit -m x",
+    "sudo bash -c 'git commit -m x'",
+    'bash -c "git push --force origin main"',
+  ]
+  for (const cmd of interpreters) {
+    test(`拒（解释器）：${cmd}`, () => {
+      const r = detectCommitInvocation(cmd)
+      expect(r.isCommit, `未拦截：${cmd}`).toBe(true)
+      expect(r.block).toContain("另一个解释器")
+    })
+  }
+  test("`bash -c \"git push -uf origin main\"` ⇒ 拒（**短选项簇**也算强推，与 push-gate 同口径）", () => {
+    const r = detectCommitInvocation('bash -c "git push -uf origin main"')
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("另一个解释器")
+  })
+  test("`bash lint.sh && echo \"git commit done\"` ⇒ 放行（**跨段**字面量不算）", () => {
+    expect(detectCommitInvocation('bash lint.sh && echo "git commit done"').isCommit).toBe(false)
+  })
+  test("`docker build -t x . && echo \"git commit ok\"` ⇒ 放行（跨段字面量不算）", () => {
+    expect(detectCommitInvocation('docker build -t x . && echo "git commit ok"').isCommit).toBe(false)
+  })
+  test("`\"bash\" -c \"git push -uf origin main\"` ⇒ 拒（**引号包住的解释器名**照样执行）", () => {
+    const r = detectCommitInvocation('"bash" -c "git push -uf origin main"')
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("另一个解释器")
+  })
+  test("`'eval' \"git commit -m x\"` ⇒ 拒（引号解释器名 + 引号串）", () => {
+    const r = detectCommitInvocation("'eval' \"git commit -m x\"")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("另一个解释器")
+  })
+  test("`\"bash\" script.sh` ⇒ 放行（段内没提 commit / force push）", () => {
+    expect(detectCommitInvocation('"bash" script.sh').isCommit).toBe(false)
+  })
+  test("`git commit -m docker` ⇒ 放行（包装词不在**段首**）", () => {
+    expect(detectCommitInvocation("git commit -m docker").block).toBeUndefined()
+  })
+  test("`git commit -m \"fix git commit hook\"` ⇒ 放行（消息里的字面量不算）", () => {
+    expect(detectCommitInvocation('git commit -m "fix git commit hook"').block).toBeUndefined()
+  })
+  test("heredoc 正文里提到 git commit + 段首是 bash ⇒ **不拦**（正文是数据）", () => {
+    const cmd = "bash scripts/x.sh <<'EOF'\nsome git commit text\nEOF"
+    expect(detectCommitInvocation(cmd).block).toBeUndefined()
+  })
+  test("`bash script.sh` ⇒ 放行（串内没提 git commit ⇒ 不属本闭口）", () => {
+    expect(detectCommitInvocation("bash script.sh").isCommit).toBe(false)
+  })
+  test("`echo \"git commit\"` ⇒ 不命中（数据不是命令）", () => {
+    expect(detectCommitInvocation('echo "git commit"').isCommit).toBe(false)
+  })
+})
+
 describe("D5⑩ 判定对象可定位（换仓 / 包装命令 ⇒ 拒，不得跳过）", () => {
   const relocated = [
     "git -C /tmp/x commit -m 'x'",

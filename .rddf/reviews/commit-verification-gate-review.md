@@ -202,6 +202,34 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 ⇒ 层 1b +1（`git commit -m "say \"hi\" && b"` ⇒ 放行）；全量 794 pass / 0 fail。
 ⚠ 这条是**门禁在本会话里第一次抓到「我自己写的 bug」**（此前都是 critic 抓）⇒ 也说明形态闭口的误伤面仍在收敛中。
 
+## 6. 收口后的遗留处理（**用户批准**：④+①+②，③ 留 backlog）
+
+> ADR 已转 `Accepted` 之后，用户批准处理三个遗留 + 一个操作约束。**不是新 change**，是对 D9 条目的缓解/降级。
+
+| 项 | 改动 | 证据 |
+|---|---|---|
+| ④ 判定对象改用 shell 的 `workdir`（回退会话目录） | `plugins/commit-gate.ts`：`workRoot` 取 `input.workdir`；**角色身份（`stateRoot`）仍按会话** ⇒ 两个根不混用 | 层 2 **P25**（红声明仓经 `workdir` 提交）⇒ `commit-gate: 验证命令失败 ⇒ 拒绝提交：$ false`（此前报「暂存区为空」= 判错仓）；**P26**（绿声明仓）⇒ 放行、HEAD 推进 `a5d968f` |
+| ① force push **工具层兜底**（D9⑧ 降级） | 新增 `lib/push-gate.ts` + 插件 `execute.before` 硬拒；口径 = `git push` 后出现任一强推标志（**config 四形态的严格超集**，含短选项簇） | 层 1b `tests/push-gate.test.ts` 21 条；**层 2 P24**：`git push -uf origin main`（config **不覆盖**的簇形态）⇒ `push-gate: 检测到 **force push**（\`git push … -uf\`）⇒ 拒绝` |
+| ② 解释器闭口（D9③⑩ 收窄） | `lib/commit-gate.ts`：段首是 `bash`/`sh`/`eval`/`xargs`/`ssh`/`docker exec`/`kubectl exec` … 且串内（含引号内）提到 `git commit` 或 force push ⇒ 拒；**用剥离 heredoc 后的串**判定 | 层 1b 12 条（含负向：`git commit -m docker` / 消息里提到 / `bash script.sh` / heredoc 正文）；**层 2 P23**：`bash -c 'git commit -m probe'` ⇒ 拒 |
+| ③ heredoc 跨行引号（留 backlog） | 只在 ADR D9⑫ 登记，不实现 | — |
+| 附带 | D9 新增 ⑬（`+refspec` 两层都不拦）；CHANGELOG §4.7.4；MAD §2.8.7 / §4.4.1 补「工具层兜底」 | — |
+
+⚠ **自捕到的一条**：解释器判定最初用**未剥离 heredoc 的原串** ⇒ 命令里「heredoc 正文提到 `git commit` + 段首是 `bash x.sh`」被误拒 ⇒ 改为用剥离后的串（层 1b 补 1 条）。
+
+### 6.1 本批的审查记录
+
+| 轮 | 审查者 | 判定 | 处置 |
+|---|---|---|---|
+| 1 | oracle（**审查域: 治理面**） | **BLOCK** | ADR `:109` / `:123` 仍写「解释器形态不在门禁内」⇒ 与新增 D5⑪ 自相矛盾；编号序 `…9,11,10`；第 6 步映射缺第 11 步。**全部采纳**（两句改写 + 编号单调 + 映射补齐）；可选四项也做（push-gate 头注「严格超集」/ 测试注释 / CHANGELOG 清单指针 / MAD 投影说明） |
+| 1' | oracle（复审，只验闭合） | **PASS** | BLOCK 点逐条闭合 |
+| 1 | critic（build + arch 增量） | **REJECT**（1 BLOCKER + 2 SHOULD_FIX + 1 NIT） | BLOCKER：D5⑪ 的字符串侧用**正则**判强推 ⇒ 认不出 `-uf` 簇（`bash -c 'git push -uf …'` 三层全通）⇒ 已改为**去引号 + 分词**并复用 `isForceFlagToken`（**单一真源**，`push-gate` 也改用它）；SHOULD_FIX：解释器闭口按**本段**匹配（修跨段误伤：`bash lint.sh && echo "git commit done"`）、D9⑪ 补「`workdir` 指向无声明仓 ⇒ 放行」的行为反转；NIT：`scp`/`rsync` 在列的理由写进注释 |
+
+| 2 | critic（复审，预算内） | **APPROVE_WITH_CONDITIONS**（无 BLOCKER；2 条 SHOULD_FIX） | ① `"bash" -c 'git push -uf …'`（**引号包住的解释器名**）三层全通 ⇒ 去掉 `segmentStartsWithInterpreter` 的 `!t.quoted`（与 `isGitCommandWord` 同一立场）+ 3 条用例；② ADR D5⑪ 补 `scp`/`rsync` 在列理由与引号说明 |
+
+**验证**：`bun test tests/` **834 pass / 0 fail**（push-gate 21 + commit-gate 121）；anchors 23/23；openspec valid。
+
+**层 2（本会话）**：P23 `bash -c 'git commit'` ⇒ 拒；**P27** `bash -c 'git push -uf origin main'` ⇒ 拒（修复前**三层全通**）；P24 `git push -uf` ⇒ 拒；P25/P26 workdir 红/绿仓判定。
+
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）

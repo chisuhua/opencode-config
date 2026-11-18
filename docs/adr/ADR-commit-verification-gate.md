@@ -73,6 +73,12 @@
 ⇒ 四形态 deny 的真实价值是 **「ask ⇒ deny」的收紧**（交互会话里 `ask` 可被宿主「Allow always」放行，**`deny` 不会**）。
 ⇒ **本文不豁免任何 publish 动作的人工确认**（saved approval 能否越过 `deny` 见 D9⑧）。
 
+**工具层兜底**（D9⑧ 的缓解）：同一个插件在 `tool.execute.before` 里对 force push **直接抛错**
+（`lib/push-gate.ts`：`git push` 之后出现任一强推标志 ⇒ 拒）⇒ 不管权限层怎么合并「Allow always」与 `deny`，
+工具层都拒。⚠ 该兜底是 **config 四形态的严格超集**：短选项簇（`git push -uf origin main`）config 的 glob
+表达不了 ⇒ 由工具层补齐（这是**收紧**，不是放松）。⚠ **已知差异**：`git push origin +main`（`+refspec` 强推）
+两层都不覆盖 ⇒ 登记 D9⑬。
+
 ### D5 命令识别（窄口径，避免误伤）+ 提交形态闭口
 
 门禁识别 git 的 **`commit` 子命令本身**（不依赖配置的 glob 前缀）：
@@ -87,7 +93,7 @@
 4. 取子命令 = **跳过所有 `-` 前缀 token**；对**已知带值选项额外跳过其值**（清单：`--git-dir[=]<dir>` / `--work-tree[=]<dir>` / `--namespace[=]<ns>` / `--exec-path[=]<p>` / `--config-env <n=env>` / `-c <k=v>` / `-C <dir>`）—— ⚠ **分离值形态与等号形态都要覆盖**（只列等号形态 ⇒ 解析出的「子命令」= `<dir>` ⇒ 门禁整条不触发）；其后的第一个 token 即子命令；
 5. 判 `subcommand === "commit"`（**精确相等** ⇒ `commit-tree` / `commit-graph` / `git config commit.gpgsign` / `git log --grep commit` **不算**）；
 6. 命中 ⇒ 进入 D2 判定；**解析不出 / 解析歧义 ⇒ 拒绝**（fail-closed 兜底，**不得**默认「不是 commit」而放行）；
-   ⚠ **复合命令**（`&&` / `||` / `;` / `|` / `&` / 换行）⇒ 按第 8 步处理；**命令替换** ⇒ 第 9 步；**换仓 / 包装** ⇒ 第 10 步；
+   ⚠ **复合命令**（`&&` / `||` / `;` / `|` / `&` / 换行）⇒ 按第 8 步处理；**命令替换** ⇒ 第 9 步；**换仓 / 包装** ⇒ 第 10 步；**解释器 / 远程执行包装** ⇒ 第 11 步；
 7. **提交形态闭口**：若 argv 含下列任一 ⇒ **拒**
    （这些形态的**实际提交内容集 ≠ 暂存区** ⇒ 门禁不可判定 ⇒ fail-closed；错误文案须说明原因）：
    `-a` / `--all`（并入全部已跟踪文件的改动）/ `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file`
@@ -100,7 +106,8 @@
    **代价（显式登记）**：① `git commit -m x; echo "exit=$?"` 这类**尾随报告段**被拒（层 2 实测过模型确实这么写）—— 可见的假阳性（模型重试不带 `;` 即可）；
    ② **提交消息里出现 `$(`** 也被拒（D5⑨ 的口径）—— 出路是 `-F <file>`；
    ③ **只判**这一条命令串**里出现**的 `git` 命令词：引号包住的**命令词**（`"git" commit`）**在**识别范围内（D5③），
-   但把 `git` 藏进**字符串**再交给**另一个解释器**的形态（`bash -c '…'` / `eval` / `xargs` / 别名 / 函数）**不在**门禁内 ⇒ 见 D9③⑩；
+   把 `git` 藏进字符串交给解释器的 `bash -c` / `eval` / `xargs` / `ssh` / `docker exec` 形态**已由 D5⑪ 封闭**；
+   残余 = **脚本文件内容** / 别名 / 函数（见 D9③⑩）；
    heredoc 正文里的 `git commit` 是**数据** ⇒ 不算命令（D5 第 0 步）。
 9. **命令替换 ⇒ 拒**：`$(…)` / 反引号 / 进程替换 `<(...)` `>(...)`，**单引号外**（双引号内仍会执行）一律拒；`\$(` 这类转义不算。理由：内容不在静态可见范围，而 `git commit *: allow` 会把它们一起放行（`git commit -m "$(git push --force …)"` 即打穿 D4 的 force-push `deny`）。提交消息请用 `-F <file>`。
 10. **判定对象必须可定位 ⇒ 否则拒**：门禁只能判定**会话所在的仓**（`workRoot`），所以
@@ -108,8 +115,17 @@
     - 换仓环境变量：`GIT_DIR=` / `GIT_WORK_TREE=` / `GIT_INDEX_FILE=` / `GIT_COMMON_DIR=`；
     - `git` 之前的**包装命令**（`sudo` / `env` / `nohup` / `time` / `timeout` / `exec` / `builtin` / `setsid` / `chroot` / `nice` / `ionice` / `stdbuf` / `command`）；
     ⇒ **拒**（文案：请直接调用 `git commit`）。不这么做的后果：`cd /other && git commit` / `git -C /other commit` 会用在 **A 仓**算出的暂存区 / 写集 / 验证结果放行 **B 仓**的提交。
+11. **解释器闭口 ⇒ 拒**：段首是**解释器 / 远程执行包装**（`bash` / `sh` / `zsh` / `dash` / `ksh` / `fish` / `eval` / `xargs` / `ssh` / `docker` / `podman` / `kubectl` / `nsenter` / `expect`，
+  以及能指定**远端 shell / 传输程序**的 `scp`（`-S`）/ `rsync`（`-e`/`--rsh`）—— 该参数值同样是「交给另一个程序执行的字符串」；
+  **引号包住的解释器名**（`"bash" -c …`）同样命中；可带前置 `sudo` / `env`）
+    且**本段**（含引号内；去引号后**分词**判 —— `-uf` 这类短选项簇同样识别）提到 `git commit` 或 force push ⇒ **拒**。理由：被解释的字符串对门禁**不可见**
+    （`bash -c 'git commit -m x'` / `ssh host 'git commit'` / `docker exec ctr git commit`）。
+    ⚠ 不误伤：`git commit -m docker`（包装词不在**段首**）/ `git commit -m "fix git commit hook"`（消息里的字面量）/
+    `bash script.sh`（段内没提 `git commit`）/ **跨段**字面量（`bash lint.sh && echo "git commit done"`）⇒ 放行。
+    残余：**脚本文件内**的提交、别名 / 函数 ⇒ 见 D9⑩。
 
-⚠ **间接提交不在门禁内**（`bash -c '…'` / `eval` / `xargs` / 别名 / 函数 / 包装脚本）⇒ 见 D9③⑥。
+⚠ **间接提交的残余面**：`bash -c` / `eval` / `xargs` / `ssh` / `docker exec` 已由**第 11 步**封闭；
+仍不在门禁内的是**脚本文件内容**（`bash x.sh` 里的 `git commit`）、别名 / 函数 ⇒ 见 D9③⑥⑩。
 
 ### D6 失败语义：fail-closed + 可诊断
 
@@ -155,7 +171,7 @@
 能力面投影：`capabilityBlock()`（`lib/delegate-core.ts:619-627`）按 ask/deny **计数**派生 ⇒ 新增 4 条 deny ⇒ build 的 shell 分类由 `allow-ask` 变 `allow-ask-and-deny`
 ⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。
 
-### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十二项）
+### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十三项）
 
 > 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。
 
@@ -163,16 +179,17 @@
 |---|---|---|
 | ① | **声明文件可被改写 / 被弱化** | 防「未验证就提交」；**不防**把 `verify_commands` 改成 `[["true"]]` 之类空壳（且能在**同一次提交**里改，因为 builder 写集含 `**`）；缓解：守卫**逐条相等**断言本仓声明的期望命令清单（不是「非空」） |
 | ② | **插件缺席 ⇒ 门禁不存在** | 防未验证提交；**不防**插件未加载 / `--standalone` / 未 `service restart`；缓解：层 2 真宿主验 + 文档登记（同 `role-gate` D5⑥） |
-| ③ | **间接提交不在门禁内** | 防顶层 `git commit`；**不防** `bash x.sh` / `$(...)` / `make commit` / 包装脚本；缓解：无（登记为已知面） |
+| ③ | **间接提交不在门禁内** | 防顶层 `git commit` 与 `$(...)`；**不防** `bash x.sh`（**脚本文件内**的提交）/ `make commit` / 自研包装脚本；缓解：D5⑪ 已封「解释器 + 串内提到 commit」的形态（`bash -c` / `eval` / `ssh` / `xargs` / `docker exec`）⇒ 残余只剩「脚本文件内容」 |
 | ④ | **其它仓库不受门禁** | 防本仓未验证提交；**不防**后端在 `project_dir` 指向的任意目录提交（无声明 ⇒ 放行）；缓解：声明文件随仓走 |
 | ⑤ | **非交互路径能力扩张** | ask ⇒ 硬拒 ⇒ 变成「门禁放行即可」；**不防**无人复核（无人可点 Always，也无人复核）；缓解：②（角色写集）+ ①（验证绿）两道门仍在 |
-| ⑥ | **命令解析固有盲区** | 防顶层 `git commit` 的常见变体；**不防**别名 / 函数 / `eval` / 极端写法（如把 `git` 藏进**引号或字符串**再交给解释器 ⇒ **未验证提交直接落地**）；缓解：解析口径按「精确相等 + 带值选项跳过 + `-` 前缀 token 全跳过」收窄，误伤面小 |
+| ⑥ | **命令解析固有盲区** | 防顶层 `git commit` 的常见变体（含**引号包住的命令词** `"git" commit`）；**不防**别名 / 函数 / **脚本文件内容**（`bash x.sh` 里的 `git commit` ⇒ 未验证提交直接落地）；缓解：解析口径按「精确相等 + 带值选项跳过 + `-` 前缀 token 全跳过」收窄，误伤面小；`bash -c` / `eval` / `ssh` / `xargs` / `docker exec` 已由 D5⑪ 封 |
 | ⑦ | **语义类缺陷验证命令覆盖不到** | 防「验证红」；**不防**措辞 / 治理面漂移 / 设计错误（测试不红）；缓解：**不豁免 push** 的人工确认 + 评审与验收 |
-| ⑧ | **saved approval 可能越过 D4 的 `deny`** | `git push *` 的持久化 allow 与 config `deny` 的优先级**无源码锚点**（宿主合并算法未查明）⇒ 曾点过 Always 的用户可能连 force-push 也不再被问；缓解：层 2 实测优先级（见 V1） |
+| ⑧ | **saved approval 可能越过 D4 的 `deny`** | 宿主的持久化授权与 config `deny` 的优先级**无源码锚点**（合并算法未查明）⇒ 曾点过 Always 的用户可能连 force-push 也不再被问；缓解：**工具层兜底**（`lib/push-gate.ts`，见 D4）⇒ 权限层放行与否都不影响结果 |
 | ⑨ | **后端的提交面宽于其 edit 面** | 门禁按 `decideWrite`（architect 类含治理面）；后端 edit 上限（`classAllowRoots`）不含治理面 ⇒ 治理面可被后端**提交**（但写不了）；缓解：scope 派生仍限制其写盘面 |
-| ⑩ | **字符串级判定的残余面** | 防顶层 `git commit` 的复合 / 替换 / 换仓 / 包装形态（D5⑧⑨⑩）；**不防**把 `git` 藏进**引号或字符串**再交给解释器的形态（`bash -c '…'` / `eval` / `xargs` / 别名 / 函数 / 包装脚本）；缓解：无（与 ③ 同源，登记为已知面） |
-| ⑪ | **门禁按「会话所在目录」判定，不是 shell 的 `workdir`** | 门禁的 `workRoot` 取自**会话的 location 目录** ⇒ 在**别的仓**（`workdir` 指向它）提交时，暂存区 / 写集 / 验证命令都落在**会话目录**上 ⇒ **一律拒**（fail-closed：`暂存区为空`）；缓解：无（口径如此：门禁只管会话所在仓） |
+| ⑩ | **字符串级判定的残余面** | 防顶层 `git commit` 的复合 / 替换 / 换仓 / 包装形态（D5⑧⑨⑩）+ 解释器形态（D5⑪）；**不防**别名 / 函数 / **脚本文件内容**（`bash x.sh` 里的 `git commit`）⇒ 未验证提交可能落地；缓解：无（与 ③ 同源，登记为已知面） |
+| ⑪ | **判定对象以 shell 的 `workdir` 为准**（`workdir` 缺失时回退会话目录） | 防「在别的仓提交却按会话目录判暂存区」；**不防**命令**内部**再换目录（`cd … && git commit` 已被 D5⑧ 拒）；⚠ **行为反转**：`workdir` 指向**无声明**的仓 ⇒ D2 三判据不设门禁 ⇒ **放行**（旧口径按会话目录判 ⇒ fail-closed 拒）；这是 D9④ 口径的推导结果，**有意为之**；缓解：`workRoot` 取 `workdir`、角色身份（`stateRoot`）仍取会话 ⇒ 两个根不混用 |
 | ⑫ | **heredoc 预处理是逐行状态机** | 防「正文被当成命令 / 位置 pathspec」；**不防**跨行引号串（引号状态不跨行跟踪）导致的误剥离 ⇒ 极端形态下可能**漏判**（过度剥离会隐藏真实命令段 ⇒ fail-open 方向）；缓解：形态极罕见；⚠ 另：**赋值名字带引号**（`"GIT_AUTHOR_NAME"="x" git commit`）按 shell 语义**不是赋值前缀**（实测 bash 报 `command not found` ⇒ 该命令根本不会执行 ⇒ 无绕过） |
+| ⑬ | **`git push origin +main`（`+refspec` 强推）两层都不拦** | D4 的 config 四形态与 `lib/push-gate.ts` 都只认**标志**（`--force*` / `-f*`）⇒ `+refspec` 落 `git push *: ask` ⇒ 交互会话可被 Allow always 放行；缓解：无（登记为已知口；补法 = 两层同时加 `+refspec` 识别，需另立 change） |
 
 ## 选项对比表
 
@@ -229,6 +246,6 @@
   **变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红；放行 `git commit …; git push --force …` ⇒ V7 红；放行 `git commit -m "$(…)"` ⇒ V7 红；放行 `git commit …; cat .env` ⇒ V7 红。
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
-- [ ] **V10 免宣称十二项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
+- [ ] **V10 免宣称十三项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
 - [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 四形态命中 `deny`、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [ ] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。
