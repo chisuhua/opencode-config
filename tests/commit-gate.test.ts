@@ -56,6 +56,39 @@ describe("D5 命令词与兜底扫描（引号命令词 / 不把字面量当命�
   test("`echo git commit` ⇒ 不命中（字面量不是命令词）", () => {
     expect(detectCommitInvocation("echo git commit").isCommit).toBe(false)
   })
+  // ⚠ 第 6 轮的两条 fail-open 回归
+  test("`git commit -F - <<'MSG' && git push --force origin main` ⇒ 拒（标记行**尾部**是命令）", () => {
+    const cmd = "git commit -F - <<'MSG' && git push --force origin main\nfix: x\nMSG"
+    const r = detectCommitInvocation(cmd)
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("单独成段")
+  })
+  test("`git commit -F - <<'MSG' ; git push --force origin main` ⇒ 拒（另一分隔符形态）", () => {
+    const cmd = "git commit -F - <<'MSG' ; git push --force origin main\nfix: x\nMSG"
+    expect(detectCommitInvocation(cmd).block).toBeTruthy()
+  })
+  test("`GIT_AUTHOR_NAME=\"x\" git commit -m \"y\"` ⇒ 识别为 commit（值带引号的赋值前缀）", () => {
+    const r = detectCommitInvocation('GIT_AUTHOR_NAME="x" git commit -m "y"')
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
+  test('`"sudo" git commit -m x` ⇒ 拒（引号包住的包装命令仍是包装命令）', () => {
+    const r = detectCommitInvocation('"sudo" git commit -m x')
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeTruthy()
+  })
+  test('`VAR="a b" timeout 10 git commit` ⇒ 拒（引号值 + 包装命令）', () => {
+    const r = detectCommitInvocation('VAR="a b" timeout 10 git commit')
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeTruthy()
+  })
+  test("`git commit -m x &\n` / `git commit -m x &;` ⇒ 拒（末位 `&` 后可跟纯分隔符）", () => {
+    expect(detectCommitInvocation("git commit -m x &\n").block).toContain("单独成段")
+    expect(detectCommitInvocation("git commit -m x &;").block).toContain("单独成段")
+  })
+  test("`git commit -m x &> /dev/null` ⇒ 放行（`&>` 是重定向，不是后台执行）", () => {
+    expect(detectCommitInvocation("git commit -m x &> /dev/null").block).toBeUndefined()
+  })
   test("`git commit -F - <<'MSG' … MSG` ⇒ 放行（heredoc 正文是数据）", () => {
     const cmd = "git commit -F - <<'MSG'\nfix: x\n\nbody\nMSG"
     const r = detectCommitInvocation(cmd)

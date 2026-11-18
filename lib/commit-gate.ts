@@ -97,12 +97,22 @@ const WRAPPER_VALUE_OPTIONS = new Set(["-u", "--user", "-g", "--group", "-p", "-
  */
 const COMPOUND_TOKENS = new Set(["&&", "||", ";", "|", "&", "\n"])
 
+/** 整串是否以**后台执行**（`&`）收尾（尾部可跟纯分隔符 `\n` / `;`）。 */
+function endsWithBackgroundAmp(tokens: Token[]): boolean {
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const v = tokens[i]!.value
+    if (v === "\n" || v === ";") continue
+    return v === "&"
+  }
+  return false
+}
+
 /** 这一段是否以**包装命令**开头（`sudo` / `env` / `timeout` / `exec` …；`VAR=val` 前缀不算）。 */
 function startsWithWrapper(tokens: Token[]): boolean {
   let i = 0
   while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
   const t = tokens[i]
-  return !!t && !t.quoted && WRAPPERS.has(t.value)
+  return !!t && WRAPPERS.has(t.value)
 }
 
 /**
@@ -112,7 +122,7 @@ function startsWithWrapper(tokens: Token[]): boolean {
 function gitWordIndex(tokens: Token[]): number {
   let i = 0
   while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
-  while (i < tokens.length && WRAPPERS.has(tokens[i]!.value) && !tokens[i]!.quoted) {
+  while (i < tokens.length && WRAPPERS.has(tokens[i]!.value)) {
     i++
     while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
     // 包装命令自己的带值选项（`sudo -u u` / `env -i`）
@@ -130,6 +140,8 @@ function gitWordIndex(tokens: Token[]): number {
 export interface Token {
   value: string
   quoted: boolean
+  /** 该 token 的**首字符**来自引号（`"sudo"` / `"FOO=bar"` ⇒ shell 里是**命令名**，不是赋值） */
+  leadingQuote?: boolean
 }
 
 /**
@@ -151,7 +163,8 @@ function stripHeredocs(command: string): string {
       i++
       continue
     }
-    out.push(`${line.slice(0, marker.start)} `)
+    // ⚠ 只删**标记本身**（`<<` / `<<-` / 结束标记词）⇒ 标记行**尾部**的命令（`&& git push --force …`）必须保留
+    out.push(`${line.slice(0, marker.start)} ${line.slice(marker.end)}`)
     i++
     const delim = marker.delim
     while (i < lines.length) {
@@ -164,7 +177,7 @@ function stripHeredocs(command: string): string {
 }
 
 /** 在一行里找 heredoc 标记（**引号外**的 `<<` / `<<-` + 结束标记词）；找不到 ⇒ null。 */
-function findHeredocMarker(line: string): { start: number; delim: string } | null {
+function findHeredocMarker(line: string): { start: number; end: number; delim: string } | null {
   let quote: string | null = null
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]!
@@ -202,7 +215,7 @@ function findHeredocMarker(line: string): { start: number; delim: string } | nul
       j += m[0].length
     }
     if (!delim) return null
-    return { start: i, delim }
+    return { start: i, end: j, delim }
   }
   return null
 }
@@ -213,6 +226,7 @@ export function tokenizeCommand(command: string): Token[] {
   let cur = ""
   let quoted = false
   let has = false
+  let leadQuote = false
   let quoteChar = ""
   for (let i = 0; i < command.length; i++) {
     const ch = command[i]!
@@ -227,6 +241,7 @@ export function tokenizeCommand(command: string): Token[] {
     if (ch === '"' || ch === "'") {
       quoteChar = ch
       quoted = true
+      if (!has) leadQuote = true // ⚠ 首字符来自引号 ⇒ shell 里是命令名，不是赋值前缀
       has = true
       continue
     }
@@ -241,10 +256,11 @@ export function tokenizeCommand(command: string): Token[] {
         cur = ""
         has = false
       } else if (has) {
-        out.push({ value: cur, quoted })
+        out.push({ value: cur, quoted, leadingQuote: leadQuote })
         cur = ""
         quoted = false
         has = false
+        leadQuote = false
       }
       // 跳过操作符本体与其目标（`>f` / `> f` / `2>&1` / `>>f` / `&>f`）
       i++
@@ -259,22 +275,45 @@ export function tokenizeCommand(command: string): Token[] {
       if (i === start) i-- // 无目标（如 `>&2` 已在上一步吃掉）⇒ 回退一格，避免跳过下一个字符
       continue
     }
-    if (ch === "\n") {
+    if (ch === "&" && command[i + 1] === ">") {
+      // `&>` / `&>>` = **stdout+stderr 重定向**（不是后台执行）⇒ 连同目标一起剥离
       if (has) {
-        out.push({ value: cur, quoted })
+        out.push({ value: cur, quoted, leadingQuote: leadQuote })
         cur = ""
         quoted = false
         has = false
+        leadQuote = false
+      }
+      i += 2 // 跳过 `&>`
+      while (i < command.length && /[0-9&>]/.test(command[i]!) && command[i] !== "&") i++
+      if (command[i] === "&") {
+        i++
+        while (i < command.length && /[0-9]/.test(command[i]!)) i++
+      }
+      while (i < command.length && /\s/.test(command[i]!)) i++
+      const start = i
+      while (i < command.length && !/\s/.test(command[i]!) && command[i] !== ";" && command[i] !== "|" && command[i] !== "&") i++
+      if (i === start) i--
+      continue
+    }
+    if (ch === "\n") {
+      if (has) {
+        out.push({ value: cur, quoted, leadingQuote: leadQuote })
+        cur = ""
+        quoted = false
+        has = false
+        leadQuote = false
       }
       out.push({ value: "\n", quoted: false })
       continue
     }
     if (ch === ";" || ch === "&" || ch === "|") {
       if (has) {
-        out.push({ value: cur, quoted })
+        out.push({ value: cur, quoted, leadingQuote: leadQuote })
         cur = ""
         quoted = false
         has = false
+        leadQuote = false
       }
       let meta = ch
       if ((ch === "&" || ch === "|") && command[i + 1] === ch) {
@@ -288,22 +327,29 @@ export function tokenizeCommand(command: string): Token[] {
     }
     if (/\s/.test(ch)) {
       if (has) {
-        out.push({ value: cur, quoted })
+        out.push({ value: cur, quoted, leadingQuote: leadQuote })
         cur = ""
         quoted = false
         has = false
+        leadQuote = false
       }
       continue
     }
     cur += ch
     has = true
   }
-  if (has) out.push({ value: cur, quoted })
+  if (has) out.push({ value: cur, quoted, leadingQuote: leadQuote })
   return out
 }
 
+/**
+ * 该 token 是不是 `VAR=val` **赋值前缀**。
+ * ⚠ **值可带引号**（`GIT_AUTHOR_NAME="x" git commit` 是赋值）但**名字不可**（`"FOO=bar" git commit`
+ * 在 shell 里是**命令名**）⇒ 用 `leadingQuote` 判「名字是否被引号包住」。
+ */
 function isVarAssignment(token: Token): boolean {
-  return !token.quoted && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token.value)
+  if (token.leadingQuote) return false
+  return /^[A-Za-z_][A-Za-z0-9_]*=/.test(token.value)
 }
 
 /**
@@ -485,8 +531,8 @@ export function detectCommitInvocation(command: string): CommitInvocation {
   if (nonEmpty.length === 0) return { isCommit: false }
 
   // ⚠ 末位 `&` ⇒ **后台执行**（退出码不再反映提交结果 ⇒ 可诊断性受损）⇒ 拒
-  const last = tokens[tokens.length - 1]
-  if (last && !last.quoted && last.value === "&") {
+  //   （`&` 之后可跟纯分隔符：`git commit -m x &` / `… &\n` / `… &;` 都要拒 ⇒ 跳过尾部的 `\n` / `;` 再看）
+  if (endsWithBackgroundAmp(tokens)) {
     return {
       isCommit: true,
       block:
@@ -531,7 +577,7 @@ function commitInSegment(tokens: Token[]): CommitInvocation {
     }
   }
   // ⑩ 包装命令（`sudo` / `env` / `timeout` …）⇒ 拒（不是「跳过」，见 ADR D5⑩）
-  const wrapped = tokens.slice(0, i).find((t) => !t.quoted && WRAPPERS.has(t.value))
+  const wrapped = tokens.slice(0, i).find((t) => WRAPPERS.has(t.value))
   if (wrapped) {
     return {
       isCommit: true,

@@ -12,6 +12,7 @@
 | 1 | critic（arch） | **REJECT**（3 BLOCKER + 8 SHOULD_FIX + NITS） | 全部采纳：B1 公式与单源冲突（改调 `decideWrite`）；B2 `-a`/`--only`/`--include` 绕过（加提交形态闭口）；B3 落点清单缺项（14 → 18 点）；SHOULD_FIX 逐条（回滚路径 / D4 理由更正 / D9⑧ saved approval / 退出码语义 / 解析口径可执行化 / D9① 守卫逐条相等 / 内容锚点 / Verification 内联 / 层 1a 突变 / 两根统一 / 身份链 fallback） |
 | 2 | critic（arch，复审） | **REJECT**（B1 已闭合；B2/B3 未闭合 + 1 条新 BLOCKER） | 全部采纳：B2 枚举补齐（位置 pathspec / `-o` / `-i`）+ 解析兜底 + 复合命令闭口；B3 补 3 个落点（父篇修订行与 `:43` 行 / `tests/role-exemptions.test.ts` D5② / MAD §3.4 纪律句与残留句）⇒ 18 → **20 点**；新 BLOCKER-3 = 后端 brief 规则与 `docs/dual-session-delegation.md` 的残留（D8 点 19/20） |
 | 3 | critic（arch，复审；**用户已明确批准**） | **REJECT**（上轮 3 条 BLOCKER **全闭合**；本轮新 diff 引入 **1 条新 BLOCKER**） | 新 BLOCKER = 复合命令「尾随段放行」与 D5 的口径冲突：`git commit -m x; git push --force origin main` **整串以 `git commit ` 开头** ⇒ 命中 `allow` ⇒ push 的 `ask` / force-push 的 `deny` **同时失效**（**搭便车**）。修：见 §2.1 |
+| 6 | critic（arch，复审；**用户已明确批准**，只验闭合） | **REJECT**（轮 5 的回归 + SHOULD_FIX 已闭；但本轮 diff 引入 **2 条 fail-open 回归**） | ① `stripHeredocs` 把**标记行尾部**的命令整段丢弃 ⇒ `git commit -F - <<'MSG' && git push --force …` 被判成单段 ⇒ **force-push 搭便车打穿 D4 的 deny**；② 兜底收窄后 `GIT_AUTHOR_NAME="x" git commit`（**值带引号**的赋值前缀）**完全不被识别** ⇒ 门禁整条不触发 ⇒ 未验证提交静默落地。修法见 §2.4 |
 | 5 | critic（arch，复审；**用户已明确批准**，只验闭合） | **REJECT**（轮 4 三条 **全闭合**；但新 diff 引入 **1 条回归 BLOCKER** + 3 条 SHOULD_FIX） | 回归 BLOCKER = 段分隔符 token **泄漏**进单段判定 ⇒ `git commit -m x;` 这种等价写法被误拒（且文案错）。SHOULD_FIX = 兜底扫描把 heredoc 正文 / `echo git commit` 当命令（假阳性）+ **`"git" commit` 完全绕过门禁**（fail-open）+ 代价段未对齐。修法见 §2.3 |
 | 4 | critic（arch，复审；**用户已明确批准**，只验闭合） | **REJECT**（轮 3 的**字面三形态**已闭合；但**同类面**未闭 —— 3 条新 BLOCKER） | B1 白名单把带 `ask` 档位的命令当「无害」（`cat/head/tail *.env`、`git branch -D`、`git config` 写形态）；B2 **引号内命令替换**（`git commit -m "$(git push --force …)"`）打穿 force-push `deny`；B3 **`cd` 在纯报告清单里** ⇒ 换仓后判定对象错位。修法 = **删掉白名单**（见 §2.2） |
 
@@ -84,13 +85,24 @@
 | SHOULD_FIX ③ / NIT：代价段与实现对齐 | D5⑧ 代价段补三条（尾随报告段被拒 / 消息含 `$(` 被拒 / 只判顶层字符串）；D9 表行序修正为单调 | — |
 | 附带发现（登记为 D9⑪） | 门禁的 `workRoot` 取**会话 location 目录**，**不是** shell 的 `workdir` ⇒ 在别的仓提交 ⇒ 暂存区判定落在会话目录 ⇒ 一律拒（fail-closed） | 层 2：探针仓提交在本会话里被拒为「暂存区为空」 |
 
+### 2.4 轮 6 的修法（两条 fail-open 回归 + 4 条 SHOULD_FIX/NIT）
+
+| 面 | 修法 | 证据 |
+|---|---|---|
+| **BLOCKER ①**：`stripHeredocs` 丢弃标记行**尾部**的命令 ⇒ heredoc + 搭便车绕过 D5⑧ | 只删**标记本身**（`<<` / `<<-` / 结束标记词），**标记行尾部保留** | 层 1b 2 条（`… <<'MSG' && git push --force …` / `… <<'MSG' ; git push --force …` ⇒ 拒）；**层 2 P21（活会话）**：同一串 ⇒ `Permission denied: commit-gate: \`git commit\` 必须**单独成段**…` |
+| **BLOCKER ②**：`GIT_AUTHOR_NAME="x" git commit`（**值带引号**）不被识别 ⇒ 门禁不触发 ⇒ 静默落地 | `Token` 加 `leadingQuote`（区分「名字被引号包住」与「值被引号包住」）；`isVarAssignment` 改为「名字不可带引号、**值可带**」；**包装命令按值判定**（`"sudo"` 仍是 sudo） | 层 1b 3 条（引号值 VAR ⇒ 识别为 commit / `"sudo" git commit` ⇒ 拒 / `VAR="a b" timeout 10 git commit` ⇒ 拒）；**层 2 P22（活会话）**：`GIT_AUTHOR_NAME="x" git commit -m "y"` ⇒ `commit-gate: 暂存区为空 ⇒ 请先 git add 再提交` ⇒ **门禁已触发**（修复前不会触发） |
+| SHOULD_FIX ①：末位 `&` 可被一个换行 / 分号绕过 | `endsWithBackgroundAmp`：从尾部跳过 `\n` / `;` 再看是否 `&` | 层 1b 1 条（`… &\n` / `… &;` ⇒ 拒，文案含「单独成段」） |
+| SHOULD_FIX ②：`&>` 被当成后台执行（合法提交被误拒 + 文案说错） | 分词器新增 `&>` / `&>>` 分支（stdout+stderr 重定向）⇒ 连同目标剥离 | 层 1b 1 条（`git commit -m x &> /dev/null` ⇒ 放行） |
+| SHOULD_FIX ③：ADR D5 步骤表缺 heredoc 剥离规则 | D5 新增**第 0 步**（正文是数据；**标记行尾部仍是命令**） | — |
+| SHOULD_FIX ④ / NIT：代价③ 与 D5③ 自相矛盾、D9 表行序、Status 行陈旧、heredoc 逐行解析边界 | 代价③ 改写；D9 表行序修正 + 新增 ⑫（逐行状态机边界）；Status 行在收口时改为**只留当前状态** | — |
+
 ## 3. 实施产物（builder）
 
 | 落点 | 内容 |
 |---|---|
 | `lib/commit-gate.ts`（新增） | D5 命令识别（分词 / 全局选项 / 子命令精确匹配 / 闭口 / 复合命令 / fail-closed）+ D2 三判据组合 + 声明读取 |
 | `plugins/commit-gate.ts`（新增） | 接线：shell 钩子 → 会话 → `canonicalRoot` → 声明 → 暂存状态 → 角色（主会话=身份链 / 后端=`role_class`）→ `decideWrite` → 验证命令 → 抛错 |
-| `tests/commit-gate.test.ts`（新增） | 层 1b **92 条**：命中矩阵 8 / 换仓与包装（D5⑩）15 / 命令替换（D5⑨）9 / 误伤矩阵 / 提交形态闭口 12 / 必须单独成段（D5⑧）17 / fail-closed / 分词 / 三判据 / 声明 |
+| `tests/commit-gate.test.ts`（新增） | 层 1b **100 条**：命中矩阵 8 / 换仓与包装（D5⑩）15 / 命令替换（D5⑨）9 / 误伤矩阵 / 提交形态闭口 12 / 必须单独成段（D5⑧）17 / fail-closed / 分词 / 三判据 / 声明 |
 | `opencode.jsonc` | build shell：`git commit*` ⇒ **allow**；force-push 四形态 ⇒ **deny**；`git push` 仍 **ask** |
 | `prompts/build.md` | §输出 / 点名条款 / 角色表 / 角色列表 / 增强层 commit 契约 / `capability:build` 块（`allow-ask` ⇒ `allow-ask-and-deny`，行数不变） |
 | `docs/MULTI-AGENT-DESIGN.md` | 版本摘要 / §2.6 / §2.8.7 D5② / §3.4（标题·理由句·纪律句·残留句）/ §4.4.1 / §4.4.3 |
@@ -104,7 +116,7 @@
 ## 4. 验证
 
 ```bash
-bun test tests/                            # 784 pass / 0 fail（改造前 690）
+bun test tests/                            # 792 pass / 0 fail（改造前 690）
 bash scripts/check-upstream-anchors.sh     # OK（23/23）
 openspec validate role-aware-permissions --strict  # valid
 ```
@@ -150,6 +162,8 @@ openspec validate role-aware-permissions --strict  # valid
 | P17 门禁（轮 5 · 回归修复）：`git commit -m "semi probe";`（末位 `;`） | 放行（末位 `;` 只是空命令） | ✅ 放行；HEAD 推进（`bff5e6d semi probe`） |
 | P18 门禁（轮 5 · 引号命令词）：`"git" commit -m "quoted probe"`（探针仓声明 `[["false"]]`） | 拒（红 ⇒ 拒） | ✅ `commit-gate: 验证命令失败 ⇒ 拒绝提交：$ false`；HEAD 未推进（`703c399 init`）⇒ 修复前该串会**静默落地**（未验证提交） |
 | P19 门禁（**本交互会话 · 插件已加载**）：① `cd <dir> && git commit -m x` | 拒（复合） | ✅ `Permission denied: commit-gate: \`git commit\` 必须**单独成段**…`（**这条是我自己的调用被拦** —— `cd … &&` 前缀让整串成了复合命令） |
+| P21 门禁（轮 6 · 活会话）：`git commit -F - <<'MSG' && git push --force origin main`（heredoc + 搭便车） | 拒 | ✅ `Permission denied: commit-gate: \`git commit\` 必须**单独成段**…`（**形态闭口在声明检查之前** ⇒ 与仓无关） |
+| P22 门禁（轮 6 · 活会话）：`GIT_AUTHOR_NAME="x" git commit -m "y"` | 识别为 commit ⇒ 门禁触发 | ✅ `commit-gate: 暂存区为空 ⇒ 请先 git add 再提交` ⇒ 修复前该串**不触发门禁**（未验证提交静默落地） |
 | P20 门禁（**本交互会话**）：② `git commit -F - <<'MSG' … MSG`（**单段**） | 放行 | ✅ 放行；门禁**先跑了仓库声明的验证命令**（`bun test tests/` 785 pass + anchors 23/23）才放行 ⇒ HEAD 推进（`5c152ee`）⇒ 真宿主上的「验证 ⇒ 放行」闭环已在本会话跑到 |
 
 ⚠ P10 的假阳性是**层 2 才能发现的坑**（层 1b 用例当时按「复合命令一律拒」写 ⇒ 与实现同源 ⇒ 无判别力）。
@@ -174,5 +188,6 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）
-- critic：**5 轮**（REJECT ×5：轮 1 三 BLOCKER / 轮 2 两 BLOCKER + 一新增 / 轮 3 上轮全闭 + 一新增 / 轮 4 字面三形态全闭 + 同类面 3 条 / 轮 5 三条全闭 + 一回归）
-- 复审额度：轮 3 / 轮 4 / 轮 5 均经**用户明确批准**；若轮 5 的修法需再次复审（轮 6），**须再次取得用户批准**
+- critic：**6 轮**（REJECT ×6：轮 1 三 BLOCKER / 轮 2 两 BLOCKER + 一新增 / 轮 3 上轮全闭 + 一新增 / 轮 4 字面三形态全闭 + 同类面 3 条 / 轮 5 三条全闭 + 一回归 / 轮 6 回归已闭 + **两条 fail-open 回归**）
+- 复审额度：轮 3 – 轮 6 均经**用户明确批准**；若轮 6 的修法需再次复审（轮 7），**须再次取得用户批准**
+- ⚠ **规律**：每轮都能抓到**新引入**的绕过面 ⇒ 收紧口径的每一步都带来新的边界 ⇒ 收口前**必须**有一轮「只验闭合」确认
