@@ -219,6 +219,8 @@
 ### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十六项）
 
 > 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。
+> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑯`，由该列**派生**，**不在表里另加列**）。
+> **三处载体**（可指认，不是「整文件出现过」）：① 本文 D9 表；② 对应 change 的 `proposal.md` 的**行首标题** `## D9 十六项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**）；③ `docs/MULTI-AGENT-DESIGN.md` **§2.8.8** 索引段。后两处一行一项，只写「标识 + 本表标题原文 + 指回本文」，**不复述**本表的决策列（避免第二真源）。
 
 | # | 免宣称 | 防什么 / 不防什么 / 缓解 |
 |---|---|---|
@@ -237,7 +239,7 @@
 | ⑬ | **命令行之外的强推不可见** | Rev 2 已把 `+refspec` / `--mirror`（含 git 长选项缩写）与带引号形态纳入口径（D4，V16）；残余 = 强推由 **git 配置**驱动时命令行里没有强推 token（`remote.<n>.push` 的 refspec 里带 `+`、`remote.<n>.mirror=true`；`push.default` 只选 refspec、本身不产生 `+`）⇒ 门禁看不到 refspec；缓解：无（要读仓库 git 配置才能判，且配置本身不受门禁约束；登记为已知面） |
 | ⑭ | **删除类 push 未纳入强推口径**（`--delete` / `-d` / `:refspec` / `--prune`） | 它们**删除**远端 ref（不可逆，但不是「重写历史」）⇒ 落在 `git push *` = `ask` ⇒ 人工确认仍在；**不防** saved approval 越过 ask（与 D9⑧ 同一机制）⇒ 同一风险面、不同语义；缓解：无（用户裁决本批只收 `+refspec` / `--mirror`） |
 | ⑮ | **命令词的运行时 / 转义表还原不可静态判定** | Rev 3 已封「引用 / 转义还原」（`"git"` / `g\it` / `$'git'` / `$"git"` / `git c\ommit`）；残余 = ① **参数展开**（`$CMD commit` / `${CMD} commit`）的运行时值不可见；② **转义序列表**（ANSI-C `$'\x67it'` ⇒ bash 解码成 `git`，逐层还原拿不到）⇒ 未验证提交可能落地；缓解：无（读 `process.env` 看似可行，但 shell 可用局部赋值 / `export` 覆盖 ⇒ 静态不可靠；登记为已知面）。⚠ **后果类不止「单条命令词不可识别」**：引号状态判错时后果是**行吞** —— 预处理把后续行当 heredoc 正文**整行删除**（有实证）、或分词器把后续行吞进**未闭合引用**（同类机理推定）⇒ **其后的真命令完全不可见**（比漏判当条更严重，因为被漏掉的是**后续**命令）。实测一例（Rev 2 实施期）：`$'…'` 分支多跳一格 ⇒ `cat <<EOF $'` 的标记行被判成引号平衡 ⇒ heredoc 吞掉含真命令的行 ⇒ fail-open（已修 + 回归用例 + 变红 `C-H2b`）⇒ **判据要按「漏掉其后命令」设计，不能只测单条命令词** |
-| ⑯ | **引号包住的 `git` 子命令走 fail-closed 误拒** | `git "commit" -m x` / `git "push" origin main` / `git -c k=v "commit"` 在 shell 里**去引号后照常执行**，而 `parseGitSubcommandIndex` 默认拒绝 quoted 子命令（Rev 3 还原的是**词值**，**子命令槽位仍按 `quoted` 形态标记拒绝** —— `allowQuotedSub` 默认 `false`；与词值还原无关，别去改 tokenizer）⇒ 门禁判「无法解析 `git` 的子命令 ⇒ 拒绝」⇒ **误拒**（实测含 `git "status"` 一类非提交命令同样被拒）；方向 **fail-closed**（不会让未验证提交落地）⇒ 记作已知误拒面，不记作漏洞；缓解：无（放开子命令会同时放宽「引用包住 / 解释器闭口」的判定面 ⇒ 需单独裁决，另立）。⚠ push 侧不受此影响：`detectForcePush` 用 `allowQuotedSub = true` ⇒ `git "push" --force` 仍被 push-gate 拦。**三处登记**：AC = `openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/proposal.md` 的 Out of Scope（指向本行）；测试注释 = `tests/commit-gate.test.ts` 的「D9⑯ 钉证」用例（断言当前是 fail-closed 拒绝，不是需求）；主题文档 = `docs/MULTI-AGENT-DESIGN.md` §2.8.7 的一句 pointer |
+| ⑯ | **引号包住的 `git` 子命令走 fail-closed 误拒** | `git "commit" -m x` / `git "push" origin main` / `git -c k=v "commit"` 在 shell 里**去引号后照常执行**，而 `parseGitSubcommandIndex` 默认拒绝 quoted 子命令（Rev 3 还原的是**词值**，**子命令槽位仍按 `quoted` 形态标记拒绝** —— `allowQuotedSub` 默认 `false`；与词值还原无关，别去改 tokenizer）⇒ 门禁判「无法解析 `git` 的子命令 ⇒ 拒绝」⇒ **误拒**（实测含 `git "status"` 一类非提交命令同样被拒）；方向 **fail-closed**（不会让未验证提交落地）⇒ 记作已知误拒面，不记作漏洞；缓解：无（放开子命令会同时放宽「引用包住 / 解释器闭口」的判定面 ⇒ 需单独裁决，另立）。⚠ push 侧不受此影响：`detectForcePush` 用 `allowQuotedSub = true` ⇒ `git "push" --force` 仍被 push-gate 拦。**三处登记**：AC = `openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/proposal.md` 的 Out of Scope（指向本行）；测试注释 = `tests/commit-gate.test.ts` 的「D9⑯ 钉证」用例（断言当前是 fail-closed 拒绝，不是需求）；主题文档 = `docs/MULTI-AGENT-DESIGN.md` §2.8.8 索引段（该行）—— ⚠ 本行登记时写作 §2.8.7，索引段最终落在 **§2.8.8**（§2.8.7 的标题与判据真源是 `ADR-role-aware-permissions` D5，不混入） |
 
 ## 选项对比表
 
@@ -300,6 +302,7 @@
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
 - [ ] **V10 免宣称十六项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
+  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。⚠ **本项的第二子句（D5② 旧措辞三处同批改）当前仍红**：`openspec/changes/role-aware-permissions/proposal.md` 的 D5② 行仍是旧措辞「不在范围」⇒ 见 change `commit-gate-d9-three-place-registration` 的 Out of Scope ③（另案）。
 - [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [ ] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。
 - [x] **V13 heredoc 跨行引号 ⇒ 不得漏判**：`bash -c "line1\n<<'EOF'\n" ; git commit -m x` ⇒ **拒**（理由应为「单独成段」/解释器闭口，**不是**「暂存区为空」）。**变红**：退回逐行 `stripHeredocs` ⇒ V13 红。
