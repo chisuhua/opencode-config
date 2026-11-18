@@ -107,14 +107,14 @@ ADR 自己承诺 D9 每项在**三处**登记，V10 又把「删掉任一处登�
 |---|---|---|---|
 | AC1 | **三处齐全**：AC 面（各小节**并集**）/ 测试文件 JSDoc 头 / MAD §2.8.8 各自覆盖 ADR 派生的**全部 id**（缺项数 = 0） | 结构 | V10 |
 | AC2 | **行形态 + 标题保真**：`- **D9①**` 后**必须**含 ADR 标题原文（去反引号 + 空白归一后比较）⇒ 「只写编号」「写 `……`」「标题走样」三种都红 | 结构 | metis 歧义 2 |
-| AC3 | **期望集派生**：ADR 恰 16 行、id 唯一、标题非空；守卫**代码里不出现**任何十六项的 id 字面量数组（断言 `const ids = [...]` 形态不存在 ⇒ 防写死） | 结构 | metis 建议 2 |
+| AC3 | **期望集派生**：ADR 恰 16 行、id 唯一、标题非空；**「不写死」由 AC4 的判别力用例证明**（若代码写死十六项，合成 ADR 加第 ⑰ 行后不会报「缺 D9⑰」⇒ AC4 必红）—— ⚠ **不**声称「代码里没有 id 字面量数组」（本文件 JSDoc 头本来就含十六项，自扫描会自匹配；修正自 critic 的 SHOULD_FIX） | 结构 | metis 建议 2 + critic |
 | AC4 | **加第 ⑰ 行 ⇒ 必红**：在**合成 ADR 文本**上加一行 `\| ⑰ \| **新增项** \| … \|` ⇒ 判定函数报 `D9⑰ 未登记`（**判别力**用例，「新增项忘登记立刻红」的唯一证据） | 结构 | metis 建议 2 |
 | AC5 | **区段作用域**：散文里的散落命中**不算** —— 删掉 MAD §2.8.8 的某行后，即使 MAD 别处（`:728` / `:733`）、`tests/commit-gate.test.ts` 的 D9⑯ describe、归档 proposal 的 Out of Scope 文句仍在 ⇒ **仍红** | 结构 | metis 建议 3 |
 | AC6 | **归档韧性**：fixture 两形态（`changes/<n>/proposal.md` 与 `changes/archive/<date>-<n>/proposal.md`）都绿 ⇒ 本 change 归档当天守卫**不会断** | 结构 | metis 建议 1 |
 | AC7 | **负向词**：登记行内出现 `TODO/待补/待定/不登记/不适用/不做` ⇒ 红；MAD 索引段出现 `缓解：` ⇒ 红（防复述 ADR 决策列 ⇒ 第二真源） | 结构 | metis 建议 3 |
 | AC8 | **唯一性**：同一 id 在并集里 2 次 ⇒ 红 | 结构 | metis 边界 |
 | AC9 | **不空转**：`bun test tests/commit-gate-d9-registration.test.ts` 单独全绿，且该文件 **0 `skip` / 0 `todo`** | 结构 | metis 建议 AC-L |
-| AC10 | **ADR 改动面**：`git diff <base> -- docs/adr/ADR-commit-verification-gate.md` 只有 **3 个 hunk / 4 处增改**（`:221` 前言 **+2 句**、`:240`（⑯ 行）**改 1 句**、`:302`（V10）**+1 句**）；16 行 `#` 列**零差异**；决策列**仅 ⑯ 行一处**（主题文档指针 §2.8.7 → §2.8.8 + 沿革注）⇒ ⚠ **不得**再写成「决策列零差异」（⑯ 行本身就是许可落点之一 —— 修正自 oracle 的 finding） | 结构 | metis 建议 5 + oracle |
+| AC10 | **ADR 改动面（可机械复核）**：`git diff --numstat 65895a5 -- docs/adr/ADR-commit-verification-gate.md` = **`9\t2`**（**4 个 hunk**：`:15` 修订行 +1 句溯源、`:221` 前言 +6 行（标识口径 / 三处载体 / ①②③ / 复述禁令）、`:240`（⑯ 行）改 1 句、`:302`（V10）+1 行）；**D9 表仅 ⑯ 行一处被改**（其余 15 行零差异），且 ⑯ 行改的是同一单元格里的「登记」句 ⇒ **决策内容（防什么 / 不防什么 / 缓解）逐字未变** | 结构 | metis 建议 5 + oracle + critic |
 | AC11 | **证据包**：7 条突变的「突变描述 + 红输出 + 复原 + 复跑全绿」落 `.rddf/reviews/commit-gate-d9-registration-mutations.md` | 结构 | 本仓 AC8 先例 |
 | AC12 | **回归**：`bun test tests/` 全绿；`bash scripts/check-upstream-anchors.sh` 全绿；`openspec validate <name> --strict` valid；**§2.8.7 的 D5② 锚点句逐字未变**（由 **diff 形状**保证：MAD 只做「§2.8.7 末尾插一行 pointer + 新增 §2.8.8」的纯插入；⚠ `tests/config-guards.test.ts:135` 只是**存在性 pin**，对 §2.8.7 其余句子**无判别力** —— 措辞修正自 oracle） | 结构 | `config-guards:135` + oracle |
 | AC13 | **人工核（机器不判）**：十六项的**语义**（该标题是否仍准确描述免宣称面）由 **oracle 1 轮**逐项核 ⇒ 16 行 verdict 落证据包；机器只判「标识在规范位置 + 标题保真 + 不复述决策列」 | 人工 | metis 建议 10 |
