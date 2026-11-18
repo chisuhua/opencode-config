@@ -115,9 +115,9 @@ ADR 自己承诺 D9 每项在**三处**登记，V10 又把「删掉任一处登�
 | AC8 | **唯一性**：同一 id 在并集里 2 次 ⇒ 红 | 结构 | metis 边界 |
 | AC9 | **不空转**：`bun test tests/commit-gate-d9-registration.test.ts` 单独全绿，且该文件 **0 `skip` / 0 `todo`** | 结构 | metis 建议 AC-L |
 | AC10 | **ADR 改动面（可机械复核）**：`git diff --numstat 65895a5 -- docs/adr/ADR-commit-verification-gate.md` = **`9\t2`**（**4 个 hunk**：`:15` 修订行 +1 句溯源、`:221` 前言 +6 行（标识口径 / 三处载体 / ①②③ / 复述禁令）、`:240`（⑯ 行）改 1 句、`:302`（V10）+1 行）；**D9 表仅 ⑯ 行一处被改**（其余 15 行零差异），且 ⑯ 行改的是同一单元格里的「登记」句 ⇒ **决策内容（防什么 / 不防什么 / 缓解）逐字未变** | 结构 | metis 建议 5 + oracle + critic |
-| AC11 | **证据包**：7 条突变的「突变描述 + 红输出 + 复原 + 复跑全绿」落 `.rddf/reviews/commit-gate-d9-registration-mutations.md` | 结构 | 本仓 AC8 先例 |
+| AC11 | **证据包**：**7 条**必需突变的「突变描述 + 红输出 + 复原 + 复跑全绿」落 `.rddf/reviews/commit-gate-d9-registration-mutations.md`（另有 **M8** 补充 = oracle finding ① 的载体改名锚 ⇒ 实际 **8 条**；校准自 verifier L3） | 结构 | 本仓 AC8 先例 |
 | AC12 | **回归**：`bun test tests/` 全绿；`bash scripts/check-upstream-anchors.sh` 全绿；`openspec validate <name> --strict` valid；**§2.8.7 的 D5② 锚点句逐字未变**（由 **diff 形状**保证：MAD 只做「§2.8.7 末尾插一行 pointer + 新增 §2.8.8」的纯插入；⚠ `tests/config-guards.test.ts:135` 只是**存在性 pin**，对 §2.8.7 其余句子**无判别力** —— 措辞修正自 oracle） | 结构 | `config-guards:135` + oracle |
-| AC13 | **人工核（机器不判）**：十六项的**语义**（该标题是否仍准确描述免宣称面）由 **oracle 1 轮**逐项核 ⇒ 16 行 verdict 落证据包；机器只判「标识在规范位置 + 标题保真 + 不复述决策列」 | 人工 | metis 建议 10 |
+| AC13 | **人工核（机器不判）**：十六项的**语义**（该标题是否仍准确描述免宣称面）由 **oracle 1 轮**逐项核 ⇒ **16 行 verdict 落审查记录 §4**（`-.rddf/reviews/commit-gate-d9-three-place-registration-review.md`；证据包只收变红三件套，不收 verdict —— 校准自 verifier L4）；机器只判「标识在规范位置 + 标题保真 + 不复述决策列」 | 人工 | metis 建议 10 |
 
 **AC 的「取红 / 钉住」分档**（本仓先例要求区分）：
 
@@ -145,7 +145,7 @@ ADR 自己承诺 D9 每项在**三处**登记，V10 又把「删掉任一处登�
 |---|---|---|
 | ① | **十六项「防什么 / 不防什么 / 缓解」的语义正确性**（机判） | 机器判不了语义 ⇒ 写成机判就是制造「宣称 ≠ 实现」⇒ 交 **oracle 人工核**（AC13） |
 | ② | **三处互相复制同一句错话**的检测 | 不可机判 ⇒ 缓解 = 只写「标题 + pointer」、禁复述决策列（AC7）⇒ 把漂移面压到最小 |
-| ③ | **V10 的第二子句**（`+ D5② 旧措辞三处同批改`） | `openspec/changes/role-aware-permissions/proposal.md:119` 仍是旧措辞「不在范围」（MAD `:491` 与 `tests/role-exemptions.test.ts:9-11` 已改）⇒ **属另一 change 的 proposal** ⇒ 本 change 只登记：改法 = 把该行改成与 MAD 同措辞并加「已由 ADR-commit-verification-gate D5 部分闭合」。⇒ **结论：V10 的「十六项三处登记」子句由本 change 闭；「D5② 旧措辞」子句仍红，另案** |
+| ③ | ~~**V10 的第二子句**（`+ D5② 旧措辞三处同批改`）~~ **已于 2026-11-18 闭合** | 用户裁决「一并修」：`openspec/changes/role-aware-permissions/proposal.md` 的 D5② 行已改为「已由 `docs/adr/ADR-commit-verification-gate.md` D5 部分闭合」措辞（与 MAD §2.8.7、`tests/role-exemptions.test.ts` 文件头**三处同措辞**）⇒ **V10 两个子句现在都闭合** |
 | ④ | 改造 / 抽公共 `AC23` 守卫（`tests/role-exemptions.test.ts`） | 不同病、不混批。⚠ 顺带登记的**已知隐患**：它的 `PLACES` 把 `openspec/changes/role-aware-permissions/proposal.md` **写死** ⇒ 该 change 一归档守卫即断（AC6 只保证**本**守卫有归档韧性） |
 | ⑤ | `D8` 的 20 点守卫迁移 / 通用登记框架 / 代码生成器 | 过度设计（metis AI-slop 风险 4）：本 change 的病因只是「登记没有载体」 |
 | ⑥ | 编号 >㉟（35）的方案 | 派生口径（`D9` + `#` 列文本）在圈码 `①`–`㉟` 内**无需特判**；`㊱` 及以后（非圈码形态）会让 `ADR_ROW_RE` **静默不匹配** ⇒ 届时须扩字符类（**登记为边界**：当前十六项离它有 19 项余量） |

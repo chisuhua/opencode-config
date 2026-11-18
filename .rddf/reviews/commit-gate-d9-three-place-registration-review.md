@@ -79,7 +79,7 @@ critic 对 focus 1 的裁定（重要）：**本批属「执行点落地」而�
 |---|---|---|
 | ① | 十六项语义机判 | 交 oracle 人工核（AC13，本报告 §4） |
 | ② | 三处互相复制同一句错话的检测 | 不可机判；缓解 = 只写标题 + pointer + AC7 禁 `缓解：` |
-| ③ | **V10 第二子句**（`role-aware-permissions/proposal.md` 的 D5② 旧措辞「不在范围」） | **仍红**；本 change 只闭「十六项三处登记」子句（改法已在该 proposal 的 Out of Scope ③） |
+| ③ | ~~**V10 第二子句**~~ **已于 2026-11-18 闭合**（用户裁决一并修） | `role-aware-permissions/proposal.md` 的 D5② 行已同步为「已由 `ADR-commit-verification-gate` D5 部分闭合」措辞（与 MAD §2.8.7、`tests/role-exemptions.test.ts` 文件头三处同措辞）⇒ V10 两个子句均闭合 |
 | ④ | 既有 AC23 守卫的**路径写死**（`role-aware-permissions` 一归档即断） | 另案（本守卫 AC6 只保证**自己**有归档韧性） |
 | ⑤ | `D8` 的 20 点守卫迁移 / 通用登记框架 / 生成器 | 过度设计 |
 | ⑥ | 编号 >㉟（35）的方案 | 派生口径到 35 项够用；`㊱` 起须扩字符类 |
