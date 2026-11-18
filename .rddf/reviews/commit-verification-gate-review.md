@@ -149,9 +149,19 @@ openspec validate role-aware-permissions --strict  # valid
 | P16 门禁（轮 4 · 纯重定向，无段分隔符）：`git commit -m "redir plain" > /dev/null 2>&1` | 放行 | ✅ 放行；HEAD 推进（`1f42171 redir plain`） |
 | P17 门禁（轮 5 · 回归修复）：`git commit -m "semi probe";`（末位 `;`） | 放行（末位 `;` 只是空命令） | ✅ 放行；HEAD 推进（`bff5e6d semi probe`） |
 | P18 门禁（轮 5 · 引号命令词）：`"git" commit -m "quoted probe"`（探针仓声明 `[["false"]]`） | 拒（红 ⇒ 拒） | ✅ `commit-gate: 验证命令失败 ⇒ 拒绝提交：$ false`；HEAD 未推进（`703c399 init`）⇒ 修复前该串会**静默落地**（未验证提交） |
+| P19 门禁（**本交互会话 · 插件已加载**）：① `cd <dir> && git commit -m x` | 拒（复合） | ✅ `Permission denied: commit-gate: \`git commit\` 必须**单独成段**…`（**这条是我自己的调用被拦** —— `cd … &&` 前缀让整串成了复合命令） |
+| P20 门禁（**本交互会话**）：② `git commit -F - <<'MSG' … MSG`（**单段**） | 放行 | ✅ 放行；门禁**先跑了仓库声明的验证命令**（`bun test tests/` 785 pass + anchors 23/23）才放行 ⇒ HEAD 推进（`5c152ee`）⇒ 真宿主上的「验证 ⇒ 放行」闭环已在本会话跑到 |
 
 ⚠ P10 的假阳性是**层 2 才能发现的坑**（层 1b 用例当时按「复合命令一律拒」写 ⇒ 与实现同源 ⇒ 无判别力）。
 ⇒ 口径修正后补了 4 条层 1b 用例（尾随段放行 / 前置 add 拒 / 元字符独立成 token / `&&` 形态）。
+
+### 4.3 门禁在本会话的生效状态（事实登记）
+
+- 插件**已在本会话加载**（此前记为「需 `service restart`」的待办**已自然解决**）：门禁实际拦下了本会话的多次提交尝试（P19 ①）。
+- 由此暴露的**使用约束**（已写进 ADR D9⑪ 与本报告）：门禁按**会话所在目录**判定，且 `git commit` 必须**单独成段** ⇒
+  - 提交命令**不要带 `cd … &&` 前缀**（用 shell 工具的 `workdir`）；
+  - 多行提交消息用 `git commit -F - <<'MSG' … MSG`（heredoc 正文已按数据处理）或多个 `-m`。
+- ⚠ **本会话的门禁是「只认复合形态」的新规则**：早期探针（P1–P18）跑在 `opencode run --standalone` 的独立实例里，规则版本不同 ⇒ 各自独立取证，不互相覆盖。
 
 ## 5. 已用轮次
 
