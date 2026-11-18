@@ -59,15 +59,15 @@ const PLACES = [
 
 > 每条要工具证据；`skip` ≠ `pass`。判据真源 = proposal 的 **AC1–AC9**（本文只摘要）。
 
-- [ ] **AC1** 三态解析：仅活跃 / 仅归档 / 并存（⇒ `ambiguous`）/ 都无（⇒ `none`）四例
-- [ ] **AC2** **真实态**：本仓当前状态 ⇒ `kind === "active"` 且路径恰为 `openspec/changes/role-aware-permissions/proposal.md`（恰好 1 候选）
-- [ ] **AC3** 身份与互异性：AC 面 ∈ `openspec/changes`；三处路径互不相同
-- [ ] **AC4** 失败形态：载体缺失 ⇒ **判红 + 可读文案**（含解析根与两形态相对路径），不抛异常
-- [ ] **AC5** 三态文案分开（无文件 / 无标题 / 六项不全）
-- [ ] **AC6** 判据不变：`missingItems` 语义逐字未变；删 `D5③` 仍红；「活跃缺项 + archive 齐全」仍红
-- [ ] **AC7** 不空转：0 skip / 0 todo；解析器纯函数、无模块级缓存
-- [ ] **AC8** 回归：`bun test tests/` 全绿；anchors 全绿；`config-guards:142` 的 `tests/role-exemptions.test.ts D5②（部分闭合）` 锚仍绿
-- [ ] **AC9** 证据包：**≥3** 条突变（删项 / 零候选 / 脏并存），三件套
+- [x] **AC1** 三态解析（四例）：仅活跃 ⇒ `active` / 仅归档 ⇒ `archived` / 并存 ⇒ `ambiguous` / 都无 ⇒ `none`（`searched` 含两形态）
+- [x] **AC2** **真实态**：本仓当前状态 ⇒ **恰好 1 个候选**且路径 ∈ `openspec/changes`（⚠ `kind` 只记入验收报告、**不做断言** —— 否则该 change 一归档本判据自己就红）
+- [x] **AC3** 身份与互异性：AC 面 ∈ `openspec/changes`；`new Set([ac, self, mad]).size === 3`
+- [x] **AC4** 失败形态：`none` / `ambiguous` ⇒ **测试判红 + 可断言文案**（含解析根与两形态相对路径），实测**无未捕获异常**
+- [x] **AC5** 文案三态分开：(a) 无文件（含「目录在但 `proposal.md` 缺」点名目录）/ (b) 有文件无行首标题（含**期望标题原文**）/ (c) 有标题六项不全（label 含相对路径）
+- [x] **AC6** 判据强度不变：① 删真实载体的 `D5③` ⇒ 仍红；② fixture「活跃缺项 + archive 齐全」⇒ **仍红**（不得静默回退到 archive）；`missingItems` 语义逐字未变
+- [x] **AC7** 不空转 / 无缓存：0 `skip` / 0 `todo`；同一 root 两次调用一致（形态变化立即反映）；fixture root 不污染真实 root
+- [x] **AC8** 回归：`bun test tests/` 全绿（913）；anchors 23/23；`config-guards:142` 的 `tests/role-exemptions.test.ts D5②（部分闭合）` 锚仍绿
+- [x] **AC9** 证据包：**6** 条突变（M1–M6，含删项 / 零候选 / 脏并存）的三件套落 `.rddf/reviews/role-exemptions-guard-archive-resilience-mutations.md`
 
 ## Capabilities
 
