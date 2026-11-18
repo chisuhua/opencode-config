@@ -1,6 +1,8 @@
 # commit-gate-d9-three-place-registration —— 审查记录（oracle → critic）
 
 > 判据真源：`openspec/changes/commit-gate-d9-three-place-registration/proposal.md` 的 **AC1–AC13**。
+> **归档指针（2026-11-18）**：该 change 已归档为 `openspec/changes/archive/2026-11-18-commit-gate-d9-three-place-registration/`。本文内出现的 `openspec/changes/commit-gate-d9-three-place-registration/…` 是**归档前的历史记述**（过程记录不回改）。
+
 > 审查顺序：**oracle（治理面）→ critic**（按 `prompts/build.md` §审查配对：治理面 / ADR 行）。
 > 预算：oracle 1 轮 + critic **2 轮**（第 2 轮只验 BLOCKER 闭合；本 change 的 critic 上限 2 轮，已用满）。
 

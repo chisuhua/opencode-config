@@ -7,7 +7,7 @@ feedback_status: none
 
 # commit-gate-d9-three-place-registration — ADR D9 十六项的「三处登记」补齐 + 机械守卫
 
-> **实施状态**：**已立项**（2026-11-18）⇒ `openspec/changes/commit-gate-d9-three-place-registration/`（逐条判据以该 proposal 的 AC1–AC13 为**唯一真源**；本文只保留**动机与机制**）
+> **实施状态**：✅ **已归档**（2026-11-18）⇒ `openspec/changes/archive/2026-11-18-commit-gate-d9-three-place-registration/`（逐条判据以该 proposal 的 AC1–AC13 为**唯一真源**；**验收报告 = `.rddf/reviews/commit-gate-d9-three-place-registration-verify.md` 第 2 轮通过**；本文只保留**动机与机制**）
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。**由 builder 代 planner 起草**（用户 2026-11-18 指定）⇒ **metis 1 轮审后已修订**（rev 1；逐条处置见 `.rddf/reviews/commit-gate-d9-three-place-registration-planner-review.md`）。
 > ⚠ **rdd-workflow 的 `add-improve` 前置在本仓不适用**：无 `improvement-suggestions.md`、无 `.rddf/roadmap.md` 的 Phase Skeleton ⇒ 无 `主题:` 字段可匹配（本仓 20 个 improvement 全部同样不满足该 schema）—— 同例见 `docs/CHANGELOG.md:410-412`（`delegate-base-resolved-return`）。
 > 决策依据：`docs/adr/ADR-commit-verification-gate.md` **D9 表前言**（`:221`）+ **V10**（`:302`，Status `Accepted`）—— 本项**不新增决策**，只把既有承诺落到**可机械校验**的形态。

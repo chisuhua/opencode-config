@@ -2,6 +2,8 @@
 
 > **角色**：verifier（独立验收；只出证据与判决，不改实现）
 > **判据来源**：`openspec/changes/commit-gate-d9-three-place-registration/proposal.md` 的 `## 验收标准`（**AC1–AC13**）—— 本 change 明确声明「判据真源 = 该 AC 表」。
+> **归档指针（2026-11-18）**：该 change 已归档为 `openspec/changes/archive/2026-11-18-commit-gate-d9-three-place-registration/`。本文内出现的 `openspec/changes/commit-gate-d9-three-place-registration/…` 是**归档前的历史记述**（过程记录不回改）。
+
 > **分流判定**：`rddf rdd-verify --dry-run` ⇒ `No eligible changes to verify (empty queue)`（无 `.rddf/state/iteration.json`、无 P3 archive gate 事件）⇒ 走**本地验收**（本报告）。
 > ⚠ **本地验收的额外门（`tasks_done == tasks_total > 0`）不适用**：本 change **无 `tasks.md`**（`openspec archive` 也报 `Task status: No tasks`）⇒ 以 AC 表为唯一判据（proposal 的自我声明）。
 > **已用轮次**：**第 1 轮**（上限 3）。
