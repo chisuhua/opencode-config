@@ -163,6 +163,14 @@ openspec validate role-aware-permissions --strict  # valid
   - 多行提交消息用 `git commit -F - <<'MSG' … MSG`（heredoc 正文已按数据处理）或多个 `-m`。
 - ⚠ **本会话的门禁是「只认复合形态」的新规则**：早期探针（P1–P18）跑在 `opencode run --standalone` 的独立实例里，规则版本不同 ⇒ 各自独立取证，不互相覆盖。
 
+### 4.4 D5 与 D2 的职责切分（实测发现的事实登记）
+
+D5 的**形态闭口**（单独成段 / 命令替换 / 判定对象可定位 / 提交形态闭口）**对所有仓库生效**，
+D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明了 `.rddf/commit-gate.json` 的仓库生效**。
+⇒ 这是**必需**的切分（不是副作用）：形态闭口封的是**宿主整串前缀匹配**的漏洞，未声明的仓同样会被
+`git commit -m x; git push --force …` 搭便车打穿 force-push 的 `deny`。
+⚠ 实测代价：**未声明的仓**也会被形态闭口拒（如 `git commit -m x; echo ok`）⇒ 已在 ADR D3 写明。
+
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）

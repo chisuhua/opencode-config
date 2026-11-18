@@ -57,7 +57,11 @@
   ⚠ 与 `role-gate` 不同：后者按 `ADR-role-aware-permissions` D3 跳过后端。
 - **仓库根**：**`canonicalRoot(cwd)`**（`cwd` = 会话的 `location.directory`，**不用 `process.cwd()`**，同 `plugins/role-gate.ts:74-76` 的既有教训）⇒ `workRoot`（git toplevel，声明文件与写集判定都用它）与 `stateRoot`（主仓根）——**不用 `process.cwd()`**（同 `plugins/role-gate.ts` 的既有教训：进程 cwd 会取到**另一个仓**的根 ⇒ 整条 fail-open）。
   ⚠ **roots 不混用**：`workRoot` ≠ `stateRoot`（worktree 场景）⇒ 声明取 `workRoot`、写集判定基准根也是 `workRoot`。
-- `<workRoot>/.rddf/commit-gate.json` **不存在 ⇒ 放行**（只对显式声明的仓库生效；其它仓库零影响）。
+- `<workRoot>/.rddf/commit-gate.json` **不存在 ⇒ D2 的三判据不设门禁 ⇒ 放行**（只对显式声明的仓库生效）。
+  ⚠ **但 D5 的「形态闭口」对**所有**仓库生效**（含未声明的仓）：它封的是**宿主整串前缀匹配**的漏洞
+  （`git commit -m x; git push --force …` 整串命中 `git commit *: allow` ⇒ force-push 的 `deny` 失效）——
+  这与「有没有声明」无关 ⇒ 若形态闭口也随声明生效，未声明的仓仍可被搭便车打穿。
+  ⇒ **职责切分**：D5 = 「这条命令**是不是**一次可判定的提交」（全仓生效）；D2 = 「这次提交**能不能**过」（仅声明仓生效）。
   ⚠ 声明文件**必须 git-tracked**（否则 worktree 内无声明 ⇒ 静默无门禁）⇒ 守卫钉住。
 
 ### D4 `push` 维持人工，且 force push 收紧
