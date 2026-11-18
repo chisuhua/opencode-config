@@ -186,3 +186,17 @@ error: Expected: "ambiguous"
 | **F4**（低影响）① `none` 文案里 `archive/*-…` 是 glob，读者可能当真实路径去读；② AC7 注释称「顺序证明未污染」因果过度 | ✅ **修**：① 文案加「（后者为 glob 形态）」；② 注释改为「作为真实态的廉价端到端复验」 | 同上 |
 
 **加固后复跑**：单文件 **20 pass / 0 fail**；全量 **914 pass / 0 fail**；6 条突变**全部仍红在预期断言**（M1/M2/M6 各 2 红；M3 5 红；M4 5 红；M5 3 红）。
+
+## 真实归档演练（非突变；AC2 / AC6 的执行证据）
+
+> 六条突变之外，直接把真实 change 按归档形态摆放，验证「归档当天不崩」这件事本身（这是本 change 存在的理由）。
+
+| 步 | 命令 / 结果 |
+|---|---|
+| 移动 | `mv openspec/changes/role-aware-permissions openspec/changes/archive/2026-11-19-role-aware-permissions` |
+| 候选解析 | 候选数 = **1**，`archived:openspec/changes/archive/2026-11-19-role-aware-permissions/proposal.md` |
+| 守卫 | `bun test tests/role-exemptions.test.ts` ⇒ **20 pass / 0 fail** |
+| 全量 | `bun test tests/` ⇒ **914 pass / 0 fail** |
+| 复原 | `mv` 回 `openspec/changes/role-aware-permissions` ⇒ **914 pass / 0 fail**，`git status` 无残留 |
+
+⚠ 旧实现（写死活跃路径）在这一形态下三处 `readFileSync` 会抛 `ENOENT` ⇒ 整个文件崩、归档 commit 被 `bun test tests/` 卡死。本演练即为该风险的直接证伪。

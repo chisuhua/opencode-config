@@ -59,7 +59,7 @@ const PLACES = [
 
 > 每条要工具证据；`skip` ≠ `pass`。判据真源 = proposal 的 **AC1–AC9**（本文只摘要）。
 
-- [x] **AC1** 三态解析（四例）：仅活跃 ⇒ `active` / 仅归档 ⇒ `archived` / 并存 ⇒ `ambiguous` / 都无 ⇒ `none`（`searched` 含两形态）
+- [x] **AC1** 三态解析（**六例**）：仅活跃 ⇒ `active` / 仅归档 ⇒ `archived` / 并存 ⇒ `ambiguous` / 都无 ⇒ `none`（`searched` 含两形态）/ 目录在但 `proposal.md` 缺 ⇒ `none` 且点名目录 / 近似名（`2026-01-01-extend-<name>`）不算候选
 - [x] **AC2** **真实态**：本仓当前状态 ⇒ **恰好 1 个候选**且路径 ∈ `openspec/changes`（⚠ `kind` 只记入验收报告、**不做断言** —— 否则该 change 一归档本判据自己就红）
 - [x] **AC3** 身份与互异性：AC 面 ∈ `openspec/changes`；`new Set([ac, self, mad]).size === 3`
 - [x] **AC4** 失败形态：`none` / `ambiguous` ⇒ **测试判红 + 可断言文案**（含解析根与两形态相对路径），实测**无未捕获异常**

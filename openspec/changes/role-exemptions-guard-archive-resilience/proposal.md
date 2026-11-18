@@ -54,9 +54,11 @@ function resolveAcFace(root: string): AcFace { /* 见 proposal 下方「判定�
 | 1（`openspec/changes/<name>/proposal.md`） | `active` | ✅ 通过 | — |
 | 1（`openspec/changes/archive/*-<name>/proposal.md`） | `archived` | ✅ 通过 | — |
 | **0** | `none` | ❌ 红 | 含**解析根** + 两形态**相对路径**（含「目录在但 `proposal.md` 缺」子情形：点名目录） |
-| **≥2** | `ambiguous` | ❌ 红 | 列出**全部候选路径** + 「形态并存，权威不明（删掉旧目录）」 |
+| **≥2** | `ambiguous` | ❌ 红 | 列出**全部候选路径** + 「删掉多余的候选（活跃与归档并存 ⇒ 删 `archive/` 下的日期目录；两个归档并存 ⇒ 删旧的那个）」 |
 
-- 归档目录匹配 = `e.name.endsWith("-" + AC_NAME)`；`archive/` 不存在 ⇒ 视为 0 候选（`existsSync` 兜，不抛）。
+- 归档目录匹配 = **精确式** `^\d{4}-\d{2}-\d{2}-<name>$`（本仓归档一律 `YYYY-MM-DD-<change>`，18/18 历史归档均为此形态）。
+  ⚠ **不用** `e.name.endsWith("-" + AC_NAME)` —— 后缀匹配会把名字**以** `-role-aware-permissions` 结尾的其它 change 捞成候选（常驻假红）；判别力用例：`2026-01-01-extend-role-aware-permissions` 不算候选（oracle 复审 F1）。
+- `archive/` 不存在 ⇒ 视为 0 候选（`existsSync` 兜，不抛）。
 - **不**扫全部 proposal（AC23 的面是**名字绑定**的 ⇒ 通用扫描会把「脏并存」退化成「出现 2 次」，诊断变差）。
 
 ### D2 载体身份与互异性（补回 R2 丢掉的保证）
@@ -95,7 +97,7 @@ function resolveAcFace(root: string): AcFace { /* 见 proposal 下方「判定�
 
 | AC | 判据 | 类型 | 来源 |
 |---|---|---|---|
-| AC1 | **三态**：fixture 四例 —— 仅活跃 ⇒ `active`；仅归档 ⇒ `archived`；并存 ⇒ **`ambiguous`**；都无 ⇒ **`none`**（且 `searched` 含两形态） | 结构 | metis H2 / A1 |
+| AC1 | **三态**：fixture 六例 —— 仅活跃 ⇒ `active`；仅归档 ⇒ `archived`；并存 ⇒ **`ambiguous`**；都无 ⇒ **`none`**（且 `searched` 含两形态）；目录在但 `proposal.md` 缺 ⇒ `none` 且点名目录；**近似名**（`2026-01-01-extend-<name>`）不算候选 ⇒ `none` | 结构 | metis H2 / A1 + oracle F1 |
 | AC2 | **真实态**：本仓当前状态解析 ⇒ **恰好 1 个候选**且路径 ∈ `openspec/changes`（⚠ `kind` 只记入验收报告、**不做断言** —— 否则该 change 一归档本判据自己就红；修正自 metis 建议 6） | 结构 | metis 建议 6（修正） |
 | AC3 | **身份与互异性**：AC 面 ∈ `openspec/changes`；`new Set([ac, self, mad]).size === 3` | 结构 | metis 建议 2 |
 | AC4 | **失败形态**：`none` / `ambiguous` ⇒ **测试判红 + 文案可断言**（含解析根与两形态相对路径）；实测**无未捕获异常** | 结构 | metis 建议 4 |
@@ -122,6 +124,9 @@ function resolveAcFace(root: string): AcFace { /* 见 proposal 下方「判定�
 | M4 | 把 AC23 小节的标题改成 `### 免宣称六项` | AC5(b)「文案含期望标题原文」 |
 | M5 | 删真实载体里的 `D5③` 行 | AC6①「删项仍红」 |
 | M6 | 让解析器在活跃缺项时**回退**到 archive 副本 | AC6②「不得静默回退」 |
+
+**真实归档演练（非突变，执行证据）**：把 `openspec/changes/role-aware-permissions` 实际 `mv` 到 `openspec/changes/archive/2026-11-19-role-aware-permissions` 后 ⇒ 候选数 = 1 且为 `archived`、守卫 **20 pass / 0 fail**、全量 **914 pass / 0 fail**；`mv` 回来后同样 914 绿。（旧实现在这一形态下抛 `ENOENT`。）
+
 
 ## Out of Scope
 
