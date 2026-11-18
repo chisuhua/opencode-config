@@ -463,9 +463,13 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 | **backlog 名（建议）** | `commit-gate-d9-three-place-registration` |
 | **要解决什么** | ADR `:221` + `:302` 承诺「D9 每项在 AC + 测试注释 + 主题文档**三处**登记」，实际只有 ⑯ 齐全 ⇒ **宣称与登记不一致**（与本批 critic 在 §9.5 抓到的是同一类病，只是对象不同） |
 | **两条候选路径（需裁决）** | **A 补登记**：给 D9 每项一个**稳定标识**（`D9①`…`D9⑯`），在三处各登记一次，并加**守卫测试**（照 `tests/role-exemptions.test.ts` 的 `AC23` 形态：机械查三处命中 + 「删任一处 ⇒ 必红」的判别力用例）⇒ V10 的「变红」条款才有机械载体。**B 改口径**：把 ADR `:221` / `:302` 的措辞从「三处登记」降为「**均登记于 ADR；部分项另有两处指针**」⇒ 承认现状，但**放弃**机械守卫（⇒ V10 只能人工核） |
+| **用户裁决（2026-11-18）** | **路径 A**（补登记 + 加机械守卫）—— 理由与本仓既有纪律一致：V10 的价值在**机械可判**，降级成人工核 ⇒ 下一条 D9 项仍只写 ADR 一处 ⇒ 病复发 |
+| **落地产物** | ✅ **improvement 草稿已写**：`.rddf/improvements/commit-gate-d9-three-place-registration.md`（5 段 + frontmatter；**由 builder 代 planner 起草**（用户指定）⇒ **待 planner 审查**（metis 1 轮）后方可立项）—— 先例：`delegate-base-resolved-return`（`docs/CHANGELOG.md:410-412`） |
+| **⚠ `add-improve` 的 HARD-GATE 校验结果** | ❌ **不通过**（`pre_create_brainstorm_check.sh`）：缺 `## 架构依据` / `## 范围` / `**主题**:` ⇒ **本仓 20 个 improvement 文件（含本文件）全部同样不通过**（`通过=0 / 不通过=20`）⇒ **schema 不在本仓适用**，非本文件特有问题；根因已在本仓 CHANGELOG 有明文（本仓无 `improvement-suggestions.md`、无 roadmap Phase Skeleton ⇒ 无 `主题:` 可匹配）⇒ **不注册** `improvement-suggestions.md`（该文件在本仓不存在；新建一个只含一行的索引会让其余 19 项「看起来没登记」） |
 | **为什么不在本批** | ① 触及 **ADR 决策文字**（V10 = Verification 判据）⇒ 须 **architect** 角色 + oracle/critic；② 补登记涉及 **15 项 × 最多 3 处**的文档与测试改动 ⇒ 体量与本批（强推口径 + heredoc + 词值还原）**不同病**，混在一起会让本批的边界失焦；③ 本批已用满 critic 预算（3 轮）⇒ 混批审不动 |
-| **本批只登记什么** | 本报告（builder 的记账面）+ 本条 backlog 指针 ⇒ **不写** `.rddf/improvements/**`（那是 planner 的产物，且 `add-improve` 有 HARD-GATE：草案须用户先批） |
-| **谁来做** | **planner**（立 improvement → 5 段草稿 → 立项）⇒ **architect**（若走路径 B，改 ADR 措辞 + 回填指针）⇒ **builder**（路径 A 的守卫与登记点落地） |
+| **本批只登记什么** | 本报告（builder 的记账面）+ **improvement 草稿**（用户已批准 ⇒ 代 planner 起草，**未立项**）⇒ **不写** `openspec/changes/**`（立项是 planner 的动作）、**不改** ADR 措辞（architect 的动作）、**不动**任何守卫 / 文档登记（builder 的实施动作，在下个 change 里做） |
+| **谁来做（下一步）** | **planner**：metis 1 轮审草稿 → 立项 `openspec/changes/<name>/`（AC-A–AC-F 编号）⇒ **architect**：D1 标识 + D6 ADR `:221`/`:302` 措辞（含守卫载体与标识口径）⇒ **builder**：D2/D3/D4 三处登记 + D5 守卫（含判别力突变演练） |
+| **与本批的关系** | ⛔ **不并入** `commit-gate-force-push-heredoc`（不同病 + 该批 critic 预算已用满）⇒ **该批的归档不依赖本项完成**；本项独立立项、独立审查 |
 
 ## 10. ADR 补登（D9⑯ + ⑮ 行吞后果类）—— 审查与逐条处置
 
