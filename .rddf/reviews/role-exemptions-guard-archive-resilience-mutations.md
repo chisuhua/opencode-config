@@ -3,7 +3,7 @@
 > 判据真源：`openspec/changes/role-exemptions-guard-archive-resilience/proposal.md` 的 **AC9** 与「变红演练（6 条）」表（M1–M6）。
 > 被验对象：`tests/role-exemptions.test.ts`（AC 面载体解析器 `resolveAcFace` + 三态文案）+ 真实载体 `openspec/changes/role-aware-permissions/proposal.md`。
 > 执行方式：脚本 `/tmp/opencode/mutate_ac23.sh`（每条突变 → 跑单文件 → 复原 → 复跑绿；`trap` 兜底复原）。原始日志留档于 `/tmp/opencode/mutations.log`（不入仓，过程性 scratch）。
-> 环境：`bun test v1.3.14`；基线单文件 **19 pass / 0 fail**。
+> 环境：`bun test v1.3.14`；基线单文件 **20 pass / 0 fail**（oracle 复审后加了一条「近似名不算候选」用例，见文末「复审后加固」）。
 
 ## 汇总
 
@@ -16,7 +16,7 @@
 | M5 | 删真实载体里的 `D5③` 行 | AC6①「删项仍红」 | AC1(AC 面)+逐项正文+AC6① | ✅ |
 | M6 | 活跃缺项时静默回退到 archive 副本 | AC6②「不得静默回退」 | AC6② + AC5(c) | ✅ |
 
-每条突变后均复原并复跑 **19 pass / 0 fail**；全部复原后全量 `bun test tests/` ⇒ **913 pass / 0 fail**。
+每条突变后均复原并复跑 **20 pass / 0 fail**；全部复原后全量 `bun test tests/` ⇒ **914 pass / 0 fail**。
 
 ## M1 删 `ambiguous` 分支
 
@@ -31,14 +31,14 @@
 ```
 (fail) AC1 fixture：候选枚举三态（纯函数，传自己的 root） > 并存 ⇒ ambiguous（列出全部候选）
 (fail) AC6② 判据强度：活跃缺项 + 归档齐全 ⇒ 仍红（不得静默回退） > 活跃 proposal 缺 D5③、archive 副本齐全 ⇒ ambiguous（不是静默取 archive）
- 17 pass
+ 18 pass
   2 fail
 error: expect(received).toBe(expected)
 Expected: "ambiguous"
 Received: "active"
 ```
 
-**复原后**：19 pass / 0 fail。
+**复原后**：20 pass / 0 fail。
 
 ## M2 AC 面解析结果指向测试文件本身
 
@@ -54,7 +54,7 @@ Received: "active"
 ```
 (fail) AC3 身份与互异性：三处是三个不同文件 > AC 面 ∈ openspec/changes 且三处路径两两不同
 (fail) AC5 文案三态分开 > (c) 有标题但六项不全：缺项文案的 label 含相对路径
- 17 pass
+ 18 pass
   2 fail
 error: expect(received).toBe(expected)
 Expected: true
@@ -63,7 +63,7 @@ error: Expected: "openspec/changes/role-aware-permissions/proposal.md"
        Received: "../../home/ubuntu/.config/opencode/tests/role-exemptions.test.ts"
 ```
 
-**复原后**：19 pass / 0 fail。
+**复原后**：20 pass / 0 fail。
 
 > 这条正是 metis 的 **R2**：若解析器把 AC 面指到测试文件（本文件头本来就有六项），三条「六项齐全」用例会**全绿**，AC23 静默降级成「一处命中」。AC3 的互异性断言是唯一拦住它的那条。
 
@@ -80,16 +80,17 @@ error: Expected: "openspec/changes/role-aware-permissions/proposal.md"
 
 ```
 (fail) AC1 fixture：候选枚举三态（纯函数，传自己的 root） > 都无 ⇒ none（searched 含两形态）
+(fail) AC1 fixture：候选枚举三态（纯函数，传自己的 root） > 近似名（2026-01-01-extend-role-aware-permissions）不算候选（后缀匹配会假红）
 (fail) AC1 fixture：候选枚举三态（纯函数，传自己的 root） > 目录在但 proposal.md 缺 ⇒ none 且点名目录
 (fail) AC4 失败形态：判红 + 可读文案（不抛异常） > 两次解析器调用都不抛（none 与 ambiguous 均返回诊断对象）
 (fail) AC5 文案三态分开 > (a) 无载体：文案含解析根 + 两形态相对路径
  15 pass
-  4 fail
+  5 fail
 error: AC23 的 AC 面载体缺失
 error: expect(received).not.toThrow()
 ```
 
-**复原后**：19 pass / 0 fail。
+**复原后**：20 pass / 0 fail。
 
 ## M4 真实载体的小节标题降级为 `###`
 
@@ -108,13 +109,13 @@ error: expect(received).not.toThrow()
 (fail) AC23 免宣称六项在三处各自命中 > AC6① 判别力：删掉任一项 ⇒ 必红
 (fail) AC2 真实态：AC 面恰好 1 个候选，且落在 openspec/changes 下 > 真实态解析
 (fail) AC3 身份与互异性：三处是三个不同文件 > AC 面 ∈ openspec/changes 且三处路径两两不同
- 14 pass
+ 15 pass
   5 fail
 error: expect(received).toBeNull()
 Received: "openspec/changes/role-aware-permissions/proposal.md 缺行首标题「## 免宣称六项（AC23 的登记面）」（找不到该字面的行首标题）"
 ```
 
-**复原后**：19 pass / 0 fail。
+**复原后**：20 pass / 0 fail。
 
 > 这条同时证明 **AC5(b)** 的文案在**真实路径**上生效（文案含期望标题**原文**），且失败形态是**判红**（`expect(...).toBeNull()`）而非异常。
 
@@ -128,13 +129,13 @@ Received: "openspec/changes/role-aware-permissions/proposal.md 缺行首标题�
 (fail) AC23 免宣称六项在三处各自命中 > AC1 AC（proposal.md）：六项齐全
 (fail) AC23 免宣称六项在三处各自命中 > AC1 六项**逐项**都有正文（不只是标识符）
 (fail) AC23 免宣称六项在三处各自命中 > AC6① 判别力：删掉任一项 ⇒ 必红
- 16 pass
+ 17 pass
   3 fail
 error: AC（proposal.md：openspec/changes/role-aware-permissions/proposal.md） 缺免宣称项：D5③
 error: AC（proposal.md：openspec/changes/role-aware-permissions/proposal.md） 缺 D5③
 ```
 
-**复原后**：19 pass / 0 fail。
+**复原后**：20 pass / 0 fail。
 
 > 文案里带**相对路径**（AC5(c) 的要求）在真实失败里可见；`D5①` 等其余项仍在 ⇒ 缺项检查不是「全有全无」的恒真判定（原判别力未回退）。
 
@@ -152,7 +153,7 @@ error: AC（proposal.md：openspec/changes/role-aware-permissions/proposal.md）
 ```
 (fail) AC5 文案三态分开 > (c) 有标题但六项不全：缺项文案的 label 含相对路径
 (fail) AC6② 判据强度：活跃缺项 + 归档齐全 ⇒ 仍红（不得静默回退） > 活跃 proposal 缺 D5③、archive 副本齐全 ⇒ ambiguous（不是静默取 archive）
- 17 pass
+ 18 pass
   2 fail
 error: expect(received).toBeNull()
 Received: "缺 AC23 的 AC 面载体：在 /tmp/ac23-guard-HJ8XzP 下找不到 …；目录在但缺 proposal.md：openspec/changes/role-aware-permissions ⇒ 见 docs/adr/ADR-role-aware-permissions.md D5"
@@ -160,7 +161,7 @@ error: Expected: "ambiguous"
        Received: "archived"
 ```
 
-**复原后**：19 pass / 0 fail。
+**复原后**：20 pass / 0 fail。
 
 > `Received: "archived"` 是这条突变的核心证据：候选按**内容**过滤就会把「活跃缺项」静默让位给归档副本 ⇒ 判据强度被悄悄调低。按**文件存在性**计数才能得到 `ambiguous`。
 
@@ -169,6 +170,19 @@ error: Expected: "ambiguous"
 | 步 | 结果 |
 |---|---|
 | 每条突变后复原 + 单文件复跑 | **19 pass / 0 fail**（6/6） |
-| 全部复原后全量 `bun test tests/` | **913 pass / 0 fail** |
+| 全部复原后全量 `bun test tests/` | **914 pass / 0 fail** |
 | 工作树 | 仅 `M tests/role-exemptions.test.ts`（本 change 的改动）+ `M cli.json`（运行时文件，刻意不提交） |
 | 真实载体 | 与突变前逐字相同（`cp` 备份复原；`git status` 无载体改动） |
+
+## 复审后加固（oracle 治理面 PASS 的 finding 处置）
+
+> 以上 M1–M6 的数字取自**加固后**的最终代码（20 例基线）。本节记录 relative 改动，判据强度不变。
+
+| finding | 处置 | 落点 |
+|---|---|---|
+| **F1**（中影响）归档匹配用 `endsWith("-<name>")` ⇒ 名字**以** `-role-aware-permissions` 结尾的其它 change 会被捞成候选 ⇒ 假红 | ✅ **修**：改为 `ARCHIVE_DIR_RE = /^\d{4}-\d{2}-\d{2}-<name>$/`（本仓 18/18 历史归档均为此形态，当日行为零变化）＋**新增一条判别力用例**「近似名 `2026-01-01-extend-role-aware-permissions` 不算候选」 | `tests/role-exemptions.test.ts` |
+| **F2**（低影响）`emptyDirs` 只在 `none` 分支 surfaced；活跃副本在位 + 残留空归档目录时不提示 | ⛔ **不修**：把它并进 `ambiguous` 会让「活跃副本即权威 + 一个残留空目录」由**绿转红** ⇒ 那是改判定面，超出本 change 的「只修载体解析」（D6）。登记为已知诊断边界 | — |
+| **F3**（低影响）`ambiguous` 文案只说「删掉旧目录」，双归档场景可能删错 | ✅ **修**：文案改为「删掉多余的候选（活跃与归档并存 ⇒ 删 archive/ 下的日期目录；两个归档并存 ⇒ 删旧的那个）」 | 同上 |
+| **F4**（低影响）① `none` 文案里 `archive/*-…` 是 glob，读者可能当真实路径去读；② AC7 注释称「顺序证明未污染」因果过度 | ✅ **修**：① 文案加「（后者为 glob 形态）」；② 注释改为「作为真实态的廉价端到端复验」 | 同上 |
+
+**加固后复跑**：单文件 **20 pass / 0 fail**；全量 **914 pass / 0 fail**；6 条突变**全部仍红在预期断言**（M1/M2/M6 各 2 红；M3 5 红；M4 5 红；M5 3 红）。

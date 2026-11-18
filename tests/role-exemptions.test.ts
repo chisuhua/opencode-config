@@ -41,6 +41,10 @@ const AC_NAME = "role-aware-permissions"
 const AC_HEADING = "## 免宣称六项（AC23 的登记面）"
 /** 缺载体时指引读者去这儿（决策真源）。 */
 const ADR_REF = "docs/adr/ADR-role-aware-permissions.md"
+/** 归档目录名：本仓归档一律 `YYYY-MM-DD-<change>`（18/18 历史归档均为此形态）。
+ *  ⚠ **不做** `endsWith("-<name>")` 后缀匹配 —— 那会把名字**以** `-role-aware-permissions`
+ *  结尾的其它 change 捞成候选（假红）。 */
+const ARCHIVE_DIR_RE = new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${AC_NAME}$`)
 
 /** `root` 下的 POSIX 相对路径（断言口径统一，避免前缀差异造成假红）。 */
 function rel(root: string, p: string): string {
@@ -79,7 +83,7 @@ function resolveAcFace(root: string): AcFace {
 
   if (existsSync(archiveDir)) {
     for (const e of readdirSync(archiveDir, { withFileTypes: true })) {
-      if (!e.isDirectory() || !e.name.endsWith(`-${AC_NAME}`)) continue
+      if (!e.isDirectory() || !ARCHIVE_DIR_RE.test(e.name)) continue
       const dir = path.join(archiveDir, e.name)
       const p = path.join(dir, "proposal.md")
       if (existsSync(p)) found.push({ kind: "archived", path: p })
@@ -103,11 +107,14 @@ function acFaceFailures(face: AcFace, root: string): string[] {
   if (face.kind === "none") {
     const extra = face.emptyDirs.length > 0 ? `；目录在但缺 proposal.md：${face.emptyDirs.join(", ")}` : ""
     return [
-      `缺 AC23 的 AC 面载体：在 ${root} 下找不到 ${face.searched.join(" 或 ")}${extra} ⇒ 见 ${ADR_REF} D5`,
+      `缺 AC23 的 AC 面载体：在 ${root} 下找不到 ${face.searched.join(" 或 ")}（后者为 glob 形态）${extra} ⇒ 见 ${ADR_REF} D5`,
     ]
   }
   if (face.kind === "ambiguous") {
-    return [`AC23 的 AC 面候选并存（形态并存，权威不明，删掉旧目录）：${face.paths.join(", ")}`]
+    return [
+      `AC23 的 AC 面候选并存（形态并存，权威不明）：${face.paths.join(", ")}` +
+        " ⇒ 删掉多余的候选（活跃与归档并存 ⇒ 删 archive/ 下的日期目录；两个归档并存 ⇒ 删旧的那个）",
+    ]
   }
   if (!hasAcHeading(face.text)) {
     return [`${rel(root, face.path)} 缺行首标题「${AC_HEADING}」（找不到该字面的行首标题）`]
@@ -293,6 +300,15 @@ describe("AC1 fixture：候选枚举三态（纯函数，传自己的 root）", 
     }
   })
 
+  test("近似名（2026-01-01-extend-role-aware-permissions）不算候选（后缀匹配会假红）", () => {
+    const root = makeFixture({ [`openspec/changes/archive/2026-01-01-extend-${AC_NAME}/proposal.md`]: FULL_AC_BODY })
+    try {
+      expect(resolveAcFace(root).kind).toBe("none")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("目录在但 proposal.md 缺 ⇒ none 且点名目录", () => {
     const root = makeFixture({ [`openspec/changes/${AC_NAME}/README.md`]: "x\n" })
     try {
@@ -391,7 +407,7 @@ describe("AC7 无模块级缓存 / fixture 不污染真实态", () => {
     }
   })
 
-  // ⚠ 顺序有意义：本 describe 在所有 fixture 用例之后 ⇒ 这条断言同时证明 fixture 未污染真实 root。
+  // 作为真实态的**廉价端到端复验**（fixture 全在 os.tmpdir() 下、解析器按 root 参数隔离 ⇒ 构造上不会污染真实 root）。
   test("fixture 用例跑完后，真实态仍解析为单一候选", () => {
     const face = resolveAcFace(ROOT)
     expect(["active", "archived"]).toContain(face.kind)
