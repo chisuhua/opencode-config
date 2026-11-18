@@ -100,7 +100,10 @@ const COMPOUND_TOKENS = new Set(["&&", "||", ";", "|", "&", "\n"])
 /** 整串是否以**后台执行**（`&`）收尾（尾部可跟纯分隔符 `\n` / `;`）。 */
 function endsWithBackgroundAmp(tokens: Token[]): boolean {
   for (let i = tokens.length - 1; i >= 0; i--) {
-    const v = tokens[i]!.value
+    const t = tokens[i]!
+    // ⚠ **带引号的 `&` 是数据**（`git commit -m "&"`）⇒ 不是分隔符 ⇒ 不算后台执行
+    if (t.quoted) return false
+    const v = t.value
     if (v === "\n" || v === ";") continue
     return v === "&"
   }
@@ -233,6 +236,12 @@ export function tokenizeCommand(command: string): Token[] {
     if (quoteChar) {
       if (ch === quoteChar) {
         quoteChar = ""
+      } else if (quoteChar === '"' && ch === "\\" && i + 1 < command.length) {
+        // ⚠ **双引号内的转义**（`\"` / `\\` / `\$` / `` \` ``）⇒ 字面量（shell 语义）
+        //   —— 否则 `git commit -m "say \"hi\" && b"` 里的引号会提前闭合 ⇒ 其中的 `&` 跑成**分隔符**
+        //   ⇒ 合法提交被误判成「复合命令」。
+        cur += command[i + 1]!
+        i++
       } else {
         cur += ch
       }
@@ -277,6 +286,7 @@ export function tokenizeCommand(command: string): Token[] {
     }
     if (ch === "&" && command[i + 1] === ">") {
       // `&>` / `&>>` = **stdout+stderr 重定向**（不是后台执行）⇒ 连同目标一起剥离
+      // ⚠ fd 前缀（`2>&1` 那种）走的是上面的 `>` 分支（那里已剥）⇒ 本分支不重复处理
       if (has) {
         out.push({ value: cur, quoted, leadingQuote: leadQuote })
         cur = ""

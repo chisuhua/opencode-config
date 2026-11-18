@@ -86,6 +86,9 @@ describe("D5 命令词与兜底扫描（引号命令词 / 不把字面量当命�
     expect(detectCommitInvocation("git commit -m x &\n").block).toContain("单独成段")
     expect(detectCommitInvocation("git commit -m x &;").block).toContain("单独成段")
   })
+  test("`git commit -m \"&\"` ⇒ 放行（带引号的 `&` 是数据，不是分隔符）", () => {
+    expect(detectCommitInvocation('git commit -m "&"').block).toBeUndefined()
+  })
   test("`git commit -m x &> /dev/null` ⇒ 放行（`&>` 是重定向，不是后台执行）", () => {
     expect(detectCommitInvocation("git commit -m x &> /dev/null").block).toBeUndefined()
   })
@@ -292,6 +295,11 @@ describe("分词（引号感知 ⇒ `echo \"git commit\"` 不是一个 git 调�
   })
   test("单引号同理", () => {
     expect(tokenizeCommand("echo 'git commit'").map((x) => x.value)).toEqual(["echo", "git commit"])
+  })
+  test("双引号内的转义引号是字面量（`\"` 不闭合引号 ⇒ 其中的 `&&` 不是分隔符）", () => {
+    const cmd = 'git commit -m "say \\"hi\\" && b"'
+    expect(tokenizeCommand(cmd).map((x) => x.value)).toEqual(["git", "commit", "-m", 'say "hi" && b'])
+    expect(detectCommitInvocation(cmd).block).toBeUndefined()
   })
   test("闭口检查只看 commit 之后的 token（消息文本不算 pathspec）", () => {
     // `git commit -m 'src/a.ts'` ⇒ `-m` 的值是消息，**不是**位置 pathspec

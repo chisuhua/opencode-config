@@ -12,6 +12,7 @@
 | 1 | critic（arch） | **REJECT**（3 BLOCKER + 8 SHOULD_FIX + NITS） | 全部采纳：B1 公式与单源冲突（改调 `decideWrite`）；B2 `-a`/`--only`/`--include` 绕过（加提交形态闭口）；B3 落点清单缺项（14 → 18 点）；SHOULD_FIX 逐条（回滚路径 / D4 理由更正 / D9⑧ saved approval / 退出码语义 / 解析口径可执行化 / D9① 守卫逐条相等 / 内容锚点 / Verification 内联 / 层 1a 突变 / 两根统一 / 身份链 fallback） |
 | 2 | critic（arch，复审） | **REJECT**（B1 已闭合；B2/B3 未闭合 + 1 条新 BLOCKER） | 全部采纳：B2 枚举补齐（位置 pathspec / `-o` / `-i`）+ 解析兜底 + 复合命令闭口；B3 补 3 个落点（父篇修订行与 `:43` 行 / `tests/role-exemptions.test.ts` D5② / MAD §3.4 纪律句与残留句）⇒ 18 → **20 点**；新 BLOCKER-3 = 后端 brief 规则与 `docs/dual-session-delegation.md` 的残留（D8 点 19/20） |
 | 3 | critic（arch，复审；**用户已明确批准**） | **REJECT**（上轮 3 条 BLOCKER **全闭合**；本轮新 diff 引入 **1 条新 BLOCKER**） | 新 BLOCKER = 复合命令「尾随段放行」与 D5 的口径冲突：`git commit -m x; git push --force origin main` **整串以 `git commit ` 开头** ⇒ 命中 `allow` ⇒ push 的 `ask` / force-push 的 `deny` **同时失效**（**搭便车**）。修：见 §2.1 |
+| 7 | critic（arch，复审；**用户已明确批准**，只验闭合） | **APPROVE_WITH_CONDITIONS**（**无 BLOCKER**；3 条 SHOULD_FIX） | ① `endsWithBackgroundAmp` 丢了 `!quoted` 守卫 ⇒ `git commit -m "&"` 被误拒（**本轮引入的假阳性**）⇒ 已修 + 用例；② critic 静态追踪称 `2>&1` 的 fd 前缀泄漏 ⇒ **实跑为绿**（`2>&1` 走 `>` 分支，token 干净、放行；层 2 P16 亦为放行）⇒ 静态追踪有误，**撤回**；③ 「名字带引号的赋值前缀」⇒ **bash 实测不接受**（`A=1: command not found` ⇒ 命令不执行 ⇒ 无绕过）⇒ 规则正确，边界写入 D9⑫ |
 | 6 | critic（arch，复审；**用户已明确批准**，只验闭合） | **REJECT**（轮 5 的回归 + SHOULD_FIX 已闭；但本轮 diff 引入 **2 条 fail-open 回归**） | ① `stripHeredocs` 把**标记行尾部**的命令整段丢弃 ⇒ `git commit -F - <<'MSG' && git push --force …` 被判成单段 ⇒ **force-push 搭便车打穿 D4 的 deny**；② 兜底收窄后 `GIT_AUTHOR_NAME="x" git commit`（**值带引号**的赋值前缀）**完全不被识别** ⇒ 门禁整条不触发 ⇒ 未验证提交静默落地。修法见 §2.4 |
 | 5 | critic（arch，复审；**用户已明确批准**，只验闭合） | **REJECT**（轮 4 三条 **全闭合**；但新 diff 引入 **1 条回归 BLOCKER** + 3 条 SHOULD_FIX） | 回归 BLOCKER = 段分隔符 token **泄漏**进单段判定 ⇒ `git commit -m x;` 这种等价写法被误拒（且文案错）。SHOULD_FIX = 兜底扫描把 heredoc 正文 / `echo git commit` 当命令（假阳性）+ **`"git" commit` 完全绕过门禁**（fail-open）+ 代价段未对齐。修法见 §2.3 |
 | 4 | critic（arch，复审；**用户已明确批准**，只验闭合） | **REJECT**（轮 3 的**字面三形态**已闭合；但**同类面**未闭 —— 3 条新 BLOCKER） | B1 白名单把带 `ask` 档位的命令当「无害」（`cat/head/tail *.env`、`git branch -D`、`git config` 写形态）；B2 **引号内命令替换**（`git commit -m "$(git push --force …)"`）打穿 force-push `deny`；B3 **`cd` 在纯报告清单里** ⇒ 换仓后判定对象错位。修法 = **删掉白名单**（见 §2.2） |
@@ -102,7 +103,7 @@
 |---|---|
 | `lib/commit-gate.ts`（新增） | D5 命令识别（分词 / 全局选项 / 子命令精确匹配 / 闭口 / 复合命令 / fail-closed）+ D2 三判据组合 + 声明读取 |
 | `plugins/commit-gate.ts`（新增） | 接线：shell 钩子 → 会话 → `canonicalRoot` → 声明 → 暂存状态 → 角色（主会话=身份链 / 后端=`role_class`）→ `decideWrite` → 验证命令 → 抛错 |
-| `tests/commit-gate.test.ts`（新增） | 层 1b **100 条**：命中矩阵 8 / 换仓与包装（D5⑩）15 / 命令替换（D5⑨）9 / 误伤矩阵 / 提交形态闭口 12 / 必须单独成段（D5⑧）17 / fail-closed / 分词 / 三判据 / 声明 |
+| `tests/commit-gate.test.ts`（新增） | 层 1b **102 条**：命中矩阵 8 / 换仓与包装（D5⑩）15 / 命令替换（D5⑨）9 / 误伤矩阵 / 提交形态闭口 12 / 必须单独成段（D5⑧）17 / fail-closed / 分词 / 三判据 / 声明 |
 | `opencode.jsonc` | build shell：`git commit*` ⇒ **allow**；force-push 四形态 ⇒ **deny**；`git push` 仍 **ask** |
 | `prompts/build.md` | §输出 / 点名条款 / 角色表 / 角色列表 / 增强层 commit 契约 / `capability:build` 块（`allow-ask` ⇒ `allow-ask-and-deny`，行数不变） |
 | `docs/MULTI-AGENT-DESIGN.md` | 版本摘要 / §2.6 / §2.8.7 D5② / §3.4（标题·理由句·纪律句·残留句）/ §4.4.1 / §4.4.3 |
@@ -116,7 +117,7 @@
 ## 4. 验证
 
 ```bash
-bun test tests/                            # 792 pass / 0 fail（改造前 690）
+bun test tests/                            # 794 pass / 0 fail（改造前 690）
 bash scripts/check-upstream-anchors.sh     # OK（23/23）
 openspec validate role-aware-permissions --strict  # valid
 ```
@@ -185,9 +186,25 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 `git commit -m x; git push --force …` 搭便车打穿 force-push 的 `deny`。
 ⚠ 实测代价：**未声明的仓**也会被形态闭口拒（如 `git commit -m x; echo ok`）⇒ 已在 ADR D3 写明。
 
+### 2.5 轮 7 的处置（末轮无 BLOCKER）
+
+| 轮 7 SHOULD_FIX | 处置 |
+|---|---|
+| ① `git commit -m "&"` 被误拒（`endsWithBackgroundAmp` 丢了 `!quoted` 守卫） | ✅ **已修**（补回守卫）+ 层 1b 用例（层 1b → **101 条**） |
+| ② `2>&1` 的 fd 前缀泄漏（critic 静态追踪） | ⛔ **撤回**：实跑 `tokenizeCommand("git commit -m x > /dev/null 2>&1")` ⇒ `["git","commit","-m","x"]`（干净）⇒ 放行；`2>&1` 走的是 `>` 分支（已剥 fd 前缀），`&>` 分支只处理 `&>` ⇒ 静态追踪有误 |
+| ③ 「名字带引号的赋值前缀」（`"GIT_AUTHOR_NAME"="x" git commit`） | ✅ **无 fail-open**：bash 实测 `"A"=1 env` ⇒ `A=1: command not found` ⇒ 该命令**根本不会执行** ⇒ 无绕过；规则（名字不可带引号）**符合 shell 语义**；边界写入 D9⑫ |
+
+### 2.6 轮 7 之后由**门禁自捕**的一条修正（非复审发现）
+
+收口提交本身被门禁拦下（`必须**单独成段**`）⇒ 反查分词器：**双引号内的转义引号**（`\"`）没被处理
+⇒ 引号提前闭合 ⇒ 提交消息里的 `&` 跑成**分隔符** ⇒ 合法提交被误判成复合命令。
+⇒ 修：双引号内按 shell 语义处理 `\"` / `\\` / `\$` / `` \` `` 为字面量（单引号内无转义，POSIX）。
+⇒ 层 1b +1（`git commit -m "say \"hi\" && b"` ⇒ 放行）；全量 794 pass / 0 fail。
+⚠ 这条是**门禁在本会话里第一次抓到「我自己写的 bug」**（此前都是 critic 抓）⇒ 也说明形态闭口的误伤面仍在收敛中。
+
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）
-- critic：**6 轮**（REJECT ×6：轮 1 三 BLOCKER / 轮 2 两 BLOCKER + 一新增 / 轮 3 上轮全闭 + 一新增 / 轮 4 字面三形态全闭 + 同类面 3 条 / 轮 5 三条全闭 + 一回归 / 轮 6 回归已闭 + **两条 fail-open 回归**）
-- 复审额度：轮 3 – 轮 6 均经**用户明确批准**；若轮 6 的修法需再次复审（轮 7），**须再次取得用户批准**
-- ⚠ **规律**：每轮都能抓到**新引入**的绕过面 ⇒ 收紧口径的每一步都带来新的边界 ⇒ 收口前**必须**有一轮「只验闭合」确认
+- critic：**7 轮**（REJECT ×6 + `APPROVE_WITH_CONDITIONS` ×1；末轮**无 BLOCKER** ⇒ 满足「BLOCKER 全闭 + 复审确认闭合」）
+- 复审额度：轮 3 – 轮 7 均经**用户明确批准**
+- ⚠ **规律**（已登记）：每轮都能抓到**新引入**的绕过面 ⇒ 收紧口径的每一步都带来新的解析边界 ⇒ 收口前**必须**有一轮「只验闭合」确认；本 change 共 7 轮（远超 ADR 行的 1+1 额度，**全部经用户逐轮批准**）

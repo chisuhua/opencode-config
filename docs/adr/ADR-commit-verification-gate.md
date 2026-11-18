@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | **Draft**（oracle 1 轮 BLOCK 已修；critic 1 轮 REJECT 已修 ⇒ 待复审） |
+| Status | **Accepted**（2026-11-18；oracle 1 轮 + critic 7 轮，末轮 `APPROVE_WITH_CONDITIONS` 无 BLOCKER ⇒ 逐轮处置见审稿报告） |
 | Date | 2026-11-18 |
 | Author | architect（主会话） |
 | Parent | `ADR-role-aware-permissions`（其 D5② 免宣称由本文**部分**闭合；其 `:43` 的执行点表述由本文改写）＋ `ADR-class-write-scope-alignment`（能力面投影纪律，引用点 = `lib/delegate-core.ts:619-627` 的 ask/deny 计数派生） |
@@ -12,7 +12,7 @@
 | 关联 backlog | ① `openspec/changes/required-question-commit-confirm/proposal.md` 的 AC5/AC6 以「权限层加 ask」为机制结论（已勾未归档）⇒ **本文反转该档位** ⇒ 该 change 待归档时须按本文改写；② `prompts/front.md` 的「提交由用户在确认后另行发起」措辞会陈旧（front 的 commit 本就 deny ⇒ 行为不变）|
 | AC 映射 | 待立项后回填（本文 Verification 的 V1–V12 → change AC 编号） |
 | 审稿报告 | `.rddf/reviews/commit-verification-gate-review.md`（oracle → critic 输出誊写；oracle 轮逐条应答在同文件，**不进正文**） |
-| 修订 | 2026-11-18：oracle BLOCK（14 条）与 critic REJECT（3 BLOCKER + 8 SHOULD_FIX）的逐条处置见审稿报告；本文只保留**结论** |
+| 修订 | 2026-11-18：oracle / critic 的逐轮处置见审稿报告（§1–§2.4）；本文只保留**结论** |
 
 ## 背景与问题
 
@@ -172,7 +172,7 @@
 | ⑨ | **后端的提交面宽于其 edit 面** | 门禁按 `decideWrite`（architect 类含治理面）；后端 edit 上限（`classAllowRoots`）不含治理面 ⇒ 治理面可被后端**提交**（但写不了）；缓解：scope 派生仍限制其写盘面 |
 | ⑩ | **字符串级判定的残余面** | 防顶层 `git commit` 的复合 / 替换 / 换仓 / 包装形态（D5⑧⑨⑩）；**不防**把 `git` 藏进**引号或字符串**再交给解释器的形态（`bash -c '…'` / `eval` / `xargs` / 别名 / 函数 / 包装脚本）；缓解：无（与 ③ 同源，登记为已知面） |
 | ⑪ | **门禁按「会话所在目录」判定，不是 shell 的 `workdir`** | 门禁的 `workRoot` 取自**会话的 location 目录** ⇒ 在**别的仓**（`workdir` 指向它）提交时，暂存区 / 写集 / 验证命令都落在**会话目录**上 ⇒ **一律拒**（fail-closed：`暂存区为空`）；缓解：无（口径如此：门禁只管会话所在仓） |
-| ⑫ | **heredoc 预处理是逐行状态机** | 防「正文被当成命令 / 位置 pathspec」；**不防**跨行引号串（引号状态不跨行跟踪）导致的误剥离 ⇒ 极端形态下可能漏判；缓解：形态极罕见（fail-closed 方向未受影响：误剥离只会让命令更短，不会凭空造出 commit 段） |
+| ⑫ | **heredoc 预处理是逐行状态机** | 防「正文被当成命令 / 位置 pathspec」；**不防**跨行引号串（引号状态不跨行跟踪）导致的误剥离 ⇒ 极端形态下可能**漏判**（过度剥离会隐藏真实命令段 ⇒ fail-open 方向）；缓解：形态极罕见；⚠ 另：**赋值名字带引号**（`"GIT_AUTHOR_NAME"="x" git commit`）按 shell 语义**不是赋值前缀**（实测 bash 报 `command not found` ⇒ 该命令根本不会执行 ⇒ 无绕过） |
 
 ## 选项对比表
 
