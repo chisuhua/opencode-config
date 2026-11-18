@@ -47,6 +47,27 @@ describe("D5 命令识别：命中 commit 的形态", () => {
   }
 })
 
+describe("D5 命令词与兜底扫描（引号命令词 / 不把字面量当命令）", () => {
+  test('`"git" commit -m x` ⇒ 识别为 commit（引号包住的命令词也是命令词）', () => {
+    const r = detectCommitInvocation('"git" commit -m x')
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
+  test("`echo git commit` ⇒ 不命中（字面量不是命令词）", () => {
+    expect(detectCommitInvocation("echo git commit").isCommit).toBe(false)
+  })
+  test("`git commit -F - <<'MSG' … MSG` ⇒ 放行（heredoc 正文是数据）", () => {
+    const cmd = "git commit -F - <<'MSG'\nfix: x\n\nbody\nMSG"
+    const r = detectCommitInvocation(cmd)
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
+  test("heredoc 正文里的 `git commit` ⇒ 不命中（数据不是命令）", () => {
+    const cmd = "cat > /tmp/x.md <<EOF\nplease git commit -m oops\nEOF"
+    expect(detectCommitInvocation(cmd).isCommit).toBe(false)
+  })
+})
+
 describe("D5⑩ 判定对象可定位（换仓 / 包装命令 ⇒ 拒，不得跳过）", () => {
   const relocated = [
     "git -C /tmp/x commit -m 'x'",
@@ -158,7 +179,6 @@ describe("D5⑧ commit 必须单独成段（任一段是 commit ⇒ 拒）", () 
     "git commit -m x; git branch -D feature",
     "git commit -m x; cat .env",
     "git commit -m x | tee /tmp/log",
-    "git commit -m x &",
     "cd /other/repo && git commit -m x",
     "git commit -m x\ngit push --force origin main",
     "git status | git commit -m x",
@@ -170,6 +190,23 @@ describe("D5⑧ commit 必须单独成段（任一段是 commit ⇒ 拒）", () 
       expect(r.block, `未拦下：${cmd}`).toBeTruthy()
     })
   }
+  // ⚠ 末位分隔符 = **空命令**（语义与裸提交等价）⇒ 放行；段分隔符 token 不得泄漏进单段判定
+  test("`git commit -m x;` ⇒ 放行（末位 `;` 只是空命令）", () => {
+    const r = detectCommitInvocation("git commit -m x;")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toBeUndefined()
+  })
+  test("`git commit -m x\n` ⇒ 放行（末位换行只是空命令）", () => {
+    expect(detectCommitInvocation("git commit -m x\n").block).toBeUndefined()
+  })
+  test("`\ngit commit -m x` ⇒ 放行（首行换行只是空命令）", () => {
+    expect(detectCommitInvocation("\ngit commit -m x").block).toBeUndefined()
+  })
+  test("`git commit -m x &` ⇒ 拒（后台执行 ⇒ 退出码不反映提交结果），且文案含「单独成段」", () => {
+    const r = detectCommitInvocation("git commit -m x &")
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("单独成段")
+  })
   test("`git status && ls` ⇒ 不命中", () => {
     expect(detectCommitInvocation("git status && ls").isCommit).toBe(false)
   })

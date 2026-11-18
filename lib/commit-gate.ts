@@ -14,7 +14,8 @@
  *   ⑦ **提交形态闭口**：`-a` / `--all` / `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file`
  *      / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`）⇒ **拒**
  *      （这些形态的**实际提交内容集 ≠ 暂存区** ⇒ 门禁不可判定）；
- *   ⑧ **commit 必须单独成段**：命令串出现引号外的 `;` / `&&` / `||` / `|` / `&` / **换行**且任一段是 commit ⇒ **拒**。
+ *   ⑧ **commit 必须单独成段**：命令串出现引号外的 `;` / `&&` / `||` / `|` / `&` / **换行**且**去空段后段数 > 1** ⇒ **拒**
+ *      （末位 `&` ⇒ 后台执行 ⇒ 拒；末位 `;` / 换行 ⇒ 只是**空命令** ⇒ 放行）。
  *      理由：shell 权限是**整串前缀匹配** ⇒ 整串以 `git commit ` 开头会命中 `git commit *: allow`，其余**任意**段
  *      都会搭便车（`git push --force` / `git branch -D` / `cat .env` / `rm -rf` / `cd 别的仓` …）⇒ 不可能用「无害命令
  *      白名单」枚举干净（白名单与配置里真实的 ask/deny 档位必然对不齐）⇒ **fail-closed**。重定向（`> f` / `2>&1` /
@@ -96,6 +97,14 @@ const WRAPPER_VALUE_OPTIONS = new Set(["-u", "--user", "-g", "--group", "-p", "-
  */
 const COMPOUND_TOKENS = new Set(["&&", "||", ";", "|", "&", "\n"])
 
+/** 这一段是否以**包装命令**开头（`sudo` / `env` / `timeout` / `exec` …；`VAR=val` 前缀不算）。 */
+function startsWithWrapper(tokens: Token[]): boolean {
+  let i = 0
+  while (i < tokens.length && isVarAssignment(tokens[i]!)) i++
+  const t = tokens[i]
+  return !!t && !t.quoted && WRAPPERS.has(t.value)
+}
+
 /**
  * `git` **命令词**在一段 token 里的下标（`VAR=val` 前缀 / 包装命令及其带值选项 / 子 shell 前缀都跳过）。
  * ⚠ 跳过的包装命令**不是放行**：`commitInSegment` 一旦发现 `git` 前有包装命令 ⇒ 拒（ADR D5⑩）。
@@ -121,6 +130,81 @@ function gitWordIndex(tokens: Token[]): number {
 export interface Token {
   value: string
   quoted: boolean
+}
+
+/**
+ * **heredoc 剥离**（仅用于**识别**，不改实际执行的命令）。
+ *
+ * `git commit -F - <<'MSG' … MSG` 这类写法里，heredoc 正文是**数据**（不是命令）⇒ 不得被当成
+ * 「位置 pathspec」误拒，也不得让正文里的 `git commit` 字面量被误判成命令。
+ * ⇒ 识别时整段（标记 + 正文 + 结束标记）替换为空。
+ */
+function stripHeredocs(command: string): string {
+  const lines = command.split("\n")
+  const out: string[] = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]!
+    const marker = findHeredocMarker(line)
+    if (!marker) {
+      out.push(line)
+      i++
+      continue
+    }
+    out.push(`${line.slice(0, marker.start)} `)
+    i++
+    const delim = marker.delim
+    while (i < lines.length) {
+      const l = lines[i]!.replace(/^[ \t]+/, "").trim()
+      i++
+      if (l === delim) break
+    }
+  }
+  return out.join("\n")
+}
+
+/** 在一行里找 heredoc 标记（**引号外**的 `<<` / `<<-` + 结束标记词）；找不到 ⇒ null。 */
+function findHeredocMarker(line: string): { start: number; delim: string } | null {
+  let quote: string | null = null
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!
+    if (quote) {
+      if (ch === "\\") {
+        i++
+        continue
+      }
+      if (ch === quote) quote = null
+      continue
+    }
+    if (ch === "\\") {
+      i++
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      continue
+    }
+    if (ch !== "<" || line[i + 1] !== "<") continue
+    let j = i + 2
+    if (line[j] === "-") j++
+    while (j < line.length && /\s/.test(line[j]!)) j++
+    let delim = ""
+    const q = line[j]
+    if (q === "'" || q === '"') {
+      const end = line.indexOf(q, j + 1)
+      if (end < 0) return null
+      delim = line.slice(j + 1, end)
+      j = end + 1
+    } else {
+      const m = line.slice(j).match(/^[A-Za-z_][A-Za-z0-9_]*/)
+      if (!m) return null
+      delim = m[0]
+      j += m[0].length
+    }
+    if (!delim) return null
+    return { start: i, delim }
+  }
+  return null
 }
 
 /** 引号感知分词（`echo "git commit"` ⇒ **一个** token ⇒ 不会被误判成 commit 调用）。 */
@@ -281,9 +365,14 @@ function stripShellPrefix(value: string): string {
   return value.replace(/^[({!]+/, "")
 }
 
+/**
+ * 该 token 是不是 `git` **命令词**。
+ * ⚠ **引号包住也算**（`"git" commit -m x` 照样会执行 git）—— 否则它既不触发门禁、也不匹配
+ *   `git commit *: allow`（build 的 shell 默认档是 `"*": "allow"`）⇒ **未验证的提交直接落地**。
+ *   引号形态**不剥** shell 前缀（`"(git"` 不是命令词）。
+ */
 function isGitCommandWord(token: Token): boolean {
-  if (token.quoted) return false
-  const v = stripShellPrefix(token.value)
+  const v = token.quoted ? token.value : stripShellPrefix(token.value)
   if (!v.includes("/") && v !== "git") return false
   return path.basename(v) === "git"
 }
@@ -361,7 +450,9 @@ export function detectCommitInvocation(command: string): CommitInvocation {
   if (typeof command !== "string" || command.trim() === "") {
     return { isCommit: false, block: "commit-gate: 取不到 shell 命令 ⇒ 拒绝写类调用（fail-closed）" }
   }
-  const tokens = tokenizeCommand(command)
+  // ⚠ heredoc 正文是**数据** ⇒ 识别前先剥离（否则正文会被当成位置 pathspec / 命令字面量）
+  const cmd = stripHeredocs(command)
+  const tokens = tokenizeCommand(cmd)
   if (tokens.length === 0) {
     return { isCommit: false, block: "commit-gate: shell 命令为空 ⇒ 拒绝（fail-closed）" }
   }
@@ -391,11 +482,24 @@ export function detectCommitInvocation(command: string): CommitInvocation {
       detail: "compound",
     }
   }
+  if (nonEmpty.length === 0) return { isCommit: false }
 
-  const hit = commitInSegment(tokens)
+  // ⚠ 末位 `&` ⇒ **后台执行**（退出码不再反映提交结果 ⇒ 可诊断性受损）⇒ 拒
+  const last = tokens[tokens.length - 1]
+  if (last && !last.quoted && last.value === "&") {
+    return {
+      isCommit: true,
+      block:
+        "commit-gate: `git commit` 必须**单独成段**（末位 `&` 会把提交放到后台 ⇒ 退出码不反映提交结果）⇒ 拒绝",
+      detail: "compound",
+    }
+  }
+
+  // ⚠ 单段判定**只喂 nonEmpty[0]**（否则尾随的 `;` / 换行 / `&` 分隔符 token 会被当成「位置 pathspec」）
+  const hit = commitInSegment(nonEmpty[0]!)
   if (!hit.isCommit) return hit
   // ⑨ **命令替换**：内容不在静态可见范围，而 `git commit *: allow` 会把它们一起放行
-  if (containsCommandSubstitution(command)) {
+  if (containsCommandSubstitution(cmd)) {
     return {
       isCommit: true,
       block:
@@ -412,7 +516,9 @@ function commitInSegment(tokens: Token[]): CommitInvocation {
   // ③ 定位 `git` **命令词**（`VAR=val` / 包装命令及其选项 / 子 shell 前缀都跳过）
   const i = gitWordIndex(tokens)
   if (i >= tokens.length || !isGitCommandWord(tokens[i]!)) {
-    // 兜底：git 不在「预期位置」（如 `timeout 10 git commit`）⇒ 仍要认出它是 commit（否则 fail-open）
+    // 兜底：**只有「包装命令前缀」**才回溯扫描（`timeout 10 git commit` / `sudo -u u git commit`）
+    //   ⇒ 否则会把 **heredoc 正文** / `echo git commit` 里的字面量误判成命令（假阳性）。
+    if (!startsWithWrapper(tokens)) return { isCommit: false }
     const any = tokens.findIndex((t, idx) => idx > 0 && isGitCommandWord(t))
     if (any < 0) return { isCommit: false }
     const subAny = parseGitSubcommand(tokens, any + 1)
