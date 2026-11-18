@@ -22,6 +22,14 @@ bun test tests/commit-gate-d9-registration.test.ts   ⇒ 18 pass / 0 fail（rc=0
 | **M6** | **测试文件头**重复一行 `D9③` | ✅ 红（1 例） | `… > 整体绿` | `测试注释 的 D9③ 出现 2 次（应恰好 1 次）` |
 | **M7** | **MAD §2.8.8** 索引段写入 `缓解：无` | ✅ 红（1 例） | `… > 整体绿` | `主题文档索引段出现「缓解：」（禁复述 ADR 的决策列）` |
 
+## 2b. 补充突变（oracle 的 finding ① 落地后新增）
+
+| # | 突变 | 结果 | 必红的用例 | 命中的判据文案 |
+|---|---|---|---|---|
+| **M8** | 把载体文件 `tests/commit-gate-d9-registration.test.ts` **临时改名**（V10 指名的路径悬空） | ✅ 红（1 例） | `config-guards … > ADR-commit-verification-gate V10 宣称为机械载体的路径真实存在` | `V10 指名的机械载体不存在：tests/commit-gate-d9-registration.test.ts（改名后 V10 悬空）` |
+
+> 来历：oracle 指出「V10 把某个**文件路径**写进判据文本，却没有任何守卫核对该路径存在 ⇒ 改名后守卫照绿、V10 悬空」⇒ 已在 `tests/config-guards.test.ts` 加存在性锚，并用「临时改名」实测它**有判别力**（复原后绿）。
+
 ## 3. 复原
 
 ```

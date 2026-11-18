@@ -3149,6 +3149,16 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(ok).toBe(true)
   })
 
+  test("ADR-commit-verification-gate V10 宣称为机械载体的路径真实存在（改名 ⇒ 悬空必红）", () => {
+    // ⚠ 为什么需要：V10 的「机械载体」是**文件路径字面量** ⇒ 改名 / 搬文件后守卫照绿、V10 悬空
+    //   （「宣称 ≠ 实现」的典型形态）。本判据只钉两件事：ADR 正文指名该路径 + 该路径存在。
+    const ROOT = path.join(import.meta.dir, "..")
+    const rel = "tests/commit-gate-d9-registration.test.ts"
+    const adr = readFileSync(path.join(ROOT, "docs", "adr", "ADR-commit-verification-gate.md"), "utf8")
+    expect(adr, `V10 应指名机械载体「${rel}」`).toContain(rel)
+    expect(existsSync(path.join(ROOT, rel)), `V10 指名的机械载体不存在：${rel}（改名后 V10 悬空）`).toBe(true)
+  })
+
   test("AC18：产品侧收拢 backlog stub 已建，且其 Acceptance 含 owns 核对项", () => {
     expect(existsSync(BACKLOG)).toBe(true)
     const text = readFileSync(BACKLOG, "utf8")
