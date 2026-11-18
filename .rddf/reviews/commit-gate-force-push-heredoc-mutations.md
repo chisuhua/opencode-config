@@ -1,7 +1,7 @@
 # commit-gate-force-push-heredoc —— 变红演练证据包（AC8）
 
 > 形态：**临时突变 → 跑目标测试 → 记录红 → 复原 → 复跑全量**（每次都复原 ⇒ 工作树无残留）。
-> 判据来源：`openspec/changes/commit-gate-force-push-heredoc/proposal.md`「变红演练」表（一子规则一行）。
+> 判据来源：`openspec/changes/commit-gate-force-push-heredoc/proposal.md`（**已归档** 2026-11-18 ⇒ `openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/proposal.md`）「变红演练」表（一子规则一行）。
 
 | # | 突变 | 目标测试 | 实跑（红） | 必红的用例 |
 |---|---|---|---|---|

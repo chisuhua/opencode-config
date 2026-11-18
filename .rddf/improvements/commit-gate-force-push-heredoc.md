@@ -7,6 +7,7 @@ feedback_status: none
 
 # commit-gate-force-push-heredoc — 强推口径补 `+refspec`/`--mirror` + heredoc 预处理改单遍跨行引号 + 命令词引用/转义还原
 
+> **实施状态**：✅ **已归档**（2026-11-18）⇒ `openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/`（AC0–AC9 逐条判定见 `.rddf/reviews/commit-verification-gate-review.md` §9.6；层 2 实测见 §9.4 + §11.1）
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
 > 决策真源：`docs/adr/ADR-commit-verification-gate.md` **Rev 2 / 2.1 / Rev 3**（Status `Accepted`；Rev 2 经 oracle 1 + 复审 1 + critic 1，Rev 3 经 oracle 1，均无 BLOCKER）。
 > 逐轮处置：`.rddf/reviews/commit-verification-gate-review.md` §7（Rev 2）+ §8（Rev 3，待誊写）。

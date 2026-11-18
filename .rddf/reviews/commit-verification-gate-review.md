@@ -318,6 +318,9 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 
 ## 9. 实施批次（`commit-gate-force-push-heredoc`）—— 产物与证据
 
+> **归档指针（2026-11-18）**：本批已归档为 `openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/`。
+> 本节内出现的 `openspec/changes/commit-gate-force-push-heredoc/…` 是**归档前的历史记述**（按本仓惯例，过程记录不回改）。
+
 > 决策：ADR **Rev 2 / 2.1 / Rev 3**（§7 / §8）；计划：`openspec/changes/commit-gate-force-push-heredoc/proposal.md`（metis + critic 已审，见 §8.3）。
 > 实施：builder（主会话）；治理面改动另走 `审查域: 治理面` 的 oracle → critic（见 §9.5）。
 
