@@ -10,9 +10,9 @@
 | Parent | `ADR-role-aware-permissions`（其 D5② 免宣称由本文**部分**闭合；其 `:43` 的执行点表述由本文改写）＋ `ADR-class-write-scope-alignment`（能力面投影纪律，引用点 = `lib/delegate-core.ts:619-627` 的 ask/deny 计数派生） |
 | 关联 change | **未立项** ⇒ 登记 `backlog: commit-verification-gate`（立项后回填本行 + AC 映射 + `design.md` 的变红演练条款；**Rev 2 的 D4 / D5 增量亦须一并纳入 AC**，勿只收 Rev 1） |
 | 关联 backlog | ① `openspec/changes/required-question-commit-confirm/proposal.md` 的 AC5/AC6 以「权限层加 ask」为机制结论（已勾未归档）⇒ **本文反转该档位** ⇒ 该 change 待归档时须按本文改写；② `prompts/front.md` 的「提交由用户在确认后另行发起」措辞会陈旧（front 的 commit 本就 deny ⇒ 行为不变）|
-| AC 映射 | 待立项后回填（本文 Verification 的 V1–V17 → change AC 编号） |
+| AC 映射 | 待立项后回填（本文 Verification 的 V1–V18 → change AC 编号；Rev 3 的 V18 → AC0，**排在 V13–V17 之前实施** —— tokenizer 的词值还原是 V13–V15 heredoc 用例所依赖的同一份引号/转义规则，先落它可避免基于旧词值写用例再返工） |
 | 审稿报告 | `.rddf/reviews/commit-verification-gate-review.md`（oracle → critic 输出誊写；oracle 轮逐条应答在同文件，**不进正文**） |
-| 修订 | 2026-11-18：oracle / critic 的逐轮处置见审稿报告（§1–§2.4）；本文只保留**结论**。**Rev 2（2026-11-18，用户裁决）**：强推形状补 `+refspec` / `--mirror`（D4 / D9⑬）；heredoc 预处理改单遍跨行引号感知（D5 第 0 步 / D9⑫）；新增 D9⑭（删除类未纳入）；计数以 D4 为**唯一定义处**。Rev 2 的审查与逐条处置见审稿报告 §7（**不进正文**）|
+| 修订 | 2026-11-18：oracle / critic 的逐轮处置见审稿报告（§1–§2.4）；本文只保留**结论**。**Rev 2（2026-11-18，用户裁决）**：强推形状补 `+refspec` / `--mirror`（D4 / D9⑬）；heredoc 预处理改单遍跨行引号感知（D5 第 0 步 / D9⑫）；新增 D9⑭（删除类未纳入）；计数以 D4 为**唯一定义处**。Rev 2 的审查与逐条处置见审稿报告 §7（**不进正文**）。**Rev 3（2026-11-18，用户裁决并入本批）**：规划期实测发现**命令词的引用 / 转义**形态漏判（`g\it commit` / `$'git' commit` / `$"git" commit` ⇒ bash 真的执行 `git commit`，门禁判 `isCommit: false`）⇒ D5③ 扩为「**引用 / 转义还原后也算命令词**」、D9 新增 ⑮、Verification 增 V18 |
 
 ## 背景与问题
 
@@ -110,15 +110,23 @@
 0. **heredoc 预处理**：识别前把 heredoc 的**标记 + 正文 + 结束标记**整段剥离（**正文是数据**，不是命令；否则正文会被当成位置 pathspec、正文里的 `git commit` 字面量会被当成命令）。
    ⚠ **只删标记本身**（`<<` / `<<-` / 结束标记词）⇒ **标记行尾部仍是命令**（`git commit -F - <<'MSG' && git push --force …` 的尾部必须保留，否则搭便车打穿 D4 的 `deny`）。
    ⚠ **单遍扫描 + 引号状态跨行**（Rev 2）：`<<` 只在**引号外**才算 heredoc 标记；引号 / 转义规则与第 1 步分词器
-   **同一套**（双引号内 `\"` `\\` 转义、单引号全字面）。理由：`bash -c "a` / `<<'EOF'` / `" ; git commit -m x` 里
+   **同一套**：双引号内 `\"` `\\` 转义、单引号内 `\` **全字面**、引号外 `\` 转义下一个字符、`$'…'` / `$"…"` 按对应引用处理。理由：`bash -c "a` / `<<'EOF'` / `" ; git commit -m x` 里
    那个 `<<'EOF'` 在**跨行引号内**（是数据），逐行状态机会把它当真标记 ⇒ 剥到串尾 ⇒ 吞掉真正的第二段命令
    （**实测 fail-open**：真实 shell 执行了第二段，门禁判 `isCommit: false`；见 V13）。
    `<<<`（herestring）**不算** heredoc；`<<-` 允许终止行带前导 tab；正文**不做**引号跟踪（正文是数据）。
    残余：同一行多个 heredoc（`cat <<A <<B`）只处理第一个 ⇒ D9⑫。
 1. 按**引号感知**分词；
 2. 跳过 `VAR=val` 前缀（如 `GIT_AUTHOR_NAME=x`）；
-3. 定位 `git` token（允许带路径，**basename 必须是 `git`**；⚠ **引号包住也算命令词** —— `"git" commit -m x` 照样会执行 git，
-   而它既不触发门禁、也不匹配 `git commit *: allow`（build 的 shell 默认档是 `"*": "allow"`）⇒ 未验证提交直接落地）；
+3. 定位 `git` token（允许带路径，**basename 必须是 `git`**；⚠ **引用 / 转义还原后也算命令词** ——
+   `"git" commit` / `g\it commit` / `$'git' commit` / `$"git" commit` 都会执行 git，
+   而它们既不触发门禁、也不匹配 `git commit *: allow`（build 的 shell 默认档是 `"*": "allow"`）⇒ 未验证提交直接落地）：
+
+   - **tokenizer 按 bash 语义还原词值**：引号外 `\` 转义下一个字符（**不产生分隔** ⇒ `git\ commit` 仍是**一个**词 `git commit`，不是 git）；
+     `$` 紧跟 `'` / `"` 时按该引用处理（`$` **不进**词值 ⇒ `$'git'` ⇒ 词值 `git`）；
+   - 判定「是不是 `git`」与「子命令是不是 `commit`」一律用**还原后**的词值（`git c\ommit` ⇒ 子命令 `commit`）；
+   - ⚠ 还原**只影响词值**，不改变 `quoted` / `leadingQuote` 这类**源码形态**标记（它们描述的是写法，不是还原后的词）；
+   - ⚠ 还原只覆盖**字面转义**（`\`）与**引用外壳**（`"` / `'` / `$'` / `$"`）；**转义序列表**（ANSI-C `\xNN` / `\n`）
+     与**参数展开**不在其内（`$'\x67it'` ⇒ bash 解码成 `git`，逐层还原拿不到）⇒ D9⑮；
 4. 取子命令 = **跳过所有 `-` 前缀 token**；对**已知带值选项额外跳过其值**（清单：`--git-dir[=]<dir>` / `--work-tree[=]<dir>` / `--namespace[=]<ns>` / `--exec-path[=]<p>` / `--config-env <n=env>` / `-c <k=v>` / `-C <dir>`）—— ⚠ **分离值形态与等号形态都要覆盖**（只列等号形态 ⇒ 解析出的「子命令」= `<dir>` ⇒ 门禁整条不触发）；其后的第一个 token 即子命令；
 5. 判 `subcommand === "commit"`（**精确相等** ⇒ `commit-tree` / `commit-graph` / `git config commit.gpgsign` / `git log --grep commit` **不算**）；
 6. 命中 ⇒ 进入 D2 判定；**解析不出 / 解析歧义 ⇒ 拒绝**（fail-closed 兜底，**不得**默认「不是 commit」而放行）；
@@ -200,7 +208,7 @@
 能力面投影：`capabilityBlock()`（`lib/delegate-core.ts:619-627`）按 ask/deny **计数**派生 ⇒ Rev 1 新增 4 条 deny 使分类由 `allow-ask` 变 `allow-ask-and-deny`；Rev 2 再增 4 条（合计 8 条）**不改分类**（派生规则是定性判定：ask>0 且 deny>0）
 ⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。
 
-### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十四项）
+### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十五项）
 
 > 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。
 
@@ -220,6 +228,7 @@
 | ⑫ | **同一行多个 heredoc 只处理第一个** | Rev 2 已把「逐行状态机 / 跨行引号」**闭合**（D5 第 0 步，V13–V15）；残余 = `cat <<A <<B` 的第二个正文会被当命令文本 ⇒ 方向是**误拒**（不是放行）；缓解：形态罕见，登记；⚠ 另：**赋值名字带引号**（`"GIT_AUTHOR_NAME"="x" git commit`）按 shell 语义**不是赋值前缀**（实测 bash 报 `command not found` ⇒ 该命令根本不会执行 ⇒ 无绕过） |
 | ⑬ | **命令行之外的强推不可见** | Rev 2 已把 `+refspec` / `--mirror`（含 git 长选项缩写）与带引号形态纳入口径（D4，V16）；残余 = 强推由 **git 配置**驱动时命令行里没有强推 token（`remote.<n>.push` 的 refspec 里带 `+`、`remote.<n>.mirror=true`；`push.default` 只选 refspec、本身不产生 `+`）⇒ 门禁看不到 refspec；缓解：无（要读仓库 git 配置才能判，且配置本身不受门禁约束；登记为已知面） |
 | ⑭ | **删除类 push 未纳入强推口径**（`--delete` / `-d` / `:refspec` / `--prune`） | 它们**删除**远端 ref（不可逆，但不是「重写历史」）⇒ 落在 `git push *` = `ask` ⇒ 人工确认仍在；**不防** saved approval 越过 ask（与 D9⑧ 同一机制）⇒ 同一风险面、不同语义；缓解：无（用户裁决本批只收 `+refspec` / `--mirror`） |
+| ⑮ | **命令词的运行时 / 转义表还原不可静态判定** | Rev 3 已封「引用 / 转义还原」（`"git"` / `g\it` / `$'git'` / `$"git"` / `git c\ommit`）；残余 = ① **参数展开**（`$CMD commit` / `${CMD} commit`）的运行时值不可见；② **转义序列表**（ANSI-C `$'\x67it'` ⇒ bash 解码成 `git`，逐层还原拿不到）⇒ 未验证提交可能落地；缓解：无（读 `process.env` 看似可行，但 shell 可用局部赋值 / `export` 覆盖 ⇒ 静态不可靠；登记为已知面） |
 
 ## 选项对比表
 
@@ -248,6 +257,7 @@
 - **声明文件需维护**（`verify_commands` + tracked + 守卫逐条相等）⇒ 漏改 ⇒ 门禁变弱 ⇒ 守卫先红。
 - 语义类缺陷（措辞、治理面漂移、设计错误）验证命令覆盖不到 ⇒ 只能靠评审与验收 ⇒ **不豁免 push** 的人工确认。
 - 取代了 `ADR-role-aware-permissions.md:43` 的执行点表述 ⇒ 父篇须记**修订指针**（避免两份真源）。
+- **Rev 3：词值还原会波及全部判定**（命令词定位 / 子命令解析 / 提交形态闭口 / D4 的 `detectForcePush` / D5⑪ 的 `mentionsCommitOrForcePush` —— 五处共用同一 tokenizer）⇒ 改动**必须**配全量回归（`bun test tests/`）+ V18 的变红演练；还原只改**词值**，不改 `quoted` / `leadingQuote` 标记（否则形态闭口的判定依据被动摇）。
 
 **回滚路径（三步，**不可只退一半**）**
 1. `opencode.jsonc`：build shell 的 `git commit*` ⇒ 改回 `ask`；force-push **8 条** deny 移除（Rev 1 + Rev 2 同批，恢复原状）；
@@ -280,7 +290,7 @@
   **变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红；放行 `git commit …; git push --force …` ⇒ V7 红；放行 `git commit -m "$(…)"` ⇒ V7 红；放行 `git commit …; cat .env` ⇒ V7 红。
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
-- [ ] **V10 免宣称十四项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
+- [ ] **V10 免宣称十五项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
 - [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [ ] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。
 - [ ] **V13 heredoc 跨行引号 ⇒ 不得漏判**：`bash -c "line1\n<<'EOF'\n" ; git commit -m x` ⇒ **拒**（理由应为「单独成段」/解释器闭口，**不是**「暂存区为空」）。**变红**：退回逐行 `stripHeredocs` ⇒ V13 红。
@@ -288,3 +298,6 @@
 - [ ] **V15 跨行引号合法提交 ⇒ 放行**：`git commit -m "a\nb"` ⇒ 放行；`"bash" -c …`（引号包住的解释器名）⇒ 仍拒。
 - [ ] **V16 强推形状 + 反向判据**：`git push origin +main` / `+a:b` / `--mirror` / `--mirro`（长选项缩写）/ `"+main"` / `"--force"`（带引号）/ `bash -c "git push -uf origin main"` ⇒ **拒**；`git push -o +ci origin main` / `bash -c "git push -o +ci origin main"` / `--no-force-with-lease` / `--tags` / `-u origin main` / `origin main` ⇒ **放行**。**变红**：删掉「带值选项跳过」⇒ V16 红（`-o +ci` 被误拒）；删掉 `+refspec` 分支 / 改回精确名匹配 / 保留 `if (t.quoted) continue` ⇒ V16 红。
 - [ ] **V17 层 2 归因**：`git push origin +main` 在真宿主上被拒时，**记录是哪一层**（宿主权限错 / `push-gate:` 文案），并如实写进报告 —— 不得把「工具层命中」写成「config 生效」。
+- [ ] **V18 命令词的引用 / 转义还原**：`"git" commit -m x` / `g\it commit -m x` / `$'git' commit -m x` / `$"git" commit -m x` / `git c\ommit -m x` ⇒ **被识别为 commit**（不得漏判）；⚠ `$'\x67it' commit -m x`（转义序列表）**不在**本判据内 ⇒ 登记 D9⑮；`git commit -m 'a\b'` / `git commit -m "a\\b"` ⇒ 放行；`echo a\ b` ⇒ 仍是**一个** token（还原不得把词切开）；
+⚠ `git\ commit -m x`（转义**空格** ⇒ 词值是 `git commit`，bash **不执行**）⇒ **不得**被识别为 commit（单段无子命令）——
+防「先按空白切词、再逐词剥转义」这类潦草实现。**变红**：还原逻辑删掉 / 只做引号不做转义 ⇒ V18 红；按空白先切词再剥转义 ⇒ V18 红。

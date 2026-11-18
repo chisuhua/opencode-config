@@ -262,6 +262,60 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 
 `lib/commit-gate.ts`（`stripHeredocs` 单遍重写 + 谓词升级）、`lib/push-gate.ts`（删 `if (t.quoted) continue` + 复用 helper）、`opencode.jsonc`（4 条 deny）、`tests/**`（V13–V16 对应用例、`tests/push-gate.test.ts:39` 的 `+main` 允许用例需**翻转**）**全部未动** ⇒ 由 builder 实施，并随实施批走 `审查域: 治理面`。
 
+## 8. Rev 3 + 实施计划 —— 审查与逐条处置
+
+> 触发：ADR Rev 2 收口后，用户要求「切 planner 做实施计划 → metis → critic → builder 实施」。
+> 规划期**实测**发现第四个缺口（命令词引用 / 转义）⇒ 用户裁决**并入本批** ⇒ 需要先补决策文本（Rev 3）。
+
+### 8.1 规划期实测（第四个缺口，与前三个同源）
+
+| 输入 | 真实 bash | 门禁 | 归属 |
+|---|---|---|---|
+| `g\it commit -m x` | **执行 git** | `isCommit: false` | Rev 3 → D5③ |
+| `$'git' commit -m x` | **执行 git** | `false` | Rev 3 → D5③ |
+| `$"git" commit -m x` | **执行 git** | `false` | Rev 3 → D5③ |
+| `git c\ommit -m x` | **执行 git commit** | `false` | Rev 3 → D5③ |
+| `git\ commit -m x` | **不执行**（`\ ` 转义空格 ⇒ 一个词 `git commit`） | `false`（**碰巧**对） | Rev 3 → V18 负向判据 |
+| `$'\x67it' commit -m x` | **执行 git**（ANSI-C 十六进制） | `false` | **D9⑮**（不实施） |
+| heredoc 正文含强推字面量 | — | **误拒**（push-gate 不剥离 heredoc） | 实施对齐（AC9） |
+
+⇒ 四条形态的根因一致：**门禁对 shell 语义的还原不完整** ⇒ 决策落在「tokenizer 源头还原词值」（Rev 3 D5③），不在比较处放宽。
+
+### 8.2 Rev 3 审查
+
+| 轮 | 审查者 | 判定 | 处置 |
+|---|---|---|---|
+| R1 | oracle（`审查域: 其他审查`） | **PASS**（3 处文字级修订，无 BLOCKER） | ① D9 表头 / V10 的「十四项」⇒「十五项」（事实错误）；② 行序倒挂（D9 ⑮ 在 ⑭ 前、V18 在 V17 前）⇒ 理顺；③ V18 补 `git\ commit` **负向判据** + 变红条款（防「先切词再剥转义」的潦草实现）；④（建议）AC 映射行补 V18 排期理由（tokenizer 还原是 V13–V15 所依赖的同一份规则 ⇒ 先行）；⑤（低）后果章把「波及全部判定」具体化为**五处**消费点 |
+
+### 8.3 实施计划审查（planner 侧）
+
+| 轮 | 审查者 | 判定 | 处置 |
+|---|---|---|---|
+| M1 | **metis**（planner 的固定审查者，硬前置） | 6 节缺口分析 | **P0 全部吸收**：① helper 签名钉死（`scanForcePush(tokens, from)`，替换 `isForceFlagToken`，不留别名）；② `stripHeredocs` **输出契约 6 条不变式**（H1–H6）+ 引号/转义口径写实；③ AC2 拆 **AC2a/AC2b**（AC2b 的期望是**拒**）；④ AC5 定为**非阻塞 + 强制记录 + 禁止宣称「config 已覆盖」**；⑤ AC4 补四类缺项（删除类放行 / 5 个带值选项 × 2 形态 / 引号命令词与子命令 / 短选项附着值）；⑥ AC6 拆「存在 + **顺序**（`indexOf` 断言）」；⑦ **符号链接约束**（`opencode.jsonc → opencode.jsonc.opencode-go`，不得替换链接、不得出现 mode 变化）。**P1 吸收**：证据包（AC8）/ 能力面投影不变 / ADR 元数据回填 / 「实施期新发现形态一律登记不扩口径」的元规则 / 形状计数守卫入 Out of Scope。**NITS**：注释类 delimiter 与 ANSI-C 表的边界登记入 Out of Scope |
+| M1′ | 自查（metis 的一条建议我**未采纳**） | — | metis 称「提前终止 ⇒ fail-open」；我复核后判定应为 **fail-closed（误拒）** ⇒ 已在 proposal C 节把**两个方向相反**的边界分开标注，并写明「该 fail-closed 读法**以 H5 成立为前提**」（残余正文含不平衡引号时，tokenizer 可能吞掉后续真命令 ⇒ 该路径由 H5 收紧消除） |
+| C1 | **critic**（`profile: arch + plan`） | **APPROVE_WITH_CONDITIONS**（无 BLOCKER；5 SHOULD_FIX + 4 NITS） | ① AC2a/AC2b/AC3 **改动前已绿**（实测证实）⇒ AC 表加「**取红 / 钉住**」分档（真取红点 = AC0/AC1/AC4/AC9），证据包不得把「钉住」写成「红」；② S4 横跨两层 ⇒ 补 `lib/push-gate.ts` 的**三处** quoted 检查（`:71` 参数层 / `:54` git 词定位层 / `:67` 子命令层）；③ 变红表补 **C-H5 / C-H6 / A-R4/R5** 行；④ 「四形态」落点表区分**字样落点**与**改动点**，并写明 ADR 自身两处属**史实引用不改**、AC7 的 grep 口径要排除本 change 自身 + `.rddf/reviews/**` + `docs/adr/**`；⑤ `parseGitSubcommandIndex` 的 `sub.quoted` ⇒ `git "commit"` 走 fail-closed 误拒 ⇒ **未登记残余** ⇒ 登记入 Out of Scope（并注明 ADR D9 应追加一条，归档前由 architect 补）。**NITS**：修订行版本史膨胀 / D9⑫「已闭合」与 V 未勾的读法歧义 ⇒ 记录不改（既有惯例） |
+
+**预算**：Rev 3 = oracle 1 轮；计划 = metis 1 轮 + critic 1 轮 ⇒ 均在各自额度内（critic 尚未用满 2 轮）。
+
+### 8.4 本批的审查面归属（重要）
+
+- **arch**（ADR Rev 3 决策文本）：已由 oracle 审过 + critic 在 `arch` 档一并过。
+- **治理面**（`opencode.jsonc` 权限段 / `tests/config-guards.test.ts` 守卫断言 / `docs/MULTI-AGENT-DESIGN.md` / `docs/CHANGELOG.md`）：
+  **实施批**才产生这些改动 ⇒ 须在**实施批**走 `审查域: 治理面` 的 oracle → critic（本报告不覆盖那一轮）。
+
+### 8.5 已登记不做的（Out of Scope，均有落点）
+
+| 项 | 落点 |
+|---|---|
+| 删除类 push（`--delete` / `-d` / `:refspec` / `--prune`） | ADR **D9⑭** |
+| 命令行之外的强推（`remote.<n>.push` 带 `+` / `remote.<n>.mirror`） | ADR **D9⑬** |
+| 同行多个 heredoc | ADR **D9⑫** |
+| 参数展开 / ANSI-C 转义表（`$CMD` / `$'\x67it'`） | ADR **D9⑮** |
+| 引号包住的**子命令**（`git "commit"` ⇒ fail-closed 误拒） | proposal Out of Scope（⚠ **ADR D9 应追加一条**，architect 归档前补） |
+| shell 注释 / 非常规 delimiter（`#` 里的 `<<` / `<<$X` / `<<\EOF`） | proposal Out of Scope（方向 = 误拒） |
+| 形状计数三向一致守卫（6 形状 ↔ 8 条 config ↔ 用例 ↔ 文案） | proposal Out of Scope（另立 backlog） |
+| ADR 拆分（正文 > 250 行，D5 的 11 步属设计规格） | proposal Out of Scope（另立 backlog） |
+
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）
@@ -269,3 +323,4 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 - 复审额度：轮 3 – 轮 7 均经**用户明确批准**
 - ⚠ **规律**（已登记）：每轮都能抓到**新引入**的绕过面 ⇒ 收紧口径的每一步都带来新的解析边界 ⇒ 收口前**必须**有一轮「只验闭合」确认；本 change 共 7 轮（远超 ADR 行的 1+1 额度，**全部经用户逐轮批准**）
 - **Rev 2 批次**（D9⑫⑬，见 §7）：oracle **1 轮**（REJECT）+ 复审 **1 次**（BLOCK，1 处残留）+ critic **1 轮**（APPROVE）⇒ 在 ADR 行额度内
+- **Rev 3 + 实施计划**（见 §8）：oracle **1 轮**（PASS）+ metis **1 轮** + critic **1 轮**（APPROVE_WITH_CONDITIONS，5 SHOULD_FIX 全处置） ⇒ 在额度内；⚠ 实施批的**治理面**改动另需 `审查域: 治理面` 的 oracle → critic
