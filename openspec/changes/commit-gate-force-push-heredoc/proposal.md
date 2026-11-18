@@ -196,7 +196,7 @@ export function scanForcePush(tokens: Token[], from: number): {
 - **参数展开 / ANSI-C 转义表**（`$CMD commit` / `$'\x67it'`）⇒ ADR **D9⑮**。
 - **`git "commit"` / `g\it "commit"`（引号包住的**子命令**）** —— `lib/commit-gate.ts::parseGitSubcommandIndex` 的 `sub.quoted` 检查 "
        "⇒ 判**不是** commit ⇒ 走 fail-closed **误拒**（bash 实际会执行 commit）⇒ 方向安全但**是 Rev 3 词值还原留下的未登记残余**；"
-       "⇒ 本批**不扩**（登记即可）；⚠ **ADR 的 D9 应追加一条**（architect 动作，归档前补）。
+       "⇒ 本批**不扩**（登记即可）。**已登记**：`docs/adr/ADR-commit-verification-gate.md` **D9⑯**（含 `git "status"` 一类非提交命令同样被误拒的实测）；钉证用例见 `tests/commit-gate.test.ts` 的「D9⑯」。
 - **shell 注释与非常规 delimiter**（`#` 注释里的 `<<` / `<<$X` / `<<\EOF` / `<<''`）—— 方向 = **误拒（fail-closed）**，登记为已知边界；**本批不实现**（若实施中出现 ⇒ 按元规则 G 登记，不自行扩口径）。
 - **ADR 拆分**（正文 > 250 行上限，D5 的 11 步属「设计规格」而非决策）—— 另立 backlog，不在本 change。
 - **形状计数三向一致守卫**（ADR 的 6 形状 ↔ config 8 条 ↔ 测试用例 ↔ MAD 文案）—— 本批用 AC6 的落点枚举替代，**独立守卫**另立 backlog。

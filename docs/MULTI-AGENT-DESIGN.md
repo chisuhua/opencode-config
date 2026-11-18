@@ -730,6 +730,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 `git push` 之后出现强推指示符 ⇒ 拒；覆盖 `--force*` / `--mirror*`（**含长选项缩写** `--mirro`）/ 短选项簇（`-uf`）/
 **前导 `+` 的 refspec** / **带引号**形态）⇒ 权限层怎么合并都不影响结果；该兜底是 config 八条的**严格超集**
 （短选项簇与带引号形态 config 的 glob 表达不了）。
+⚠ **引号包住的 `git` 子命令**（`git "commit" -m x`）走 **fail-closed 误拒**（`parseGitSubcommandIndex` 的 `quoted` 检查；方向安全，记作已知误拒面）⇒ 见 `docs/adr/ADR-commit-verification-gate.md` **D9⑯**。
 ⚠ **跳过带值选项**（`-o` / `--push-option` / `--receive-pack` / `--exec` / `--repo`）⇒ `git push -o +ci origin main`（合法、非强推）**不**误拒
 （**工具层**口径）；⚠ 但 **config 层表达不了「跳带值」** ⇒ 该串在**权限层**就命中 `git push * +*` ⇒ 被 deny（**假阳性**，方向 fail-closed）⇒ 登记为 ADR D4 的已知限制。
 

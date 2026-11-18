@@ -173,6 +173,20 @@ describe("V13–V15 heredoc 预处理（单遍 + 跨行引号）", () => {
   })
 })
 
+describe("D9⑯ 引号包住的子命令 ⇒ fail-closed 误拒（已知误拒面，非需求）", () => {
+  // ⚠ ADR D9⑯：`parseGitSubcommandIndex` 默认拒 quoted 子命令（`allowQuotedSub = false`）⇒
+  //   门禁判「无法解析 `git` 的子命令 ⇒ 拒绝」。方向 **fail-closed**（拒的是**会执行**的命令 ⇒
+  //   最坏后果是误拒，不是漏放）。本用例只**钉住当前行为**：若将来放开 `allowQuotedSub`，
+  //   这里会红 ⇒ 届时须同步改 ADR D9⑯ 并补「tokenizer 词值还原 vs 子命令槽位」的判定面说明。
+  for (const cmd of ['git "commit" -m x', 'git "status"', 'git -c k=v "commit" -m x']) {
+    test(`fail-closed 误拒：${cmd}`, () => {
+      const r = detectCommitInvocation(cmd)
+      expect(r.isCommit).toBe(true)
+      expect(r.block, "应命中 fail-closed 拒绝理由").toContain("无法解析 `git` 的子命令")
+    })
+  }
+})
+
 describe("D5⑪ 解释器闭口（把 git 交给另一个解释器 ⇒ 拒）", () => {
   const interpreters = [
     'bash -c "git commit -m x"',

@@ -386,7 +386,9 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 | I1 | **oracle**（`审查域: 治理面`） | **PASS-WITH-NOTES**（3 条必修） | ① `CHANGELOG §4.7.4` 仍写「`+refspec` 两层都不拦」⇒ 与 §4.7.5 自相矛盾 ⇒ 标为**当时快照**并指向 §4.7.5；② 守卫的**顺序断言只钉了新增 4 条** ⇒ 扩到**全部 8 条**（顺序即策略）；③ **config 层表达不了「跳带值」** ⇒ `git push -o +ci origin main` 在**权限层**即被 deny（假阳性）⇒ 登记到 ADR D4 / MAD §4.4.3 / proposal AC4 三处 |
 | I2 | **critic**（`profile: build + arch`） | **REJECT**（1 BLOCKER + 2 SHOULD_FIX + 5 NITS，`scope_exceeded: true`） | **BLOCKER**：`scanLine` 的 `$'…'` 分支**多跳一格**（与 `tokenizeCommand` 不一致 ⇒ 开引号不被跟踪）⇒ `cat <<EOF $'` 这类「标记行尾部挂未闭合 `$'…'`」被判成引号平衡 ⇒ `<<` 当真标记 ⇒ 剥掉后续行 ⇒ **漏判真命令**（已用真实 bash 复现：后续命令执行、门禁判 `isCommit: false`）⇒ 已修 + 补回归用例 + 补突变行 C-H2b。SHOULD_FIX：① 裸 `--`（选项终止符）命中 S1 前缀匹配 ⇒ `git push origin -- main` 被误判强推 ⇒ 已排除 + 补负向用例；② 带值长选项只认**全名** ⇒ `--push-o +ci`（缩写）的值被 S3 误拒 ⇒ 改**双向前缀** + 补负向用例。NITS：证据包的「目标测试」列错位（脚本变量泄漏）⇒ 已修；CHANGELOG §4.7.5 缺 config 层 caveat ⇒ 已补；`cli.json` 的 `verbosity` 改动**不在本批范围** ⇒ **不纳入提交**（运行时文件）；`.openspec.yaml` 注释引用了不存在的 `design.md` ⇒ 已改；报告 §5 重复片段 ⇒ 已删 |
 
-⚠ **预算**：本 change 的 critic 已用 **2 轮**（计划审查 §8.3 + 实施审查 §9.5）⇒ **BLOCKER 闭合未再做第 3 轮**（需用户批准）。闭合证据：新增用例 `标记行尾部挂**未闭合 $'…'** ⇒ 真命令不得漏判` 由变红 C-H2b 钉住（去掉修复 ⇒ 该用例必红）。
+| I3 | **critic**（**第 3 轮**，经用户明确批准，**只验 BLOCKER 闭合** + 本轮新增 diff） | **APPROVE**（`mergeable: yes` / `scope_exceeded: false`） | BLOCKER **已闭合**，判定依据：① `scanLine` 的 `$'…'` 分支 `continue` 前不再动 `i`，与 `tokenizeCommand` 的同分支逐字同构 ⇒ 标记行返回时 `endQuote !== null` ⇒ `<<` 不进候选；② 回归用例 `tests/commit-gate.test.ts:158` 钉住；③ 变红演练 C-H2b 钉证「去掉修复 ⇒ 该用例必红」。两条 SHOULD_FIX 与 NIT 落点逐条核实到位。新增 NIT（不阻断）：双向前缀会接受 `--push-option-extra` 这类比真选项更长的假缩写 —— 只会多吞一个非 `+` 词，方向仍 fail-closed。 |
+
+⚠ **预算**：本 change 的 critic 共用 **3 轮**（计划审查 §8.3 + 实施审查 §9.5-I2 + 闭合验证 §9.5-I3），**第 3 轮经用户明确批准且只验闭合**；I3 无新 BLOCKER ⇒ 不再复审。闭合证据：新增用例 `标记行尾部挂**未闭合 $'…'** ⇒ 真命令不得漏判` 由变红 C-H2b 钉住（去掉修复 ⇒ 该用例必红）。
 
 ### 9.6 AC 逐条判定
 
@@ -406,6 +408,40 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 
 ⚠ **待办（诚实登记）**：`git "commit"`（引号包住的**子命令**）走 fail-closed **误拒**（`parseGitSubcommandIndex` 的 `sub.quoted`）⇒ **未登记残余** ⇒ 需 architect 在 ADR D9 追加一条（归档前补）。
 
+## 10. ADR 补登（D9⑯ + ⑮ 行吞后果类）—— 审查与逐条处置
+
+> 触发：上一轮 critic（实施审查）指出两处「宣称与登记不一致」——① `git "commit"` 这条**实际会发生**的行为（fail-closed 误拒）只在 plan 的 Out of Scope，ADR 里没登记（plan 原话「architect 动作，归档前补」）；② D9⑮ 只写「命令词不可识别」一类后果，而实施批的 BLOCKER 实证了另一类（**行吞**：漏掉的是**其后**命令）。
+> 用户裁决：**现在补**。范围：**不改任何决策**，只动 D9 的两格 + 计数。
+
+### 10.1 改动清单
+
+| 落点 | 改动 |
+|---|---|
+| `docs/adr/ADR-commit-verification-gate.md` | D9 表头计数 十五 → **十六**；V10 同步；**新增 ⑯**（引号包住的 `git` 子命令 ⇒ fail-closed 误拒，含 `git "status"` 实测）；**⑮ 补第二后果类「行吞」**（并标注第二个机理为「同类机理推定」）；修订行加一句「Rev 3 收尾（归档前补登）」（**不新开 Rev 号**，避免元数据头膨胀） |
+| `docs/MULTI-AGENT-DESIGN.md` §2.8.7 | 一句 pointer 指向 D9⑯（**叙述性**，不新增判据、不改任何表格行 / 不变式 / 触发条件 ⇒ 按 §审查配对 不需要新增 critic 轮） |
+| `openspec/changes/commit-gate-force-push-heredoc/proposal.md` | Out of Scope 的「待补」改为「**已登记 D9⑯**」+ 钉证用例指针 |
+| `tests/commit-gate.test.ts` | **D9⑯ 钉证 3 例**（`git "commit" -m x` / `git "status"` / `git -c k=v "commit"` ⇒ `block` 含「无法解析 `git` 的子命令」）—— 只钉当前行为，**不是需求** |
+
+### 10.2 审查
+
+| 轮 | 审查者 | 判定 | 处置 |
+|---|---|---|---|
+| A1 | **oracle**（`审查域: 其他审查`，arch 面） | **APPROVE**（1 条后续义务 + 1 条措辞 SHOULD_FIX + 1 条可选） | ① **后续义务**：⑯ 的「三处登记」为 0/3（AC 无 pointer / 测试无钉证 / MAD 无 pointer）⇒ V10 核验时会 resurface 成 BLOCKER ⇒ **三处全补**（proposal Out of Scope 指本行 + `tests/commit-gate.test.ts` 的 D9⑯ 用例 + MAD §2.8.7 一句）；② **措辞**：⑯ 原句「Rev 3 的词值还原只还原命令词、未放开子命令」机理不精确（词值还原对**所有** token 生效 —— V18 的 `git c\ommit` 就是子命令词值被还原；拒绝来自 `quoted` **形态标记**检查）⇒ 改为「Rev 3 还原的是词值，子命令槽位仍按 `quoted` 标记拒绝（`allowQuotedSub` 默认 `false`；与词值还原无关，别去改 tokenizer）」；③ **可选**：⑮ 的第二个机理（分词器未闭合引用吞行）无实证 ⇒ 标「（同类机理推定）」。**自疑两点获裁决**：过程史实（`$'` 分支多跳一格）**保留正确**（本文体例内嵌带日期实证，且它是「行吞」的唯一实证、直接决定判据设计）；⑯ **追加在末尾正确**（重编号会打断既有引用） |
+
+### 10.3 新增用例的变红演练
+
+| 突变 | 结果 |
+|---|---|
+| `lib/commit-gate.ts::parseGitSubcommandIndex` 的 `allowQuotedSub` 默认值 `false` → `true` | **3 例全红**（`git "commit" -m x` / `git "status"` / `git -c k=v "commit"`）⇒ 用例对「当前行为」有判别力 |
+
+复原后：`bun test tests/` ⇒ **880 pass / 0 fail**（改前 877，+3）；`bash scripts/check-upstream-anchors.sh` ⇒ 23/23。
+
+### 10.4 结论
+
+- **未改决策**：D1–D8 / D4 / D5 / 选项对比表 / 后果章 / Verification 判据文本**逐字未动**（oracle 已核）。
+- **宣称 = 实现**：⑯ 现在**三处可查**（ADR D9⑯ ↔ proposal Out of Scope ↔ 测试钉证 + MAD pointer），V10 核验时不会因 ⑯ 塌陷。
+- ⚠ **登记（不在本批）**：V10 声称「十六项**三处登记**」，但 ①–⑮ 中多数只有 ADR 一处（与 ⑯ 之前的体例相同）⇒ 这是**本批之前就存在**的结构性缺口 ⇒ 归档前统一核对时若按 V10 严格判，需另立一项补齐（**不**在本次静默扩范围）。
+
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）
@@ -414,4 +450,5 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 - ⚠ **规律**（已登记）：每轮都能抓到**新引入**的绕过面 ⇒ 收紧口径的每一步都带来新的解析边界 ⇒ 收口前**必须**有一轮「只验闭合」确认；本 change 共 7 轮（远超 ADR 行的 1+1 额度，**全部经用户逐轮批准**）
 - **Rev 2 批次**（D9⑫⑬，见 §7）：oracle **1 轮**（REJECT）+ 复审 **1 次**（BLOCK，1 处残留）+ critic **1 轮**（APPROVE）⇒ 在 ADR 行额度内
 - **Rev 3 + 实施计划**（见 §8）：oracle **1 轮**（PASS）+ metis **1 轮** + critic **1 轮**（APPROVE_WITH_CONDITIONS，5 SHOULD_FIX 全处置） ⇒ 在额度内
-- **实施批**（见 §9.5）：oracle **1 轮**（`审查域: 治理面`，PASS-WITH-NOTES，3 条必修已落）+ critic **2 轮**（计划审查 §8.3 + 实施审查 §9.5，后者 REJECT 1 BLOCKER ⇒ 已修）⇒ critic 额度**已用满 2 轮** ⇒ BLOCKER 闭合未做第 3 轮（需用户批准）
+- **实施批**（见 §9.5）：oracle **1 轮**（`审查域: 治理面`，PASS-WITH-NOTES，3 条必修已落）+ critic **2 轮**（计划审查 §8.3 + 实施审查 §9.5，后者 REJECT 1 BLOCKER ⇒ 已修）⇒ critic 第 **3** 轮（只验 BLOCKER 闭合，经用户批准）⇒ **APPROVE**（闭合已确认）
+- **ADR 补登**（见 §10）：oracle **1 轮**（`审查域: 其他审查`，**APPROVE**；1 条后续义务 + 1 条措辞已落）；MAD 的一句 pointer 属**叙述性**改动（不新增判据）⇒ 不新增 critic 轮

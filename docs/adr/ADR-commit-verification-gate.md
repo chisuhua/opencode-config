@@ -12,7 +12,7 @@
 | 关联 backlog | ① `openspec/changes/required-question-commit-confirm/proposal.md` 的 AC5/AC6 以「权限层加 ask」为机制结论（已勾未归档）⇒ **本文反转该档位** ⇒ 该 change 待归档时须按本文改写；② `prompts/front.md` 的「提交由用户在确认后另行发起」措辞会陈旧（front 的 commit 本就 deny ⇒ 行为不变）|
 | AC 映射 | **V18 → AC0**（tokenizer 词值还原，**排在 V13–V17 之前实施** —— 词值还原是 V13–V15 heredoc 用例所依赖的同一份引号/转义规则，先落它可避免基于旧词值写用例再返工）；**V13 → AC1**、**V14 → AC2a + AC2b**、**V15 → AC3**、**V16 → AC4**、**V17 → AC5**、**V1 → AC6**（Rev 2 / 2.1 / Rev 3 批次，`openspec/changes/commit-gate-force-push-heredoc/proposal.md`）；**V2–V12 → `role-aware-permissions` 的 AC2–AC24**（Rev 1 批次）。AC7（回归）/ AC8（证据包）/ AC9（push-gate 前处理对齐）是本 change 的**附加**判据（无对应 V 项） |
 | 审稿报告 | `.rddf/reviews/commit-verification-gate-review.md`（oracle → critic 输出誊写；oracle 轮逐条应答在同文件，**不进正文**） |
-| 修订 | 2026-11-18：oracle / critic 的逐轮处置见审稿报告（§1–§2.4）；本文只保留**结论**。**Rev 2（2026-11-18，用户裁决）**：强推形状补 `+refspec` / `--mirror`（D4 / D9⑬）；heredoc 预处理改单遍跨行引号感知（D5 第 0 步 / D9⑫）；新增 D9⑭（删除类未纳入）；计数以 D4 为**唯一定义处**。Rev 2 的审查与逐条处置见审稿报告 §7（**不进正文**）。⚠ **Verification 勾选口径**：只勾**有证据**的项 —— V1 / V13–V18 的证据在审稿报告 §9（本批）与 §4.1（变红演练）；V2–V12 的证据在 §4 / §4.2（Rev 1 批次）⇒ 保持未勾（归档批统一核对），**不**在本文声称「已全部验证」。**Rev 3（2026-11-18，用户裁决并入本批）**：规划期实测发现**命令词的引用 / 转义**形态漏判（`g\it commit` / `$'git' commit` / `$"git" commit` ⇒ bash 真的执行 `git commit`，门禁判 `isCommit: false`）⇒ D5③ 扩为「**引用 / 转义还原后也算命令词**」、D9 新增 ⑮、Verification 增 V18 |
+| 修订 | 2026-11-18：oracle / critic 的逐轮处置见审稿报告（§1–§2.4）；本文只保留**结论**。**Rev 2（2026-11-18，用户裁决）**：强推形状补 `+refspec` / `--mirror`（D4 / D9⑬）；heredoc 预处理改单遍跨行引号感知（D5 第 0 步 / D9⑫）；新增 D9⑭（删除类未纳入）；计数以 D4 为**唯一定义处**。Rev 2 的审查与逐条处置见审稿报告 §7（**不进正文**）。⚠ **Verification 勾选口径**：只勾**有证据**的项 —— V1 / V13–V18 的证据在审稿报告 §9（本批）与 §4.1（变红演练）；V2–V12 的证据在 §4 / §4.2（Rev 1 批次）⇒ 保持未勾（归档批统一核对），**不**在本文声称「已全部验证」。**Rev 3（2026-11-18，用户裁决并入本批）**：规划期实测发现**命令词的引用 / 转义**形态漏判（`g\it commit` / `$'git' commit` / `$"git" commit` ⇒ bash 真的执行 `git commit`，门禁判 `isCommit: false`）⇒ D5③ 扩为「**引用 / 转义还原后也算命令词**」、D9 新增 ⑮、Verification 增 V18。**Rev 3 收尾（归档前补登）**：D9 新增 ⑯（引号包住的 `git` 子命令 ⇒ fail-closed 误拒，方向安全）并把 ⑮ 的后果类补成两类（单条命令词不可识别 / **行吞** —— 后者会让**其后**的真命令完全不可见） |
 
 ## 背景与问题
 
@@ -216,7 +216,7 @@
 能力面投影：`capabilityBlock()`（`lib/delegate-core.ts:619-627`）按 ask/deny **计数**派生 ⇒ Rev 1 新增 4 条 deny 使分类由 `allow-ask` 变 `allow-ask-and-deny`；Rev 2 再增 4 条（合计 8 条）**不改分类**（派生规则是定性判定：ask>0 且 deny>0）
 ⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。
 
-### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十五项）
+### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十六项）
 
 > 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。
 
@@ -236,7 +236,8 @@
 | ⑫ | **同一行多个 heredoc 只处理第一个** | Rev 2 已把「逐行状态机 / 跨行引号」**闭合**（D5 第 0 步，V13–V15）；残余 = `cat <<A <<B` 的第二个正文会被当命令文本 ⇒ 方向是**误拒**（不是放行）；缓解：形态罕见，登记；⚠ 另：**赋值名字带引号**（`"GIT_AUTHOR_NAME"="x" git commit`）按 shell 语义**不是赋值前缀**（实测 bash 报 `command not found` ⇒ 该命令根本不会执行 ⇒ 无绕过） |
 | ⑬ | **命令行之外的强推不可见** | Rev 2 已把 `+refspec` / `--mirror`（含 git 长选项缩写）与带引号形态纳入口径（D4，V16）；残余 = 强推由 **git 配置**驱动时命令行里没有强推 token（`remote.<n>.push` 的 refspec 里带 `+`、`remote.<n>.mirror=true`；`push.default` 只选 refspec、本身不产生 `+`）⇒ 门禁看不到 refspec；缓解：无（要读仓库 git 配置才能判，且配置本身不受门禁约束；登记为已知面） |
 | ⑭ | **删除类 push 未纳入强推口径**（`--delete` / `-d` / `:refspec` / `--prune`） | 它们**删除**远端 ref（不可逆，但不是「重写历史」）⇒ 落在 `git push *` = `ask` ⇒ 人工确认仍在；**不防** saved approval 越过 ask（与 D9⑧ 同一机制）⇒ 同一风险面、不同语义；缓解：无（用户裁决本批只收 `+refspec` / `--mirror`） |
-| ⑮ | **命令词的运行时 / 转义表还原不可静态判定** | Rev 3 已封「引用 / 转义还原」（`"git"` / `g\it` / `$'git'` / `$"git"` / `git c\ommit`）；残余 = ① **参数展开**（`$CMD commit` / `${CMD} commit`）的运行时值不可见；② **转义序列表**（ANSI-C `$'\x67it'` ⇒ bash 解码成 `git`，逐层还原拿不到）⇒ 未验证提交可能落地；缓解：无（读 `process.env` 看似可行，但 shell 可用局部赋值 / `export` 覆盖 ⇒ 静态不可靠；登记为已知面） |
+| ⑮ | **命令词的运行时 / 转义表还原不可静态判定** | Rev 3 已封「引用 / 转义还原」（`"git"` / `g\it` / `$'git'` / `$"git"` / `git c\ommit`）；残余 = ① **参数展开**（`$CMD commit` / `${CMD} commit`）的运行时值不可见；② **转义序列表**（ANSI-C `$'\x67it'` ⇒ bash 解码成 `git`，逐层还原拿不到）⇒ 未验证提交可能落地；缓解：无（读 `process.env` 看似可行，但 shell 可用局部赋值 / `export` 覆盖 ⇒ 静态不可靠；登记为已知面）。⚠ **后果类不止「单条命令词不可识别」**：引号状态判错时后果是**行吞** —— 预处理把后续行当 heredoc 正文**整行删除**（有实证）、或分词器把后续行吞进**未闭合引用**（同类机理推定）⇒ **其后的真命令完全不可见**（比漏判当条更严重，因为被漏掉的是**后续**命令）。实测一例（Rev 2 实施期）：`$'…'` 分支多跳一格 ⇒ `cat <<EOF $'` 的标记行被判成引号平衡 ⇒ heredoc 吞掉含真命令的行 ⇒ fail-open（已修 + 回归用例 + 变红 `C-H2b`）⇒ **判据要按「漏掉其后命令」设计，不能只测单条命令词** |
+| ⑯ | **引号包住的 `git` 子命令走 fail-closed 误拒** | `git "commit" -m x` / `git "push" origin main` / `git -c k=v "commit"` 在 shell 里**去引号后照常执行**，而 `parseGitSubcommandIndex` 默认拒绝 quoted 子命令（Rev 3 还原的是**词值**，**子命令槽位仍按 `quoted` 形态标记拒绝** —— `allowQuotedSub` 默认 `false`；与词值还原无关，别去改 tokenizer）⇒ 门禁判「无法解析 `git` 的子命令 ⇒ 拒绝」⇒ **误拒**（实测含 `git "status"` 一类非提交命令同样被拒）；方向 **fail-closed**（不会让未验证提交落地）⇒ 记作已知误拒面，不记作漏洞；缓解：无（放开子命令会同时放宽「引用包住 / 解释器闭口」的判定面 ⇒ 需单独裁决，另立）。⚠ push 侧不受此影响：`detectForcePush` 用 `allowQuotedSub = true` ⇒ `git "push" --force` 仍被 push-gate 拦。**三处登记**：AC = `openspec/changes/commit-gate-force-push-heredoc/proposal.md` 的 Out of Scope（指向本行）；测试注释 = `tests/commit-gate.test.ts` 的「D9⑯ 钉证」用例（断言当前是 fail-closed 拒绝，不是需求）；主题文档 = `docs/MULTI-AGENT-DESIGN.md` §2.8.7 的一句 pointer |
 
 ## 选项对比表
 
@@ -298,7 +299,7 @@
   **变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红；放行 `git commit …; git push --force …` ⇒ V7 红；放行 `git commit -m "$(…)"` ⇒ V7 红；放行 `git commit …; cat .env` ⇒ V7 红。
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
-- [ ] **V10 免宣称十五项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
+- [ ] **V10 免宣称十六项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
 - [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [ ] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。
 - [x] **V13 heredoc 跨行引号 ⇒ 不得漏判**：`bash -c "line1\n<<'EOF'\n" ; git commit -m x` ⇒ **拒**（理由应为「单独成段」/解释器闭口，**不是**「暂存区为空」）。**变红**：退回逐行 `stripHeredocs` ⇒ V13 红。
