@@ -104,6 +104,75 @@ describe("D5 命令词与兜底扫描（引号命令词 / 不把字面量当命�
   })
 })
 
+describe("V18 命令词的引用 / 转义还原（ADR Rev 3 D5③）", () => {
+  const recognized = [
+    '"git" commit -m x',
+    "g\\it commit -m x",
+    "$'git' commit -m x",
+    '$"git" commit -m x',
+    "git c\\ommit -m x",
+  ]
+  for (const cmd of recognized) {
+    test(`识别为 commit：${cmd}`, () => {
+      expect(detectCommitInvocation(cmd).isCommit, `未识别为 commit：${cmd}`).toBe(true)
+    })
+  }
+  test("`git\\ commit -m x`（转义空格 ⇒ 一个词 `git commit`，bash 不执行）⇒ 不得识别为 commit", () => {
+    expect(detectCommitInvocation("git\\ commit -m x").isCommit).toBe(false)
+  })
+  test("`git commit -m 'a\\b'` ⇒ 放行（单引号内反斜杠是字面量）", () => {
+    expect(detectCommitInvocation("git commit -m 'a\\b'").block).toBeUndefined()
+  })
+  test("`git commit -m \"a\\\\b\"` ⇒ 放行（双引号内转义）", () => {
+    expect(detectCommitInvocation('git commit -m "a\\\\b"').block).toBeUndefined()
+  })
+  test("`echo a\\ b` ⇒ 仍是一个 token（还原不得把词切开）", () => {
+    const toks = tokenizeCommand("echo a\\ b").map((t) => t.value)
+    expect(toks).toEqual(["echo", "a b"])
+  })
+})
+
+describe("V13–V15 heredoc 预处理（单遍 + 跨行引号）", () => {
+  test("AC1 跨行引号里的 `<<` 不是标记 ⇒ 真命令不得漏判", () => {
+    const cmd = "bash -c \"line1\n<<'EOF'\n\" ; git commit -m x"
+    const r = detectCommitInvocation(cmd)
+    expect(r.isCommit, "跨行引号内的 `<<` 被当标记 ⇒ 吞掉真命令").toBe(true)
+  })
+  test("AC2a 合法 heredoc 提交 ⇒ 放行", () => {
+    const cmd = "git commit -F - <<'MSG'\nsubject\nMSG"
+    expect(detectCommitInvocation(cmd).block).toBeUndefined()
+  })
+  test("AC2a 正文含 `git commit` 且段首 `bash x.sh` ⇒ 不拦（正文是数据）", () => {
+    const cmd = "bash scripts/x.sh <<'EOF'\nsome git commit text\nEOF"
+    expect(detectCommitInvocation(cmd).block).toBeUndefined()
+  })
+  test("AC2b 标记行尾部保留 ⇒ `&& git push --force` 仍参与判定（拒：单独成段）", () => {
+    const cmd = "git commit -F - <<'MSG' && git push --force origin main\nbody\nMSG"
+    const r = detectCommitInvocation(cmd)
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("单独成段")
+  })
+  test("AC3 跨行引号合法提交 ⇒ 放行", () => {
+    expect(detectCommitInvocation('git commit -m "a\nb"').block).toBeUndefined()
+  })
+  test("标记行尾部挂**未闭合 `$'…'`** ⇒ 命令行未完成 ⇒ `<<` 不是标记 ⇒ 真命令不得漏判", () => {
+    // bash 实测：`cat <<EOF $'` 的 `$'` 跨行闭合 ⇒ heredoc 才在**之后**开始 ⇒ 末行的 git commit 真执行
+    const cmd = "cat <<EOF $'\nx\n'\nEOF\ngit commit -m x"
+    expect(
+      detectCommitInvocation(cmd).isCommit,
+      "未闭合 `$'…'` 让标记行被判成引号平衡 ⇒ 剥掉后续行 ⇒ 漏判真命令",
+    ).toBe(true)
+  })
+  test("H5 终止行判定与 bash 一致：普通 `<<` 要求整行相等（`EOF ` 尾随空格 ⇒ 不终止 ⇒ 其后正文仍是数据）", () => {
+    // ⚠ 正文里放一条**真命令**：若终止行判定过宽（把 `EOF ` 当终止行）⇒ 它会被当命令 ⇒ 可判别
+    const cmd = "bash x.sh <<'EOF'\nEOF \ngit commit -m sneaky\nEOF"
+    expect(
+      detectCommitInvocation(cmd).isCommit,
+      "尾随空格的 `EOF ` 被当终止行 ⇒ 正文里的命令被误当命令",
+    ).toBe(false)
+  })
+})
+
 describe("D5⑪ 解释器闭口（把 git 交给另一个解释器 ⇒ 拒）", () => {
   const interpreters = [
     'bash -c "git commit -m x"',
@@ -145,6 +214,11 @@ describe("D5⑪ 解释器闭口（把 git 交给另一个解释器 ⇒ 拒）", 
   })
   test("`\"bash\" script.sh` ⇒ 放行（段内没提 commit / force push）", () => {
     expect(detectCommitInvocation('"bash" script.sh').isCommit).toBe(false)
+  })
+  test("`bash -c \"git push -uf origin main\"` ⇒ 拒（字符串侧与顶层**同一 helper** ⇒ `-uf` 簇也认）", () => {
+    const r = detectCommitInvocation('bash -c "git push -uf origin main"')
+    expect(r.isCommit).toBe(true)
+    expect(r.block).toContain("另一个解释器")
   })
   test("`git commit -m docker` ⇒ 放行（包装词不在**段首**）", () => {
     expect(detectCommitInvocation("git commit -m docker").block).toBeUndefined()

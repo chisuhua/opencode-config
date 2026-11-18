@@ -157,9 +157,8 @@ export function mentionsCommitOrForcePush(raw: string): boolean {
     const sub = tokens[subIndex]!.value
     if (sub === "commit") return true
     if (sub === "push") {
-      for (let k = subIndex + 1; k < tokens.length; k++) {
-        if (isForceFlagToken(tokens[k]!)) return true
-      }
+      // ⚠ **与顶层判定共用同一 helper** ⇒ 两层口径自动一致（S1–S5：前缀 / 短簇 / `+refspec` / 跳带值）
+      if (scanForcePush(tokens, subIndex + 1).hit) return true
     }
   }
   return false
@@ -220,40 +219,71 @@ export interface Token {
  *
  * `git commit -F - <<'MSG' … MSG` 这类写法里，heredoc 正文是**数据**（不是命令）⇒ 不得被当成
  * 「位置 pathspec」误拒，也不得让正文里的 `git commit` 字面量被误判成命令。
- * ⇒ 识别时整段（标记 + 正文 + 结束标记）替换为空。
+ *
+ * **ADR Rev 2 / 2.1（D5 第 0 步）：单遍扫描 + 引号状态跨行** —— 与 `tokenizeCommand` **同一套**
+ * 引号 / 转义规则（双引号内 `\"` `\\` 转义、单引号内 `\` 全字面、引号外 `\` 转义下一个字符、
+ * `$'…'` / `$"…"` 按对应引用处理）。理由：`bash -c "a` / `<<'EOF'` / `" ; git commit -m x` 里那个
+ * `<<'EOF'` 在**跨行引号内**（是数据），逐行状态机会把它当真标记 ⇒ 剥到串尾 ⇒ 吞掉真正的第二段命令
+ * （**实测 fail-open**：真实 shell 执行了第二段，门禁判 `isCommit: false`）。
+ *
+ * **输出契约（H1–H6）**
+ * - **H1** 只有**引号外**的 `<<`（且不是 `<<<` herestring）才是候选标记；
+ * - **H2** 候选标记**所在行必须引号平衡**（行末引号状态为空）⇒ 否则不是标记
+ *   （bash 语义：命令行未完成 ⇒ heredoc 尚未开始 ⇒ 后续行都是字符串的一部分）；
+ * - **H3** **标记本身**删除，**标记行其余部分逐字保留**（含 `&&` 尾部与重定向）；
+ * - **H4** **正文行与终止行整行删除**（不留空行 ⇒ 段数计数不受影响）；
+ * - **H5** 终止行判定与 bash 一致：普通 `<<` **整行相等**；`<<-` 去掉**前导 tab** 后相等；
+ *   未找到终止行 ⇒ 按 bash 吞到串尾；
+ * - **H6** 输出仍是「可再次 tokenize 的命令串」。
  */
-function stripHeredocs(command: string): string {
+export function stripHeredocs(command: string): string {
   const lines = command.split("\n")
   const out: string[] = []
+  let quote: string | null = null // **跨行**的引号状态
   let i = 0
   while (i < lines.length) {
     const line = lines[i]!
-    const marker = findHeredocMarker(line)
+    const scan = scanLine(line, quote)
+    // H2：本行引号未闭合（行首或行末）⇒ 行内**没有** heredoc 标记（原样保留，状态继续）
+    if (quote !== null || scan.endQuote !== null) {
+      out.push(line)
+      quote = scan.endQuote
+      i++
+      continue
+    }
+    const start = scan.candidates[0]
+    const marker = start === undefined ? null : parseHeredocMarker(line, start)
     if (!marker) {
       out.push(line)
       i++
       continue
     }
-    // ⚠ 只删**标记本身**（`<<` / `<<-` / 结束标记词）⇒ 标记行**尾部**的命令（`&& git push --force …`）必须保留
-    out.push(`${line.slice(0, marker.start)} ${line.slice(marker.end)}`)
+    // H3：标记本身删除，**标记行其余部分逐字保留**
+    out.push(line.slice(0, start) + line.slice(marker.end))
     i++
-    const delim = marker.delim
+    // H4 / H5：正文行与终止行整行删除（未找到终止行 ⇒ 吞到串尾）
     while (i < lines.length) {
-      const l = lines[i]!.replace(/^[ \t]+/, "").trim()
+      const l = lines[i]!
       i++
-      if (l === delim) break
+      if (isHeredocTerminator(l, marker.delim, marker.stripTabs)) break
     }
   }
   return out.join("\n")
 }
 
-/** 在一行里找 heredoc 标记（**引号外**的 `<<` / `<<-` + 结束标记词）；找不到 ⇒ null。 */
-function findHeredocMarker(line: string): { start: number; end: number; delim: string } | null {
-  let quote: string | null = null
+/**
+ * 扫一行：返回**引号外**的 `<<` 候选位置与**行末**的引号状态。
+ * @param line   该行文本
+ * @param quote0 行首的引号状态（跨行携带；`null` = 不在引号内）
+ */
+function scanLine(line: string, quote0: string | null): { endQuote: string | null; candidates: number[] } {
+  let quote = quote0
+  const candidates: number[] = []
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]!
     if (quote) {
-      if (ch === "\\") {
+      // 双引号内 `\` 转义下一个字符（bash 语义）；单引号内 `\` 是**字面量**
+      if (quote === '"' && ch === "\\") {
         i++
         continue
       }
@@ -261,34 +291,62 @@ function findHeredocMarker(line: string): { start: number; end: number; delim: s
       continue
     }
     if (ch === "\\") {
-      i++
+      i++ // 引号外转义 ⇒ 下一个字符是字面量
+      continue
+    }
+    if (ch === "$" && (line[i + 1] === "'" || line[i + 1] === '"')) {
+      // ⚠ **不动 i**（for 循环末尾的 `i++` 会正好落到引号上）—— 与 `tokenizeCommand` 同一套规则；
+      //   多跳一格会让开引号**不被跟踪** ⇒ `cat <<EOF $'` 这类「标记行尾部挂未闭合 `$'…'`」被判成
+      //   引号平衡 ⇒ `<<` 被当真标记 ⇒ 剥掉后续行 ⇒ **漏判真命令**（critic 抓到的 BLOCKER）。
       continue
     }
     if (ch === "'" || ch === '"') {
       quote = ch
       continue
     }
-    if (ch !== "<" || line[i + 1] !== "<") continue
-    let j = i + 2
-    if (line[j] === "-") j++
-    while (j < line.length && /\s/.test(line[j]!)) j++
-    let delim = ""
-    const q = line[j]
-    if (q === "'" || q === '"') {
-      const end = line.indexOf(q, j + 1)
-      if (end < 0) return null
-      delim = line.slice(j + 1, end)
-      j = end + 1
-    } else {
-      const m = line.slice(j).match(/^[A-Za-z_][A-Za-z0-9_]*/)
-      if (!m) return null
-      delim = m[0]
-      j += m[0].length
-    }
-    if (!delim) return null
-    return { start: i, end: j, delim }
+    // `<<` 候选（`<<<` 是 herestring ⇒ 不算）
+    if (ch === "<" && line[i + 1] === "<" && line[i + 2] !== "<") candidates.push(i)
   }
-  return null
+  return { endQuote: quote, candidates }
+}
+
+/** 解析一个 heredoc 标记（分隔词 + 结束位置）。不是合法标记 ⇒ null。 */
+function parseHeredocMarker(
+  line: string,
+  start: number,
+): { end: number; delim: string; stripTabs: boolean } | null {
+  let j = start + 2
+  let stripTabs = false
+  if (line[j] === "-") {
+    stripTabs = true
+    j++
+  }
+  while (j < line.length && (line[j] === " " || line[j] === "\t")) j++
+  if (j >= line.length) return null
+  const q = line[j]
+  if (q === "'" || q === '"') {
+    const close = line.indexOf(q, j + 1)
+    if (close < 0) return null
+    let delim = line.slice(j + 1, close)
+    let end = close + 1
+    // 引号后仍可接词字符（bash：`<<'E'OF` ⇒ 分隔词 `EOF`）
+    const more = /^[A-Za-z0-9_]*/.exec(line.slice(end))
+    if (more && more[0]) {
+      delim += more[0]
+      end += more[0].length
+    }
+    return { end, delim, stripTabs }
+  }
+  const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(line.slice(j))
+  if (!m) return null
+  return { end: j + m[0].length, delim: m[0], stripTabs }
+}
+
+/** 该行是不是 heredoc 的**终止行**（bash 语义：普通 `<<` 整行相等；`<<-` 去前导 tab）。 */
+function isHeredocTerminator(line: string, delim: string, stripTabs: boolean): boolean {
+  let l = line.replace(/\r$/, "") // CRLF 容忍
+  if (stripTabs) l = l.replace(/^\t+/, "")
+  return l === delim
 }
 
 /** 引号感知分词（`echo "git commit"` ⇒ **一个** token ⇒ 不会被误判成 commit 调用）。 */
@@ -313,6 +371,28 @@ export function tokenizeCommand(command: string): Token[] {
       } else {
         cur += ch
       }
+      continue
+    }
+    // ⚠ **引号外的反斜杠 = 转义**（bash 语义，ADR Rev 3 D5③）：
+    //   `g\it` ⇒ 词值 `git`（转义的是**非空格**字符 ⇒ 词还是 git ⇒ bash 真的执行 git）；
+    //   `\ `（转义**空格**）⇒ **不产生分隔** ⇒ `git\ commit` 仍**一个**词（词值 `git commit`，不是 git）。
+    if (ch === "\\") {
+      const next = command[i + 1]
+      if (next === undefined) {
+        cur += ch // 末尾的孤立反斜杠（bash 会等续行）⇒ 当字面量
+        has = true
+        i++
+        continue
+      }
+      cur += next
+      has = true
+      i += 1 // ⚠ for 循环末尾还会 `i++` ⇒ 这里只能 +1（否则会多吃一个字符：`g\it` ⇒ `gi`）
+      continue
+    }
+    // ⚠ **`$'…'` / `$"…"`**（ANSI-C / locale 引用）：`$` **不进**词值 ⇒ `$'git'` ⇒ 词值 `git`
+    //   （bash 会把它还原成 `git` ⇒ 真执行 git ⇒ 必须识别）。
+    if (ch === "$" && (command[i + 1] === "'" || command[i + 1] === '"')) {
+      // ⚠ **不动 i**（for 循环末尾的 `i++` 会正好落到引号上）⇒ `$` 不进词值，下一轮按引号处理
       continue
     }
     if (ch === '"' || ch === "'") {
@@ -469,16 +549,81 @@ export function containsCommandSubstitution(command: string): boolean {
 }
 
 /**
- * 强推标志（`--force` / `--force=…` / `-f` / **短选项簇里含 `f`**）—— **单一真源**：
- * `lib/push-gate.ts` 与 D5⑪ 的字符串侧判定都调它（避免「顶层拒 `-uf`、包进 bash 就放行」）。
+ * **强推指示符的扫描**（ADR Rev 2 / 2.1 的 D4 判定表 S1–S5）—— **单一真源**：
+ * `lib/push-gate.ts` 的顶层判定与 D5⑪ 的字符串侧判定都调它
+ * （避免「顶层拒 `-uf`、包进 bash 就放行」这类两层分裂）。
+ *
+ * 判定表：
+ * - **S1 长选项按前缀**：`--force*` / `--mirror*`（git 允许长选项缩写 ⇒ `git push --mirro` 也命中）
+ *   ⇒ `--no-force-with-lease` **不**命中（`--no-` 天然不匹配前缀）。
+ * - **S2 短选项逐字母**：`-f` / `-uf` 命中；**遇带值短选项（`-o`）即停** ⇒ `-oquickfix` 不命中。
+ * - **S3 前导 `+` 的 refspec**：`+main` / `+a:b` 命中；`:old`（删除类）**不**命中（D9⑭）。
+ * - **S4 quoted 不跳过**：shell 去引号后即真身 ⇒ `"+main"` / `"--force"` 命中。
+ * - **S5 跳带值选项的值**（`-o` / `--push-option` / `--receive-pack` / `--exec` / `--repo`）
+ *   ⇒ `git push -o +ci origin main` **不**命中（合法、非强推）。
  */
-export function isForceFlagToken(token: Token): boolean {
-  const value = token.value
-  if (value.startsWith("--")) {
-    return value.split("=")[0] === "--force" || value.split("=")[0] === "--force-with-lease" || value.split("=")[0] === "--force-if-includes"
+export interface ForcePushScan {
+  /** 是否命中强推指示符 */
+  hit: boolean
+  /** 命中的类别（`S1` / `S2` / `S3`） */
+  kind?: "long" | "short-cluster" | "plus-refspec"
+  /** 命中的 token 原文（用于错误文案） */
+  token?: string
+}
+
+/**
+ * 强推长选项（ADR D4：六形态里的 `--force*` 与 `--mirror*`）。
+ * ⚠ git 允许**长选项缩写**（实测 `git push --mirro` 被接受为 `--mirror`）⇒ 判定要**双向**匹配：
+ *   选项名以已知强推项**开头**（`--force-with-lease`）**或**已知强推项以选项名**开头**（`--forc` / `--mirro`）。
+ * ⚠ `--no-*` 天然不匹配（`--no-force-with-lease` ⇒ 不拒）。
+ */
+const FORCE_LONG_OPTIONS = ["--force", "--force-with-lease", "--force-if-includes", "--mirror"]
+
+/** `git push` 的**带值选项**（其值可能是 `+…` ⇒ 必须跳过，否则误判成强推）。 */
+const PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--receive-pack", "--exec", "--repo"])
+
+/**
+ * 从 `tokens[from]` 起（`from` = `push` 子命令 token 的**下一个**下标）扫描强推指示符。
+ * @param tokens 分词结果
+ * @param from   扫描起点
+ */
+export function scanForcePush(tokens: Token[], from: number): ForcePushScan {
+  for (let i = from; i < tokens.length; i++) {
+    const t = tokens[i]!
+    const v = t.value
+    // ── S1：长选项（按前缀）──
+    if (v.startsWith("--") && v !== "--") {
+      const eq = v.indexOf("=")
+      const name = eq >= 0 ? v.slice(0, eq) : v
+      if (FORCE_LONG_OPTIONS.some((opt) => opt.startsWith(name) || name.startsWith(opt))) {
+        return { hit: true, kind: "long", token: v }
+      }
+      // S5：带值长选项的**分离值形态** ⇒ 跳过它的值（等号形态自带值，无需跳）
+      // ⚠ git 允许**长选项缩写** ⇒ 双向前缀匹配（`--push-o` ⇒ `--push-option`）
+      const isValueOpt = [...PUSH_VALUE_OPTIONS].some((opt) => opt.startsWith(name) || name.startsWith(opt))
+      if (eq < 0 && isValueOpt) i += 1
+      continue
+    }
+    // ── S2：短选项（逐字母解析；遇带值短选项即停）──
+    if (v.startsWith("-") && v.length > 1) {
+      const letters = v.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        const c = letters[k]!
+        if (c === "o") {
+          // `-o` 带值：其后若是**附着值**（`-o+ci`）⇒ 值已在本 token 内；否则值是**下一个 token**
+          if (k === letters.length - 1) i += 1
+          break // 附着值结束 ⇒ 后续字符不是选项字母
+        }
+        if (c === "f") return { hit: true, kind: "short-cluster", token: v }
+      }
+      continue
+    }
+    // ── S3：前导 `+` 的 refspec ──
+    if (v.startsWith("+") && v.length > 1) {
+      return { hit: true, kind: "plus-refspec", token: v }
+    }
   }
-  if (value.startsWith("-") && value.length > 1) return value.slice(1).includes("f")
-  return false
+  return { hit: false }
 }
 
 /** 会让「判定对象」换仓的 git 全局选项（ADR D5⑩）。 */
@@ -508,7 +653,7 @@ function stripShellPrefix(value: string): string {
  *   `git commit *: allow`（build 的 shell 默认档是 `"*": "allow"`）⇒ **未验证的提交直接落地**。
  *   引号形态**不剥** shell 前缀（`"(git"` 不是命令词）。
  */
-function isGitCommandWord(token: Token): boolean {
+export function isGitCommandWord(token: Token): boolean {
   const v = token.quoted ? token.value : stripShellPrefix(token.value)
   if (!v.includes("/") && v !== "git") return false
   return path.basename(v) === "git"
@@ -518,7 +663,11 @@ function isGitCommandWord(token: Token): boolean {
  * 从 `git` 之后解析**子命令**。
  * @returns 子命令名；解析不出 ⇒ `null`（⇒ 调用方 fail-closed）
  */
-function parseGitSubcommandIndex(tokens: Token[], start: number): number | null {
+export function parseGitSubcommandIndex(
+  tokens: Token[],
+  start: number,
+  allowQuotedSub = false,
+): number | null {
   let i = start
   while (i < tokens.length) {
     const t = tokens[i]!
@@ -530,7 +679,10 @@ function parseGitSubcommandIndex(tokens: Token[], start: number): number | null 
     i += 1
   }
   const sub = tokens[i]
-  if (!sub || sub.quoted) return null
+  if (!sub) return null
+  // ⚠ 默认**拒绝**引号包住的子命令（`git "commit"` ⇒ fail-closed 误拒，登记于 ADR D9 的残余面）；
+  //   `allowQuotedSub = true` 时**接受**（push 侧要用：`git "push" --force` 照样执行 git）。
+  if (sub.quoted && !allowQuotedSub) return null
   return i
 }
 

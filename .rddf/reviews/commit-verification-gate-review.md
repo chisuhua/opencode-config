@@ -316,6 +316,96 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 | 形状计数三向一致守卫（6 形状 ↔ 8 条 config ↔ 用例 ↔ 文案） | proposal Out of Scope（另立 backlog） |
 | ADR 拆分（正文 > 250 行，D5 的 11 步属设计规格） | proposal Out of Scope（另立 backlog） |
 
+## 9. 实施批次（`commit-gate-force-push-heredoc`）—— 产物与证据
+
+> 决策：ADR **Rev 2 / 2.1 / Rev 3**（§7 / §8）；计划：`openspec/changes/commit-gate-force-push-heredoc/proposal.md`（metis + critic 已审，见 §8.3）。
+> 实施：builder（主会话）；治理面改动另走 `审查域: 治理面` 的 oracle → critic（见 §9.5）。
+
+### 9.1 产物清单（逐条对 AC）
+
+| 文件 | 改动 | 对应 AC |
+|---|---|---|
+| `lib/commit-gate.ts` | ① tokenizer **词值还原**（引号外 `\` 转义、`$'…'`/`$"…"` 前缀还原；不改 `quoted`/`leadingQuote`）② `stripHeredocs` 重写为**单遍 + 跨行引号**（H1–H6 输出契约）③ `isForceFlagToken` → **`scanForcePush`**（S1–S5：长选项**缩写**双向匹配 / 短选项逐字母 / `+refspec` / quoted 不跳过 / 跳带值）④ D5⑪ 字符串侧**共用**该 helper ⑤ 导出 `stripHeredocs` / `isGitCommandWord` / `parseGitSubcommandIndex(allowQuoted)` | AC0 / AC1 / AC2a / AC2b / AC3 / AC4 |
+| `lib/push-gate.ts` | 复用 `scanForcePush` + `stripHeredocs`；删三处 quoted 检查（`:54` git 词 / `:67` 子命令 / `:71` 参数）；头注改口径 | AC4 / AC9 |
+| `opencode.jsonc.opencode-go`（**符号链接目标**） | +4 条 `deny`（`git push +*` / `* +*` / `--mirror*` / `* --mirror*`），置于 `git push *` = `ask` **之后** | AC6 |
+| `tests/config-guards.test.ts` | 断言 4 → **8 条** + **顺序断言**（新增 deny 的 `indexOf` > `git push *` 的 `indexOf`）+ 文案锚 | AC6 |
+| `tests/commit-gate.test.ts` | +V18（词值还原 5 正例 + 2 负例）+ V13–V15（heredoc 5 例）+ D5⑪ 的 `-uf` 簇 | AC0 / AC1 / AC2a / AC2b / AC3 |
+| `tests/push-gate.test.ts` | **翻转** `+main` 的允许用例；+六形态 + 反向判据（带值选项 / 删除类 / `--no-force-with-lease`）+ AC9 | AC4 / AC9 |
+| `docs/MULTI-AGENT-DESIGN.md` | 页首 + §2.8.7 + §4.4.3（八条 / 单一真源 / 带值跳过） | AC6 |
+| `docs/CHANGELOG.md` | §4.7.4 口径 + **新节 §4.7.5**（含 `--force-with-lease` 也被拒的**用户可感知变化**） | AC6 |
+| `docs/adr/ADR-commit-verification-gate.md` | 元数据回填（关联 change / AC 映射 / V 勾选）+ D4 的「证据缺口」**改为实测结论** | AC6 / AC7 |
+| `openspec/changes/commit-gate-force-push-heredoc/.openspec.yaml` | `skip_specs: true`（planner 写集不含该文件 ⇒ builder 建） | AC7 |
+| `.rddf/reviews/commit-gate-force-push-heredoc-mutations.md` | **AC8 证据包**（12 条变红演练） | AC8 |
+
+### 9.2 层 1b（`bun test tests/`）
+
+**834 pass / 0 fail（改前）⇒ 877 pass / 0 fail（改后，+43）**；`bash scripts/check-upstream-anchors.sh` ⇒ **23/23**；`openspec validate commit-gate-force-push-heredoc --strict` ⇒ **valid**。
+
+### 9.3 变红演练（AC8）—— **13/13 全部变红**
+
+证据包：`.rddf/reviews/commit-gate-force-push-heredoc-mutations.md`（每条含「突变点 → 必红的用例名 → 复原后复跑全绿」）。
+
+| 子规则 | 突变 | 变红的用例 |
+|---|---|---|
+| A-R1/R3 | 删掉引号外转义 + `$'…'` 前缀还原 | V18「`g\it commit -m x` ⇒ 识别为 commit」 |
+| A-R2 | 转义字符当分隔符（先切词再剥转义） | 同上 |
+| B-S1 | 长选项改回精确名集合 | 「`git push --mirro` ⇒ 拒」 |
+| B-S2 | 短选项退回「含 f 即强推」 | 「`git push -oquickfix origin main` ⇒ 放行」 |
+| B-S3 | 删 `+refspec` 分支 | 「`git push origin +main` ⇒ 拒」 |
+| B-S4 | 恢复 quoted 跳过 | 「`git push origin "+main"` ⇒ 拒」 |
+| B-S5 | 删「跳带值选项的值」 | 「`git push --push-option +ci origin main` ⇒ 放行」 |
+| C-H1/H2 | 引号状态**不跨行** | 「AC1 跨行引号里的 `<<` 不是标记 ⇒ 真命令不得漏判」 |
+| C-H3 | 删整个标记行（而非只删标记） | 「AC2b 标记行尾部保留」 |
+| C-H4 | 不删正文 | 「AC2a 合法 heredoc 提交 ⇒ 放行」 |
+| C-H5 | 终止行判定退回 `.trim()` | 「H5 `EOF ` 尾随空格 ⇒ 不终止」 |
+| C-H2b | `scanLine` 的 `$'…'` 分支多跳一格（开引号不被跟踪） | 「标记行尾部挂**未闭合 `$'…'`** ⇒ 真命令不得漏判」 |
+| D-AC6 | config 只写 4 条 deny | 档位守卫「force-push 八条 ⇒ deny」 |
+
+⚠ **两处自捕**（与 §7.2 同类）：① 首个 C-H1/H2 突变点打偏（改的是 `scanLine` 的入参，而**分支条件**仍用跨行携带的 `quote` ⇒ 没红）⇒ 改为突变「不跨行携带引号」；② C-H5 的首个用例**不可判别**（正文里没有真命令 ⇒ 提前终止与否结果相同）⇒ 用例改为在 `EOF ` 之后放一条 `git commit -m sneaky`。
+⚠ 演练期间**一次污染**：探针在 `/tmp/opencode` 留了 `.git` ⇒ 污染了 `tests/delegate-tool.test.ts` 的「非 git 工程」用例（vcs 闸门）⇒ 已删除该 `.git`（本会话探针产物）⇒ 复跑 874 pass / 0 fail。
+
+### 9.4 层 2 实测（真宿主）
+
+| 探针 | 期望 | 实跑 |
+|---|---|---|
+| **P28**（独立实例 `opencode run --standalone --auto`，**新插件代码**）`g\it commit -m x`（Red 声明仓） | 被识别为 commit ⇒ 门禁触发 | ✅ `commit-gate: 暂存区为空 ⇒ 请先 git add 再提交`（**插件文案**，非 git 报错）⇒ HEAD 未推进（`75c616e init`）。⇒ 修复前该串**完全不触发门禁**（未验证提交静默落地） |
+| **P29**（同上）`git push "+main"`（带引号形态） | config 匹配不到 ⇒ 工具层兜住 | ✅ `push-gate: 检测到 **force push**（\`git push … +main\`）⇒ 拒绝` ⇒ **未执行 git** |
+| **P30**（本交互会话 · config 层）`git push origin +main` | 归因 | ✅ 宿主 `permission.rejected`（⇒ **config 的 `git push * +*` 生效**）；对照 `git push origin main`（只匹配 `ask`）⇒ **过了权限层**、真执行了 git ⇒ 证明拒的确实是新增的 `deny` |
+| **P31**（本交互会话 · config 层）`git push --mirror` | 归因 | ✅ 宿主 `permission.rejected`（⇒ `git push --mirror*` 生效） |
+
+⇒ **证据缺口的结论变了**：ADR D4 原写「宿主 glob 能否跨空格匹配中缀**无源码锚点** ⇒ config 层 best-effort」
+⇒ **实测：能匹配** ⇒ config 层**生效**；但**带引号形态**匹配不到 ⇒ 那类**只有工具层**能拦 ⇒ **工具层仍是权威兜底**（已回写 ADR D4 与 V17）。
+
+⚠ **层 2 的前置条件**：插件在 **server 启动时**加载 ⇒ 本会话的插件仍是**改前**代码 ⇒ P28 / P29 用**独立实例**跑（新代码）。
+⇒ **未实跑**：AC1 的跨行引号形态在**真宿主**的层 2 复验（需 `service restart` 后在本会话跑；层 1b 已覆盖其纯逻辑，插件接线未变）。
+
+### 9.5 实施批的审查记录
+
+| 轮 | 审查者 | 判定 | 处置 |
+|---|---|---|---|
+| I1 | **oracle**（`审查域: 治理面`） | **PASS-WITH-NOTES**（3 条必修） | ① `CHANGELOG §4.7.4` 仍写「`+refspec` 两层都不拦」⇒ 与 §4.7.5 自相矛盾 ⇒ 标为**当时快照**并指向 §4.7.5；② 守卫的**顺序断言只钉了新增 4 条** ⇒ 扩到**全部 8 条**（顺序即策略）；③ **config 层表达不了「跳带值」** ⇒ `git push -o +ci origin main` 在**权限层**即被 deny（假阳性）⇒ 登记到 ADR D4 / MAD §4.4.3 / proposal AC4 三处 |
+| I2 | **critic**（`profile: build + arch`） | **REJECT**（1 BLOCKER + 2 SHOULD_FIX + 5 NITS，`scope_exceeded: true`） | **BLOCKER**：`scanLine` 的 `$'…'` 分支**多跳一格**（与 `tokenizeCommand` 不一致 ⇒ 开引号不被跟踪）⇒ `cat <<EOF $'` 这类「标记行尾部挂未闭合 `$'…'`」被判成引号平衡 ⇒ `<<` 当真标记 ⇒ 剥掉后续行 ⇒ **漏判真命令**（已用真实 bash 复现：后续命令执行、门禁判 `isCommit: false`）⇒ 已修 + 补回归用例 + 补突变行 C-H2b。SHOULD_FIX：① 裸 `--`（选项终止符）命中 S1 前缀匹配 ⇒ `git push origin -- main` 被误判强推 ⇒ 已排除 + 补负向用例；② 带值长选项只认**全名** ⇒ `--push-o +ci`（缩写）的值被 S3 误拒 ⇒ 改**双向前缀** + 补负向用例。NITS：证据包的「目标测试」列错位（脚本变量泄漏）⇒ 已修；CHANGELOG §4.7.5 缺 config 层 caveat ⇒ 已补；`cli.json` 的 `verbosity` 改动**不在本批范围** ⇒ **不纳入提交**（运行时文件）；`.openspec.yaml` 注释引用了不存在的 `design.md` ⇒ 已改；报告 §5 重复片段 ⇒ 已删 |
+
+⚠ **预算**：本 change 的 critic 已用 **2 轮**（计划审查 §8.3 + 实施审查 §9.5）⇒ **BLOCKER 闭合未再做第 3 轮**（需用户批准）。闭合证据：新增用例 `标记行尾部挂**未闭合 $'…'** ⇒ 真命令不得漏判` 由变红 C-H2b 钉住（去掉修复 ⇒ 该用例必红）。
+
+### 9.6 AC 逐条判定
+
+| AC | 判定 | 证据 |
+|---|---|---|
+| AC0 | ✅ | 层 1b 9 例 + 变红 A-R1/R3 / A-R2 + 层 2 P28 |
+| AC1 | ✅（层 1b）/ ⏳ 层 2 待 restart | 层 1b 用例 + 变红 C-H1/H2 |
+| AC2a | ✅（**钉住**：改动前已绿） | 层 1b + 变红 C-H4 |
+| AC2b | ✅（**钉住**） | 层 1b + 变红 C-H3 |
+| AC3 | ✅（**钉住**） | 层 1b |
+| AC4 | ✅ | 层 1b 30+ 例（含 `--` 终止符 / 带值缩写反向判据）+ 变红 B-S1–S5 + 层 2 P29 |
+| AC5 | ✅ | 层 2 P30 / P31（归因已记录，结论只写「config 层生效 / 工具层兜底」） |
+| AC6 | ✅ | 守卫 8 条 + 顺序断言 + 变红 D-AC6；全部落点已同步（grep 口径见 proposal AC7） |
+| AC7 | ✅ | 877 pass / 0 fail；anchors 23/23；`openspec validate --strict` valid；grep 口径剩余命中为空 |
+| AC8 | ✅ | 证据包 13/13 变红 |
+| AC9 | ✅ | 层 1b 2 例（正文含强推字面量 ⇒ 不拦；正文之外 ⇒ 仍拒） |
+
+⚠ **待办（诚实登记）**：`git "commit"`（引号包住的**子命令**）走 fail-closed **误拒**（`parseGitSubcommandIndex` 的 `sub.quoted`）⇒ **未登记残余** ⇒ 需 architect 在 ADR D9 追加一条（归档前补）。
+
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）
@@ -323,4 +413,5 @@ D2 的**三判据**（验证命令 / 暂存区 / 角色写集）**只对声明�
 - 复审额度：轮 3 – 轮 7 均经**用户明确批准**
 - ⚠ **规律**（已登记）：每轮都能抓到**新引入**的绕过面 ⇒ 收紧口径的每一步都带来新的解析边界 ⇒ 收口前**必须**有一轮「只验闭合」确认；本 change 共 7 轮（远超 ADR 行的 1+1 额度，**全部经用户逐轮批准**）
 - **Rev 2 批次**（D9⑫⑬，见 §7）：oracle **1 轮**（REJECT）+ 复审 **1 次**（BLOCK，1 处残留）+ critic **1 轮**（APPROVE）⇒ 在 ADR 行额度内
-- **Rev 3 + 实施计划**（见 §8）：oracle **1 轮**（PASS）+ metis **1 轮** + critic **1 轮**（APPROVE_WITH_CONDITIONS，5 SHOULD_FIX 全处置） ⇒ 在额度内；⚠ 实施批的**治理面**改动另需 `审查域: 治理面` 的 oracle → critic
+- **Rev 3 + 实施计划**（见 §8）：oracle **1 轮**（PASS）+ metis **1 轮** + critic **1 轮**（APPROVE_WITH_CONDITIONS，5 SHOULD_FIX 全处置） ⇒ 在额度内
+- **实施批**（见 §9.5）：oracle **1 轮**（`审查域: 治理面`，PASS-WITH-NOTES，3 条必修已落）+ critic **2 轮**（计划审查 §8.3 + 实施审查 §9.5，后者 REJECT 1 BLOCKER ⇒ 已修）⇒ critic 额度**已用满 2 轮** ⇒ BLOCKER 闭合未做第 3 轮（需用户批准）

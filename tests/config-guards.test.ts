@@ -77,19 +77,40 @@ describe("守卫漂移检测：配置 == 规则真源", () => {
 
   // ⚠ **2026-11-18（`ADR-commit-verification-gate` D1）**：`git commit` 的审批点已从**权限弹窗（ask）**
   //   搬到**工具层验证门**（`plugins/commit-gate.ts`）⇒ 档位改为 `allow`；
-  //   **publish 维持人工**（用户裁决：push 一律严格），**force-push 四形态收紧为 `deny`**
-  //   （shell 是整串前缀匹配 ⇒ flag 在末位的形态也必须显式列出）。
+  //   **publish 维持人工**（用户裁决：push 一律严格），**force-push 八条收紧为 `deny`**
+  //   （shell 是整串前缀匹配 ⇒ flag 在末位的形态也必须显式列出；
+  //     Rev 2 补 `+refspec` / `--mirror` ⇒ **四条扩为八条** —— 计数定义见 ADR D4）。
   //   ⚠ build **不在** `GUARDED_AGENTS` 里 ⇒ 它的 shell 是手写在配置里的 ⇒ 用本判据钉住。
-  test("build 的 shell：`git commit` ⇒ allow（验证门接管）；`git push` ⇒ ask；force-push 四形态 ⇒ deny", () => {
+  test("build 的 shell：`git commit` ⇒ allow（验证门接管）；`git push` ⇒ ask；force-push 八条 ⇒ deny", () => {
     const shell = config.agent.build.permission.shell as Record<string, string>
     expect(shell["git commit *"], "`git commit *` 应为 allow（审批点已搬到工具层验证门）").toBe("allow")
     expect(shell["git commit"], "裸 `git commit` 应为 allow").toBe("allow")
     // ⚠ publish 仍需人工确认（两条规则成对 ⇒ 防止只加一条）
     expect(shell["git push *"], "`git push *` 仍应是 ask").toBe("ask")
     expect(shell["git push"], "`git push` 仍应是 ask").toBe("ask")
-    // ⚠ force-push 四形态（含 flag 在末位者）必须 deny
-    for (const pat of ["git push --force*", "git push -f*", "git push * --force*", "git push * -f*"]) {
+    // ⚠ force-push **八条**（含 flag 在末位者 + Rev 2 的 `+refspec` / `--mirror`）必须 deny
+    const forceDenies = [
+      "git push --force*",
+      "git push -f*",
+      "git push * --force*",
+      "git push * -f*",
+      "git push +*",
+      "git push * +*",
+      "git push --mirror*",
+      "git push * --mirror*",
+    ]
+    for (const pat of forceDenies) {
       expect(shell[pat], `缺 force-push deny 规则「${pat}」`).toBe("deny")
+    }
+    // ⚠ **顺序**：新增的 deny 必须排在 `git push *`（ask）**之后** ⇒ last-match-wins 才落 deny
+    const keys = Object.keys(shell)
+    const askIdx = keys.indexOf("git push *")
+    expect(askIdx).toBeGreaterThanOrEqual(0)
+    // ⚠ **全部 8 条**都要排在 `git push *` 之后（不只新增的 4 条 —— 旧 4 条被挪到前面同样会让
+    //   `--force` 形态退回 ask，而「存在」断言照样绿 ⇒ 顺序即策略，必须逐条钉住）
+    for (const pat of forceDenies) {
+      const idx = keys.indexOf(pat)
+      expect(idx, `缺 force-push deny 规则「${pat}」`).toBeGreaterThan(askIdx)
     }
   })
 
@@ -113,7 +134,7 @@ describe("守卫漂移检测：配置 == 规则真源", () => {
       ["MAD §2.6 pause/commit 契约", mad, "工具层验证门决定、`git push` 等用户确认"],
       ["MAD §2.8.7 D5②（部分闭合）", mad, "已由 `docs/adr/ADR-commit-verification-gate.md` D5 部分闭合"],
       ["MAD §4.4.1（commit 段退役 + force-push deny）", mad, "`git commit` 段已退役"],
-      ["MAD §4.4.3（前缀匹配 ⇒ 四形态）", mad, "force-push `deny` 必须列全**四种形态**"],
+      ["MAD §4.4.3（前缀匹配 ⇒ 全部形态）", mad, "force-push `deny` 必须列全**D4 定义的全部形态**"],
       ["MAD 版本摘要", mad, "2026-11-18 变更"],
       ["lib/delegate-core.ts 后端 brief", read(path.join("lib", "delegate-core.ts")), "`git commit` 由工具层验证门决定"],
       ["docs/dual-session-delegation.md", read(path.join("docs", "dual-session-delegation.md")), "由工具层验证门决定"],

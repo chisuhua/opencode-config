@@ -1060,13 +1060,29 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 #### 4.7.4 遗留面收口：force-push 工具层兜底 / workdir 判定 / 解释器闭口（2026-11-18 续）
 
 - **force push 工具层兜底**（`lib/push-gate.ts`）：config 的 `deny` 与宿主「Allow always」持久化授权优先级未知
-  ⇒ 同一插件在 `execute.before` 直接拒（`git push` 后出现任一强推标志）。是 config 四形态的**严格超集**
-  （短选项簇 `git push -uf` config 的 glob 表达不了）。
+  ⇒ 同一插件在 `execute.before` 直接拒（`git push` 后出现任一强推标志）。是 config 强推 deny 的**严格超集**
+  （短选项簇 `git push -uf` config 的 glob 表达不了；Rev 2 扩到八条）。
 - **判定对象改用 shell 的 `workdir`**（回退会话目录）：跨仓提交不再被误判「暂存区为空」；角色身份仍按会话（`stateRoot`）。
 - **解释器闭口**（ADR D5⑪）：段首是 `bash -c` / `sh -c` / `eval` / `xargs` / `ssh` / `docker exec` / `kubectl exec`
   且串内（含引号内）提到 `git commit` 或 force push ⇒ 拒（被解释的字符串对门禁不可见）。完整包装清单与残余面见 ADR D5⑪ / D9③⑩（`zsh`/`dash`/`ksh`/`fish`/`scp`/`rsync`/`podman`/`nsenter`/`expect` 等同属闭口范围）。
-- **仍登记不做的**：`git push origin +main`（`+refspec`，两层都不拦，D9⑬）、**脚本文件内容**里的提交（D9③⑥⑩）、
-  heredoc 逐行解析边界（D9⑫）。
+- **仍登记不做的**（⚠ **本节是当时的快照**）：`git push origin +main`（`+refspec`，两层都不拦，D9⑬ —— **Rev 2 起已闭合**，见 §4.7.5）、
+  **脚本文件内容**里的提交（D9③⑥⑩ —— 仍成立）、heredoc 逐行解析边界（D9⑫ —— **Rev 2 起已闭合**，见 §4.7.5）。
+
+#### 4.7.5 强推口径扩到八条 + heredoc 预处理单遍 + 命令词引用/转义还原（2026-11-18）
+
+- **强推口径**：config `deny` 四条 ⇒ **八条**（新增 `git push +*` / `git push * +*` / `git push --mirror*` / `git push * --mirror*`
+  —— `+refspec` 与 `--mirror` 也是「重写远端历史」）；工具层谓词改为**单一真源** `scanForcePush`
+  （覆盖长选项**缩写** `--mirro`、短选项簇 `-uf`、前导 `+` 的 refspec、**带引号**形态；
+  **跳过带值选项**的值 ⇒ `git push -o +ci origin main` 在**工具层**不误拒
+  —— ⚠ **但 config 层表达不了「跳带值」**：该串在**权限层**就命中 `git push * +*` ⇒ 被 deny（假阳性，方向 fail-closed；见 ADR D4 已知限制）。
+  用户可感知的行为变化：
+  **`git push --force-with-lease` 现在也会被拒**（口径是「凡重写远端历史即拒」，有意为之）。
+- **heredoc 预处理**改**单遍扫描 + 引号状态跨行**（与分词器同一套引号/转义规则）：
+  修掉一条**实测 fail-open**（跨行引号里的 `<<` 被误当 heredoc 标记 ⇒ 吞掉真正的提交命令）。
+- **命令词还原**（tokenizer 源头）：引号外的反斜杠转义、`$'…'` / `$"…"` 引用外壳 ⇒
+  `g\it commit` / `$'git' commit` / `git c\ommit` 现在**被识别为 commit**（此前未验证提交可直接落地）。
+- **仍登记不做**：删除类 push（`--delete` / `-d` / `:refspec` / `--prune`）、命令行之外的强推
+  （`remote.<n>.push` 带 `+`）、参数展开与 ANSI-C 转义表、同行多个 heredoc ⇒ 见 ADR D9⑫–⑮。
 
 ## 各版本验证记录
 

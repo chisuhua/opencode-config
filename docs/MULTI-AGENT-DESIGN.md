@@ -7,7 +7,7 @@
 本文档是 OpenCode V2 multi-agent 系统的**当前态**设计参考：设计原则、agent 详细定义、委派拓扑、权限模型、provider 路由、未来改进 TODO。后续重构时请先读本文件。
 
 > **本版（v2.3.1）变更**：新增 §3.4「用户侧的批准纪律（宿主『Allow always』的边界）」+ §4.4.1 补 `git commit` ask（v2.44 已生效但当前态缺载）
-> **2026-11-18 变更**：`git commit` 的审批点从**权限弹窗（ask）**搬到**工具层验证门**（`plugins/commit-gate.ts`，见 `docs/adr/ADR-commit-verification-gate.md`）⇒ §3.4 的纪律对象收窄为 **`git push`**；§4.4.1 的 `git commit` ask 段退役，force-push 四形态收紧为 `deny`
+> **2026-11-18 变更**：`git commit` 的审批点从**权限弹窗（ask）**搬到**工具层验证门**（`plugins/commit-gate.ts`，见 `docs/adr/ADR-commit-verification-gate.md`）⇒ §3.4 的纪律对象收窄为 **`git push`**；§4.4.1 的 `git commit` ask 段退役，force-push 收紧为 `deny`（四形态 → **八条**，见 ADR D4）
 >
 > **本版（v2.3.0）变更**：新增 §2.9「subagent 输入契约」—— 把 `prompts/build.md` 里「7 字段上下文契约」从**散文**变成**可判定的门**：规则真源 `lib/subagent-contract-core.ts`、宿主接线 `plugins/subagent-contract.ts`（L3 `session.hook("context")` 生成前告知 / **L1 `tool.hook("execute.before")` 硬门** / L2 `session.hook("prompt")` 检测）、审计 CLI `scripts/audit-subagent-prompts.ts`。默认 **warn**（灰度），逐 agent 可切 `enforce`；豁免 = 关键词（限任务陈述区 400 字符）+ 结构前置（缺失 ≥4/7）+ 状态继承（继承"复审模式"且本轮自证引用上一轮，续接轮不清零）。
 >
@@ -722,9 +722,16 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 **历史残留处置（2026-11-18）**：`git commit` 的弹窗虽已取消，但**曾点过 Allow always 的持久化批准仍在**宿主状态库
 ⇒ 若将来恢复 `ask` 档，它会**立即命中**（即恢复弹窗但不再询问）⇒ 一次性清除该批准。
 
-**`git push --force` 的额外一层**：`opencode.jsonc` 已把 force-push **四形态**设为 `deny`（`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*`）
-⇒ `deny` **不会**被 Allow always 放行（这是它相对 `ask` 的价值）；⚠ 但「持久化 allow 与 config `deny` 的优先级」**无源码锚点**（宿主合并算法未查明）⇒ 如实登记为该 ADR 的 D9⑧。
-**缓解已落地**：同一插件在工具层对 force push **再兜一层**（`lib/push-gate.ts`：`git push` 之后出现任一强推标志 ⇒ 拒）⇒ 权限层怎么合并都不影响结果；该兜底是 config 四形态的**严格超集**（短选项簇 `git push -uf` config 的 glob 表达不了）。
+**`git push --force` 的额外一层**：`opencode.jsonc` 已把 force-push **八条**设为 `deny`
+（`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*` ＋ `git push +*` / `git push * +*` / `git push --mirror*` / `git push * --mirror*`
+—— 后四条是 `+refspec` 与 `--mirror` 两种强推形态）
+⇒ `deny` **按设计**不会被 Allow always 放行（这是它相对 `ask` 的价值）；⚠ 但「持久化 allow 与 config `deny` 的优先级」**无源码锚点**（宿主合并算法未查明）⇒ 如实登记为该 ADR 的 D9⑧ ⇒ **工具层再兜一层**（下段）。
+**缓解已落地**：同一插件在工具层对 force push **再兜一层**（`lib/push-gate.ts` + `lib/commit-gate.ts::scanForcePush` 单一真源：
+`git push` 之后出现强推指示符 ⇒ 拒；覆盖 `--force*` / `--mirror*`（**含长选项缩写** `--mirro`）/ 短选项簇（`-uf`）/
+**前导 `+` 的 refspec** / **带引号**形态）⇒ 权限层怎么合并都不影响结果；该兜底是 config 八条的**严格超集**
+（短选项簇与带引号形态 config 的 glob 表达不了）。
+⚠ **跳过带值选项**（`-o` / `--push-option` / `--receive-pack` / `--exec` / `--repo`）⇒ `git push -o +ci origin main`（合法、非强推）**不**误拒
+（**工具层**口径）；⚠ 但 **config 层表达不了「跳带值」** ⇒ 该串在**权限层**就命中 `git push * +*` ⇒ 被 deny（**假阳性**，方向 fail-closed）⇒ 登记为 ADR D4 的已知限制。
 
 **为什么这条纪律不写进 `prompts/**`**：`prompts/<id>.md` 的唯一消费者是模型——模型看不见宿主弹窗、控制不了点击、也感知不到持久化。写进去只会产生「每会话重复提醒」「在 ask 通过后怀疑用户点了 always 而拒绝继续」一类噪音，并制造「系统在 enforce 什么」的假信心。`prompts/**` 只承载**模型可执行的规则**。
 
@@ -858,7 +865,7 @@ agent 级 `read` **必须**写成对象形式并把 `.env` 规则放在 `*` 之�
 "read": { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" }
 ```
 
-shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`）。**已知残留**：shell 是整串前缀匹配（⇒ §4.4.1 的 force-push `deny` 必须列全**四种形态**，含 flag 在末位者），`git show HEAD:.env > /tmp/x` 这类重定向仍会绕过——权限模型的固有限制，不是配置问题。
+shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`）。**已知残留**：shell 是整串前缀匹配（⇒ §4.4.1 的 force-push `deny` 必须列全**D4 定义的全部形态**（八条，含 flag 在末位者与 `+refspec` / `--mirror`）），`git show HEAD:.env > /tmp/x` 这类重定向仍会绕过——权限模型的固有限制，不是配置问题。
 
 #### 4.4.4 只读白名单的排除项
 
