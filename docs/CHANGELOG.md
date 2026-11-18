@@ -1023,7 +1023,8 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 
 ### 4.7 v2.47 权限加固：commit 审批点搬到工具层验证门（2026-11-18）
 
-见 `docs/adr/ADR-commit-verification-gate.md`（oracle 1 轮 BLOCK → 修；critic 2 轮 REJECT → 修）。
+见 `docs/adr/ADR-commit-verification-gate.md`（Status: **Accepted**；oracle 1 轮 + critic **7 轮**，末轮
+`APPROVE_WITH_CONDITIONS`（无 BLOCKER）⇒ 逐轮处置见 `.rddf/reviews/commit-verification-gate-review.md`）。
 
 #### 4.7.1 `git commit`：`ask` ⇒ `allow`，闸门改由插件承担
 
@@ -1041,6 +1042,20 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 `git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*` ⇒ `deny`
 （shell 是**整串前缀匹配** ⇒ flag 在末位的形态也必须显式列出；`deny` 不会被宿主的 Allow always 放行）。
 `git push` 仍 `ask` ⇒ **publish 一律维持人工确认**。
+
+#### 4.7.3 命令识别口径收紧（fail-closed，7 轮复审收敛）
+
+复审逐轮挖出「**整串前缀匹配 ⇒ 搭便车**」的同族绕过面 ⇒ 口径最终收敛为**三条硬规则**（ADR D5⑧⑨⑩）：
+
+- **commit 必须单独成段**：引号外出现 `;` / `&&` / `||` / `|` / `&` / 换行 且任一段是 commit ⇒ 拒
+  （否则 `git commit -m x; git push --force …` 整串命中 `git commit *: allow` ⇒ force-push 的 `deny` 被绕过；
+  `cd 别的仓 && git commit` 还会让门禁判错仓）。末位 `;` / 换行只是**空命令** ⇒ 放行；末位 `&`（后台执行）⇒ 拒。
+- **命令替换 ⇒ 拒**：`$(…)` / 反引号 / 进程替换（单引号外）⇒ 拒（`git commit -m "$(git push --force …)"` 会打穿 `deny`）。
+- **判定对象必须可定位 ⇒ 拒**：`git -C` / `--git-dir` / `--work-tree` / `GIT_DIR=` 等换仓形态，以及 `sudo` / `env` / `timeout` 等**包装命令** ⇒ 拒。
+
+⚠ **代价**（显式登记于 ADR D9）：① `git commit -m x; echo "exit=$?"` 这类尾随报告段被拒（可见假阳性，模型重试即可）；
+② 提交消息里出现 `$(` 被拒（改用 `-F <file>`）；③ 形态闭口对**所有仓**生效（封的是宿主的整串前缀漏洞），D2 的三判据仍只对**声明仓**生效；
+④ 门禁按**会话所在目录**判定（不是 shell 的 `workdir`）⇒ 跨仓提交一律拒。
 
 ## 各版本验证记录
 
