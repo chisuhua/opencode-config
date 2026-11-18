@@ -66,7 +66,7 @@ critic 对 focus 1 的裁定（重要）：**本批属「执行点落地」而�
 
 | 项 | 实测 |
 |---|---|
-| 守卫单文件 | `bun test tests/commit-gate-d9-registration.test.ts` ⇒ **19 pass / 0 fail** |
+| 守卫单文件 | `bun test tests/commit-gate-d9-registration.test.ts` ⇒ **18 pass / 0 fail**（⚠ 交付给 critic 的输入里误写「19 例」，实测为 **18**；本次复核改正 —— 不影响任何判定，critic 的闭合结论与计数无关） |
 | 全量 | `bun test tests/` ⇒ **899 pass / 0 fail**（连跑两次；有一次既有用例 `AC10④` 抖动失败，单跑通过且它只读两个本批未碰文件的 git 历史 ⇒ 判环境抖动） |
 | anchors | `bash scripts/check-upstream-anchors.sh` ⇒ **23/23** |
 | openspec | `openspec validate commit-gate-d9-three-place-registration --strict` ⇒ **valid** |
