@@ -14,12 +14,18 @@
  *   ⑦ **提交形态闭口**：`-a` / `--all` / `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file`
  *      / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`）⇒ **拒**
  *      （这些形态的**实际提交内容集 ≠ 暂存区** ⇒ 门禁不可判定）；
- *   ⑧ **复合命令**：只要出现 commit，**其余每一段**都必须是「纯报告命令」或「只读 git」（`git push` / `rm` / `git add`
- *      等一律拒）。两个理由：① shell 权限是**整串前缀匹配** ⇒ 整串以 `git commit ` 开头会让 push 的 `ask` /
- *      force-push 的 `deny` 同时失效（**搭便车**）；② `git add && git commit` 的改动序使「判定对象 = 执行前 index」不成立。
- *      而**尾随的报告段**（`git commit -m x; echo "exit=$?"`）与**重定向**（`> /dev/null 2>&1`）**放行**（层 2 实测的假阳性坑）。
+ *   ⑧ **commit 必须单独成段**：命令串出现引号外的 `;` / `&&` / `||` / `|` / `&` / **换行**且任一段是 commit ⇒ **拒**。
+ *      理由：shell 权限是**整串前缀匹配** ⇒ 整串以 `git commit ` 开头会命中 `git commit *: allow`，其余**任意**段
+ *      都会搭便车（`git push --force` / `git branch -D` / `cat .env` / `rm -rf` / `cd 别的仓` …）⇒ 不可能用「无害命令
+ *      白名单」枚举干净（白名单与配置里真实的 ask/deny 档位必然对不齐）⇒ **fail-closed**。重定向（`> f` / `2>&1` /
+ *      fd 前缀 `2>`）不是段分隔符 ⇒ `git commit -m x > /dev/null 2>&1` 照常放行。
+ *   ⑨ **命令替换**（`$(…)` / 反引号 / 进程替换 `<(...)` `>(...)`，**单引号外**）⇒ **拒**：内容不在静态可见范围，
+ *      而 `git commit *: allow` 会把它们一起放行。
+ *   ⑩ **判定对象可定位**：`git -C` / `--git-dir` / `--work-tree` / `GIT_DIR=` / `GIT_WORK_TREE=` / `GIT_INDEX_FILE=` /
+ *      `GIT_COMMON_DIR=` ⇒ **拒**；`git` 之前有**包装命令**（`sudo` / `env` / `nohup` / `time` / `timeout` / `exec` …）⇒ **拒**
+ *      （门禁只能判**会话所在仓**；换仓后暂存区 / 写集 / 验证命令全部错位）。
  *
- * 已知盲区（登记于 ADR D9⑥）：别名 / 函数 / `eval` / `xargs` 等把 `git` 包起来的形态。
+ * 已知盲区（登记于 ADR D9③⑥）：`bash -c '…'` / `eval` / `xargs` / 别名 / 函数 等把 `git` 藏进**引号或字符串**的形态。
  */
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
@@ -65,59 +71,34 @@ const COMMIT_VALUE_OPTIONS = new Set([
 const COMMIT_CLOSED_SHORT = new Set(["a", "o", "i"])
 
 /** 可以出现在 `git` 之前的包装命令（`sudo git commit` / `env X=1 git commit`）。 */
-const WRAPPERS = new Set(["sudo", "env", "nohup", "time", "command", "nice", "ionice", "stdbuf"])
+const WRAPPERS = new Set([
+  "sudo",
+  "env",
+  "nohup",
+  "time",
+  "command",
+  "nice",
+  "ionice",
+  "stdbuf",
+  "exec",
+  "builtin",
+  "setsid",
+  "timeout",
+  "chroot",
+])
 
 /** 包装命令（`sudo` / `env`）自己带值选项 ⇒ 跳过它们（`sudo -u u git commit`）。 */
 const WRAPPER_VALUE_OPTIONS = new Set(["-u", "--user", "-g", "--group", "-p", "--prompt", "-C", "-D", "-r", "-t"])
 
-/** 复合命令的分隔符（出现在 token 层面）。 */
-const COMPOUND_TOKENS = new Set(["&&", "||", ";", "|", "&"])
-
-/** **纯报告**命令（复合命令里的非 commit 段只允许这些 ⇒ 防「`git commit …; <危险命令>`」搭便车）。 */
-export const REPORTING_COMMANDS = new Set([
-  "echo",
-  "printf",
-  "true",
-  ":",
-  "exit",
-  "cat",
-  "ls",
-  "pwd",
-  "head",
-  "tail",
-  "wc",
-  "date",
-  "sleep",
-  "test",
-  "[",
-  "false",
-  "cd",
-  "export",
-  "set",
-  "unset",
-  "umask",
-])
-
-/** **只读** git 子命令（同上：复合命令里的非 commit git 段只允许这些）。 */
-export const HARMLESS_GIT_SUBCOMMANDS = new Set([
-  "status",
-  "log",
-  "diff",
-  "show",
-  "rev-parse",
-  "describe",
-  "remote",
-  "config",
-  "branch",
-  "ls-files",
-  "blame",
-  "cat-file",
-  "shortlog",
-])
+/**
+ * 段分隔符（token 层面）：引号外的 `;` / `&&` / `||` / `|` / `&` / **换行**。
+ * ⚠ 出现任何一个且任一段是 commit ⇒ **拒**（整串前缀匹配 ⇒ 其余段搭便车）。
+ */
+const COMPOUND_TOKENS = new Set(["&&", "||", ";", "|", "&", "\n"])
 
 /**
  * `git` **命令词**在一段 token 里的下标（`VAR=val` 前缀 / 包装命令及其带值选项 / 子 shell 前缀都跳过）。
- * 单一真源：`gitSubcommandOf` 与 `commitInSegment` 都走它（避免两套前缀扫描漂移）。
+ * ⚠ 跳过的包装命令**不是放行**：`commitInSegment` 一旦发现 `git` 前有包装命令 ⇒ 拒（ADR D5⑩）。
  */
 function gitWordIndex(tokens: Token[]): number {
   let i = 0
@@ -135,13 +116,6 @@ function gitWordIndex(tokens: Token[]): number {
   // 前缀 `(` / `{` 已被 stripShellPrefix 处理；这里只剥独立成 token 的 `(` / `{` / `!`
   while (i < tokens.length && ["(", "{", "!"].includes(tokens[i]!.value)) i++
   return i
-}
-
-/** 取一段里的 git 子命令（非 git 段 ⇒ null）。 */
-export function gitSubcommandOf(tokens: Token[]): string | null {
-  const i = gitWordIndex(tokens)
-  if (i >= tokens.length || !isGitCommandWord(tokens[i]!)) return null
-  return parseGitSubcommand(tokens, i + 1)
 }
 
 export interface Token {
@@ -201,6 +175,16 @@ export function tokenizeCommand(command: string): Token[] {
       if (i === start) i-- // 无目标（如 `>&2` 已在上一步吃掉）⇒ 回退一格，避免跳过下一个字符
       continue
     }
+    if (ch === "\n") {
+      if (has) {
+        out.push({ value: cur, quoted })
+        cur = ""
+        quoted = false
+        has = false
+      }
+      out.push({ value: "\n", quoted: false })
+      continue
+    }
     if (ch === ";" || ch === "&" || ch === "|") {
       if (has) {
         out.push({ value: cur, quoted })
@@ -236,6 +220,60 @@ export function tokenizeCommand(command: string): Token[] {
 
 function isVarAssignment(token: Token): boolean {
   return !token.quoted && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token.value)
+}
+
+/**
+ * **命令替换**扫描（ADR D5⑨）：`$(` / 反引号 / 进程替换 `<(` `>(`，**单引号外**都算
+ * （双引号内仍会做替换；`\$(` 这类转义不算）。
+ */
+export function containsCommandSubstitution(command: string): boolean {
+  let i = 0
+  let quote: string | null = null
+  while (i < command.length) {
+    const ch = command[i]!
+    if (quote === "'") {
+      if (ch === "'") quote = null
+      i++
+      continue
+    }
+    if (ch === "\\") {
+      i += 2 // 转义 ⇒ 下一个字符是字面量
+      continue
+    }
+    if (quote === '"') {
+      if (ch === '"') quote = null
+      else if (ch === "$" && command[i + 1] === "(") return true
+      else if (ch === "`") return true
+      i++
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      i++
+      continue
+    }
+    if (ch === "$" && command[i + 1] === "(") return true
+    if (ch === "`") return true
+    if ((ch === "<" || ch === ">") && command[i + 1] === "(") return true // 进程替换
+    i++
+  }
+  return false
+}
+
+/** 会让「判定对象」换仓的 git 全局选项（ADR D5⑩）。 */
+const RELOCATING_GIT_OPTIONS = ["-C", "--git-dir", "--work-tree"]
+
+/** 会让「判定对象」换仓的环境变量（ADR D5⑩）。 */
+const RELOCATING_ENV_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"]
+
+/** 该 token 是否是换仓选项（`-C <dir>` / `-C<dir>` / `--git-dir[=]<dir>` / `--work-tree[=]<dir>`）。 */
+function relocatingOptionOf(value: string): string | null {
+  for (const opt of RELOCATING_GIT_OPTIONS) {
+    if (value === opt) return opt
+    if (value.startsWith(`${opt}=`)) return opt
+    if (opt === "-C" && value.startsWith("-C") && value.length > 2) return opt
+  }
+  return null
 }
 
 /** 剥掉 shell 前缀（`(git` / `{` / `!`）⇒ 首 token 仍可判成 git 命令词。 */
@@ -328,9 +366,9 @@ export function detectCommitInvocation(command: string): CommitInvocation {
     return { isCommit: false, block: "commit-gate: shell 命令为空 ⇒ 拒绝（fail-closed）" }
   }
 
-  // ⑧ 复合命令：出现 commit 时，**其余每一段**必须是「纯报告命令」或「只读 git」
-  //   （`git add -A && git commit` / `git commit; git push --force` ⇒ 拒：前者判定对象不可判定，
-  //     后者靠整串前缀搭便车；而 `git commit -m x; echo "exit=$?"` 的尾随段无害 ⇒ 放行）。
+  // ⑧ **commit 必须单独成段**：引号外出现 `;` / `&&` / `||` / `|` / `&` / 换行 ⇒ 只要任一段是 commit 就拒。
+  //   理由：整串以 `git commit ` 开头 ⇒ 命中 `git commit *: allow` ⇒ 其余**任意**段都搭便车
+  //   （`git push --force` / `git branch -D` / `cat .env` / `rm -rf` / `cd 别的仓`）⇒ 白名单枚举不干净 ⇒ fail-closed。
   const segments: Token[][] = [[]]
   for (const t of tokens) {
     if (!t.quoted && COMPOUND_TOKENS.has(t.value)) {
@@ -339,49 +377,34 @@ export function detectCommitInvocation(command: string): CommitInvocation {
     }
     segments[segments.length - 1]!.push(t)
   }
-  if (segments.length > 1) {
-    const hits = segments.map((seg) => commitInSegment(seg))
+  const nonEmpty = segments.filter((seg) => seg.length > 0)
+  if (nonEmpty.length > 1) {
+    const hits = nonEmpty.map((seg) => commitInSegment(seg))
     if (!hits.some((h) => h.isCommit)) return { isCommit: false }
     const blocked = hits.find((h) => h.block)
     if (blocked) return { isCommit: true, block: blocked.block, detail: blocked.detail }
-
-    // ⚠ **复合命令的搭便车防护**：shell 权限是**整串前缀匹配** ⇒ `git commit -m x; git push --force`
-    //   整串以 `git commit ` 开头 ⇒ 命中 `"git commit *": "allow"` ⇒ **push 的 ask / force-push 的 deny 同时失效**。
-    //   ⇒ 只要 commit 存在，**其余每一段**都必须是「纯报告命令」或「只读 git」，否则拒。
-    for (let k = 0; k < segments.length; k++) {
-      if (hits[k]!.isCommit) continue
-      const seg = segments[k]!
-      if (seg.length === 0) continue
-      const sub = gitSubcommandOf(seg)
-      if (sub) {
-        if (!HARMLESS_GIT_SUBCOMMANDS.has(sub)) {
-          return {
-            isCommit: true,
-            block:
-              `commit-gate: 复合命令中的 \`git ${sub}\` 段不在「只读 git」清单 ⇒ 拒绝` +
-              `（整串以 \`git commit \` 开头会让 permission 的 ask / deny 全部失效 ⇒ 必须分两次调用）`,
-            detail: "compound-segment",
-          }
-        }
-        continue
-      }
-      const first = stripShellPrefix(seg[0]!.value)
-      if (!REPORTING_COMMANDS.has(first)) {
-        return {
-          isCommit: true,
-          block:
-            `commit-gate: 复合命令中的 \`${first}\` 段不在「纯报告」清单 ⇒ 拒绝` +
-            `（同上：整串前缀会让 permission 的 ask / deny 失效）`,
-          detail: "compound-segment",
-        }
-      }
+    return {
+      isCommit: true,
+      block:
+        "commit-gate: `git commit` 必须**单独成段**（不得与 `;` / `&&` / `||` / `|` / `&` / 换行拼接）⇒ 拒绝" +
+        "（整串以 `git commit ` 开头会让其余段的 permission 档位全部失效）",
+      detail: "compound",
     }
-    return { isCommit: true, detail: "compound" }
   }
 
   const hit = commitInSegment(tokens)
-  if (hit.block) return { isCommit: true, block: hit.block, detail: hit.detail }
-  return { isCommit: hit.isCommit, detail: hit.detail }
+  if (!hit.isCommit) return hit
+  // ⑨ **命令替换**：内容不在静态可见范围，而 `git commit *: allow` 会把它们一起放行
+  if (containsCommandSubstitution(command)) {
+    return {
+      isCommit: true,
+      block:
+        "commit-gate: 命令里含**命令替换**（`$(…)` / 反引号 / 进程替换）⇒ 拒绝" +
+        "（内容不可静态判定；提交消息请用 `-F <file>`）",
+      detail: "command-substitution",
+    }
+  }
+  return hit
 }
 
 /** 单段（无复合分隔符）里是否有 commit 调用。 */
@@ -389,7 +412,38 @@ function commitInSegment(tokens: Token[]): CommitInvocation {
   // ③ 定位 `git` **命令词**（`VAR=val` / 包装命令及其选项 / 子 shell 前缀都跳过）
   const i = gitWordIndex(tokens)
   if (i >= tokens.length || !isGitCommandWord(tokens[i]!)) {
-    return { isCommit: false }
+    // 兜底：git 不在「预期位置」（如 `timeout 10 git commit`）⇒ 仍要认出它是 commit（否则 fail-open）
+    const any = tokens.findIndex((t, idx) => idx > 0 && isGitCommandWord(t))
+    if (any < 0) return { isCommit: false }
+    const subAny = parseGitSubcommand(tokens, any + 1)
+    if (subAny !== "commit") return { isCommit: false, detail: `subcommand=${subAny}` }
+    return {
+      isCommit: true,
+      block:
+        "commit-gate: `git` 前有**包装命令**或无法定位的写法 ⇒ 拒绝（门禁只能判会话所在的仓；请直接调用 `git commit`）",
+      detail: "wrapper",
+    }
+  }
+  // ⑩ 包装命令（`sudo` / `env` / `timeout` …）⇒ 拒（不是「跳过」，见 ADR D5⑩）
+  const wrapped = tokens.slice(0, i).find((t) => !t.quoted && WRAPPERS.has(t.value))
+  if (wrapped) {
+    return {
+      isCommit: true,
+      block: `commit-gate: \`git\` 前的包装命令 \`${wrapped.value}\` ⇒ 拒绝（请直接调用 \`git commit\`；包装命令会改变判定对象）`,
+      detail: "wrapper",
+    }
+  }
+  // ⑩ 换仓环境变量（`GIT_DIR=… git commit`）⇒ 拒
+  const envVar = tokens
+    .slice(0, i)
+    .map((t) => t.value.match(/^([A-Za-z_][A-Za-z0-9_]*)=/)?.[1])
+    .find((name) => name && RELOCATING_ENV_VARS.includes(name))
+  if (envVar) {
+    return {
+      isCommit: true,
+      block: `commit-gate: 环境变量 \`${envVar}\` 会换仓 ⇒ 拒绝（门禁只能判会话所在的仓）`,
+      detail: "relocated",
+    }
   }
   const subIndex = parseGitSubcommandIndex(tokens, i + 1)
   if (subIndex === null) {
@@ -403,6 +457,14 @@ function commitInSegment(tokens: Token[]): CommitInvocation {
   const sub = tokens[subIndex]!.value
   if (sub !== "commit") {
     return { isCommit: false, detail: `subcommand=${sub}` }
+  }
+  const reloc = tokens.slice(i + 1, subIndex).map((t) => relocatingOptionOf(t.value)).find((x) => x !== null)
+  if (reloc) {
+    return {
+      isCommit: true,
+      block: `commit-gate: \`git ${reloc}\` 会换仓 ⇒ 拒绝（门禁只能判会话所在的仓）`,
+      detail: "relocated",
+    }
   }
   const form = checkCommitForm(tokens, subIndex)
   if (form) {

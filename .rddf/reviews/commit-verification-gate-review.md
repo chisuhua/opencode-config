@@ -11,7 +11,8 @@
 | 1 | oracle（治理面） | **BLOCK**（14 条 S1–S14） | 全部采纳：删「change 已完成且已验收」判据（**时序互锁**：正在实施的 change 永远不满足 ⇒ 本仓一次也提交不了）；D2③ 改用**角色写集**（复用 `decideWrite` 单源）；新增 D9 宣称边界；D8 改逐点清单；背景按 `CHANGELOG.md:39-52` 更正失效模型 |
 | 1 | critic（arch） | **REJECT**（3 BLOCKER + 8 SHOULD_FIX + NITS） | 全部采纳：B1 公式与单源冲突（改调 `decideWrite`）；B2 `-a`/`--only`/`--include` 绕过（加提交形态闭口）；B3 落点清单缺项（14 → 18 点）；SHOULD_FIX 逐条（回滚路径 / D4 理由更正 / D9⑧ saved approval / 退出码语义 / 解析口径可执行化 / D9① 守卫逐条相等 / 内容锚点 / Verification 内联 / 层 1a 突变 / 两根统一 / 身份链 fallback） |
 | 2 | critic（arch，复审） | **REJECT**（B1 已闭合；B2/B3 未闭合 + 1 条新 BLOCKER） | 全部采纳：B2 枚举补齐（位置 pathspec / `-o` / `-i`）+ 解析兜底 + 复合命令闭口；B3 补 3 个落点（父篇修订行与 `:43` 行 / `tests/role-exemptions.test.ts` D5② / MAD §3.4 纪律句与残留句）⇒ 18 → **20 点**；新 BLOCKER-3 = 后端 brief 规则与 `docs/dual-session-delegation.md` 的残留（D8 点 19/20） |
-| 3 | critic（arch，复审；**用户已明确批准**超出 2 轮预算） | **REJECT**（上轮 3 条 BLOCKER **全闭合**；本轮新 diff 引入 **1 条新 BLOCKER**） | 新 BLOCKER = 复合命令「尾随段放行」与 D5 的口径冲突：`git commit -m x; git push --force origin main` **整串以 `git commit ` 开头** ⇒ 命中 `allow` ⇒ push 的 `ask` / force-push 的 `deny` **同时失效**（**搭便车**）。修：见 §2.1 |
+| 3 | critic（arch，复审；**用户已明确批准**） | **REJECT**（上轮 3 条 BLOCKER **全闭合**；本轮新 diff 引入 **1 条新 BLOCKER**） | 新 BLOCKER = 复合命令「尾随段放行」与 D5 的口径冲突：`git commit -m x; git push --force origin main` **整串以 `git commit ` 开头** ⇒ 命中 `allow` ⇒ push 的 `ask` / force-push 的 `deny` **同时失效**（**搭便车**）。修：见 §2.1 |
+| 4 | critic（arch，复审；**用户已明确批准**，只验闭合） | **REJECT**（轮 3 的**字面三形态**已闭合；但**同类面**未闭 —— 3 条新 BLOCKER） | B1 白名单把带 `ask` 档位的命令当「无害」（`cat/head/tail *.env`、`git branch -D`、`git config` 写形态）；B2 **引号内命令替换**（`git commit -m "$(git push --force …)"`）打穿 force-push `deny`；B3 **`cd` 在纯报告清单里** ⇒ 换仓后判定对象错位。修法 = **删掉白名单**（见 §2.2） |
 
 ## 1. oracle 轮（治理面）逐条应答
 
@@ -55,13 +56,29 @@
 | 顺带修的解析缺陷 | ① 包装命令带值选项（`sudo -u u`）在 `commitInSegment` 里没跳过 ⇒ 抽出 `gitWordIndex` 做**单一真源**；② 子命令下标改用 `parseGitSubcommandIndex`（原 `findIndex` 会把 `-C commit` 的值误当子命令）；③ 前缀子 shell（`(git commit …)`）；④ 删死代码 `INDEX_MUTATING_SUBCOMMANDS` |
 | 用例 | 层 1b 55 → **63**（搭便车 3 / 重定向 2 / 子 shell 1 / 包装命令 1 / 只读 git 段 1） |
 
+### 2.2 轮 4 三条 BLOCKER 的修法（删白名单 ⇒ fail-closed）
+
+**根因**：用「命令白名单」判「其余段是否无害」不可行 —— 白名单与 `opencode.jsonc` 里真实的 `ask`/`deny`
+档位**必然漂移**（实测：`cat`/`head`/`tail` 有 `*.env` 的 `ask`、`git branch -D *` 是 `ask`、`git config`
+写 `.git/config`），而 build 的 shell 默认档是 **`"*": "allow"`** ⇒ 任何漏网形态都是**无限制执行**。
+
+| 轮 4 BLOCKER | 修法 | 证据 |
+|---|---|---|
+| **B1** 白名单放行带 `ask` 档位的命令 | **删除 `REPORTING_COMMANDS` / `HARMLESS_GIT_SUBCOMMANDS`** ⇒ 改为「**commit 必须单独成段**」：引号外出现 `;` / `&&` / `\|\|` / `\|` / `&` / **换行**且任一段是 commit ⇒ 拒 | 层 1b 14 条复合用例（含 `…; cat .env` / `…; git branch -D feature` / `… \| tee /tmp/log` / `cd … && git commit`） |
+| **B2** 引号内命令替换 | 新增 `containsCommandSubstitution`（`$(…)` / 反引号 / `<(` `>(`，单引号外；转义不算）⇒ 拒；提交消息用 `-F` | 层 1b 5 条替换用例 + 3 条负向（单引号 / `$HOME` / `\$(`）；层 2 **P14** 实跑 deny |
+| **B3** `cd` 换仓 | 白名单删除后 `cd … && git commit` 属复合 ⇒ 拒；并补 **D5⑩**：`git -C` / `--git-dir` / `--work-tree` / `GIT_DIR=` / `GIT_WORK_TREE=` / `GIT_INDEX_FILE=` / `GIT_COMMON_DIR=` / **包装命令**（`sudo`/`env`/`timeout`/`exec`…）⇒ 拒 | 层 1b 14 条（换仓 8 + 包装 6）+ 2 条负向（`--namespace` 不换仓 / `GIT_AUTHOR_NAME` 允许）；层 2 **P15** 实跑 deny |
+
+**代价（显式承认）**：`git commit -m x; echo "exit=$?"` 这类尾随报告段也一并被拒（层 2 P10 实测过模型确实这么写）
+⇒ **可见的假阳性**（模型重试不带 `;` 即可），换取「不需要任何白名单校准」。
+`git commit -m x > /dev/null 2>&1`（**纯重定向**，无段分隔符）仍放行 —— 层 2 **P16** 实跑通过。
+
 ## 3. 实施产物（builder）
 
 | 落点 | 内容 |
 |---|---|
 | `lib/commit-gate.ts`（新增） | D5 命令识别（分词 / 全局选项 / 子命令精确匹配 / 闭口 / 复合命令 / fail-closed）+ D2 三判据组合 + 声明读取 |
 | `plugins/commit-gate.ts`（新增） | 接线：shell 钩子 → 会话 → `canonicalRoot` → 声明 → 暂存状态 → 角色（主会话=身份链 / 后端=`role_class`）→ `decideWrite` → 验证命令 → 抛错 |
-| `tests/commit-gate.test.ts`（新增） | 层 1b **49 条**：命中矩阵 12 / 误伤矩阵 8 / 闭口 11 / 复合命令 2 / fail-closed 2 / 分词 3 / 三判据 5 / 声明 5 |
+| `tests/commit-gate.test.ts`（新增） | 层 1b **86 条**：命中矩阵 8 / 换仓与包装（D5⑩）15 / 命令替换（D5⑨）9 / 误伤矩阵 / 提交形态闭口 12 / 必须单独成段（D5⑧）17 / fail-closed / 分词 / 三判据 / 声明 |
 | `opencode.jsonc` | build shell：`git commit*` ⇒ **allow**；force-push 四形态 ⇒ **deny**；`git push` 仍 **ask** |
 | `prompts/build.md` | §输出 / 点名条款 / 角色表 / 角色列表 / 增强层 commit 契约 / `capability:build` 块（`allow-ask` ⇒ `allow-ask-and-deny`，行数不变） |
 | `docs/MULTI-AGENT-DESIGN.md` | 版本摘要 / §2.6 / §2.8.7 D5② / §3.4（标题·理由句·纪律句·残留句）/ §4.4.1 / §4.4.3 |
@@ -75,7 +92,7 @@
 ## 4. 验证
 
 ```bash
-bun test tests/                            # 755 pass / 0 fail（改造前 690）
+bun test tests/                            # 778 pass / 0 fail（改造前 690）
 bash scripts/check-upstream-anchors.sh     # OK（23/23）
 openspec validate role-aware-permissions --strict  # valid
 ```
@@ -83,7 +100,7 @@ openspec validate role-aware-permissions --strict  # valid
 ⚠ **未实跑的部分（如实登记）**：
 ① **saved approval 与 config `deny` 的优先级** —— 需人工在宿主弹窗点「Allow always」⇒ 无自动化路径（D9⑧）。
 ② **交互会话里 `git commit` 是否仍弹窗** —— 需 `service restart` 后复验（本会话未加载新插件）。
-③ **P11（搭便车 deny）** —— 模型拒绝执行该探针命令（见 §4.2）⇒ 该条无层 2 证据；同分支由 P13 覆盖。
+③ **P11（搭便车 deny）** —— 模型拒绝执行该探针命令（见 §4.2）⇒ 该条无层 2 证据；同分支由 P13 / P14 覆盖。
 ④ **层 2 的 e2e 仓侧回归**（`/workspace/main/rdd-workflow-e2e` 的 `test_role_gate_runtime.bats`）—— 本 change 未新增 e2e 用例，未重跑。
 
 ## 4.1 变红演练记录（层 1a / 层 1b 各判据的判别力证据）
@@ -110,11 +127,14 @@ openspec validate role-aware-permissions --strict  # valid
 | P6 门禁：验证红（声明 `[["false"]]`）+ 已暂存 | 拒 | ✅ `commit-gate: 验证命令失败 ⇒ 拒绝提交：$ false`；HEAD **未推进** |
 | P7 门禁：暂存区为空 | 拒 | ✅ `commit-gate: 暂存区为空 ⇒ 请先 git add 再提交` |
 | P8 门禁：验证绿（声明 `[["true"]]`） | 放行 | ✅ commit completed；HEAD **推进**（`green probe`） |
-| P9 门禁：`git add -A && git commit` | 拒（前置段改 index） | ✅ 拒 |
-| P10 门禁：`git commit -m x; echo "exit=$?"` | **不拦**（尾随段无害） | ⚠ **首跑被误判成「位置 pathspec」⇒ 假阳性** ⇒ 已修（分词：元字符独立成 token）⇒ 复跑通过 |
-| P11 门禁（轮 3 新口径）：`git commit -m hitch; git push --force origin main` | 拒 | ⚠ **无证据**：模型在 `--agent build` 会话里**拒绝原样执行**该命令（自身判断「`;` 串联 push 属绕过 deny 形态」）⇒ 该探针**不产生判定证据**，不得记为通过。同一 `invocation.block ⇒ throw` 分支的 deny 效果由 **P13** 覆盖 |
-| P12 门禁（轮 3 新口径）：`git commit -m "redir probe" > /dev/null 2>&1; echo "exit=$?"` | **不拦**（重定向 + fd 前缀剥离后无残留 token） | ✅ 放行；HEAD 推进（`084d9fe redir probe`）、工作树干净 ⇒ 假阳性修复在真宿主上有效 |
-| P13 门禁（轮 3 新口径·deny 分支）：`git commit -m "tag probe"; git tag probe-tag` | 拒（`git tag` 不在只读清单） | ✅ `commit-gate: 复合命令中的 \`git tag\` 段不在「只读 git」清单 ⇒ 拒绝…`；HEAD **未推进**（`6328c54 init`）、无 tag |
+| P9 门禁：`git add -A && git commit` | 拒 | ✅ 拒 |
+| P10 门禁：`git commit -m x; echo "exit=$?"` | **轮 3 口径：放行** / **轮 4 口径：拒** | ⚠ 首跑被误判成「位置 pathspec」（假阳性）⇒ 轮 3 修分词后放行；**轮 4 起按「必须单独成段」改判为拒**（见 §2.2 代价）⇒ 该行**不再**作为放行证据 |
+| P11 门禁：`git commit -m hitch; git push --force origin main` | 拒 | ⚠ **无证据**：模型在 `--agent build` 会话里**拒绝原样执行**该命令（自身判断「`;` 串联 push 属绕过 deny 形态」）⇒ 不产生判定证据，不记为通过；同分支由 **P13** 覆盖 |
+| P12 门禁：`git commit -m "redir probe" > /dev/null 2>&1; echo "exit=$?"` | 轮 3 口径：放行 | ✅ 当时放行（`084d9fe`）；**轮 4 起该命令含 `;` ⇒ 拒** ⇒ 重定向证据改由 **P16** 承担 |
+| P13 门禁（复合 deny 分支）：`git commit -m "tag probe"; git tag probe-tag` | 拒 | ✅ `Permission denied`；HEAD **未推进**（`6328c54 init`）、无 tag |
+| P14 门禁（轮 4 · 命令替换）：`git commit -m "$(echo sub)"` | 拒 | ✅ 宿主 `Exit code: 1`、HEAD **未推进**（`733cf32 init`）；文案（纯逻辑）：`commit-gate: 命令里含**命令替换**（\`$(…)\` / 反引号 / 进程替换）⇒ 拒绝…` |
+| P15 门禁（轮 4 · 换仓）：`git -C /tmp/opencode/cg-sub commit -m x` | 拒 | ✅ 宿主 `Exit code: 1`、HEAD **未推进**；文案：`commit-gate: \`git -C\` 会换仓 ⇒ 拒绝（门禁只能判会话所在的仓）` |
+| P16 门禁（轮 4 · 纯重定向，无段分隔符）：`git commit -m "redir plain" > /dev/null 2>&1` | 放行 | ✅ 放行；HEAD 推进（`1f42171 redir plain`） |
 
 ⚠ P10 的假阳性是**层 2 才能发现的坑**（层 1b 用例当时按「复合命令一律拒」写 ⇒ 与实现同源 ⇒ 无判别力）。
 ⇒ 口径修正后补了 4 条层 1b 用例（尾随段放行 / 前置 add 拒 / 元字符独立成 token / `&&` 形态）。
@@ -122,5 +142,5 @@ openspec validate role-aware-permissions --strict  # valid
 ## 5. 已用轮次
 
 - oracle：**1 轮**（BLOCK，14 条全采纳）
-- critic：**3 轮**（REJECT ×3：轮 1 三 BLOCKER / 轮 2 两 BLOCKER + 一新增 / 轮 3 上轮全闭 + 一新增；逐条采纳并修）
-- 复审额度：轮 3 经**用户明确批准**；若轮 3 的新 BLOCKER 需再次复审（轮 4），**须再次取得用户批准**
+- critic：**4 轮**（REJECT ×4：轮 1 三 BLOCKER / 轮 2 两 BLOCKER + 一新增 / 轮 3 上轮全闭 + 一新增 / 轮 4 字面三形态全闭 + 同类面 3 条）
+- 复审额度：轮 3 / 轮 4 均经**用户明确批准**；若轮 4 的修法需再次复审（轮 5），**须再次取得用户批准**

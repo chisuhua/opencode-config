@@ -79,22 +79,23 @@
 4. 取子命令 = **跳过所有 `-` 前缀 token**；对**已知带值选项额外跳过其值**（清单：`--git-dir[=]<dir>` / `--work-tree[=]<dir>` / `--namespace[=]<ns>` / `--exec-path[=]<p>` / `--config-env <n=env>` / `-c <k=v>` / `-C <dir>`）—— ⚠ **分离值形态与等号形态都要覆盖**（只列等号形态 ⇒ 解析出的「子命令」= `<dir>` ⇒ 门禁整条不触发）；其后的第一个 token 即子命令；
 5. 判 `subcommand === "commit"`（**精确相等** ⇒ `commit-tree` / `commit-graph` / `git config commit.gpgsign` / `git log --grep commit` **不算**）；
 6. 命中 ⇒ 进入 D2 判定；**解析不出 / 解析歧义 ⇒ 拒绝**（fail-closed 兜底，**不得**默认「不是 commit」而放行）；
-   ⚠ **复合命令**（`&&` / `||` / `;` / `|` / `&`）⇒ 按第 8 步闭口处理（含**搭便车防护**）；
+   ⚠ **复合命令**（`&&` / `||` / `;` / `|` / `&` / 换行）⇒ 按第 8 步处理；**命令替换** ⇒ 第 9 步；**换仓 / 包装** ⇒ 第 10 步；
 7. **提交形态闭口**：若 argv 含下列任一 ⇒ **拒**
    （这些形态的**实际提交内容集 ≠ 暂存区** ⇒ 门禁不可判定 ⇒ fail-closed；错误文案须说明原因）：
    `-a` / `--all`（并入全部已跟踪文件的改动）/ `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file`
    / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`：git 手册明文其「忽略 index，改记所列文件的**当前内容**」）。
-8. **复合命令闭口（含搭便车防护）**：命令串按 `;` / `&&` / `||` / `|` / `&` **分段**（元字符紧贴时也独立成 token），**重定向剥离**（`> f` / `>> f` / `2>&1` / `< f` / fd 前缀 `2>`）。
-   出现 commit 时，**其余每一段**都必须是下列两类之一，否则 **拒**：
-   - **纯报告命令**：`echo` / `printf` / `true` / `false` / `:` / `exit` / `cat` / `ls` / `pwd` / `head` / `tail` / `wc` / `date` / `sleep` / `test` / `[` / `cd` / `export` / `set` / `unset` / `umask`；
-   - **只读 git 子命令**：`status` / `log` / `diff` / `show` / `rev-parse` / `describe` / `remote` / `config` / `branch` / `ls-files` / `blame` / `cat-file` / `shortlog`。
+8. **commit 必须单独成段**：命令串按 `;` / `&&` / `||` / `|` / `&` / **换行** 分段（引号外的元字符紧贴时也独立成 token；**重定向不是段分隔符** —— `> f` / `>> f` / `2>&1` / `< f` / fd 前缀 `2>` 一律剥离）。
+   只要**任一段**是 commit 而**段数 > 1** ⇒ **拒**（错误文案要求分两次调用）。
+   ⚠ **为什么不用「无害命令白名单」**：shell 权限是**整串前缀匹配** ⇒ 整串以 `git commit ` 开头即命中 `git commit *: allow` ⇒ **其余任意段**都能搭便车，而配置里真实的 `ask` / `deny` 集合（`.env` 读取、`git branch -D`、`git config` 写入、`rm -r`、`git reset --hard` …）会随配置演进 ⇒ 白名单**必然**与之漂移（实测：`cat` / `head` / `tail` / `branch` 都带着 `ask` 档位，却被当成「无害」）。⇒ fail-closed。
+   代价：`git commit -m x; echo "exit=$?"` 这类**尾随报告段**也一并被拒（层 2 实测过模型确实这么写）—— 属**可见的假阳性**（模型重试不带 `;` 即可），换取的是不再需要任何白名单校准。
+9. **命令替换 ⇒ 拒**：`$(…)` / 反引号 / 进程替换 `<(...)` `>(...)`，**单引号外**（双引号内仍会执行）一律拒；`\$(` 这类转义不算。理由：内容不在静态可见范围，而 `git commit *: allow` 会把它们一起放行（`git commit -m "$(git push --force …)"` 即打穿 D4 的 force-push `deny`）。提交消息请用 `-F <file>`。
+10. **判定对象必须可定位 ⇒ 否则拒**：门禁只能判定**会话所在的仓**（`workRoot`），所以
+    - 换仓选项：`git -C <dir>` / `--git-dir[=]<dir>` / `--work-tree[=]<dir>`；
+    - 换仓环境变量：`GIT_DIR=` / `GIT_WORK_TREE=` / `GIT_INDEX_FILE=` / `GIT_COMMON_DIR=`；
+    - `git` 之前的**包装命令**（`sudo` / `env` / `nohup` / `time` / `timeout` / `exec` / `builtin` / `setsid` / `chroot` / `nice` / `ionice` / `stdbuf` / `command`）；
+    ⇒ **拒**（文案：请直接调用 `git commit`）。不这么做的后果：`cd /other && git commit` / `git -C /other commit` 会用在 **A 仓**算出的暂存区 / 写集 / 验证结果放行 **B 仓**的提交。
 
-   两个理由（缺一不可）：
-   ① **搭便车**：shell 权限是**整串前缀匹配** ⇒ `git commit -m x; git push --force origin main` **整串以 `git commit ` 开头** ⇒ 命中 `git commit *: allow` ⇒ push 的 `ask` 与 force-push 的 `deny` **同时失效**；
-   ② **判定对象**：`git add -A && git commit` 的实际内容集 ≠ 判定时的 index ⇒ 第 ③ 条判据（角色写集）失效。
-   ⇒ 而**尾随的报告段**（`git commit -m x; echo "exit=$?"`）**放行** —— ⚠ 层 2 实测的假阳性坑：一刀切拒绝复合命令会拦下模型最常见的写法 ⇒ 合法提交被拦 ⇒ 模型转去找绕路写法。
-
-⚠ **间接提交不在门禁内**（包装脚本 / `$(...)` / `bash x.sh` / `make commit` / `eval`）⇒ 见 D9③⑥。
+⚠ **间接提交不在门禁内**（`bash -c '…'` / `eval` / `xargs` / 别名 / 函数 / 包装脚本）⇒ 见 D9③⑥。
 
 ### D6 失败语义：fail-closed + 可诊断
 
@@ -140,7 +141,7 @@
 能力面投影：`capabilityBlock()`（`lib/delegate-core.ts:619-627`）按 ask/deny **计数**派生 ⇒ 新增 4 条 deny ⇒ build 的 shell 分类由 `allow-ask` 变 `allow-ask-and-deny`
 ⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。
 
-### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 九项）
+### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十项）
 
 > 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。
 
@@ -154,6 +155,7 @@
 | ⑥ | **命令解析固有盲区** | 防顶层 `git commit` 的常见变体；**不防**别名 / 函数 / `eval` / 极端写法；缓解：解析口径按「精确相等 + 带值选项跳过 + `-` 前缀 token 全跳过」收窄，误伤面小 |
 | ⑦ | **语义类缺陷验证命令覆盖不到** | 防「验证红」；**不防**措辞 / 治理面漂移 / 设计错误（测试不红）；缓解：**不豁免 push** 的人工确认 + 评审与验收 |
 | ⑨ | **后端的提交面宽于其 edit 面** | 门禁按 `decideWrite`（architect 类含治理面）；后端 edit 上限（`classAllowRoots`）不含治理面 ⇒ 治理面可被后端**提交**（但写不了）；缓解：scope 派生仍限制其写盘面 |
+| ⑩ | **字符串级判定的残余面** | 防顶层 `git commit` 的复合 / 替换 / 换仓 / 包装形态（D5⑧⑨⑩）；**不防**把 `git` 藏进**引号或字符串**再交给解释器的形态（`bash -c '…'` / `eval` / `xargs` / 别名 / 函数 / 包装脚本）；缓解：无（与 ③ 同源，登记为已知面） |
 | ⑧ | **saved approval 可能越过 D4 的 `deny`** | `git push *` 的持久化 allow 与 config `deny` 的优先级**无源码锚点**（宿主合并算法未查明）⇒ 曾点过 Always 的用户可能连 force-push 也不再被问；缓解：层 2 实测优先级（见 V1） |
 
 ## 选项对比表
@@ -201,10 +203,16 @@
 - [ ] **V3 暂存内容越角色写集 ⇒ 硬拒**：错误指名角色 + 越界文件。**变红**：去掉 ③ ⇒ V3 红。
 - [ ] **V4 暂存区为空 ⇒ 硬拒**；`git diff --cached --quiet` 退出码 ≥2（判定失败）⇒ **亦拒**。**变红**：把退出码 ≥2 当放行 ⇒ V4 红。
 - [ ] **V5 无声明仓库 ⇒ 放行**（其它仓库零影响）。**变红**：无声明时改为拒绝 ⇒ V5 红。
-- [ ] **V6 命令识别**：`git commit` / `git -c k=v commit` / `GIT_AUTHOR_NAME=x git commit` / `git -C dir commit` / `git commit --no-verify` / `git --git-dir <dir> commit`（分离值）被识别为 commit；**且** `git commit-tree` / `git log --grep commit` / `git config commit.gpgsign` **不**被误伤；**解析不出子命令 ⇒ 拒**（不静默放行）。**变红**：只认 `git commit ` 前缀 ⇒ V6 红；去掉 fail-closed 兜底 ⇒ V6 红。
-- [ ] **V7 提交形态闭口**：`git commit -a` / `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file` / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`）⇒ **拒**；**复合命令**的其余段不是「纯报告命令 / 只读 git」（`git add -A && git commit -m x` / `git commit -m x; git push --force origin main` / `git commit -m x; rm -rf /tmp/x`）⇒ **拒**，而**尾随报告段**（`git commit -m x; echo "exit=$?"`）与**重定向**（`git commit -m x > /dev/null 2>&1`）⇒ **放行**。**变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红；放行 `git commit …; git push --force …` ⇒ V7 红。
+- [ ] **V6 命令识别**：`git commit` / `git -c k=v commit` / `GIT_AUTHOR_NAME=x git commit` / `git commit --no-verify` / `git --namespace ns commit` 被识别为 commit **且放行**；`git -C dir commit` / `git --git-dir=<dir> commit`（分离值与等号两形态）/ `GIT_DIR=… git commit` / `sudo git commit` / `timeout 10 git commit` 被识别为 commit **且拒**（D5⑩）；**且** `git commit-tree` / `git log --grep commit` / `git config commit.gpgsign` **不**被误伤；**解析不出子命令 ⇒ 拒**（不静默放行）。**变红**：只认 `git commit ` 前缀 ⇒ V6 红；去掉 fail-closed 兜底 ⇒ V6 红；把 `git -C dir commit` 当放行 ⇒ V6 红。
+- [ ] **V7 提交形态闭口 + 单独成段 + 命令替换**：
+  - 提交形态：`-a` / `--only` / `-o` / `--include` / `-i` / `--pathspec-from-file` / **位置 pathspec**（`git commit <path>` / `git commit -- <path>`）⇒ **拒**；
+  - **任一段是 commit 且段数 > 1**（`&&` / `||` / `;` / `|` / `&` / **换行**）⇒ **拒** —— 含 `git add -A && git commit`、`git commit …; git push --force …`、`git commit …; cat .env`、`git commit … | tee x`、`cd /other && git commit`、`git commit -m x` 换行再接 `git push --force`；
+  - **命令替换**（`$(…)` / 反引号 / `<(` `>(`，单引号外）⇒ **拒**；
+  - **重定向**（`> /dev/null 2>&1` / `2>/dev/null`，含 fd 前缀）与**子 shell 前缀**（`(git commit …)`）⇒ **放行**。
+
+  **变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红；放行 `git commit …; git push --force …` ⇒ V7 红；放行 `git commit -m "$(…)"` ⇒ V7 红；放行 `git commit …; cat .env` ⇒ V7 红。
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
-- [ ] **V10 免宣称九项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
+- [ ] **V10 免宣称十项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
 - [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 四形态命中 `deny`、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [ ] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。

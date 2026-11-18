@@ -1,7 +1,8 @@
 /**
  * commit-gate —— **层 1b 纯逻辑单测**（`docs/adr/ADR-commit-verification-gate.md` D2 / D5）
  *
- * 覆盖两块：① **命令识别矩阵**（ADR D5 的解析口径 + 闭口）；② **三判据组合**（D2）。
+ * 覆盖：① **命令识别矩阵**（ADR D5 的解析口径 + 提交形态闭口 + 必须单独成段 + 命令替换 + 判定对象可定位）；
+ * ② **三判据组合**（D2）。
  * ⚠ fixture 硬规则：独立父目录（`mkdtempSync`）、**禁读真实 HOME**、真实文件形状。
  */
 import { describe, expect, test } from "bun:test"
@@ -32,12 +33,8 @@ describe("D5 命令识别：命中 commit 的形态", () => {
     "git commit",
     "git commit -m 'fix: x'",
     "git -c user.name=x commit -m 'x'",
-    "git -C /tmp/x commit -m 'x'",
     "GIT_AUTHOR_NAME=x git commit -m 'x'",
     "git commit --no-verify -m 'x'",
-    "git --git-dir /tmp/x commit -m 'x'",
-    "git --git-dir=/tmp/x commit -m 'x'",
-    "git --work-tree /tmp/x commit -m 'x'",
     "git --namespace ns commit -m 'x'",
     "git commit -m 'x' --author 'A <a@b>'",
   ]
@@ -48,6 +45,61 @@ describe("D5 命令识别：命中 commit 的形态", () => {
       expect(r.block, `不应被闭口拦下：${cmd}`).toBeUndefined()
     })
   }
+})
+
+describe("D5⑩ 判定对象可定位（换仓 / 包装命令 ⇒ 拒，不得跳过）", () => {
+  const relocated = [
+    "git -C /tmp/x commit -m 'x'",
+    "git -C/tmp/x commit -m 'x'",
+    "git --git-dir /tmp/x commit -m 'x'",
+    "git --git-dir=/tmp/x commit -m 'x'",
+    "git --work-tree /tmp/x commit -m 'x'",
+    "GIT_DIR=/tmp/x/.git git commit -m 'x'",
+    "GIT_WORK_TREE=/tmp/x git commit -m 'x'",
+    "GIT_INDEX_FILE=/tmp/i git commit -m 'x'",
+    "sudo git commit -m 'x'",
+    "sudo -u u git commit -m 'x'",
+    "env X=1 git commit -m 'x'",
+    "nohup git commit -m 'x'",
+    "timeout 10 git commit -m 'x'",
+    "exec git commit -m 'x'",
+  ]
+  for (const cmd of relocated) {
+    test(`拒（换仓 / 包装）：${cmd}`, () => {
+      const r = detectCommitInvocation(cmd)
+      expect(r.isCommit, `未识别为 commit ⇒ fail-open：${cmd}`).toBe(true)
+      expect(r.block, `未拦下：${cmd}`).toBeTruthy()
+    })
+  }
+  test("`git --namespace ns commit` ⇒ 不拦（namespace 不换仓）", () => {
+    expect(detectCommitInvocation("git --namespace ns commit -m 'x'").block).toBeUndefined()
+  })
+})
+
+describe("D5⑨ 命令替换（内容不可静态判定 ⇒ 拒）", () => {
+  const subs = [
+    'git commit -m "$(cat msg.txt)"',
+    'git commit -m "$(git log -1 --format=%s)"',
+    'git commit -m "`date`"',
+    'git commit -m "$(cat <<EOF\nx\nEOF\n)"',
+    "git commit -m x > >(tee /tmp/log)",
+  ]
+  for (const cmd of subs) {
+    test(`拒（命令替换）：${cmd}`, () => {
+      const r = detectCommitInvocation(cmd)
+      expect(r.isCommit).toBe(true)
+      expect(r.block).toBeTruthy()
+    })
+  }
+  test("单引号内是字面量 ⇒ 不拦", () => {
+    expect(detectCommitInvocation("git commit -m 'literal $(x)'").block).toBeUndefined()
+  })
+  test("`$HOME`（非 `$(`）⇒ 不拦", () => {
+    expect(detectCommitInvocation('git commit -m "in $HOME"').block).toBeUndefined()
+  })
+  test("`\\$(x)`（转义）⇒ 不拦", () => {
+    expect(detectCommitInvocation('git commit -m "esc \\$(x)"').block).toBeUndefined()
+  })
 })
 
 describe("D5 命令识别：不应命中的形态（防误伤）", () => {
@@ -94,78 +146,59 @@ describe("D5⑦ 提交形态闭口（实际内容集 ≠ 暂存区 ⇒ 拒）", 
   }
 })
 
-describe("D5⑧ 复合命令闭口（其余段必须是纯报告命令 / 只读 git）", () => {
-  test("`git add -A && git commit -m x` ⇒ 拒（前置段改了 index ⇒ 内容集不可判定）", () => {
-    const r = detectCommitInvocation("git add -A && git commit -m 'x'")
-    expect(r.isCommit).toBe(true)
-    expect(r.block).toContain("git add")
-  })
+describe("D5⑧ commit 必须单独成段（任一段是 commit ⇒ 拒）", () => {
+  const compounds = [
+    "git add -A && git commit -m 'x'",
+    'git commit -m x; echo "exit=$?"',
+    "git commit -m x && echo done",
+    "git commit -m x; echo done; git commit --amend",
+    "git commit -m x && git status",
+    "git commit -m x; git push --force origin main",
+    "git commit -m x && git push origin main",
+    "git commit -m x; git branch -D feature",
+    "git commit -m x; cat .env",
+    "git commit -m x | tee /tmp/log",
+    "git commit -m x &",
+    "cd /other/repo && git commit -m x",
+    "git commit -m x\ngit push --force origin main",
+    "git status | git commit -m x",
+  ]
+  for (const cmd of compounds) {
+    test(`拒（复合）：${JSON.stringify(cmd)}`, () => {
+      const r = detectCommitInvocation(cmd)
+      expect(r.isCommit, `未识别为 commit：${cmd}`).toBe(true)
+      expect(r.block, `未拦下：${cmd}`).toBeTruthy()
+    })
+  }
   test("`git status && ls` ⇒ 不命中", () => {
     expect(detectCommitInvocation("git status && ls").isCommit).toBe(false)
   })
-
-  // ⚠ 层 2 实测的**假阳性**坑：模型最常见的写法是 `git commit -m x; echo "exit=$?"`
-  //   ⇒ 尾随段**无害**（不改 index）⇒ 不得拦（否则合法提交被拦，模型会去找绕路写法）。
-  test("`git commit -m x; echo \"exit=$?\"` ⇒ 命中 commit 但**不拦**（尾随段无害）", () => {
-    const r = detectCommitInvocation('git commit -m x; echo "exit=$?"')
-    expect(r.isCommit).toBe(true)
-    expect(r.block).toBeUndefined()
-  })
-  test("`git commit -m x && echo done` ⇒ 命中 commit 但**不拦**", () => {
-    const r = detectCommitInvocation("git commit -m x && echo done")
-    expect(r.isCommit).toBe(true)
-    expect(r.block).toBeUndefined()
-  })
-  test("`git add . && git commit` ⇒ 拒（前置 add 改了 index）", () => {
-    expect(detectCommitInvocation("git add . && git commit").block).toBeTruthy()
-  })
-  test("`git commit -m x; git add -A; git commit -m y` ⇒ 拒（**第二个** commit 段之前改过 index）", () => {
-    const r = detectCommitInvocation("git commit -m x; git add -A; git commit -m y")
-    expect(r.isCommit).toBe(true)
-    expect(r.block).toBeTruthy()
-  })
-  test("`git commit -m x; echo done; git commit --amend` ⇒ 不拦（两段都没改 index）", () => {
-    const r = detectCommitInvocation("git commit -m x; echo done; git commit --amend")
-    expect(r.isCommit).toBe(true)
-    expect(r.block).toBeUndefined()
-  })
-  test("`git commit -m x && git status` ⇒ 不拦（只读 git 段）", () => {
-    expect(detectCommitInvocation("git commit -m x && git status").block).toBeUndefined()
-  })
-
-  // ⚠ **搭便车**：shell 权限是整串前缀匹配 ⇒ `git commit *` = allow 会把后面的段一起放行
-  test("`git commit -m x; git push --force origin main` ⇒ 拒（否则 force-push 的 deny 失效）", () => {
-    const r = detectCommitInvocation("git commit -m x; git push --force origin main")
-    expect(r.isCommit).toBe(true)
-    expect(r.block).toContain("只读 git")
-  })
-  test("`git commit -m x && git push origin main` ⇒ 拒（push 必须留在自己的 ask 档）", () => {
-    expect(detectCommitInvocation("git commit -m x && git push origin main").block).toBeTruthy()
-  })
-  test("`git commit -m x; rm -rf /tmp/x` ⇒ 拒（非报告命令段）", () => {
-    const r = detectCommitInvocation("git commit -m x; rm -rf /tmp/x")
-    expect(r.isCommit).toBe(true)
-    expect(r.block).toContain("纯报告")
-  })
+  // 重定向**不是**段分隔符（层 2 实测：`git commit … > /dev/null 2>&1` 是模型常用写法）
   test("`git commit -m x > /dev/null 2>&1` ⇒ 不拦（重定向被剥离）", () => {
     expect(detectCommitInvocation("git commit -m x > /dev/null 2>&1").block).toBeUndefined()
   })
   test("`git commit -m x 2>/dev/null` ⇒ 不拦（`2` 是 fd 前缀，不算 pathspec）", () => {
     expect(detectCommitInvocation("git commit -m x 2>/dev/null").block).toBeUndefined()
   })
-  test("`(git commit -m x)` ⇒ 识别为 commit（子 shell 前缀被剥）", () => {
+  test("`(git commit -m x)` ⇒ 不拦（子 shell 前缀，无段分隔符）", () => {
     const r = detectCommitInvocation("(git commit -m x)")
-    expect(r.isCommit).toBe(true)
-    expect(r.block).toBeUndefined()
-  })
-  test("`sudo -u u git commit -m x` ⇒ 识别为 commit（包装命令带值选项被跳过）", () => {
-    const r = detectCommitInvocation("sudo -u u git commit -m x")
     expect(r.isCommit).toBe(true)
     expect(r.block).toBeUndefined()
   })
   test("元字符紧贴时也要独立成 token（`x;` ⇒ [x][;]）", () => {
     const toks = tokenizeCommand("git commit -m x; echo hi").map((t) => t.value)
     expect(toks).toEqual(["git", "commit", "-m", "x", ";", "echo", "hi"])
+  })
+  test("换行也独立成 token", () => {
+    expect(tokenizeCommand("git commit -m x\necho hi").map((t) => t.value)).toEqual([
+      "git",
+      "commit",
+      "-m",
+      "x",
+      "\n",
+      "echo",
+      "hi",
+    ])
   })
 })
 
