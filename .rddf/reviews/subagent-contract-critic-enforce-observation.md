@@ -1,7 +1,10 @@
 # 观察报告：subagent 输入契约的 critic 灰度（`subagent-contract-critic-enforce`）
 
 - 日期：2026-11-14（**基线冻结日 `t0`**）
-- 判据真源：`openspec/changes/subagent-contract-critic-enforce/proposal.md` 的 AC1–AC15
+- 判据真源：**已归档** `openspec/changes/archive/2026-11-19-subagent-contract-critic-enforce/proposal.md` 的 AC1–AC15
+  （原路径 `openspec/changes/subagent-contract-critic-enforce/proposal.md`；**本报告是活文档** —— 复评时在本文件**追加**新节）
+- **状态更新（2026-11-19）**：该 change 已**范围切分后归档** —— 块 D（基线 + 初判 + 结论「继续 warn」+ 可机判触发条件）留在原 change；
+  块 R（复评）/ 块 E（仅当判 enforce）**原样移交** `openspec/changes/subagent-contract-critic-reeval/`（判据真源仍是上面那份 AC 表）。
 - 结论：**继续 warn**（违规侧样本不足：首轮违规 **N = 112 < 150**；观察窗 `t1 − t0 = 0 < 7 天`）
 - 触发条件（复评门槛，**可被下一次取数直接重算**）：**累计首轮违规 `N ≥ 150`** 时复评
 
@@ -13,7 +16,7 @@
 | 取数时刻 | 2026-11-14（`t0`） |
 | `sha256`（audit JSON） | `7f2e43ece1b11a15…`（全文 3.9 MB；需要完整值可重跑同命令比对） |
 | `git rev-parse HEAD` | `74f6a9ebf24ebe24…` |
-| `git hash-object lib/subagent-contract-core.ts` | `891aff973df196ec…` |
+| `git hash-object lib/subagent-contract-core.ts` | `891aff973df196ec398e7ed0eafc275ad4bc4b82`（全文；已用 `git show 74f6a9eb:lib/subagent-contract-core.ts \| git hash-object --stdin` 复现；2026-11-19 复查 HEAD 的该文件 hash **仍等于基线** ⇒ 窗口口径可比） |
 | `subagent-contract.json` 的 `mode` | `warn`（全局）+ `agents.critic.mode = warn` |
 | 日志 `~/.local/share/opencode/subagent-contract.log` | **存在**；70 行；末次写入 2026-11-14 12:26 |
 
@@ -112,14 +115,16 @@ git diff --stat <baseline_sha>..HEAD -- lib/subagent-contract-core.ts plugins/su
 # ④ 结论二选一（R8）⇒ 决定是否开 enforce
 ```
 
-## 本 change 的剩余工作（为何尚未归档）
+## 本 change 的剩余工作（**2026-11-19 起改为「移交」，不再挂在原 change 上**）
 
-| AC | 状态 |
+| AC | 状态（2026-11-19 校正） |
 |---|---|
-| AC1 / AC2 / AC5 / AC12 / AC13 / AC14 / AC10 | ✅ 本期已满足 |
-| AC3 / AC4 | ⏳ **样本不足**（N=112<150；新增豁免仅 1 条）—— 需样本累积 |
-| AC6 | ⏳ **封闭窗未开始**（需 `t1 − t0 ≥ 7 天`） |
-| AC7 / AC11 / AC15 | ⏳ 复评时一并做（不变量 / 回归 / 趋势） |
-| AC8 / AC9 | ✅ N/A（决策 = warn） |
+| AC1 / AC5 / AC10 / AC12 / AC13 / AC14 | ✅ 本期已满足 |
+| **AC2** | ✅ 全量套（D2）｜➡ **`--since` 套移交** reeval（提前取会把封闭窗终点钉死） |
+| **AC3** | ✅ **「样本不足」分支**（AC3 文本自带三选一）—— `N = 112 < 150` |
+| **AC4** | ✅ **基线差计数**（`79 − 78 = 1` 条新增豁免）｜➡ **≥30 抽样移交** reeval（本期新增仅 1 条 ⇒ 抽不到 30；「新增豁免 < 30」作为合法差项由 AC13② 授权，**不是** AC4 自带分支） |
+| **AC6** | ⏳ **封闭窗未开始**（需 `t1 − t0 ≥ 7 天`）➡ 移交 reeval |
+| **AC7 / AC11 / AC15** | ⏳ 复评时一并做（不变量 / 回归 / 趋势）➡ 移交 reeval |
+| **AC8 / AC9** | ✅ N/A（决策 = warn）｜➡ 移交 reeval（**仅当**后继判 enforce 才适用） |
 
-⇒ **本 change 保持 open**，待 `N ≥ 150` 且窗口 ≥ 7 天后复评；届时按本期冻结的基线（§1）与口径（§2）续算，**不需要重新发明判据**。
+⇒ ~~**本 change 保持 open**~~ ⇒ **2026-11-19 已切分归档**：复评由 `subagent-contract-critic-reeval` 承担（入场条件可机判三条）；届时按本期冻结的基线（§1）与口径（§2）续算，**不需要重新发明判据**。

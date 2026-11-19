@@ -1,0 +1,8 @@
+# 本 change 不产生 openspec 的 spec delta（本仓不使用 openspec 的 spec registry）。
+#
+# 判据真源：openspec/changes/archive/2026-11-19-subagent-contract-critic-enforce/proposal.md 的 AC 表
+#   （本 change 只承担其中的复评段 + 翻档段：AC2 的 --since 套 / AC3 / AC4 / AC6 / AC7 / AC8 / AC9 / AC11 / AC13 复评分支 / AC15）。
+# 入场条件：N >= 150 且 t1 - t0 >= 7 天 且 core hash 未变（见 proposal.md 的「入场条件」）。
+schema: spec-driven
+created: 2026-11-19
+skip_specs: true

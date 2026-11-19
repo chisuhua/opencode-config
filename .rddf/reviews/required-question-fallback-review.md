@@ -123,3 +123,9 @@ AC15（CHANGELOG）与 bats 侧复核是**收口动作**而非实施缺陷。要
 | 4 | **`no-role` 询问角色** | ✅ **已被 v2.42 覆盖**（实测），**不需要新 change** | 观察报告 §9 行 1 |
 | 5 | **`subagent-contract-critic-enforce` 复评**：门控 N **已从 112 → 326**（≥150 **已到**），但**时间门未到**（`t1−t0 ≥ 7 天` ⇒ 最早 **2026-11-21**） | ⏳ **等到 11-21**（⚠ 别提前跑 R1 —— 会把封闭窗终点钉死） | `openspec/changes/subagent-contract-critic-enforce/tasks.md` |
 | 6 | **角色矩阵「允许/禁止」列的判据形态**（层 1 最大缺口） | 📝 **设计草案已写**（不硬上弱断言） | `.rddf/improvements/role-matrix-allow-deny-guard-design.md` |
+
+> ⚠ **勘误（2026-11-19，追加而不回改上表）**：第 5 行「门控 N **已从 112 → 326**（≥150 **已到**）」**有误** ——
+> 权威数据是 **`N = 112`（未涨）**（观察报告与 `openspec/changes/archive/2026-11-19-subagent-contract-critic-enforce/tasks.md` 的 D2/D3；
+> 基线相关计数为 331 首轮+续接 / 349 首轮 / 112 首轮违规 / 79 豁免，**326 复现不出来**）。
+> ⇒ 真实状态：**`N = 112 < 150` ⇒ 样本不足**；**闸门是数据量，不是日期**（原「最早可复评日 2026-11-21」只是时间下界，到了也别跑）。
+> 复评已切分为 `openspec/changes/subagent-contract-critic-reeval/`（入场条件：`N ≥ 150` 且 `t1−t0 ≥ 7 天` 且 `core hash` 未变）。

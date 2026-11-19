@@ -35,9 +35,15 @@
 |---|---|---|---|
 | `oracle-intent-gate-e2e` | tasks 28/28，AC **未勾** | **不是「探针没跑」**（该理由曾被我误用）：观察报告 §8.4 与 `tasks.md` 状态头显示「**AC1 探针 ✅ 载体 A**」（换 provider 绕过额度上限后复跑）⇒ 真实缺口是 ① **报告内部矛盾**：§1「主证据载体 pending / 未判定（额度耗尽）」是**过期段**，与 §8.4 冲突；② **AC8 的「固定 9 列」记录表是空的**；③ AC5（E-B 两态差分）结论**已降级为「不可分辨」**（态② 产物含意图线索 ⇒ 前提未真正成立）；④ AC7-② 需 hermetic HOME、AC5b 采样 N=1 | **先做一次 verifier 勾稽轮**：把 §1 的过期段标注为已被 §8.4 取代、填 9 列表、把 AC5 的「已降级」如实写成 AC（改成「两态**不可分辨**已登记，follow-up 另立」）、再逐条勾选。**不要**重跑探针（额度是持续态故障，重跑无收益）；**不要**拿 §8.4 当「已通过」直接归档（那会给「补勾 = 通过」开坏先例） |
 | `required-question-hard-pause-probe` | tasks **7/10**，proposal 的 AC1–AC5 **已全勾** | **不是「没做完」**：缺的是 ① **Task 2 两格的条件跳步未记录**（design D3 本可「读证豁免」，证据散在 `tests/config-guards.test.ts:1332-1336` 与 `oracle-intent-gate-e2e-observation.md` §9，**本 change 无专属观察报告** —— 而 AC1 的证据载体写的是「观察报告」）；② **R1（治理面审查触发器）从未被评估**（design.md 无 prompt 措辞 ⇒ 条件可能未触发，但没人勾掉）；③ **无 review 记录** | **不归档**（归档会静默吞掉「跳步是有意的」与「R1 未评估」两条信息）。闭合路径：R1 评估并勾选（条件未触发 ⇒ 注明）、Task 2 标「D3 读证豁免」并补证据指针、或补一份本 change 的观察报告 ⇒ 再归档。⚠ 它是「**探路 change**」（产出 = 勘察结论 + 设计草案，实施留给后续 change）⇒ **另需用户裁决口径**：这种 change 是否允许「以勘察结论为终点」归档 |
-| `subagent-contract-critic-enforce` | tasks **9/22** | **时间闸门未到**：`tasks.md` 明写「**最早可复评日：2026-11-21**（`t0 = 2026-11-14` + 7 天）」⇒ 今天 2026-11-19 ⇒ 差 2 天 | **等 2026-11-21 后**再跑 R1–R8（复算四元组 / 判 N 门槛 / 豁免侧抽样 / mode 快照 / 不变量 / 趋势 / 回归 / 结论二选一）。⚠ **须先解决一处记录矛盾**：`CHANGELOG.md:72` 与 `required-question-fallback-review.md:123` 写「门控 N 112→326、≥150 已到」，而权威观察报告 `subagent-contract-critic-enforce-observation.md:89-100` 与 `tasks.md:21-23` 写「**N = 112 未涨**」⇒ **326 系错误记录**；复评以**全量重算**为准（本就有该命令），流程无害，但须防「N 门已到」的误读 |
+| `subagent-contract-critic-enforce` | tasks **9/22** | **时间闸门未到**：`tasks.md` 明写「**最早可复评日：2026-11-21**（`t0 = 2026-11-14` + 7 天）」⇒ 今天 2026-11-19 ⇒ 差 2 天 | **等 2026-11-21 后**再跑 R1–R8（复算四元组 / 判 N 门槛 / 豁免侧抽样 / mode 快照 / 不变量 / 趋势 / 回归 / 结论二选一）。⚠ **须先解决一处记录矛盾**：`CHANGELOG.md:90` 与 `required-question-fallback-review.md:124` 写「门控 N 112→326、≥150 已到」，而权威观察报告 `subagent-contract-critic-enforce-observation.md:89-100` 与 `tasks.md:21-23` 写「**N = 112 未涨**」⇒ **326 系错误记录**；复评以**全量重算**为准（本就有该命令），流程无害，但须防「N 门已到」的误读 |
 | `config-guards-ac10-timeout-flake` | 新立项（No tasks） | 未实施 | **先实施**（止疼：AC10④ 的假红）。顺序：helper → 显式超时 → fixture 三态 → 命令形态核对 → 5 条突变 → 回归 → oracle → critic → 独立验收 |
 | `real-repo-git-budget-guard` | 新立项（No tasks） | 未实施 | **随后实施**（结构）：元守卫 + 唯一入口 helper + 交接（回写 `config-guards-ac10-timeout-flake` 的 D2/AC3/AC5 + 留痕） |
+
+
+> **状态更新（2026-11-19，同日）**：该 change 已**范围切分后归档** —— 块 D（基线 + 初判 + 结论「继续 warn」+ 可机判触发条件）留在本 change；
+> 块 R / 块 E **原样移交** `openspec/changes/subagent-contract-critic-reeval/`。
+> ⚠ 上表「时间闸门未到」的措辞需修正为「**数据量闸门**」：`N = 112 < 150`（不是等到 2026-11-21 就能跑；**提前跑 R1 会把封闭窗终点钉死**）。
+> 另：`CHANGELOG` 与 `required-question-fallback-review` 里「N 112 → 326（≥150 已到）」的记录**已勘误**（真实为 `N = 112` 未涨）。
 
 ## 3. 同步与不动的地方
 
