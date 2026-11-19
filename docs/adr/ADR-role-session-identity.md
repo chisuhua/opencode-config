@@ -8,7 +8,7 @@
 | Date | 2026-11-17 |
 | Author | architect（主会话） |
 | Parent | `ADR-backend-handoff-role-class`（D2：**能力类 vs 治理身份分离** —— 本文不改）；`ADR-canonical-root-normalization`（`workRoot` / `stateRoot` 分工）；**前向依赖** `ADR-role-aware-permissions`（其 D1/T1 的 `ask` 档是本文「模型绕过脚本直写 `role.json`」的缓解手段） |
-| 关联 change | `openspec/changes/role-aware-permissions/`（**已立项 2026-11-17**；与门控/租约同一 change 同批落地） |
+| 关联 change | **已实施 + 已验收 + 已归档**（2026-11-19）：`openspec/changes/archive/2026-11-19-role-aware-permissions/`（**已立项 2026-11-17**；与门控/租约同一 change 同批落地；验收 = `.rddf/reviews/role-aware-permissions-verify.md` 第 2 轮终 **24/24 PASS**） |
 | AC 映射 | 本文 **V1–V10 ↔ AC1–AC10**（change 的验收标准表） |
 | 审稿报告 | `.rddf/reviews/role-aware-permissions-consultation.md`（oracle **2 轮** + critic **1 轮**；逐条闭合见 §8.3/§8.4） |
 | 修订 | **2026-11-17（签批后）**：D4 第 3 步补「sid 缺失 ⇒ 跳过镜像步」+ 后果章同步；D2 锁归属补「`role.json` 读写在同一锁内」。**均为与 D1 对齐的事实性修正，不改决策** |

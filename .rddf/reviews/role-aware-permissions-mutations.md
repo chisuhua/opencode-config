@@ -1,6 +1,8 @@
 # 变红演练记录 — role-aware-permissions
 
 > 判据形态与演练要求：`openspec/changes/role-aware-permissions/design.md` D9.3
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-role-aware-permissions/`。本文内出现的 `openspec/changes/role-aware-permissions/…` 是**归档前的历史记述**（过程记录不回改）。
+
 > （**层 1a 静态契约每条判据必须配演练**；层 1b 以「红→绿」记录为准；层 2 只记 skip / 实跑）。
 > 演练一律**内存突变**（不落盘、不污染工作树）或**临时改动 → 复跑 → 还原**（下文标注）。
 

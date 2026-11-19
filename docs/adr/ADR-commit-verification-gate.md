@@ -306,7 +306,7 @@
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
 - [ ] **V10 免宣称十六项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
-  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md` 的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。
+  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。
 - [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [ ] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。
 - [x] **V13 heredoc 跨行引号 ⇒ 不得漏判**：`bash -c "line1\n<<'EOF'\n" ; git commit -m x` ⇒ **拒**（理由应为「单独成段」/解释器闭口，**不是**「暂存区为空」）。**变红**：退回逐行 `stripHeredocs` ⇒ V13 红。

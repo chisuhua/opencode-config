@@ -2,6 +2,8 @@
 
 > **轮次**：**第 2 轮（终）**（`verifier` 角色，2026-11-17）｜**上限** 3 轮（`RDDF_VERIFIER_MAX_LOOPS`）
 > **判据来源**（按优先级）：`openspec/changes/role-aware-permissions/proposal.md` 的 `## 验收标准`（AC1–AC24）
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-role-aware-permissions/`。本文内出现的 `openspec/changes/role-aware-permissions/…` 是**归档前的历史记述**（过程记录不回改）。
+
 > ← 两份已签批 ADR 的 V 项（`ADR-role-session-identity` V1–V10 / `ADR-role-aware-permissions` V1–V14）。
 > 用户本次未口头追加验收条件。
 

@@ -9,7 +9,7 @@
 | Date | 2026-11-17 |
 | Author | architect（主会话） |
 | Parent | **`ADR-role-session-identity`（依赖：身份来源 —— 本文的租约键依赖它）**；`ADR-front-multi-backend`（D6.1 槽位键 = `workRoot`；D6.2 同 `workRoot` 同时一个后端）；`no-self-adjudication`（「不做什么」表第 3 行：硬 deny 属架构级 ⇒ 由本文承担） |
-| 关联 change | `openspec/changes/role-aware-permissions/`（**已立项 2026-11-17**；与身份 ADR 同一 change 同批落地） |
+| 关联 change | **已实施 + 已验收 + 已归档**（2026-11-19）：`openspec/changes/archive/2026-11-19-role-aware-permissions/`（**已立项 2026-11-17**；与身份 ADR 同一 change 同批落地；验收 = `.rddf/reviews/role-aware-permissions-verify.md` 第 2 轮终 **24/24 PASS**） |
 | AC 映射 | 本文 **V1–V14 ↔ AC11–AC24**（change 的验收标准表） |
 | 审稿报告 | `.rddf/reviews/role-aware-permissions-consultation.md`（oracle **2 轮** + critic **1 轮**；逐条闭合见 §8.3/§8.4） |
 | 修订 | **2026-11-17（签批后）**：D6 陈旧根口径 → 两文件均恒 `stateRoot`；D5「五项」→**六项**（含顺序修正）与 V13 同步；风险表「五项」→六项；D5⑥ 改为「租约仍剩 `role-switch.sh` + 派发临界区」。**事实性修正，不改决策** |；**2026-11-18**：`:43` 的执行点由「权限层 ask」改为「工具层验证门」（`docs/adr/ADR-commit-verification-gate.md`）
