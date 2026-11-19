@@ -1,0 +1,7 @@
+# 本 change 不产生 openspec 的 spec delta（本仓不使用 openspec 的 spec registry）。
+#
+# 判据落点：tests/verify_record_discipline.sh（7 条记录纪律）+ tests/record-discipline.test.ts（薄包装，进 bun test）。
+# 同源实现：rdd-workflow-e2e 的 tests/integration/test_evidence_discipline.bats（已用历史快照验证判别力）。
+schema: spec-driven
+created: 2026-11-19
+skip_specs: true
