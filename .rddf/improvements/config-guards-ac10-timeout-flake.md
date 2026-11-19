@@ -7,11 +7,12 @@ feedback_status: none
 
 # config-guards-ac10-timeout-flake — AC10④ 因 bun 默认 5s 超时而**假红**（并卡住提交门）
 
-> **实施状态**：**已立项**（2026-11-19）⇒ `openspec/changes/config-guards-ac10-timeout-flake/`（逐条判据以该 proposal 的 **AC1–AC9** 为唯一真源；本文只保留动机与机制）
+> **实施状态**：**已归档**（2026-11-19，实施 commit `ed6fd44`）⇒ `openspec/changes/archive/2026-11-19-config-guards-ac10-timeout-flake/`（逐条判据以该 proposal 的 **AC1–AC9** 为唯一真源；本文只保留动机与机制）
+> 验收：`.rddf/reviews/config-guards-ac10-timeout-flake-verify.md`（9/9 AC）+ 突变证据 `.rddf/reviews/config-guards-ac10-timeout-flake-mutations.md`（M1–M5）
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。**由 builder 代 planner 起草**（用户 2026-11-19 指定「对 AC10④ 的抖动问题进行立项」）⇒ **metis 1 轮审后已修订**（rev 1；逐条处置见 `.rddf/reviews/config-guards-ac10-timeout-flake-planner-review.md`）。
 > 决策依据：**无新决策** —— 本项**不改任何 ADR 决策、不改判据语义**，只修**判据的执行成本与失败形态**。
 > 判据真源（命令形态）：`openspec/changes/archive/2026-11-14-class-write-scope-alignment/proposal.md` 的 **AC10④**（逐字规定了 `git log -1 --format=%H -- <file>` 与 `git merge-base --is-ancestor`）—— ⇒ **命令形态不得漂移**。
-> 关联 change：`openspec/changes/config-guards-ac10-timeout-flake/`（**已立项** 2026-11-19）。
+> 关联 change：`openspec/changes/archive/2026-11-19-config-guards-ac10-timeout-flake/`（**已归档** 2026-11-19；原路径 `openspec/changes/config-guards-ac10-timeout-flake/`）。
 > 执行路径预估：**常规 change**（只改 `tests/config-guards.test.ts` ⇒ 属治理面判据载体 ⇒ **oracle + critic 各 1 轮**）。
 
 ## Why

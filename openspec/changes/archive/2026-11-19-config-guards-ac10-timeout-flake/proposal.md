@@ -89,9 +89,9 @@ function isAncestor(cwd: string, a: string, b: string): boolean
 |---|---|---|---|
 | AC1 | **显式超时生效**（正反两向 + byte-exact 复原）：① 源码含 `test(…AC10④…, { timeout: 20000 })`；② 临时插 `await Bun.sleep(6000)`（用例改 `async`）⇒ **绿**；③ 临时 `timeout: 2000` + `await Bun.sleep(3000)` ⇒ **红（超时）**；④ `git diff --exit-code tests/config-guards.test.ts` ⇒ 复原无差异 | 结构 | metis P2 / P9 |
 | AC2 | **判据语义不变（确定性 fixture）**：临时仓三态（父篇先改 ⇒ 绿 / 代码先改 ⇒ 红 / 同提交 ⇒ 绿）；真实仓一次 ⇒ 绿（**证据项**：记录当时两个 sha + `git log -1 --format=%ci`） | 结构 | metis P3 |
-| AC3 | **单一真源 + 子进程口径**：该文件内 `execFileSync("git"` 调用点 = **2**（两个 helper）；AC10④ 与 fixture 用例**共用**；真实仓路径每次执行 3 次 git 调用 | 结构 | metis P5 / P10 |
-| AC4 | **判据真的执行**（**证据项**，不新增用例）：`git log -1 --format=%H -- <两个文件>` 均返回**非空** sha；`bun test tests/config-guards.test.ts -t "AC10④"` ⇒ 1 pass | 结构 | metis P1（推荐项 a） |
-| AC5 | **命令形态与归档 spec 一致**：测试源码含 `git log -1 --format=%H --` 与 `git merge-base --is-ancestor`（逐字） | 结构 | metis「不改归档 spec 文本」 |
+| AC3 | **单一真源 + 子进程口径**：该文件内 `execFileSync("git"` 调用点 = **3**（**两个 helper** + **1 个 fixture 专用 runner** `gitFixture`，后者 cwd 恒为 `mkdtemp` 临时仓、只跑 init/commit 这类 1–2 次的小操作）；**触真实仓历史**的只有 helper 内 **2** 处；AC10④ 与 fixture 用例**共用**那两个 helper；真实仓路径每次执行 3 次 git 调用 | 结构 | metis P5 / P10 |
+| AC4 | **判据真的执行**（**证据项**，不新增用例）：`git log -1 --format=%H -- <两个文件>` 均返回**非空** sha；`bun test tests/config-guards.test.ts -t "AC10④"` ⇒ **3 pass**（真实仓用例 + fixture 三态 + 形态守卫） | 结构 | metis P1（推荐项 a） |
+| AC5 | **命令形态与归档 spec 一致**：测试源码含参数数组字面量 `["log", "-1", "--format=%H", "--", file]` 与 `["merge-base", "--is-ancestor", a, b]`（逐字）**且由源码级守卫钉住**（换 `rev-list` / `--no-renames` ⇒ 红） | 结构（机械守卫） | metis「不改归档 spec 文本」 |
 | AC6 | **失败文案可归因**：用例名或注释含可 grep 短句（「慢执行不判红」/「超时 ≠ 父篇滞后」） | 结构 | metis 隐藏意图 |
 | AC7 | **回归**：`bun test tests/` **全绿**（连跑 3 次；用 junit reporter **记录该用例每次耗时**）；`bash scripts/check-upstream-anchors.sh` 全绿；`openspec validate --strict` valid | 结构 | metis P2 / P6 |
 | AC8 | **不空转**：该文件 0 `skip` / 0 `todo`；新增 fixture 用例**非恒真**（把祖先判定写成恒真 ⇒ 反向用例必红） | 结构 | metis P5 |
@@ -127,6 +127,7 @@ function isAncestor(cwd: string, a: string, b: string): boolean
 | ⑦ | **shallow clone / CI `depth=1`**（`git log` 空 ⇒ 静默跳过；`merge-base` ≥128 ⇒ 假红） | 与 ② 同族（强度问题）⇒ 登记为已知边界，**本 change 不修** |
 | ⑧ | 区分 `merge-base` 退出码 1（非祖先，真红）与 ≥128（参数/仓库异常，假红） | 同 ② 同族 ⇒ 登记为已知边界 |
 | ⑨ | **linked worktree**（`.git` 是文件）与外部 `GIT_DIR` / `GIT_WORK_TREE` 泄漏 | 本 change **不引入 `.git` 存在性判断、不清 env**（AC4 只作证据项）⇒ 现状语义不变；登记 |
+| ⑩ | **无 git 环境**下 fixture 用例是**响红**而非跳过（`gitFixture` 无 catch；try/finally 只包清理） | AC10④ 真身的「无 git ⇒ 跳过」语义**保留**（`lastCommitSha` 空串 ⇒ return）；但 fixture 仓由用例自己 `git init` ⇒ 无 git 是**环境缺依赖**，不是「判据不可验」⇒ **响红优于静默**。登记为已知边界（本仓本来就依赖 git：提交门 + 基线取法都在用它） |
 
 ## 实施顺序
 
@@ -137,3 +138,28 @@ function isAncestor(cwd: string, a: string, b: string): boolean
 5. 突变演练 5 条（AC9；M1/M2 需临时改被测用例 ⇒ 复原后 `git diff --exit-code` 证明）；
 6. 回归（AC7；junit reporter 记录该用例每次耗时）；
 7. oracle（治理面）→ critic → 独立验收。
+
+## Acceptance（勾选镜像）
+
+> 判据正文以上表为准；本段供 `rdd-verifier` 读取。
+
+- [x] AC1 显式超时生效（正反两向 + byte-exact 复原）
+- [x] AC2 判据语义不变（确定性 fixture 三态 + 真实仓一次）
+- [x] AC3 单一真源 + 子进程口径（3 处调用点 = 2 helper + 1 fixture runner）
+- [x] AC4 判据真的执行（证据项：两 sha 非空 + 3 用例 pass）
+- [x] AC5 命令形态与归档 spec 一致（数组字面量 + 源码级守卫）
+- [x] AC6 失败文案可归因
+- [x] AC7 回归（全量 3 次 + anchors + validate）
+- [x] AC8 不空转（0 skip/todo + fixture 非恒真）
+- [x] AC9 证据包（5 条突变三件套）
+
+> **实现与验收证据（2026-11-19）**：实施 commit `ed6fd44`（唯一改动文件 `tests/config-guards.test.ts`）。
+> - **回归**：`bun test tests/` 连跑 **3 次** 均 **916 pass / 0 fail**；junit 记录 AC10④ 真实仓用例耗时 **0.443 / 0.265 / 0.260 s**（远在 20s 界内）；`check-upstream-anchors.sh` **23/23**；`openspec validate --strict` **valid**。
+> - **突变演练**：`.rddf/reviews/config-guards-ac10-timeout-flake-mutations.md`（M1–M5 逐条命中预期断言；5 条复原后 `sha256` 与 baseline 相等；AC1④ 另有 `git diff --exit-code` exit 0）。
+> - **证据项（AC2/AC4）**：`docs/adr/ADR-backend-handoff-role-class.md` = `6116839d687b354e5b69f1a330c0c624cbc509dc`（`git log -1 --format=%ci` ⇒ `2026-11-14 22:29:39 +0800`）、`lib/delegate-core.ts` = `4b31d19707a41a5c73d7e7558e1a9979e3c1c400`（`2026-11-18 00:54:42 +0800`）—— 均非空，且父篇（11-14）早于代码（11-18）⇒ 祖先判定的真实仓形态成立；`bun test tests/config-guards.test.ts -t "AC10④"` ⇒ **3 pass**。
+> - **前向指针（过渡形态，sibling 负责迁移）**：新增的**形态守卫读的是 `tests/config-guards.test.ts` 自身路径**，两个 helper 也在本文件内 —— 这是**过渡形态**。`real-repo-git-budget-guard` 的 **D4（迁移 AC10④ 到 helper）/ D9（交接回写本 change 的 D2/AC3/AC5）** 会把它们迁到 `tests/helpers/real-repo-git.ts` 并回写本文件的判据文本；**迁移漏做时形态守卫会响红**（fail-closed，不是静默缺口）。
+> - **如实记录的两处实施期修正**（判据强度不变，均为「判据写法与实际形态对齐」）：
+>   ① **AC3** 原写「调用点 = **2**」—— 确定性 fixture 需要造提交，必须有 1 个 fixture 专用 runner（`gitFixture`，cwd 恒为 `mkdtemp` 临时仓）⇒ 实测 **3**；「触真实仓历史的只有 helper 内 2 处」这一实质不变。
+>   ② **AC5** 原写「源码含 `git log -1 --format=%H --`（逐字）」—— 参数写成数组后该**字符串**根本不可能出现（判据写错，无法满足）；已改为可机判的数组字面量形态，并补**源码级守卫**（M4 证明：形态漂移后行为用例仍绿 ⇒ 必须有源码级判据）。
+> - **已知边界（登记，不修）**：形态守卫只钉这两处字面量（**含 helper 的形参名** `file`/`a`/`b` ⇒ 纯改名也会响红，属可接受的 brittleness）；shallow clone / `merge-base ≥128` / linked worktree / `GIT_DIR` 泄漏的语义沿用现状，且无 git 环境下 fixture 用例**响红**（而非跳过）——见 Out of Scope ⑦⑧⑨⑩。
+
