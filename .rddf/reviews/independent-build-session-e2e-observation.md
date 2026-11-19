@@ -1,5 +1,6 @@
 # 观察报告 — independent-build-session-e2e（独立会话的行为层保证）
 
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-independent-build-session-e2e/`。本文内出现的 `openspec/changes/<name>/…` 是**归档前的历史记述**（过程记录不回改）。
 > 判据真源：`openspec/changes/independent-build-session-e2e/proposal.md` 的 AC1–AC8
 > 日期：2026-11-16 ｜ 模型标识：本机默认链（`minimax-cn/MiniMax-M3.1-Flash` 等，见 `opencode.jsonc` 的 agent 链）
 > ⚠ **本报告落在 opencode 仓**（`rdd-workflow-e2e` 仓的 `.rddf` 被 gitignore ⇒ 观察报告无法入库那里）。

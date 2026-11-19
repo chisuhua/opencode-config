@@ -105,11 +105,13 @@ $ git diff --name-only HEAD...HEAD # 三点：只比**已提交**
 
 > 判据正文以上表为准；本段供 `rdd-verifier` 读取。
 
-- [ ] AC1 两点 diff 列出未提交改动、三点 diff 为空（旧命令失效的证据）
-- [ ] AC2 未改动的文件不被误报
-- [ ] AC3 未跟踪文件走 `ls-files --others` 那一路
-- [ ] AC4 `git show <base>:<path>` 在工作树改写后仍返回基线版本
-- [ ] AC5 `build.md` 用两点 diff + 明写未跟踪文件那一路 + 不再出现三点写法
-- [ ] AC6 `build.md` 写明基线侧/工作树侧的**不对称** + `merge-base` 的新用途（诊断用，对照用 `<base>` 本身）
-- [ ] AC7 回归绿 + anchors 无 SKIP
-- [ ] AC8 revert 演练留痕
+- [x] AC1 两点 diff 列出未提交改动、三点 diff 为空（旧命令失效的证据）
+- [x] AC2 未改动的文件不被误报
+- [x] AC3 未跟踪文件走 `ls-files --others` 那一路
+- [x] AC4 `git show <base>:<path>` 在工作树改写后仍返回基线版本
+- [x] AC5 `build.md` 用两点 diff + 明写未跟踪文件那一路 + 不再出现三点写法
+- [x] AC6 `build.md` 写明基线侧/工作树侧的**不对称** + `merge-base` 的新用途（诊断用，对照用 `<base>` 本身）
+- [x] AC7 回归绿 + anchors 无 SKIP
+- [x] AC8 revert 演练留痕
+
+> **验收证据（2026-11-19 归档前补记）**：`.rddf/reviews/verifier-baseline-worktree-diff-review.md` §4（`bun test tests/` **586 pass / 0 fail** + revert 演练 **5 条** A–E 逐条精确命中、还原后全绿）+ §5 残留（如实登记：**AC2–AC4 未逐条独立注入**；AC3/AC4 的**文档面**已由新增守卫断言覆盖，行为面靠 AC1 的同路径注入 E 防守）+ `.rddf/reviews/verifier-baseline-worktree-diff-revert-map.md`（**AC1–AC8 逐条标记**：AC1/AC5/AC6 有专属注入，AC2 与 AC1 同命令、AC3/AC4 行为面共享路径，AC7 为回归项，AC8 即该留痕本身）。

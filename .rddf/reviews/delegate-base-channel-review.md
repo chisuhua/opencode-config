@@ -1,5 +1,6 @@
 # 审稿记录 — delegate-base-channel（v2.31）
 
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-delegate-base-channel/`。本文内出现的 `openspec/changes/<name>/…` 是**归档前的历史记述**（过程记录不回改）。
 > 产物：`openspec/changes/delegate-base-channel/`（proposal AC1–AC14 / design D1–D9 / tasks Task 0–7）
 > 实施：`lib/delegate-core.ts`、`lib/delegate-async.ts`、`prompts/{plan,front}.md`、
 > `docs/backend-handoff-role-class.md`、`tests/{delegate-core,delegate-tool,delegate-async,config-guards}.test.ts`

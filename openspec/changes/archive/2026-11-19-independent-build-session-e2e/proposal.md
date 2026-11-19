@@ -94,11 +94,13 @@ e2e 仓的 **5 处 `--agent build`** 全是**载体用途**：
 
 > 判据正文以上表为准；本段供 `rdd-verifier` 读取。
 
-- [ ] AC1 新 bats 文件存在且默认 skip
-- [ ] AC2 E-1：build 独立会话首行是 `【角色: builder …】`
-- [ ] AC3 E-2：切换后首行变 verifier **且** `role.json` 的 `current_role` 被写
-- [ ] AC4 E-3：越权响应含拒绝 + 解释 + 引导
-- [ ] AC5 额度不足 ⇒ skip 不 fail
-- [ ] AC6 三条都真跑过（观察报告含原始输出）
-- [ ] AC7 本仓层 1 静态守卫仍全绿
-- [ ] AC8 观察报告如实登记（含被跳过的项）
+- [x] AC1 新 bats 文件存在且默认 skip
+- [x] AC2 E-1：build 独立会话首行是 `【角色: builder …】`
+- [x] AC3 E-2：切换后首行变 verifier **且** `role.json` 的 `current_role` 被写
+- [x] AC4 E-3：越权响应含拒绝 + 解释 + 引导
+- [x] AC5 额度不足 ⇒ skip 不 fail
+- [x] AC6 三条都真跑过（观察报告含原始输出）
+- [x] AC7 本仓层 1 静态守卫仍全绿
+- [x] AC8 观察报告如实登记（含被跳过的项）
+
+> **验收证据（2026-11-19 归档前补记）**：`.rddf/reviews/independent-build-session-e2e-observation.md` §1（**逐条三态**，不把跳过写成通过）+ §4（**AC1–AC8 逐条 ✅ 表**：E-1/E-2/E-3 真跑、词表正反例零额度进 CI、层 1 静态守卫 `bun test tests/` exit 0 **588 pass**、anchors **23/23**）+ §6（E-4 修复后复跑 **3/3 非 skip 全绿**）。

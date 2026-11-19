@@ -3,7 +3,7 @@
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。
 > ⚠ **本文件由 builder 代 planner 起草**（用户直接指定）⇒ **待 planner 审查**（metis 1 轮）后方可立项。
 > 来源：`delegate-base-channel` 的审稿残留 ⑪（`.rddf/reviews/session-handoff-20261114.md`）
-> 决策依据：`openspec/changes/delegate-base-channel/design.md` 的 **D2**（resume 语义）+ **D4**（sha 冻结）
+> 决策依据：`openspec/changes/archive/2026-11-19-delegate-base-channel/design.md` 的 **D2**（resume 语义）+ **D4**（sha 冻结）
 > 关联：`.rddf/reviews/delegate-base-channel-review.md` §7 残留 ②
 > 执行路径预估：**常规 change**（触及 `lib/**` 返回契约 + 守卫 ⇒ 治理面 ⇒ oracle → critic 各 1 轮）
 

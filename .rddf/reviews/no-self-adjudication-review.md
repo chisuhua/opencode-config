@@ -1,5 +1,6 @@
 # 审查归档 — no-self-adjudication（三方审查的原始结论摘要）
 
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-no-self-adjudication/`。本文内出现的 `openspec/changes/<name>/…` 是**归档前的历史记述**（过程记录不回改）。
 > 目的：`no-self-adjudication` 这个 change 经 **oracle → metis → critic** 三方审查，
 > 其中 oracle / metis 两轮的**原始产物只在会话内、未落盘** ⇒ critic 第 2 轮明确指出
 > 「无法逐条点名复核 19 条」「下一轮复审无『上一轮 BLOCKER 闭合』的对照基线」。

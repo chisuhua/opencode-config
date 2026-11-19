@@ -1,5 +1,6 @@
 # Revert 演练留痕 — delegate-base-channel（AC14）
 
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-delegate-base-channel/`。本文内出现的 `openspec/changes/<name>/…` 是**归档前的历史记述**（过程记录不回改）。
 > 日期：2026-11-15 ｜ 判据真源：`openspec/changes/delegate-base-channel/proposal.md` 的 AC1–AC14
 > 方法：每条**注入一个真实破坏** ⇒ 必须变红 ⇒ 还原 ⇒ 必须绿。**判红只认退出码**（非 TTY 下 bun 的失败明细在 stderr ⇒ 数 stdout 的 `(fail)` 行会永远假绿）。
 > 脚本：`/tmp/opencode/revert-base-channel.py`（scratch，不入库；本文件是留痕载体）

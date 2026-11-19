@@ -1,5 +1,6 @@
 # 审查归档 — required-question-fallback（三方审查的原始结论摘要）
 
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-required-question-fallback/`。本文内出现的 `openspec/changes/<name>/…` 是**归档前的历史记述**（过程记录不回改）。
 > 目的：本 change 经 **oracle → metis → critic** 三方审查。本文件把三轮的**结论摘要**落盘，
 > 作为**实施后增量审**的对照基线（**摘要非逐字**，以会话记录为准；若与 change 文档冲突，**以 change 文档为准**）。
 > 关联：`openspec/changes/required-question-fallback/`（proposal AC1–AC16 / design D1–D10 / tasks Task 0–5）

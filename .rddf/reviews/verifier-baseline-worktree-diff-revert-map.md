@@ -1,5 +1,6 @@
 # Revert 演练留痕 — verifier-baseline-worktree-diff（AC8）
 
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-verifier-baseline-worktree-diff/`。本文内出现的 `openspec/changes/<name>/…` 是**归档前的历史记述**（过程记录不回改）。
 > 日期：2026-11-15 ｜ 判据真源：`openspec/changes/verifier-baseline-worktree-diff/proposal.md` 的 AC1–AC8
 > 方法：每条**注入一个真实破坏** ⇒ 必须变红 ⇒ 还原 ⇒ 必须绿。**判红只认退出码**。
 

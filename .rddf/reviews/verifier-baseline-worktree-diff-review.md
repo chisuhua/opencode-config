@@ -1,5 +1,6 @@
 # 审稿记录 — verifier-baseline-worktree-diff（v2.33）
 
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-verifier-baseline-worktree-diff/`。本文内出现的 `openspec/changes/<name>/…` 是**归档前的历史记述**（过程记录不回改）。
 > 产物：`prompts/build.md` 的基线取法段 + `tests/verifier-baseline.test.ts`（新）+ `tests/config-guards.test.ts`（新守卫）
 > 治理面判定：触及 `prompts/**` + 守卫断言 ⇒ **oracle → critic**
 > 日期：2026-11-15

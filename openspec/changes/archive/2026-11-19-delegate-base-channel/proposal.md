@@ -139,17 +139,19 @@
 
 > 判据正文以上表为准；本段供 `rdd-verifier` 读取。
 
-- [ ] AC1 两处 schema 都有 `base`，`required` 不含它
-- [ ] AC2 简报基线行 `<raw> → <sha>` + 该 sha 的 `merge-base` exit 0
-- [ ] AC3 `""` / `null` 被拒
-- [ ] AC4 四种注入形态被拒
-- [ ] AC5 verifier 缺 base ⇒ 两侧链路都硬拒（文案含三点）
-- [ ] AC6 非 git 工程 ⇒ 放行 + 简报说明
-- [ ] AC7 不可解析 ref 被拒；annotated tag 不被误拒
-- [ ] AC8 resume verifier 重填 base ⇒ 简报含基线行
-- [ ] AC9 knowledge + base ⇒ 硬拒
-- [ ] AC10 五个文档面一致（含 `:84` 计数与参数流图与工具 description）
-- [ ] AC11 AC29 转行为断言 + 登记条目已删
-- [ ] AC12 拒绝顺序（scope 先于 base）+ 两处既有用例已处置
-- [ ] AC13 回归绿 + anchors 无 SKIP
-- [ ] AC14 revert 演练留痕
+- [x] AC1 两处 schema 都有 `base`，`required` 不含它
+- [x] AC2 简报基线行 `<raw> → <sha>` + 该 sha 的 `merge-base` exit 0
+- [x] AC3 `""` / `null` 被拒
+- [x] AC4 四种注入形态被拒
+- [x] AC5 verifier 缺 base ⇒ 两侧链路都硬拒（文案含三点）
+- [x] AC6 非 git 工程 ⇒ 放行 + 简报说明
+- [x] AC7 不可解析 ref 被拒；annotated tag 不被误拒
+- [x] AC8 resume verifier 重填 base ⇒ 简报含基线行
+- [x] AC9 knowledge + base ⇒ 硬拒
+- [x] AC10 五个文档面一致（含 `:84` 计数与参数流图与工具 description）
+- [x] AC11 AC29 转行为断言 + 登记条目已删
+- [x] AC12 拒绝顺序（scope 先于 base）+ 两处既有用例已处置
+- [x] AC13 回归绿 + anchors 无 SKIP
+- [x] AC14 revert 演练留痕
+
+> **验收证据（2026-11-19 归档前补记）**：`.rddf/reviews/delegate-base-channel-review.md` §3（TDD 逐条红灯 ⇒ 精确指向预期断言）+ §4（AC8 的判别力注入：闸门改按声明值判 ⇒ AC8-①/② 双红）+ §5（revert 演练）+ §6（`bun test tests/` **577 pass / 0 fail**、anchors **23/23**、`openspec validate` **valid**）+ `.rddf/reviews/delegate-base-channel-revert-map.md`（**AC1–AC14 逐条标记**：AC6/AC7 **未单独演练**及其理由（豁免分支 / peel 修法的破坏方向相反）、AC13 为回归项、AC14 即该留痕本身）。
