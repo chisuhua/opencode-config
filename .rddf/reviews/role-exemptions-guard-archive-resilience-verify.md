@@ -2,6 +2,8 @@
 
 > **角色**：verifier（独立验收；只出证据与判决，**不改实现**）
 > **判据来源**：`openspec/changes/role-exemptions-guard-archive-resilience/proposal.md` 的 `## 验收标准`（**AC1–AC9**）—— 本 change 明确声明「判据真源 = 该 AC 表」。
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-role-exemptions-guard-archive-resilience/`。本文内出现的 `openspec/changes/role-exemptions-guard-archive-resilience/…` 是**归档前的历史记述**（过程记录不回改）。
+
 > **分流判定**：`rddf rdd-verify --dry-run` ⇒ `No eligible changes to verify (empty queue)`；**`.rddf/state/iteration.json` 不存在** ⇒ **P3 archive gate 未触发**（`rdd-verifier` skill 虽 `available`，但 canonical 前置不满足）⇒ 走**本地验收**（本报告）。
 > ⚠ **本地验收的额外门（`tasks_done == tasks_total > 0`）不适用**：本 change **无 `tasks.md`**（`openspec archive` 对同族 change 也报 `Task status: No tasks`）⇒ 以 proposal 的 AC 表为唯一判据。
 > **被验提交**：`8847aaf`（实现）→ `77af072`（oracle 处置）→ `7f09fc5`（critic SHOULD_FIX + 审查记录）。

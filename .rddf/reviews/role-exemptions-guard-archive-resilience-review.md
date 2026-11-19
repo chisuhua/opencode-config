@@ -1,6 +1,8 @@
 # role-exemptions-guard-archive-resilience —— 审查记录（oracle 治理面 + critic）
 
 > 判据真源：`openspec/changes/role-exemptions-guard-archive-resilience/proposal.md` 的 **AC1–AC9**。
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-role-exemptions-guard-archive-resilience/`。本文内出现的 `openspec/changes/role-exemptions-guard-archive-resilience/…` 是**归档前的历史记述**（过程记录不回改）。
+
 > 被审对象：`tests/role-exemptions.test.ts`（改动 `8847aaf` + oracle 处置 `77af072` + 本次 SHOULD_FIX 处置）。
 > 预算：oracle **1 轮** + critic **1 轮**（`prompts/build.md` §审查配对：治理面 = oracle → critic，各 1 轮）。
 

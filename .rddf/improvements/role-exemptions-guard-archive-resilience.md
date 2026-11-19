@@ -7,12 +7,12 @@ feedback_status: none
 
 # role-exemptions-guard-archive-resilience — AC23 守卫写死未归档路径 ⇒ 该 change 一归档即崩
 
-> **实施状态**：**已立项**（2026-11-18）⇒ `openspec/changes/role-exemptions-guard-archive-resilience/`（逐条判据以该 proposal 的 **AC1–AC9** 为唯一真源；本文只保留动机与机制）
+> **实施状态**：✅ **已归档**（2026-11-19）⇒ `openspec/changes/archive/2026-11-19-role-exemptions-guard-archive-resilience/`（逐条判据以该 proposal 的 **AC1–AC9** 为唯一真源；**验收报告 = `.rddf/reviews/role-exemptions-guard-archive-resilience-verify.md` 第 2 轮通过**；**审查记录 = `.rddf/reviews/role-exemptions-guard-archive-resilience-review.md`**；本文只保留动机与机制）
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。**由 builder 代 planner 起草**（用户 2026-11-18 指定「AC23 守卫的路径硬编码立项」）⇒ **metis 1 轮审后已修订**（rev 1；逐条处置见 `.rddf/reviews/role-exemptions-guard-archive-resilience-planner-review.md`）。
 > 决策依据：`docs/adr/ADR-role-aware-permissions.md` **D5** + **AC23** —— 本项**不改任何决策、不改判据强度**，只修**载体解析**。
-> 事实依据：`tests/role-exemptions.test.ts:29`（写死未归档路径）+ `:42 / :50 / :62`（三处 `readFileSync` 无回退）⇒ 该 change 一归档即 **`ENOENT` 崩溃**（不是判红）。
+> 事实依据（**修前**状态）：`tests/role-exemptions.test.ts` 的 `PLACES` 写死未归档路径 + 三处 `readFileSync` 无回退 ⇒ 该 change 一归档即 **`ENOENT` 崩溃**（不是判红）。**已修**（候选枚举 + 四态解析）。
 > 来源：`commit-gate-d9-three-place-registration` 的 **Out of Scope ④** + 用户指令立项。
-> 关联 change：`openspec/changes/role-exemptions-guard-archive-resilience/`（**已立项** 2026-11-18）。
+> 关联 change：`openspec/changes/archive/2026-11-19-role-exemptions-guard-archive-resilience/`（**已归档** 2026-11-19；立项 2026-11-18）。
 > 执行路径预估：**常规 change**（只改 `tests/role-exemptions.test.ts` ⇒ AC23 判据载体 ⇒ 治理面：**oracle + critic 各 1 轮**）。
 
 ## Why

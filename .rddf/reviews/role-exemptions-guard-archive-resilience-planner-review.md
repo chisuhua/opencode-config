@@ -4,6 +4,8 @@
 > 轮次：**1 轮**（按 `prompts/build.md` §审查配对：新建 improvement / proposal ⇒ metis 1 轮）
 > 输入：`.rddf/improvements/role-exemptions-guard-archive-resilience.md`（rev 0）+ 指定必读（`tests/role-exemptions.test.ts`、`tests/commit-gate-d9-registration.test.ts`、D9 的验收报告、`role-aware-permissions/proposal.md:113-123`）
 > 产出：improvement **rev 1** + `openspec/changes/role-exemptions-guard-archive-resilience/proposal.md`（立项）
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-role-exemptions-guard-archive-resilience/`。本文内出现的 `openspec/changes/role-exemptions-guard-archive-resilience/…` 是**归档前的历史记述**（过程记录不回改）。
+
 
 ## 1. metis 的 finding 与逐条处置
 

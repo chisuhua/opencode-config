@@ -1,6 +1,8 @@
 # role-exemptions-guard-archive-resilience —— 变红演练证据包（AC9）
 
 > 判据真源：`openspec/changes/role-exemptions-guard-archive-resilience/proposal.md` 的 **AC9** 与「变红演练（6 条）」表（M1–M6）。
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-role-exemptions-guard-archive-resilience/`。本文内出现的 `openspec/changes/role-exemptions-guard-archive-resilience/…` 是**归档前的历史记述**（过程记录不回改）。
+
 > 被验对象：`tests/role-exemptions.test.ts`（AC 面载体解析器 `resolveAcFace` + 三态文案）+ 真实载体 `openspec/changes/role-aware-permissions/proposal.md`。
 > 执行方式：脚本 `/tmp/opencode/mutate_ac23.sh`（每条突变 → 跑单文件 → 复原 → 复跑绿；`trap` 兜底复原）。原始日志留档于 `/tmp/opencode/mutations.log`（不入仓，过程性 scratch）。
 > 环境：`bun test v1.3.14`；基线单文件 **20 pass / 0 fail**（oracle 复审后加了一条「近似名不算候选」用例，见文末「复审后加固」）。
