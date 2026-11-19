@@ -66,7 +66,7 @@ const PLACES = [
 - [x] **AC5** 文案三态分开：(a) 无文件（含「目录在但 `proposal.md` 缺」点名目录）/ (b) 有文件无行首标题（含**期望标题原文**）/ (c) 有标题六项不全（label 含相对路径）
 - [x] **AC6** 判据强度不变：① 删真实载体的 `D5③` ⇒ 仍红；② fixture「活跃缺项 + archive 齐全」⇒ **仍红**（不得静默回退到 archive）；`missingItems` 语义逐字未变
 - [x] **AC7** 不空转 / 无缓存：0 `skip` / 0 `todo`；同一 root 两次调用一致（形态变化立即反映）；fixture root 不污染真实 root
-- [x] **AC8** 回归：`bun test tests/` 全绿（913）；anchors 23/23；`config-guards:142` 的 `tests/role-exemptions.test.ts D5②（部分闭合）` 锚仍绿
+- [x] **AC8** 回归：`bun test tests/` **全绿**（本次实测 **914** pass / 0 fail；⚠ 数字随用例增删变，以实跑为准）；anchors **23/23**；`config-guards:142` 的 `tests/role-exemptions.test.ts D5②（部分闭合）` 锚仍绿
 - [x] **AC9** 证据包：**6** 条突变（M1–M6，含删项 / 零候选 / 脏并存）的三件套落 `.rddf/reviews/role-exemptions-guard-archive-resilience-mutations.md`
 
 ## Capabilities
