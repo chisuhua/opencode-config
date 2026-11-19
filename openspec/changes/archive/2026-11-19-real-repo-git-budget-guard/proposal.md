@@ -47,6 +47,7 @@ export function lastCommitSha(cwd: string, file: string): string   // cwd 参数
 export function isAncestor(cwd: string, a: string, b: string): boolean
 export function lastCommitShaInRepo(file: string): string   // 真仓薄包装（仓根按 canonical-root 口径取，worktree 感知）
 export function isAncestorInRepo(a: string, b: string): boolean
+export function isGitCallTimeout(err: unknown): boolean        // AC3 授权的**分类器**导出（不授予任何真实仓访问能力）
 ```
 
 - **cwd 参数化是必须的**：sibling change 的「祖先判定三态」fixture 用例要在临时仓里跑这两个函数。
@@ -112,10 +113,10 @@ AC10④ 改为调用 `lastCommitShaInRepo` / `isAncestorInRepo` ⇒ 显式超时
 
 | AC | 判据 | 类型 | 来源 |
 |---|---|---|---|
-| AC1 | **检测口径**：**R 形态**（`cwd` 含 `import.meta.dir`）的 git 调用点**只**出现在 helper 内；**缺 `cwd`** 的 git 调用 ⇒ **红**；**U 面 13 处**（形参 helper 3 文件 / `dest`/`project` 9 处 / `probes/**` 1 处）**显式登记**为已知漏检面 | 结构 | metis 建议 1 + spike |
+| AC1 | **检测口径**：**R 形态**（`cwd` 指向仓根，**三种等价写法都算**：字面含 `import.meta.dir` / 引用同文件里由它派生的常量（含**传递闭包**）/ **`process.cwd()`**）的 git 调用点**只**出现在 helper 内；**缺 `cwd`** 的 git 调用 ⇒ **红**；**U 面按类别显式登记**为已知漏检面（实现时实测：形参式 helper **5 处**、`cwd` 是局部 fixture 变量 **32 处**、`tests/probes/**` **1 处** = **38 处**；⚠ **不锁定计数** —— 每次新增 fixture 用例都要改判据会把规则稀释成噪音） | 结构 | metis 建议 1 + spike |
 | AC2 | **两层预算常量**：helper 导出 `REAL_REPO_GIT_TEST_TIMEOUT_MS = 20_000` 与 `REAL_REPO_GIT_CALL_TIMEOUT_MS = 6_000`；算式「3 × 6s = 18s < 20s」在代码注释里；**禁重试** | 结构 | metis 建议 3 |
-| AC3 | **超时语义分层**：per-call 超时（`err.code === "ETIMEDOUT"`）⇒ **抛带指引的错**（不被吞成空串）；其它错误 ⇒ 既有语义不变（`lastCommitSha` ⇒ 空串跳过；`isAncestor` ⇒ 红） | 结构 | metis 建议 2 |
-| AC4 | **接口冻结 + cwd 参数化**：导出 D1 的 4 个函数 + 2 个常量；真仓薄包装的仓根按 canonical-root 口径取（worktree 感知），**不引入 `.git` 存在性判断** | 结构 | metis 建议 6 |
+| AC3 | **超时语义分层**：per-call 超时（`err.code === "ETIMEDOUT"`）⇒ **抛带指引的错**（不被吞成空串）；其它错误 ⇒ 既有语义不变（`lastCommitSha` ⇒ 空串跳过；`isAncestor` ⇒ 红）。**识别逻辑导出为 `isGitCallTimeout` 以便行为断言**（`{code:"ETIMEDOUT"}` ⇒ true、`{status:128}` ⇒ false），「两个 catch 首句都 rethrow」用结构判据钉住 | 结构 + 行为 | metis 建议 2 + oracle 复审 |
+| AC4 | **接口冻结 + cwd 参数化**：导出 D1 的 **4 个访问函数 + 2 个常量**（**另含 AC3 授权的分类器 `isGitCallTimeout`** —— 它不授予真实仓访问能力，故不在「冻结的访问入口」内）；真仓薄包装的仓根按 canonical-root 口径取（worktree 感知），**不引入 `.git` 存在性判断** | 结构 | metis 建议 6 |
 | AC5 | **静态子进程计数**：清单项登记的 helper 调用点数 == 源码中该 `test(...)` 块内的实际调用点数（不等 ⇒ 红）；清单项 `budget ≥ 1`（防死项） | 结构 | metis 建议 4 |
 | AC6 | **清单 schema 单一 + 不存超时值**：清单项 = `{ file, testTitle, budget }`；超时从源码读并校验 ≥ 用例级常量（低于 ⇒ 红） | 结构 | metis 建议 5 |
 | AC7 | **扫描根空转 ⇒ 红 + 豁免显式**：扫描到的文件集 == `readdirSync` 递归得到的 `*.test.ts` 集合；豁免集合 == {helper, 守卫自身}（被显式断言） | 结构 | metis 建议 7 |
@@ -166,3 +167,36 @@ AC10④ 改为调用 `lastCommitShaInRepo` / `isAncestorInRepo` ⇒ 显式超时
 5. 突变演练 6 条（AC9；M6 的逃逸结果**如实登记**）；
 6. D9：交接（回写 sibling 的 D2/AC3/AC5 + 留痕）；
 7. 回归（AC8）→ oracle（治理面）→ critic → 独立验收。
+
+## Acceptance（勾选镜像）
+
+> 判据正文以上表为准；本段供 `rdd-verifier` 读取。
+
+- [x] AC1 检测口径（R 形态 / 缺 cwd ⇒ 红；U 面按类别登记）
+- [x] AC2 两层预算常量（20s / 6s + 算式 + 禁重试）
+- [x] AC3 超时语义分层（超时抛可归因错；其它错误语义不变）
+- [x] AC4 接口冻结 + cwd 参数化
+- [x] AC5 静态子进程计数（budget == 源码实测）
+- [x] AC6 清单 schema 单一 + 不存超时值（读源码校验下限）
+- [x] AC7 扫描根不空转 + 豁免集合显式
+- [x] AC8 规则落点 + 回归 + 交接（D9）
+- [x] AC9 证据包（6 条突变三件套；M6 逃逸如实登记）
+
+> **实现与验收证据（2026-11-19）**：
+> - **落点**：新增 `tests/helpers/real-repo-git.ts`（唯一入口：2 常量 + 4 函数）+ `tests/real-repo-git-budget.test.ts`（元守卫 + 语义判据，6 例）；`tests/config-guards.test.ts` 的 AC10④ 迁到 InRepo 包装（`{ timeout: REAL_REPO_GIT_TEST_TIMEOUT_MS }`）、命令形态守卫改读 helper 文件；`docs/test-authoring.md` 新增 §9；`tests/README.md` 覆盖表 + 规则指针。
+> - **回归**：`bun test tests/` ⇒ **922 pass / 0 fail**（迁移前 916，+6 新用例）；`check-upstream-anchors.sh` **23/23**；`openspec validate --strict` **valid**。
+> - **突变**：`.rddf/reviews/real-repo-git-budget-guard-mutations.md`（M1/M1b/M2/M3/M4/M5 逐条命中；**M6 = `Bun.spawnSync` 逃逸：不红 ⇒ 如实登记为已知漏检面**；四文件复原 `sha256` 全等）。
+> - **交接（D9）**：`.rddf/reviews/real-repo-git-budget-guard-handoff.md` + 在 sibling（已归档的 `2026-11-19-config-guards-ac10-timeout-flake`）的 proposal 追加**迁移注记**（其 D2/AC3/AC5 的「helper 在本文件内」「调用点 = 3」「命令形态在测试源码里」已被本项迁移）。
+> - **如实登记的判据文本修正**：AC1 原写「U 面 **13 处**」（P0 spike 的计数）⇒ 改为**按类别登记**（实现时实测 5 + 32 + 1 = 38 处）；理由是锁死计数会把「每新增一个 fixture 用例」变成改判据的动作，而漏检面的**实质**是「静态判不了」，与数字无关。
+> - **手段边界（如实登记）**：端到端「真的挂死 6s」不做 —— bun 的 `execFileSync` 不认运行期 `process.env.PATH`
+>   变更（实测），造不出「永不返回的 git」。**补偿**：超时识别已导出为纯函数 `isGitCallTimeout` 并用真实错误对象做
+>   **行为断言**（`ETIMEDOUT` ⇒ true / `status:128` ⇒ false），只剩「接线」用结构判据；**非超时**分支有行为证据
+>   （非 git 目录 ⇒ `""` / `false`）。
+> - **治理面复审（oracle 第 1 轮 BLOCK → 第 2 轮复验闭合）**：BLOCK 的三条整改均已落地 ——
+>   ① **`cwd: process.cwd()` 逃逸**（与省略 `cwd` 逐字等价，却是写测试的第一直觉写法）⇒ 判定式加入该形态 + 突变 **M7**（红）；
+>   ② **常量解析与文档措辞不符**（一阶 vs「派生」）⇒ 实现改**传递闭包** + 突变 **M1c**（别名链，红）；
+>   ③ **超时分支只能结构判定** ⇒ 导出 `isGitCallTimeout` 做行为断言（见上条）。
+>   另修：§9 补**反弱化禁句**（「本闸门只约束成本形态，不授权弱化判据」）；`cwdValueOf` 取首个 `cwd:`、
+>   block 提取依赖 `test(` 的两处已知边界加注释登记；已知漏检面补 `path.resolve()`（突变 **M7b** 实测不红，已登记）。
+> - **已知漏检面**（`docs/test-authoring.md` §9 与守卫文件头同样列出）：形参 helper / fixture 变量 cwd / `tests/probes/**` / `Bun.spawnSync` / `git -C` / `bash -c "git …"` / `process.chdir()` / `GIT_DIR` 泄漏。
+

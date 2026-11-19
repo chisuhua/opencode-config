@@ -7,13 +7,14 @@ feedback_status: none
 
 # real-repo-git-budget-guard — 「触真实仓历史的守卫」必须声明显式超时与子进程上限（**提前立项**）
 
-> **实施状态**：**已立项**（2026-11-19）⇒ `openspec/changes/real-repo-git-budget-guard/`（逐条判据以该 proposal 的 **AC1–AC9** 为唯一真源；本文只保留动机与机制）
+> **实施状态**：**已归档**（2026-11-19）⇒ `openspec/changes/archive/2026-11-19-real-repo-git-budget-guard/`（逐条判据以该 proposal 的 **AC1–AC9** 为唯一真源；本文只保留动机与机制）
+> 验收：`.rddf/reviews/real-repo-git-budget-guard-verify.md`（9/9 AC）+ `.rddf/reviews/real-repo-git-budget-guard-mutations.md`（9 条突变） + 交接 `.rddf/reviews/real-repo-git-budget-guard-handoff.md`
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。**由 builder 代 planner 起草**（用户 2026-11-19 指定对本 follow-up 立项）⇒ **metis 1 轮审后已修订**（rev 1；逐条处置见 `.rddf/reviews/real-repo-git-budget-guard-planner-review.md`）。
 > 来源：`config-guards-ac10-timeout-flake` 的 **Out of Scope ⑥**（「触真实仓历史的守卫必须声明显式超时与子进程上限」—— 原写「触发条件 = 出现**第二个**消费者时立项」）。
 > **提前立项的理由**：这条规则的价值恰恰是**预防性** —— 等第二个消费者出现才立项，等于「第二次事故已发生才写规则」。提前立项 ⇒ 变成**从现在起就生效的机判闸门**。
 > ⚠ **实施顺序（metis 建议 12 采纳）**：**先落 `config-guards-ac10-timeout-flake`（止疼），本项随后** —— 本项是结构重构，不该排在止疼前面。
 > 决策依据：**无新决策** —— 本项**不改任何 ADR 决策、不改既有判据语义/强度**，只给「触真实仓历史」这一类守卫立**成本预算**与**单一入口**。
-> 关联 change：`openspec/changes/real-repo-git-budget-guard/`（**已立项** 2026-11-19）。
+> 关联 change：`openspec/changes/archive/2026-11-19-real-repo-git-budget-guard/`（**已归档** 2026-11-19）。
 > 执行路径预估：**常规 change**（新增 1 个 helper 模块 + 1 个守卫文件 + 迁移唯一消费者 ⇒ 新增治理面守卫 ⇒ **oracle + critic 各 1 轮**）。
 
 ## Why

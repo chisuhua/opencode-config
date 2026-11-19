@@ -28,10 +28,14 @@ bun test tests/delegate-tool.test.ts   # 假 ctx 端到端
 | （skip 态不假装通过，但**判别力依赖床存在** ⇒ 无该仓的检出上这一族等价于零判别力）
 | `bun test tests/`（此前它是「入库但无人执行」的第四态）；fixture 床（`E2E_BED_DIR`）不在时**明确 skip** |
 | `model-fallback-core.test.ts` | 模型降级链内核（链推进 / 冷却 / 换链） |
+| `real-repo-git-budget.test.ts` | **元守卫**：触真实仓历史的 git 只能经 `tests/helpers/real-repo-git.ts`（R 形态 `cwd` 指向仓根 ⇒ 只允许在 helper 内；**缺 `cwd` ⇒ 红**）；清单项静态计数与用例超时下限（`{ timeout }` < 20s ⇒ 红）；helper 的两层预算与「超时不得被吞」的结构判据。规则文本见 `docs/test-authoring.md` §9 |
 | `subagent-contract-audit.test.ts` | **审计 CLI**（8 例）：只收集有父会话的子会话、规则按条目 agent 解析、状态继承（引用上一轮才继承 / 不引用不放行）、`--strict` exit 1 / `--agent` 过滤（临时 sqlite 夹具，不依赖真实库） |
 
-被委托的工程 = **测试自建的最小 git 仓库**（`fixtureProject()`）：临时目录 + `README.md`
-+ `tests/` 目录 + 一次 commit。**不依赖任何外部仓库**（此前依赖
+> **触真实仓历史的 git 访问只能经 `tests/helpers/real-repo-git.ts`**（`lastCommitShaInRepo` / `isAncestorInRepo`：
+> 用例级 20s + 每次调用 6s + 超时不吞）。在测试文件里直接以「仓根」为 `cwd` 跑 git（或干脆省略 `cwd`）会被
+> `real-repo-git-budget.test.ts` 判红。规则正文见 `docs/test-authoring.md` §9。
+
+被委托的工程 = **测试自建的最小 git 仓库**（`fixtureProject()`）：临时目录 + `README.md`+ `tests/` 目录 + 一次 commit。**不依赖任何外部仓库**（此前依赖
 `/workspace/main/rdd-workflow-e2e`，会让「完全离线」在别的机器上不成立）。
 
 ## 与真实运行时的关系

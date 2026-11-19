@@ -163,3 +163,18 @@ function isAncestor(cwd: string, a: string, b: string): boolean
 >   ② **AC5** 原写「源码含 `git log -1 --format=%H --`（逐字）」—— 参数写成数组后该**字符串**根本不可能出现（判据写错，无法满足）；已改为可机判的数组字面量形态，并补**源码级守卫**（M4 证明：形态漂移后行为用例仍绿 ⇒ 必须有源码级判据）。
 > - **已知边界（登记，不修）**：形态守卫只钉这两处字面量（**含 helper 的形参名** `file`/`a`/`b` ⇒ 纯改名也会响红，属可接受的 brittleness）；shallow clone / `merge-base ≥128` / linked worktree / `GIT_DIR` 泄漏的语义沿用现状，且无 git 环境下 fixture 用例**响红**（而非跳过）——见 Out of Scope ⑦⑧⑨⑩。
 
+## 迁移注记（2026-11-19，由 `real-repo-git-budget-guard` 追加）
+
+> 本文档的 D2 / AC3 / AC5 描述的是**本 change 自己落地时**（commit `ed6fd44`）的形态；它们随后被
+> `real-repo-git-budget-guard`（**D4 迁移 + D9 交接**）改写。**过程记录不回改** ⇒ 只在此追加注记，
+> 权威说明见 `.rddf/reviews/real-repo-git-budget-guard-handoff.md`。
+>
+> - **D2 / AC3**：`lastCommitSha` / `isAncestor` 已迁到 `tests/helpers/real-repo-git.ts`（另加 `lastCommitShaInRepo` /
+>   `isAncestorInRepo` 两个真仓薄包装 + 两层预算常量 + per-call 超时抛错）。`tests/config-guards.test.ts` 现在只剩
+>   **1 处** `execFileSync("git"`（`gitFixture`，cwd 恒为 `mkdtemp` 临时仓）；AC3 的「= 3」与「真实仓路径在本文件内」
+>   只在本 change 落地的那一刻成立。
+> - **AC5**：命令形态的唯一落点变为 helper；本文档里新增的「命令形态不得漂移」守卫已改为**读 helper 文件**断言
+>   （判据强度不变：仍是「与归档 spec 逐字一致」，且由突变 M4 证明有判别力）。
+> - **语义**：`lastCommitSha` 非超时失败 ⇒ `""`、`isAncestor` 非超时失败 ⇒ `false` 均**逐字保留**；用例级超时改为引用
+>   `REAL_REPO_GIT_TEST_TIMEOUT_MS`（仍是 20_000）。本文 Out of Scope ①② 描述的真实边界不变
+>   （超时**不被吞**、其它错误语义**不变**）。

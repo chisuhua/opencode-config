@@ -26,6 +26,13 @@ import { applyRules } from "../scripts/agent-guard-gen.ts"
 import { CONTRACTS } from "../lib/subagent-contract-core.ts"
 import { dispatchToolDefinition } from "../lib/delegate-async.ts"
 import {
+  REAL_REPO_GIT_TEST_TIMEOUT_MS,
+  isAncestor,
+  isAncestorInRepo,
+  lastCommitSha,
+  lastCommitShaInRepo,
+} from "./helpers/real-repo-git.ts"
+import {
   ARCH_FALLBACK_DIRS,
   DELEGATE_RESULT_CRITICAL_FIELDS,
   DELEGATE_RESULT_FIELDS,
@@ -63,40 +70,11 @@ function isClosedImprovement(head: string): boolean {
 }
 
 /**
- * 某文件在指定仓库里的最后提交 sha。
- *
- * 语义（**逐字保留**原 AC10④ 的内联实现）：任何失败（无 git / 非零退出 / 浅克隆 ⇒ 空历史）都返回空串
- * ⇒ 调用方按「跳过」处理（判据在验收报告里人工核对）。**不要**给它加 `timeout` 选项 —— 超时会被
- * 这个 `catch` 吞掉 ⇒ 判据静默消失，比假红更坏。
- *
- * `cwd` 参数化：AC10④ 传仓根，确定性 fixture 用例传临时仓（两者共用同一份实现）。
- */
-function lastCommitSha(cwd: string, file: string): string {
-  try {
-    return execFileSync("git", ["log", "-1", "--format=%H", "--", file], {
-      cwd,
-      encoding: "utf8",
-    }).trim()
-  } catch {
-    return ""
-  }
-}
-
-/** `a` 是否为 `b` 的祖先或同一 commit（`merge-base --is-ancestor` 非零退出 ⇒ false ⇒ 判红）。 */
-function isAncestor(cwd: string, a: string, b: string): boolean {
-  try {
-    execFileSync("git", ["merge-base", "--is-ancestor", a, b], { cwd, stdio: "ignore" })
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
  * 临时 fixture 仓的 git 执行器（**只给 fixture 用**，`cwd` 是 `mkdtempSync` 目录）。
  *
- * 与上面两个 helper 的区别：它跑的是「仓库初始化 / 提交」这类 1–2 次的小操作，**不触真实仓历史**
- * ⇒ 不属真实仓预算范围；隔离用户级/系统级 gitconfig（`user.*`、`commit.gpgsign` 等随机器变化）。
+ * 与 `tests/helpers/real-repo-git.ts` 的区别：它跑的是「仓库初始化 / 提交」这类 1–2 次的小操作，
+ * **不触真实仓历史** ⇒ 不属真实仓预算范围（Out of Scope ③）；隔离用户级/系统级 gitconfig
+ * （`user.*`、`commit.gpgsign` 等随机器变化）。
  */
 function gitFixture(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, {
@@ -3181,14 +3159,15 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
       //   5.0–5.1s，会越过 bun 默认的 5000ms 每用例超时 ⇒ **假红**（且文案读起来像「父篇滞后」的
       //   真问题 ⇒ 把排查引向 ADR 提交顺序，而不是机器负载）。
       //   显式超时取负载尾部上界的 ≈4 倍（20s）：慢不再判红，**超时 ≠ 父篇滞后**，~20s 才红只可能是真挂死。
-      const ROOT = path.join(import.meta.dir, "..")
-      const parentSha = lastCommitSha(ROOT, "docs/adr/ADR-backend-handoff-role-class.md")
-      const codeSha = lastCommitSha(ROOT, "lib/delegate-core.ts")
+      // 真实仓访问只经 `tests/helpers/real-repo-git.ts` 的两个 InRepo 包装（预算与错误语义在那边）
+      const parentSha = lastCommitShaInRepo("docs/adr/ADR-backend-handoff-role-class.md")
+      const codeSha = lastCommitShaInRepo("lib/delegate-core.ts")
       if (!parentSha || !codeSha) return // 环境无 git ⇒ 跳过（判据在验收报告里人工核对）
       // is-ancestor 退出码 0 ⇒ 父篇 commit 是代码 commit 的祖先或同一 commit（父篇滞后 ⇒ 退出码 1 ⇒ 红）
-      expect(isAncestor(ROOT, parentSha, codeSha)).toBe(true)
+      expect(isAncestorInRepo(parentSha, codeSha)).toBe(true)
     },
-    { timeout: 20000 },
+    // 用例级预算取 helper 的唯一常量：3 次 × 6s = 18s < 20s（见 `tests/helpers/real-repo-git.ts` 注释）
+    { timeout: REAL_REPO_GIT_TEST_TIMEOUT_MS },
   )
 
   test("AC10④ 的祖先判定（确定性 fixture）：父篇先改 ⇒ 绿 / 代码先改 ⇒ 红 / 同提交 ⇒ 绿", () => {
@@ -3249,10 +3228,10 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
   test("AC10④ 的命令形态不得漂移（与归档 spec 逐字一致 ⇒ 换 rev-list / --no-renames 必红）", () => {
     // 为什么需要：形态漂移后**用例仍然绿**（git 输出等价，实测 M4）⇒ 只有源码级判据能钉住归档
     //   spec（`class-write-scope-alignment` 的 AC10④）对命令形态的逐字要求。
-    // ⚠ 期望串用变量拼出来，避免判据自身的字面量被计入（否则删掉 helper 里的调用也照绿）。
+    // 命令形态的唯一落点是 helper（`tests/helpers/real-repo-git.ts`）；期望串用变量拼出，避免判据自匹配。
     const fmt = "--format=%H"
     const flag = "--is-ancestor"
-    const src = readFileSync(path.join(import.meta.dir, "config-guards.test.ts"), "utf8")
+    const src = readFileSync(path.join(import.meta.dir, "helpers", "real-repo-git.ts"), "utf8")
     expect(src).toContain(`["log", "-1", "${fmt}", "--", file]`)
     expect(src).toContain(`["merge-base", "${flag}", a, b]`)
   })

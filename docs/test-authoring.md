@@ -196,3 +196,42 @@ grep -q "后端已完成" output
 - [ ] 需要真实运行时的用例已门控、默认不进 CI？实跑证据是**真实输出**而非推断？
 - [ ] 覆盖宣称 ≤ 所建层的证明力？覆盖不到的面已在注释/文档里**登记为已知边界**？
 - [ ] 判红用的是**退出码**，不是数文本行？演练改配置用**外科式编辑**？
+
+---
+
+## 9. 触真实仓历史的守卫：预算与唯一入口
+
+**适用**：判据要在**本仓真实历史**上跑 git（不是 `mkdtempSync` 出来的 fixture 仓）。典型 = 祖先判定/基线取法类的守卫。
+
+**为什么单列一章**：真实仓查询的成本**随提交数增长**，且 pathspec 查询（`git log -- <path>`）会走全部提交的树。
+bun 默认**每用例 5000ms** 超时 ⇒ 负载尾部一旦越过就是**假红**，而 `verify_commands` 含 `bun test tests/`
+⇒ 假红 = **随机拒提交**，且失败文案读起来像判据本身失败（误诊方向）。
+
+**规则（三条，缺一条就是缺口）**：
+
+1. **唯一入口**：真实仓 git 只能经 `tests/helpers/real-repo-git.ts` 的 `lastCommitShaInRepo` / `isAncestorInRepo`。
+   **不要**在测试文件里直接 `execFileSync("git", …, { cwd: <仓根> })` —— 元守卫 `tests/real-repo-git-budget.test.ts`
+   会因「`cwd` 指向仓根」而**红**。三种等价写法都算：字面含 `import.meta.dir` / 同文件里由它**派生**的常量
+   （含传递闭包：`const B = path.join(A, "..")`）/ **`process.cwd()`**；**省略 `cwd`**（隐式继承进程 cwd = 仓根）同样**红**。
+
+   > ⚠ **本闸门只约束成本形态，不授权弱化判据**：把真实仓判据改写成 fixture、删清单项、调低预算常量、
+   > 或把 `cwd` 写成形参以绕过检测 —— 这些都是**改判据强度**，不是「让闸门变绿」的手段，须另走变更。
+2. **两层预算，禁止一个常量承担两种语义**：用例级 `REAL_REPO_GIT_TEST_TIMEOUT_MS = 20s`（守卫写成 `{ timeout: 该常量 }`）
+   + 每次调用 `REAL_REPO_GIT_CALL_TIMEOUT_MS = 6s`（算式 `3 × 6s = 18s < 20s`）。**禁重试**（重试会把「一次慢」放大成「必然超用例」）。
+3. **超时不得被吞**：per-call 超时（`err.code === "ETIMEDOUT"`）必须**抛带指引的错**；`lastCommitSha` 的
+   「出错 ⇒ 空串 ⇒ 跳过」只针对**非超时**失败（无 git / 非零退出 / 浅克隆）。吞掉超时 = 判据**静默消失**，比假红更坏。
+
+**新增第二个消费者时**：在 `tests/real-repo-git-budget.test.ts` 的 `REAL_REPO_GUARDS` 清单里加一行
+`{ file, testTitle, budget }`（`budget` = 该 `test(...)` 块内 helper 调用点数 ⇒ 静态计数，多/少都红）。
+**不要把超时值抄进清单** —— 唯一真源是源码里的 `{ timeout }`，守卫读取并校验它 ≥ 用例级常量。
+
+**已知漏检面（静态检测的固有代价，登记而非假装覆盖）**：形参式 git helper、`cwd` 是局部 fixture 变量
+（`dir`/`repo`/`dest`/`project`）、其它指向仓根的等价写法（`new URL("..", import.meta.url).pathname`、
+带类型标注的 const、多行种子声明、`path.resolve()`、从 env 读到的绝对路径 —— 今日仓内零作为 `cwd` 使用）、
+`tests/probes/**`（非 `*.test.ts`）、`Bun.spawnSync([…"git"…])`（**实测**，突变 M6 不红）、
+`git -C` / `bash -c "git …"` / `process.chdir()` / `GIT_DIR` 泄漏。要精确区分真实仓与 fixture 只能靠
+PATH shim / `bunfig.toml` preload 记录全量轨迹 ⇒ 那要改进程启动配置，本仓不做。
+
+> **fixture 仓不受这条规则约束**：`mkdtempSync` 里 1–2 个提交的仓成本可忽略；把规则套上去只会稀释成噪音。
+
+---
