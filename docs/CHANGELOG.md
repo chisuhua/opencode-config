@@ -10,6 +10,24 @@
 
 ---
 
+> **v2.46 勘察结论（2026-11-19，`required-question-hard-pause-probe`）：`rdd-builder` P0 / P2.5 的 HARD pause **不是缺陷**，本仓无需改动**：
+> ① **读证（零成本，`skill/rdd-builder/SKILL.md` 2026-11-18 版）**：P0 的 5 选项门在**阶段 0.0.5 默认 ON**，
+>   按 ADR-0049 用 planner advisory + LLM assessment + AC count **自动决策**（`:5` / `:158` / `:164`）
+>   ⇒ **默认模式不真 pause**（**直接读证的只有 P0**；P2.5 的 skill 侧行为**未单独判读** —— 但不影响结论：
+>   无论 P2.5 是否真 pause，`prompts/build.md` 的「HARD pause **优先于** skill 内部的自动决策 ⇒ agent 不替用户拍板」
+>   **恰好覆盖**该形态，问不到时另有 v2.42 的停机兜底 ⇒ 两条路径下都不构成缺陷）。
+> ② **残余缺口（如实登记）**：低置信度时的「暂停问用户」（unknown / 冲突 / `RDDF_REQUIRE_USER_CONFIRM=yes`）
+>   在**非交互环境**问不到 —— 但该分支在**产品仓 skill 层**，本仓 prompt 层无法改写 ⇒ **产品侧议题**。
+> ③ **未真跑**：Task 2（非交互跑一次 P0）按 `design.md` **D3 的「先读后跑」**路线**豁免**（读证已足以定性）
+>   ⇒ 该分支行为**未实测**，结论**不声称**覆盖它；`rdd-builder` 改版即过时。
+> ④ **登记落点**：守卫未覆盖清单（`tests/config-guards.test.ts` 的对应条目）+ 观察记录
+>   `.rddf/reviews/required-question-hard-pause-probe-observation.md` + 同一读证的原始记录
+>   `.rddf/reviews/oracle-intent-gate-e2e-observation.md` §9 行 2。
+> **无行为变更**（AC4）：`prompts/**` 与 skill 行为均未改；本条目只回填勘察结论。
+> 若将来要真正修产品侧的「低置信度暂停」⇒ **另立 change**（本 change 不含任何实施）。
+
+---
+
 > **v2.45 决策收口（2026-11-17，metis → oracle → critic 链的两问裁决）**：
 > ① **「不对 `git commit` 弹窗点 Allow always」不写进 `prompts/**`** —— 读者错配（`prompts/<id>.md` 的
 >   唯一消费者是模型：看不见宿主弹窗、控制不了点击、感知不到持久化）。改落 **`MULTI-AGENT-DESIGN.md` §3.4**

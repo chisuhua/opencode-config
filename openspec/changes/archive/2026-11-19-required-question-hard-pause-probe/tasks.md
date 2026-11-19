@@ -10,8 +10,12 @@
 
 ## Task 2：只在必要时真跑（**吃额度**）
 
-- [ ] **Step 1:** 非交互跑一次 `rdd-builder`（P0 触发）⇒ 观察：停下 / 自行选 / 报错（**Q1**）
-- [ ] **Step 2:** 若 P0 与 P2.5 行为可能不同 ⇒ 各跑一次（**Q3**）⚠ 成本翻倍 ⇒ 先用 Task 1 的读证判断是否必要
+- [x] **Step 1:** ~~非交互跑一次 `rdd-builder`（P0 触发）~~ ⇒ **D3 读证豁免**：Task 1 的读证（`SKILL.md:5/:158/:164`）
+  已直接否定立项时担心的形态（**默认模式 auto-decision ⇒ 不真 pause**，不存在「被绕过」）⇒ 按 `design.md` D3
+  「先读 ⇒ 答得出就**不必真跑**」豁免。⚠ **代价**：低置信度分支的行为**未实测**（产品侧议题），
+  记录见 `.rddf/reviews/required-question-hard-pause-probe-observation.md` §3
+- [x] **Step 2:** ~~若 P0 与 P2.5 行为可能不同 ⇒ 各跑一次~~ ⇒ **未触发**（Step 2 的前置是「读证不足以定性」，
+  而读证已足以定性默认模式）⇒ 见同一记录的 §1 的 Q3 行
 
 ## Task 3：落结论
 
@@ -22,7 +26,8 @@
 
 ## 审查（收口前）
 
-- [ ] **R1:** 本 change **不改 prompts / skill**（AC4）⇒ 不触发治理面审查；**但**「设计草案」若含**拟改的 prompt 措辞** ⇒ 那部分按治理面审（oracle 1 轮即可）
+- [x] **R1:** 条件**未触发**（`design.md` 无 `prompts/` 路径、无拟改的 prompt 措辞；本 change 也不改 prompt 与 skill 行为）
+  ⇒ **不产生行为变更**，无需治理面审查。评估记录：`.rddf/reviews/required-question-hard-pause-probe-observation.md` §4
 
 ## 已知边界
 
