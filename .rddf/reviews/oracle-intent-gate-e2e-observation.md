@@ -2,16 +2,42 @@
 
 > 判据真源：`~/.config/opencode/openspec/changes/oracle-intent-gate-e2e/proposal.md`（AC1–AC8）
 > 本文件由 `tests/integration/test_oracle_intent_gate.bats` 追加；**固定 9 列**（AC8）。
+> **归档指针（2026-11-19）**：该 change 已归档为 `openspec/changes/archive/2026-11-19-oracle-intent-gate-e2e/`。
+> 本文内出现的 `openspec/changes/oracle-intent-gate-e2e/…` 是**归档前的历史记述**（过程记录不回改）。
 
 ## 1. 探针结论（AC1）
+
+> ⚠ **本节已被后续实测取代（2026-11-19 勾稽）**：下面的「pending / 未验证」是**首次尝试时**的记录（那次因额度耗尽
+> 未判定，见 §1.1）。换 provider 后**复跑成功** ⇒ 载体已定死为 **`A`（`part.state.output` 有全文）**，
+> 证据见 §「AC1 探针实测（2026-11-16T08:10:53Z）」与「AC1 探针实测（2026-11-17T01:28:23Z）」两处。
+> **历史记述不回改**，故保留原文如下。
 
 - 主证据载体：**pending**（探针未跑 / 或跑完由用例回填 A / B）
 - `part.state.output` 通道：未验证
 
+**最终结论（AC1）**：主证据载体 = **`A`**（`part.state.output` 有全文；两次独立探针均判 A，长度 194 / 151）。
+`OIG_CARRIER=A` ⇒ 后续用例按 A 运行（design D2：不许假设 A 可用）。
+
 ## 2. 记录表
+
+> **9 列固定格式（AC8）**。本表是**汇总**：各行原本分散在各小节的末尾（历史记述不回改），此处按时间序集中。
+> ⚠ 第 10 行的「①无 ②有」是**修复前 pattern 的假阴性**结果，按 §8.2/§8.3 修正后重判为「两态都有判定行」。
 
 | 用例 | 模型 id | 日期 | 请求指纹 | 尝试次数 | 全部调用序号 | 结论 | 证据路径 | SC_SRC 路径 + HEAD |
 |---|---|---|---|---|---|---|---|---|
+| AC1 探针 | commandcode/deepseek/deepseek-v4.1-flash | 2026-11-16 | prompt_len=116 | 1 | 1 | carrier=A | /workspace/main/rdd-workflow-e2e/.tmp-oig/probe.json | /home/ubuntu/.config/opencode (0301c76) |
+| AC5 E-B | commandcode/deepseek/deepseek-v4.1-flash | 2026-11-16 | state1+state2 | 1 | 2 | 软约束被违反（两态都有判定行）⇒ **后按「未排除替代解释」降级为「不可分辨」** | /workspace/main/rdd-workflow-e2e/.tmp-oig/eb.json | /home/ubuntu/.config/opencode (0301c76) |
+| AC2/AC3/AC4 E-A | commandcode/deepseek/deepseek-v4.1-flash | 2026-11-16T08:25Z | prompt_len=158 | 1 | 1 | **判定行=无**（返回用的是 `治理面判定: BLOCK` ⇒ 选错词表） | /workspace/main/rdd-workflow-e2e/.tmp-oig/ea.json | /home/ubuntu/.config/opencode (de79215) |
+| AC2/AC3/AC4 E-A | commandcode/deepseek/deepseek-v4.1-flash | 2026-11-16T09:52Z | prompt_len=168 | 1 | 1 | 判定行=有（metis=否） | 同上 | /home/ubuntu/.config/opencode (a4ea85b+dirty) |
+| AC5b 审查域两态 | commandcode/deepseek/deepseek-v4.1-flash | 2026-11-16T09:56Z | state1+state2 | 1 | 2 | 词表未改变（两态都是 other） | /workspace/main/rdd-workflow-e2e/.tmp-oig/ea2.json | 同上 |
+| AC5b 审查域两态 | commandcode/deepseek/deepseek-v4.1-flash | 2026-11-16T09:59Z | state1+state2 | 1 | 2 | 词表未改变，**第 4 层标注只在态②出现** ⇒ 声明被识别 | 同上 | 同上 |
+| AC2/AC3/AC4 E-A | commandcode/deepseek/deepseek-v4.1-flash | 2026-11-16T10:34Z | prompt_len=168 | 1 | 1 | 判定行=有（metis=否） | 同上 | /home/ubuntu/.config/opencode (a005b9d) |
+| AC5b 审查域两态 | commandcode/deepseek/deepseek-v4.1-flash | 2026-11-16T10:37Z | state1+state2 | 1 | 2 | 同 09:59 那次（词表未变、标注只在态②） | 同上 | 同上 |
+| AC1 探针 | default | 2026-11-17T01:28Z | prompt_len=116 | 1 | 1 | carrier=A | /workspace/main/rdd-workflow-e2e/.tmp-oig/probe.json | /home/ubuntu/.config/opencode (46a6a83+dirty) |
+| AC5 E-B | default | 2026-11-17T01:30Z | state1+state2 | 1 | 2 | ~~不可分辨（①无 ②有 ⇒ 反直觉）~~ ⇒ **假阴性**：修复 pattern 后重判为「**两态都有判定行** ⇒ 不可分辨」 | /workspace/main/rdd-workflow-e2e/.tmp-oig/eb.json | /tmp/opencode/oig/src (no-git) |
+| AC2/AC3/AC4 E-A | default | 2026-11-17T01:42Z | prompt_len=168 | 1 | 1 | **判定行=有**（metis=否）⇒ 修复 pattern 后门禁不再假红 | 同上 | /home/ubuntu/.config/opencode (46a6a83+dirty) |
+| AC7-② 演练（E-B，模型源删「意图前提」档） | default | 2026-11-17 | state1+state2 | 1 | 2 | **两态都有判定行 ⇒ 不可分辨**（闸门形同虚设，D8 ② 期望被证实） | §8.2 的已保存输出（零模型重判） | /tmp/opencode/oig/src (no-git) |
+| AC7-① / ①b 演练（`$SC_SRC` 删判定行词表） | **零模型** | 2026-11-17 | —— | 0 | —— | 派生为空 ⇒ **fail-fast**（不是静默空正则）⇒ 默认态即进 CI | §8.1 + `bats tests/integration/test_oracle_intent_gate.bats` | e2e 仓（`SC_SRC` 指向副本） |
 
 ## 1.1 AC1 探针尝试记录
 
@@ -270,3 +296,34 @@
 `rdd-builder` 的**低置信度**「暂停问用户」（unknown / 冲突 / `RDDF_REQUIRE_USER_CONFIRM=yes`）
 在非交互环境**问不到** ⇒ 与 v2.42 修的情形同构 ⇒ 但它在 **skill 层**（产品仓 `rdd-workflow`）
 ⇒ **不在本仓 prompt 层管辖** ⇒ 登记为产品侧议题（不在本仓立 change）。
+
+---
+
+## 10. 结论汇总（2026-11-19 勾稽，AC1–AC8 逐条）
+
+> 本节是**勾稽轮**的产物：把散落在各节的历史记录按 AC 收敛成「结论 + 证据指针」。
+> **没有重跑探针**（额度是持续态故障，重跑无收益）；AC1 的载体判定**沿用两次已成功的探针**（§1 的两处实测）。
+
+| AC | 判定 | 结论 | 证据指针 |
+|---|---|---|---|
+| **AC1** | ✅ | 主证据载体 = **`A`**（`part.state.output` 有全文）；两次独立探针判 A（output 长度 194 / 151） | §2 表第 1 / 第 9 行；§「AC1 探针实测」两处 |
+| **AC2** | ✅ | E-A 门禁：最后一次 `agent=oracle` 的返回含契约判定行 `判定: APPROVE\|REJECT`（**不是** `治理面判定:`） | §2 表第 11 行（2026-11-17T01:42Z）+ §8.3（修复 pattern 后复跑绿）+ §8.4 |
+| **AC3** | ✅ | 前提成立：确有 1 次 oracle `tool_use`；`agent=metis` **未插入**（已登记） | §2 表的 E-A 各行「metis=否」 |
+| **AC4** | ✅ | `input.prompt` 原文已落盘 + 组成词标注：**含**真源派生的全部组成词（`要解决的问题` / `范围边界`）；**不判红** | §2 表 E-A 各行「prompt_len=…」+ §「AC2/AC3/AC4 E-A 实测」的入参路径 |
+| **AC5** | ✅（观察项，**结论如实写为「不可分辨」**） | ① 常规 E-B（2026-11-17）：修复 pattern 后重判 ⇒ **两态都有判定行 ⇒ 不可分辨**；② **未排除的替代解释**：态② 的审查产物本身含意图线索（背景/范围声明）⇒ 「意图未给」的前提**没有真正成立** ⇒ 不得据此断言「软约束被违反」。**观察项不 fail**（用户裁决）；「换不含意图线索的审查对象」登记为 follow-up（不在本 change 修） | §2 表第 10 / 12 行；§「AC5 判读的未排除替代解释」 |
+| **AC6** | ✅ | 额度 / 未完成 ⇒ **skip 未判定**，不 fail：2026-11-16 首次探针遇 `provider.rate-limit` ⇒ 记「未判定」并停（不重试）；2026-11-17 的 D8 ② 复跑有一次父会话超时（exit 124）⇒ 按三档纪律记未判定、改用**同条件已保存输出**零模型重判 | §1.1；§8.3「超时的一次」 |
+| **AC7** | ✅ | 两次变红演练都落盘：① `$SC_SRC` 删判定行词表 ⇒ **派生 fail-fast**（不是静默空正则）⇒ 零模型、默认进 CI；② `$SC_SRC` 删意图前提段 ⇒ **实测「两态不可分辨」** ⇒ **「V2 假绿面」真实存在**（闸门在该条件下形同虚设） | §8.1 / §8.2 |
+| **AC8** | ✅ | 观察报告表格化：§2 = **固定 9 列**、13 行（含 2 行零模型演练）；各小节的历史行**不回改**，只在本表集中 | §2 |
+
+### 10.1 勾稽时**没有做**的事（如实登记）
+
+1. **没有重跑探针 / E-A / E-B**：额度是持续态故障；且已保存的证据（输出文件 + 结论）覆盖了 AC1–AC7 的判据。
+2. **没有把「AC5 两态不可分辨」改写成通过**：它是观察项的**观察结果**，且带一条未排除的替代解释 ⇒ 如实写「不可分辨」。
+3. **没有把 `E-A` 的第一次失败（选错词表 = `治理面判定: BLOCK`）算作本 change 的缺陷**：根因是 `oracle.md` 的「判定对象属治理面」不可操作（属治理面 follow-up，已在该节登记）；本 change 的门禁**按设计红**，不是测试缺陷。
+
+### 10.2 已知边界（沿用，不新造）
+
+- **E-A / E-B 都走父会话 wrapper** ⇒ 多一个「父模型转述」变量。
+- **AC5b 的 N=1** 不排除采样噪声（与 E-B 同型；本轮未加采样）。
+- **AC5 的替代解释未排除**（见上）⇒ 若要真正区分需换审查对象（follow-up）。
+- **结论依附 `oracle.md` 的当前版本**（v2.40 起的「第 4 层标注」形态直接影响了 pattern 的写法）；prompt 改版即需复核派生正则。
