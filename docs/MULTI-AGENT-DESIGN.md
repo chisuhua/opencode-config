@@ -315,7 +315,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 | `planner` | `rdd-planner`、`add-improve`、`rdd-workflow-brainstorm` |
 | `builder` | `rdd-builder`、`execute`、`rdd-quick`、`rdd-workflow-writing-plans`、`openspec-gate`、`deps` |
 | `verifier` | `rdd-verifier`、`contract-check` |
-| `general` | `guide` |
+| `general` | — （无专属 skill；推荐能力归 `rddf guide` CLI —— `guide` skill 已于 2026-11-19 归档，见 ADR-0063） |
 
 > 该增强层**不**做阶段自动跟随：workflow 阶段由 handoff 链推进，agent 角色由用户口令切换，两者是正交的两套状态（详见 CHANGELOG 的调研结论）。
 

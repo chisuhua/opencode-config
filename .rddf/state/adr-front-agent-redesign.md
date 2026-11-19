@@ -12,6 +12,7 @@
 | AC 映射 | 见 improvement `.rddf/improvements/front-agent-redesign.md` 的 AC1–AC17（2026-11-06 由 builder 按已批准的实施路径回填，architect 可复核） |
 | 审稿报告 | `.rddf/reviews/adr-front-agent-redesign-review.md` |
 | **被取代条款（2026-11-09）** | ① **D4 的「`subagent` 保持 `deny`」作废** → 由 `docs/adr/ADR-front-knowledge-capability.md` 取代（front 放行五个只读 agent；D2.1 追加**规则顺序是硬约束**：`"*": "deny"` 必须是**第一条**，放末尾会被 opencode 的工具可见性判定把整个工具隐藏）。② **D2 的 outcome 枚举被扩展** → 由 `docs/adr/ADR-delegate-delivery-evidence.md` 取代（新增 `unverified`＝宿主成功但无交付证据；另 `busy` 早已在实现中漂移进来，本文枚举未回写）。③ **D3 的 scope 语义已收窄**：`scope` 必填与 scope 派生 `edit` 强制注入**仅对 `kind=engineering` 继续有效**；知识 session 的 `scope` 可选且忽略、只读 agent 恒注入单条 `edit:* deny`、永不注入 scope 派生 allow；`grants` 对知识 session 一律禁收；登记扩展 `kind` 字段且 knowledge 只写 `pair.json` 不写 `role.json` 的 `sessions` 分区（见 `ADR-front-knowledge-capability` D4 **H2**/H2'/H2''/H3）。④ 本文的**其余条款继续有效**（baseline 校验、grants preflight、pair/role 登记与 flock、不回传 transcript、`external_directory` 不约束 shell 的 D4.1）。**当前态请以三篇 `docs/adr/` 下的 ADR + `docs/MULTI-AGENT-DESIGN.md` 为准。** |
+| **被取代条款（2026-11-19）** | ⑤ **D7 的「保留 `guide` skill」条款作废** → 由 rdd-workflow 仓 `docs/adr/ADR-0063-retire-guide-orchestrator.md` 取代（`guide` skill 自 2026-11-19 起归档到该仓的 `docs/legacy/skills/guide/`）。**D7 的职责划分继续有效**：交互职责归 front（状态扫描摘要 / 菜单式意图路由 / 开场报状态），推荐能力在**工程 session / 纯命令行场景**归 `rddf guide` CLI（rdd-workflow 侧实现已收敛为单一模块，见该仓 `ADR-0062`），执行部分仍留在工程 session。front 侧因 `bash`/`skill` 被 deny 不调用该 CLI，仍按 `prompts/front.md` §4.1 直读状态文件出推荐 —— front 与该 CLI 是两条并行的推荐路径，各自服务自己的运行形态。 |
 
 ## 背景与问题
 
@@ -152,7 +153,11 @@ OpenCode v2（已装 v2.2.5）的插件能力足以承载委托，以下机制**
 
 ### D7 `guide` 的归宿：只并入交互，不并入执行
 
-front 吸收 `guide` 的交互部分：状态扫描摘要、菜单式意图路由（"下一步做什么"给 A/B/C）、新 session 开场报状态。**不吸收**执行部分：rdd-* skill 调用、状态文件写入、roadmap 变更留在工程 session（front `skill: deny` 已强制）。`guide` skill 不删。
+front 吸收 `guide` 的交互部分：状态扫描摘要、菜单式意图路由（"下一步做什么"给 A/B/C）、新 session 开场报状态。**不吸收**执行部分：rdd-* skill 调用、状态文件写入、roadmap 变更留在工程 session（front `skill: deny` 已强制）。
+
+> **2026-11-19 修订（ADR-0063）**：原结论（`guide` skill 予以保留）已作废 —— `guide` skill 自 2026-11-19 起归档到 rdd-workflow 仓的 `docs/legacy/skills/guide/`。本决策的**职责划分不变**：交互职责由 front 承担（状态扫描摘要 / 菜单式意图路由 / 开场报状态），推荐能力在**工程 session / 纯命令行场景**由 `rddf guide` CLI 承担（rdd-workflow 侧推荐器实现已收敛为单一模块，见 ADR-0062），执行部分仍留在工程 session。
+>
+> 补充说明：front 侧**不调用**该 CLI —— front 的 `bash` 与 `skill` 工具被 deny，跑不了脚本，仍按 `prompts/front.md` §4.1 用 `read`/`grep`/`glob` 直读状态文件自行出推荐。即 front 与 `rddf guide` 是**两条并行的推荐路径**，各自服务自己的运行形态。
 
 **新鲜度标注（强制）**：流程性摘要必须带"状态读取于 `<mtime|ISO>`，工程 session 现场可能更新"。理由：front 读的是磁盘快照，滞后于工程 session 内存现场（未提交改动、跑了一半的测试）；状态文件写入非原子，可能读到半成品；多 session 时文件不标注谁做了什么。不加标注会把快照当事实报给用户。
 

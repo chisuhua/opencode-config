@@ -409,7 +409,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | `planner` | 写 `.rddf/roadmap/**`、`.rddf/improvements/<name>.md`（5 段草稿）；`metis` 做 gap 分析；起草 `openspec/changes/<name>/proposal.md` | `rdd-planner`；`add-improve`；`rdd-workflow-brainstorm` | `rdd-planner`：`.rddf/state/.arch-handoff.json` 存在 + 有新 improvement 或待审 improvement；`add-improve`：尚无 `.rddf/improvements/<name>.md`；`brainstorm`：草稿未定、需 5 段探索 |
 | `builder` | 创建 openspec change（`proposal.md`/`design.md`/`tasks.md`）；写 `.rddf/plans/<name>.md`（TDD 5 步）；worktree 或轻量执行；跑测试；commit（工具层验证门） | `rdd-builder`；`execute`；`rdd-quick`；`rdd-workflow-writing-plans`；`openspec-gate`；`deps` | `rdd-builder`：`.rddf/improvements/<change>.md` + `.rddf/state/.planner-handoff.json` **均存在**；`execute`：`.rddf/plans/<name>.md` 已存在 + worktree context 已设（或 lightweight 模式）；`writing-plans`：该 plan 尚不存在；`openspec-gate`：commit 时且有 staged 文件；`deps`：P1.5 已达（或用户要依赖可视化）+ `openspec/changes/` 下存在多个 change；`rdd-quick`：小改动，无需 openspec change / worktree |
 | `verifier` | 「verifier 产出契约」的 1–5 步本地验收；报告落 `.rddf/reviews/` | `rdd-verifier`；`contract-check` | `rdd-verifier`：change 有 `## 验收标准`/`## Acceptance` 段 + P3 archive gate 触发；`contract-check`：疑似契约漂移 + 已给出契约路径与实现路径 |
-| `general` | 通用读写；调 subagent；直接调 rdd-workflow skill（前置条件满足时） | `guide`（推荐下一 skill） | 用户问「下一步做什么」或新 session，且无进行中的 builder/verifier |
+| `general` | 通用读写；调 subagent；直接调 rdd-workflow skill（前置条件满足时） | — （无专属 skill；推荐下一 skill 用 `rddf guide` CLI —— `guide` skill 已归档，见 ADR-0063） | 用户问「下一步做什么」或新 session，且无进行中的 builder/verifier |
 | `no-role` | 仅读 + 轻量讨论 | 无（不调用任何写类 skill） | — |
 
 **工件归属规则（同一工件在同一路径上只允许一个写入者）**

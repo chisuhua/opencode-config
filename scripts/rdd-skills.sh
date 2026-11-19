@@ -35,6 +35,8 @@ set -uo pipefail
 #
 # ⚠ 历史：早期这里是**写死的镜像**，上游新增 skill 必须手工补一行，漏了就会把新技能
 # 静默判成"不可用"（2026-11-19 新增 `session-lesson-mining` 时就是这样漏掉的）。
+# 同理，**退役**的 skill 也必须手工从本清单移除 —— 2026-11-19 移除 `guide`
+# （guide skill 已归档，见 rdd-workflow ADR-0063）。
 RDD_SKILLS_BUILTIN=(
   add-improve
   contract-check
@@ -42,7 +44,6 @@ RDD_SKILLS_BUILTIN=(
   deps
   execute
   feature
-  guide
   openspec-gate
   propose
   rdd-arch

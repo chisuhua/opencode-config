@@ -238,6 +238,7 @@ git stash list  git worktree list
 
 - 跨会话代答权限请求（ADR 选项表列为条件性保留，需 SDK 支持后单独复审）。
 - `guide` skill 的改造或删除（front 只借鉴交互范式，skill 保留）。
+  **［2026-11-19 作废］** 该保留决定已被 ADR-0063 取代 —— `guide` skill 已归档到 rdd-workflow 仓的 `docs/legacy/skills/guide/`；推荐能力由 `rddf guide` CLI 承担（rdd-workflow 侧实现已收敛为单一模块，见 ADR-0062）。
 - 上游 opencode matcher bug 修复（#49948 / #54393，登记为升级回归检查点）。
 - `rdd-workflow` 仓库侧改动。
 - 若 Stage 3.4 的清理策略本轮不做，在此登记为 known gap（`remove=false` + 无清理 = session 累积）。
