@@ -10,6 +10,26 @@
 
 ---
 
+> **v2.47 技能清单自动发现（2026-11-19，`scripts/rdd-skills.sh`）**：清单原为**写死的镜像**（28 项），
+> 上游新增 skill 必须手工补一行 —— 2026-11-19 新增 `session-lesson-mining` 时脚本仍报 `28/28`，
+> 新技能**静默缺席**（既不报错，也不进 `missing[]`，因为判定集里根本没有它）。处置：
+> ① **改为自动发现**：优先读已安装 rdd-workflow 的 `package.json::skills[]`（上游权威清单，该仓有测试
+>   保证「清单 == 磁盘」），再用磁盘 `skills/*/SKILL.md` 兜底（跳过 `deprecated:`），两者都没有时才回落
+>   脚本内置清单。
+> ② **新增 `skills_source` 字段**（`manifest:<root>` / `disk:<root>` / `builtin`）—— 让"清单从哪来"可观测；
+>   manifest 存在但读不到时向 stderr 打 WARN（不再与"根本没有 manifest"混同）。
+>   **`installed` / 退出码只看上游权威集**（manifest ∪ 内置）：磁盘发现到的项目自有技能只进 `available[]`，
+>   新增 `installed_count` 单列计数 —— 否则「项目有别的 opencode 技能 + 没装 rdd-workflow」会被误判成已安装
+>   （oracle 治理面审查 N1）。清单口径是 manifest ∪ 磁盘的**并集**（不是"manifest 优先、磁盘仅兜底"）。
+> ③ **其余行为不变**：`installed` / `available[]` / `missing[]` / `sources[]` 与退出码、探测顺序均保持原样；
+>   只有 `total_count` 由写死 28 变为动态。`prompts/build.md` 与 `docs/MULTI-AGENT-DESIGN.md` §2.6 同源更新
+>   （删掉"上游新增会漏判"的旧口径）。
+> ④ **测试**：`tests/rdd-skills.test.ts`（7 例：manifest ∪ 磁盘并集 / 无 manifest / 跳过 deprecated /
+>   全缺失回落内置 / **项目无关技能不得让 `installed` 变真（oracle N1）** /
+>   **布局像 rdd-workflow 但无权威名 ⇒ WARN（critic SHOULD_FIX）** / 两份规则文档含新字段）。
+>   真实验证：脚本现报 `29/29`，`session-lesson-mining` 在列。
+> ⑤ **WARN 走 stderr**：合并 `2>&1` 捕获会污染 JSON ⇒ 机读请只取 stdout。
+
 > **v2.46 勘察结论（2026-11-19，`required-question-hard-pause-probe`）：`rdd-builder` P0 / P2.5 的 HARD pause **不是缺陷**，本仓无需改动**：
 > ① **读证（零成本，`skill/rdd-builder/SKILL.md` 2026-11-18 版）**：P0 的 5 选项门在**阶段 0.0.5 默认 ON**，
 >   按 ADR-0049 用 planner advisory + LLM assessment + AC count **自动决策**（`:5` / `:158` / `:164`）

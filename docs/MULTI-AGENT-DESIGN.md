@@ -302,7 +302,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 - **角色矩阵自足**：四个角色的权限、产出契约、切换机制与 rdd-workflow 是否安装无关。没装 → 角色按内置流程完整工作；装了 → 额外可用对应 skill。**没装不是降级**。
 - **skill 只在前置条件满足时被调用**：每个 rdd-* skill 的 frontmatter 自带 `Invoke when canonical preconditions hold`；不满足就不调，走内置流程。不得为走流程而伪造前置条件。
 - **agent 不代替 workflow 推进阶段**：调用 skill 时遵守其 handoff 契约（不手写 handoff 文件、不跳阶段、不改 skill 的状态文件）。
-- **懒探测**：仅在准备调用某个 rdd-* skill 时跑 `~/.config/opencode/scripts/rdd-skills.sh`（`--json` 输出 `installed` / `available[]` / `sources[]` / `rddf_cli`）。探测顺序对齐 rdd-workflow 的 `resolve_rdd_skill_dir`（项目 `.opencode/skills/` → 全局 `~/.agents/skills/` → `$RDD_WORKFLOW_SRC`）。**脚本只是预筛**——它的 skill 名单是上游镜像，实际可加载性以 `skill` 工具为准。
+- **懒探测**：仅在准备调用某个 rdd-* skill 时跑 `~/.config/opencode/scripts/rdd-skills.sh`（`--json` 输出 `installed` / `installed_count` / `available[]` / `sources[]` / `skills_source` / `rddf_cli`）。**技能清单自动发现**：取已安装 rdd-workflow 的 `package.json::skills[]` 与磁盘 `skills/*/SKILL.md` 的**并集**（磁盘侧跳过 `deprecated:`），一个安装都没有时才回落脚本内置清单 —— 上游新增 skill 无需改本仓脚本（`skills_source` 说明走的是哪一路）。**`installed` / 退出码只看上游权威集**（manifest ∪ 内置），项目自带的无关技能只进 `available[]`、不进 `installed_count`。探测顺序对齐 rdd-workflow 的 `resolve_rdd_skill_dir`（项目 `.opencode/skills/` → 全局 `~/.agents/skills/` → `$RDD_WORKFLOW_SRC`）。**脚本只是预筛**——它只判「已安装」，不判前置条件是否成立；实际可加载性与调用条件以 `skill` 工具 / frontmatter 为准。
 - **pause / commit 契约**：`rdd-builder` 的 P0 / P2.5 是 HARD pause（agent 不替用户拍板）；P2 的 COMMIT GATE 与全局「`git commit` 由工具层验证门决定、`git push` 等用户确认」冲突时**全局规则优先**；`rdd-quick` 只在 builder P0 已 dispatch 后调用，agent 不自行判定进入。
 - **权限不收窄**：增强层启用**不改变**角色列表的权限边界；冲突只在**工件层**解决——见下条。
 - **工件归属规则**：同一工件在同一路径上只允许一个写入者。skill 在本路径上 → 由 skill 写；skill 是下游阶段 → agent 写它的**输入工件**而非产物（planner 写 `.rddf/improvements/<name>.md`，由 `rdd-builder` P0 生成 `proposal.md`）；skill 不可用/不在路径上 → 走内置流程并注明「本路径未启用 `<skill>`」。
@@ -1051,7 +1051,7 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 │   ├── role-show.sh
 │   ├── arch-docs-init.sh        # 架构文档结构梳理（读写项目配置）
 │   ├── build_critic_prompt.sh   # 生成 critic prompt 骨架（自动填 3/7 字段，读 arch-docs.json）
-│   └── rdd-skills.sh            # rdd-workflow 增强层探测（installed / available[] / sources[] / rddf_cli）
+│   └── rdd-skills.sh            # rdd-workflow 增强层探测（installed / installed_count / available[] / sources[] / skills_source / rddf_cli；清单自动发现）
 ├── tests/                       # 本地验证夹具（不参与发布）
 │   └── verify_arch_docs_scope.sh  # 判定三态 + arch-docs 语义验证夹具（项目形状取自 rdd-workflow-e2e 真实 fixture）
 ├── skills/                      # 启用的 skills

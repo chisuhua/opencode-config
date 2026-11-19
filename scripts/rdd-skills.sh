@@ -17,10 +17,25 @@
 
 set -uo pipefail
 
-# rdd-workflow 官方 skill 集（镜像自 rdd-workflow 的 skills/ 目录）。
-# 上游新增 skill 时需在此补一行；漏一个只会导致该 skill 被判为不可用，
-# 不会导致误判为已安装。
-RDD_SKILLS=(
+# ⚠ 依赖 bash ≥ 4（用到关联数组 `declare -A`）。bash 3.2（macOS /bin/bash）会报错并回落内置清单。
+#
+# 已知启发式（不打算上 YAML 解析，避免新依赖）：`deprecated:` 只按**行首**匹配，且只作用于
+# 磁盘侧的名字（manifest 里列出的名字不读 SKILL.md）。若将来出现 `deprecated: false` 之类写法，
+# 需要改成按 metadata 段落解析。
+#
+# 已知取舍（critic SHOULD_FIX 1）：判「装了」的证据 = manifest 或内置清单里的名字命中。
+# 若某个安装**既没有/读不到 manifest，且磁盘上的技能名全被上游改名**（与内置集也不交），
+# 会被判成未安装 —— 这种布局会打 WARN（见下），但结论仍以权威集为准。
+
+# rdd-workflow 官方 skill 集（**内置兜底**）。
+#
+# 正常路径下这份清单**不参与判定**：技能清单自动取自已安装 rdd-workflow 的
+# `package.json::skills[]`（上游发布的权威清单），并用磁盘 `skills/*/SKILL.md` 兜底。
+# 只有「一个 rdd-workflow 安装都没找到」或「清单与磁盘都读不到」时才回落到这里。
+#
+# ⚠ 历史：早期这里是**写死的镜像**，上游新增 skill 必须手工补一行，漏了就会把新技能
+# 静默判成"不可用"（2026-11-19 新增 `session-lesson-mining` 时就是这样漏掉的）。
+RDD_SKILLS_BUILTIN=(
   add-improve
   contract-check
   cross-repo-protocol
@@ -45,6 +60,7 @@ RDD_SKILLS=(
   rddf-session
   report-issue
   roadmap
+  session-lesson-mining
   spoke-system-prompt-injection
   status
   sync-hub
@@ -81,6 +97,119 @@ PROJECT_ROOT="${PROJECT_ROOT_ARG:-${PROJECT_ROOT:-}}"
 if [[ -z "$PROJECT_ROOT" ]]; then
   PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
+
+# ── 技能清单自动发现 ───────────────────────────────────────────
+# ① 已安装 rdd-workflow 的 `package.json::skills[]`（上游发布的权威清单）
+# ② 磁盘上的 `<root>/skills/*/SKILL.md` / `<root>/*/SKILL.md`（清单缺失或落后时兜底，
+#    跳过 `deprecated:`）
+# ③ 内置 `RDD_SKILLS_BUILTIN`（一个安装都没找到时）
+#
+# 为什么要自动：清单是**上游的**，本脚本不在上游仓里 —— 写死镜像时，
+# 上游新增 skill 会被静默判成"不可用"（2026-11-19 的 session-lesson-mining 就是这样漏掉的）。
+RDD_ROOTS=()
+RDD_SKILLS=()
+SKILLS_SOURCE=""
+MANIFEST_ROOT=""
+DISK_ROOT=""
+INSTALLED_COUNT=0
+declare -A SEEN=()
+# 上游权威集 = manifest ∪ 内置清单。**只有**属于它的技能才计入「增强层可用」——
+# 否则项目自己的 `.opencode/skills/<任意>/SKILL.md` 会让 `installed` 变真，
+# 把「没装 rdd-workflow」误判成「装了」（2026-11-19 oracle 审查 N1）。
+declare -A AUTHORITATIVE=()
+
+add_root() {
+  local r="$1" x
+  [[ -n "$r" && -d "$r" ]] || return 0
+  for x in "${RDD_ROOTS[@]:-}"; do
+    [[ -n "$x" && "$x" == "$r" ]] && return 0
+  done
+  RDD_ROOTS+=("$r")
+}
+
+add_skill() {
+  local name="$1"
+  [[ -n "$name" ]] || return 1
+  [[ -n "${SEEN[$name]:-}" ]] && return 1
+  SEEN["$name"]=1
+  RDD_SKILLS+=("$name")
+}
+
+# manifest_skills <root> → 每行一个 skill 名；无 package.json 或读不到 ⇒ 返回 1
+manifest_skills() {
+  local pj="$1/package.json"
+  [[ -f "$pj" ]] || return 1
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$pj" <<'PY' 2>/dev/null
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+skills = data.get("skills")
+if not isinstance(skills, list):
+    raise SystemExit(1)
+for item in skills:
+    if isinstance(item, str) and item.strip():
+        print(item.strip())
+PY
+  elif command -v jq >/dev/null 2>&1; then
+    jq -r '.skills[]? | select(type=="string")' "$pj" 2>/dev/null
+  else
+    return 1
+  fi
+}
+
+discover_skills() {
+  local root name names f
+  add_root "$PROJECT_ROOT/.opencode/skills/rdd-workflow"
+  add_root "$PROJECT_ROOT/.opencode/skills"
+  add_root "$HOME/.agents/skills/rdd-workflow"
+  add_root "${RDD_WORKFLOW_SRC:-}"
+
+  for root in "${RDD_ROOTS[@]:-}"; do
+    [[ -n "$root" ]] || continue
+    [[ -f "$root/package.json" ]] || continue
+    if names="$(manifest_skills "$root")"; then
+      # 多根都有 manifest 时，`skills_source` 只标第一个（并集语义不受影响）
+      MANIFEST_ROOT="${MANIFEST_ROOT:-$root}"
+      while IFS= read -r name; do
+        add_skill "$name" || true
+        AUTHORITATIVE["$name"]=1
+      done <<< "$names"
+    else
+      printf 'WARN: %s/package.json 的 skills[] 读不到（python3/jq 缺失或 JSON 损坏）⇒ 该根只用磁盘清单\n' "$root" >&2
+    fi
+  done
+
+  for root in "${RDD_ROOTS[@]:-}"; do
+    [[ -n "$root" ]] || continue
+    for f in "$root"/skills/*/SKILL.md "$root"/*/SKILL.md; do
+      [[ -f "$f" ]] || continue
+      grep -qE '^[[:space:]]*deprecated:' "$f" && continue
+      name="$(basename "$(dirname "$f")")"
+      if add_skill "$name"; then
+        DISK_ROOT="${DISK_ROOT:-$root}"
+      fi
+    done
+  done
+
+  local n
+  for n in "${RDD_SKILLS_BUILTIN[@]}"; do
+    AUTHORITATIVE["$n"]=1
+  done
+
+  if [[ ${#RDD_SKILLS[@]} -eq 0 ]]; then
+    RDD_SKILLS=("${RDD_SKILLS_BUILTIN[@]}")
+    SKILLS_SOURCE="builtin"
+  elif [[ -n "$MANIFEST_ROOT" ]]; then
+    SKILLS_SOURCE="manifest:$MANIFEST_ROOT"
+  else
+    SKILLS_SOURCE="disk:$DISK_ROOT"
+  fi
+}
+
+discover_skills
 
 # skill_path <name> → 打印第一个命中的目录（含 SKILL.md），无则返回 1
 # 探测顺序对齐 rdd-workflow 的 resolve_rdd_skill_dir。
@@ -135,6 +264,17 @@ for skill in "${RDD_SKILLS[@]}"; do
   fi
 done
 
+# 「增强层可用」只看**上游权威集**里的技能：项目自带的无关技能不该让 installed 变真。
+for skill in "${AVAILABLE[@]:-}"; do
+  [[ -n "$skill" && -n "${AUTHORITATIVE[$skill]:-}" ]] && INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+done
+
+# 布局像 rdd-workflow（有 skills/ 子目录）却一个权威名都没命中 ⇒ 很可能是清单损坏或全被改名，
+# 不能只在 $SKILLS_SOURCE 里静默体现（critic SHOULD_FIX 1）。
+if [[ $INSTALLED_COUNT -eq 0 && -n "${DISK_ROOT:-}" && -d "$DISK_ROOT/skills" ]]; then
+  printf 'WARN: %s 有 rdd-workflow 布局，但已装技能名都不在权威集（manifest/内置）⇒ 判为未安装；请检查清单是否损坏\n' "$DISK_ROOT" >&2
+fi
+
 RDF_CLI="no"
 RDF_CLI_PATH=""
 if command -v rddf >/dev/null 2>&1; then
@@ -144,7 +284,7 @@ fi
 
 if [[ "$MODE" == "json" ]]; then
   printf '{\n'
-  printf '  "installed": %s,\n' "$([[ ${#AVAILABLE[@]} -gt 0 ]] && echo true || echo false)"
+  printf '  "installed": %s,\n' "$([[ $INSTALLED_COUNT -gt 0 ]] && echo true || echo false)"
   printf '  "project_root": "%s",\n' "$(json_escape "$PROJECT_ROOT")"
   printf '  "sources": ['
   for i in "${!SOURCES[@]}"; do
@@ -154,7 +294,9 @@ if [[ "$MODE" == "json" ]]; then
   printf '],\n'
   printf '  "rddf_cli": %s,\n' "$([[ "$RDF_CLI" == "yes" ]] && echo true || echo false)"
   printf '  "rddf_cli_path": "%s",\n' "$(json_escape "$RDF_CLI_PATH")"
+  printf '  "skills_source": "%s",\n' "$(json_escape "$SKILLS_SOURCE")"
   printf '  "available_count": %d,\n' "${#AVAILABLE[@]}"
+  printf '  "installed_count": %d,\n' "$INSTALLED_COUNT"
   printf '  "total_count": %d,\n' "${#RDD_SKILLS[@]}"
   printf '  "available": ['
   for i in "${!AVAILABLE[@]}"; do
@@ -177,19 +319,21 @@ if [[ "$MODE" == "json" ]]; then
   printf '}\n'
   printf '}\n'
 else
-  if [[ ${#AVAILABLE[@]} -eq 0 ]]; then
+  if [[ $INSTALLED_COUNT -eq 0 ]]; then
     printf 'rdd-workflow 增强层: 不可用 (未安装)\n'
     printf 'project_root: %s\n' "$PROJECT_ROOT"
+    printf '技能清单来源: %s\n' "$SKILLS_SOURCE"
     printf 'rddf CLI: %s\n' "$RDF_CLI"
     printf '→ 角色走内置流程，不调用任何 rdd-* skill\n'
   else
     printf 'rdd-workflow 增强层: 可用 (来源: %s)\n' "${SOURCES[*]:-none}"
     printf 'project_root: %s\n' "$PROJECT_ROOT"
+    printf '技能清单来源: %s\n' "$SKILLS_SOURCE"
     printf 'rddf CLI: %s%s\n' "$RDF_CLI" "$([[ "$RDF_CLI" == "yes" ]] && printf ' (%s)' "$RDF_CLI_PATH")"
-    printf '可用技能 (%d/%d): %s\n' "${#AVAILABLE[@]}" "${#RDD_SKILLS[@]}" "${AVAILABLE[*]}"
+    printf '可用技能 (%d/%d；available=%d): %s\n' "$INSTALLED_COUNT" "${#RDD_SKILLS[@]}" "${#AVAILABLE[@]}" "${AVAILABLE[*]}"
     [[ ${#MISSING[@]} -gt 0 ]] && printf '缺失技能 (%d): %s\n' "${#MISSING[@]}" "${MISSING[*]}"
     printf '→ 调用前仍须逐 skill 判前置条件（frontmatter "Invoke when ..."）\n'
   fi
 fi
 
-[[ ${#AVAILABLE[@]} -gt 0 ]] && exit 0 || exit 1
+[[ $INSTALLED_COUNT -gt 0 ]] && exit 0 || exit 1

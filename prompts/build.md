@@ -390,13 +390,16 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 
 ```bash
 ~/.config/opencode/scripts/rdd-skills.sh            # 人类可读摘要
-~/.config/opencode/scripts/rdd-skills.sh --json     # 机读：installed / available[] / sources[] / rddf_cli
+~/.config/opencode/scripts/rdd-skills.sh --json     # 机读：installed / installed_count / available[] / sources[] / skills_source / rddf_cli
 ```
 
 - 退出码 1 / `installed: false` → **增强层关闭**，全部走内置流程。
 - `installed: true` → 逐角色按下表增强；**某 skill 不在 `available[]` 里 → 视为不可用，走内置流程**（不是报错）。
 - 脚本同时查全局 `~/.agents/skills/` 与项目 `.opencode/skills/rdd-workflow/skills/`，项目装与全局装都能识别。
-- **可用性的最终裁决在 `skill` 工具**：脚本是预筛（它的 skill 名单是 rdd-workflow 官方集的镜像，上游新增会漏判），`skill` 工具实际能加载才算可调用。两者不一致时**以 `skill` 工具为准**，不因脚本漏判就断言 skill 不存在。
+- **技能清单是自动发现的**：取已安装 rdd-workflow 的 `package.json::skills[]` 与磁盘 `skills/*/SKILL.md` 的**并集**（磁盘侧跳过 `deprecated:`；manifest 读不到时打 WARN 并只用磁盘侧），**一个安装都找不到**时才回落脚本内置清单 —— `skills_source` 说明用的是哪一路。上游新增 skill 无需改本仓脚本。
+- **`installed` 只看上游权威集**（manifest ∪ 内置清单）：项目自带的无关技能会出现在 `available[]`，但**不计入** `installed_count`，也不让退出码变 0 —— 否则「没装 rdd-workflow」会被误判成「已安装」。
+- 清单读不到或布局异常时脚本向 **stderr** 打 `WARN`（例如 manifest 损坏、或目录像 rdd-workflow 但技能名全不在权威集）⇒ **机读只取 stdout**，`2>&1` 合并会污染 JSON。
+- **可用性的最终裁决在 `skill` 工具**：脚本是预筛（它只判「已安装」，不判前置条件是否成立），`skill` 工具实际能加载才算可调用。两者不一致时**以 `skill` 工具为准**：脚本漏判不等于 skill 不存在；脚本说可用也不等于前置条件已满足。
 
 **角色 → 可选增强映射**：
 
