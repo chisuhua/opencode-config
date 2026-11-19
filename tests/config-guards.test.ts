@@ -11,7 +11,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -60,6 +60,58 @@ function isClosedImprovement(head: string): boolean {
   const localDir = path.join(import.meta.dir, "..", "openspec", "changes", "archive", m[1] as string)
   if (existsSync(localDir)) return true
   return /产品侧|外仓|其它仓|rdd-workflow/.test(line) // `rdd-workflow-e2e` 被 `rdd-workflow` 子串覆盖，不必并列
+}
+
+/**
+ * 某文件在指定仓库里的最后提交 sha。
+ *
+ * 语义（**逐字保留**原 AC10④ 的内联实现）：任何失败（无 git / 非零退出 / 浅克隆 ⇒ 空历史）都返回空串
+ * ⇒ 调用方按「跳过」处理（判据在验收报告里人工核对）。**不要**给它加 `timeout` 选项 —— 超时会被
+ * 这个 `catch` 吞掉 ⇒ 判据静默消失，比假红更坏。
+ *
+ * `cwd` 参数化：AC10④ 传仓根，确定性 fixture 用例传临时仓（两者共用同一份实现）。
+ */
+function lastCommitSha(cwd: string, file: string): string {
+  try {
+    return execFileSync("git", ["log", "-1", "--format=%H", "--", file], {
+      cwd,
+      encoding: "utf8",
+    }).trim()
+  } catch {
+    return ""
+  }
+}
+
+/** `a` 是否为 `b` 的祖先或同一 commit（`merge-base --is-ancestor` 非零退出 ⇒ false ⇒ 判红）。 */
+function isAncestor(cwd: string, a: string, b: string): boolean {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", a, b], { cwd, stdio: "ignore" })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 临时 fixture 仓的 git 执行器（**只给 fixture 用**，`cwd` 是 `mkdtempSync` 目录）。
+ *
+ * 与上面两个 helper 的区别：它跑的是「仓库初始化 / 提交」这类 1–2 次的小操作，**不触真实仓历史**
+ * ⇒ 不属真实仓预算范围；隔离用户级/系统级 gitconfig（`user.*`、`commit.gpgsign` 等随机器变化）。
+ */
+function gitFixture(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "fixture",
+      GIT_AUTHOR_EMAIL: "fixture@example.com",
+      GIT_COMMITTER_NAME: "fixture",
+      GIT_COMMITTER_EMAIL: "fixture@example.com",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_SYSTEM: "/dev/null",
+    },
+  })
 }
 
 const CONFIG_PATH = path.join(import.meta.dir, "..", "opencode.jsonc")
@@ -3121,32 +3173,88 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     expect(line).toContain("状态目录不是架构文档面")
   })
 
-  test("AC10④：父篇 ADR 的 commit 必须是代码 commit 的祖先或同一 commit（父篇滞后必红）", () => {
-    // 一次性判据（验后即冻）：用 git log -1 取**该文件**的最后提交
-    const sha = (file: string) => {
+  test(
+    "AC10④：父篇 ADR 的 commit 必须是代码 commit 的祖先或同一 commit（父篇滞后必红）",
+    () => {
+      // ⚠ **慢执行不判红**：本用例对**真实仓库**跑 3 次 git 子进程（2× `git log -1 --format=%H` 走
+      //   pathspec 全历史 + 1× `git merge-base --is-ancestor`）⇒ 常态 0.2–0.3s，但负载尾部实测
+      //   5.0–5.1s，会越过 bun 默认的 5000ms 每用例超时 ⇒ **假红**（且文案读起来像「父篇滞后」的
+      //   真问题 ⇒ 把排查引向 ADR 提交顺序，而不是机器负载）。
+      //   显式超时取负载尾部上界的 ≈4 倍（20s）：慢不再判红，**超时 ≠ 父篇滞后**，~20s 才红只可能是真挂死。
+      const ROOT = path.join(import.meta.dir, "..")
+      const parentSha = lastCommitSha(ROOT, "docs/adr/ADR-backend-handoff-role-class.md")
+      const codeSha = lastCommitSha(ROOT, "lib/delegate-core.ts")
+      if (!parentSha || !codeSha) return // 环境无 git ⇒ 跳过（判据在验收报告里人工核对）
+      // is-ancestor 退出码 0 ⇒ 父篇 commit 是代码 commit 的祖先或同一 commit（父篇滞后 ⇒ 退出码 1 ⇒ 红）
+      expect(isAncestor(ROOT, parentSha, codeSha)).toBe(true)
+    },
+    { timeout: 20000 },
+  )
+
+  test("AC10④ 的祖先判定（确定性 fixture）：父篇先改 ⇒ 绿 / 代码先改 ⇒ 红 / 同提交 ⇒ 绿", () => {
+    // 为什么需要：真实仓的「哪个文件提交更晚」会被**后续提交翻转** ⇒ 只有 fixture 能钉住三态。
+    // 两个仓库各造两个提交（线性历史里「两文件最后提交的先后」只能有一个方向）。
+    const ADR = "docs/adr/ADR-parent.md"
+    const CODE = "lib/code.ts"
+    const withRepo = (fn: (repo: string, commit: (files: Record<string, string>) => string) => void) => {
+      const repo = mkdtempSync(path.join(tmpdir(), "ac10-ancestor-"))
+      const commit = (files: Record<string, string>): string => {
+        for (const [rel, text] of Object.entries(files)) {
+          mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true })
+          writeFileSync(path.join(repo, rel), text)
+        }
+        gitFixture(repo, "add", "-A")
+        gitFixture(repo, "commit", "-q", "-m", "fixture")
+        return gitFixture(repo, "rev-parse", "HEAD").trim()
+      }
       try {
-        return execFileSync("git", ["log", "-1", "--format=%H", "--", file], {
-          cwd: path.join(import.meta.dir, ".."),
-          encoding: "utf8",
-        }).trim()
-      } catch {
-        return ""
+        gitFixture(repo, "init", "-q", "-b", "main")
+        fn(repo, commit)
+      } finally {
+        rmSync(repo, { recursive: true, force: true })
       }
     }
-    const parentSha = sha("docs/adr/ADR-backend-handoff-role-class.md")
-    const codeSha = sha("lib/delegate-core.ts")
-    if (!parentSha || !codeSha) return // 环境无 git ⇒ 跳过（判据在验收报告里人工核对）
-    // is-ancestor 退出码 0 ⇒ 父篇 commit 是代码 commit 的祖先或同一 commit（父篇滞后 ⇒ 退出码 1 ⇒ 红）
-    let ok = true
-    try {
-      execFileSync("git", ["merge-base", "--is-ancestor", parentSha, codeSha], {
-        cwd: path.join(import.meta.dir, ".."),
-        stdio: "ignore",
-      })
-    } catch {
-      ok = false
-    }
-    expect(ok).toBe(true)
+
+    // ① 父篇先改、代码后改 ⇒ 父篇 sha 是代码 sha 的祖先 ⇒ 绿
+    withRepo((repo, commit) => {
+      commit({ [ADR]: "v1\n" })
+      commit({ [CODE]: "v1\n" })
+      const parentSha = lastCommitSha(repo, ADR)
+      const codeSha = lastCommitSha(repo, CODE)
+      expect(parentSha).not.toBe("")
+      expect(codeSha).not.toBe("")
+      expect(isAncestor(repo, parentSha, codeSha)).toBe(true)
+    })
+
+    // ② 代码先改、父篇后改 ⇒ 父篇不是代码的祖先 ⇒ isAncestor false ⇒ 真实仓上该形态必红
+    withRepo((repo, commit) => {
+      commit({ [CODE]: "v2\n" })
+      commit({ [ADR]: "v2\n" })
+      const codeSha = lastCommitSha(repo, CODE)
+      const parentSha = lastCommitSha(repo, ADR)
+      expect(codeSha).not.toBe("")
+      expect(parentSha).not.toBe("")
+      expect(isAncestor(repo, parentSha, codeSha)).toBe(false)
+    })
+
+    // ③ 同一个提交同时改两个文件 ⇒ 同一 commit ⇒ 绿
+    withRepo((repo, commit) => {
+      const same = commit({ [ADR]: "v3\n", [CODE]: "v3\n" })
+      expect(lastCommitSha(repo, ADR)).toBe(same)
+      expect(lastCommitSha(repo, CODE)).toBe(same)
+      expect(isAncestor(repo, same, same)).toBe(true)
+    })
+  })
+
+  test("AC10④ 的命令形态不得漂移（与归档 spec 逐字一致 ⇒ 换 rev-list / --no-renames 必红）", () => {
+    // 为什么需要：形态漂移后**用例仍然绿**（git 输出等价，实测 M4）⇒ 只有源码级判据能钉住归档
+    //   spec（`class-write-scope-alignment` 的 AC10④）对命令形态的逐字要求。
+    // ⚠ 期望串用变量拼出来，避免判据自身的字面量被计入（否则删掉 helper 里的调用也照绿）。
+    const fmt = "--format=%H"
+    const flag = "--is-ancestor"
+    const src = readFileSync(path.join(import.meta.dir, "config-guards.test.ts"), "utf8")
+    expect(src).toContain(`["log", "-1", "${fmt}", "--", file]`)
+    expect(src).toContain(`["merge-base", "${flag}", a, b]`)
   })
 
   test("ADR-commit-verification-gate V10 宣称为机械载体的路径真实存在（改名 ⇒ 悬空必红）", () => {
