@@ -1,0 +1,9 @@
+# 本 change 不产生 openspec 的 spec delta（本仓不使用 openspec 的 spec registry）。
+#
+# 理由：本仓**不使用** openspec 的 spec registry（仓库内没有 openspec/specs/ 目录）。
+# 本 change 的行为契约以本目录 proposal.md 的「What Changes（D1–D9）」+「## 验收标准」（AC1–AC9）为准；
+# 判据落在 `tests/config-guards.test.ts`（AC10④ 用例 + 确定性 fixture 用例）。
+# 判据真源（命令形态）：openspec/changes/archive/2026-11-14-class-write-scope-alignment/proposal.md 的 AC10④。
+schema: spec-driven
+created: 2026-11-19
+skip_specs: true
