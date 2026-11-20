@@ -18,7 +18,7 @@
 > 进 `GUARDED_AGENTS`（shell 三段式只读、首键 deny、白名单**无** `bun`/`node`）、`subagent`/`delegate*`/`question`/`skill`/`lsp`/`external_directory` 全 deny、**无 `ask` 档**（无人值守）。
 > 上游语义 6 条锚点（P1–P6）进 `scripts/check-upstream-anchors.sh`（**运行时 23 → 29**；`grep -c` 只数静态行会漏掉 A7 循环展开）；第 7 条 delegate 单槽属本仓语义，由 delegate 测试覆盖。
 > 同步：`docs/MULTI-AGENT-DESIGN.md`（模型表 + agent 卡片）、`docs/SUBAGENT-ORCHESTRATION.md`（模型表 + 通道）、`.gitignore`（`.rddf/state/plan-sessions.json`）。
-> 测试：`tests/plan-topics.test.ts`（31 例：schema / node id 黑名单 / DAG / progress 与 status 正交 / 缓存分叉 / brief 完整性 / 孤儿 / 空 topic / CLI 退出码 / scope-check fixture 仓 / lock）+ `tests/config-guards.test.ts` 的 AC3–AC9 守卫。
+> 测试：`tests/plan-topics.test.ts`（34 例：schema / node id 黑名单 / DAG / progress 与 status 正交 / 缓存分叉 / brief 完整性 / 孤儿 / 空 topic / CLI 退出码 / `ready` / scope-check fixture 仓 / lock / 非法 id 不派生）+ `tests/config-guards.test.ts` 的 AC3–AC9 守卫。
 
 ---
 
