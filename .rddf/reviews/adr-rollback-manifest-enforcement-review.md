@@ -72,6 +72,32 @@
 | U6 | **修订**既有 ADR 时新增机制 | 评审：修订须说明增/撤了哪个机制 |
 | 盲区 | `.rddf/state/adr-*.md`（含 Status Accepted 的 `adr-front-agent-redesign.md`）不在扫描面 | 登记备查 |
 
+## 6. 增量审查（2026-11-21：新增 `exempt_class = no-single-baseline`）
+
+**动因**：实施期实测发现豁免闭集缺「**无单一可回退状态**」这一类（见 §7）⇒ 若不设此类，它要么被硬塞进某个豁免类（谎），要么永远红。
+
+| 轮次 | 结论 | 处置 |
+|---|---|---|
+| oracle（增量） | `APPROVE` | ① 类名改为 **`no-single-baseline`**（与正文「没有**单一**可回退状态」逐字对齐；`rewrite-only` 被否：它命名后果而非原因，且与 `one-way` 混淆面更大）—— 7 处同步；② M3 加 tie-break 句；③ 明确否掉「机判前提 = `adr_primary` 在初始提交即存在」（机制年龄 ≠ ADR 年龄，会漏掉混合形态）；④ 「守卫重跑 git 比对证据存档」列为**实施期候选**（不阻塞定稿） |
+| critic（增量，arch） | `APPROVE_WITH_CONDITIONS`（无 BLOCKER） | ① M3 内联新类定义（≤15 字）—— 决策陈述不该只活在背景段；② tie-break 补半句「能举出**混合基线的 `git log` 事实证据**时**不报 `one-way`**」；③ NIT：tie-break 的「U 条目」措辞悬空（`not-implemented` / `superseded` 走机器前提）⇒ 改为「U 条目**或机器前提**」；④ 顺带修 15 篇 / 14 篇计数漂移 |
+
+**判别式的一处修正（oracle）**：`no-single-baseline` 与 `one-way` 的差别是**可证伪性** —— 前者是**历史事实**（一条 `git log --diff-filter=A` 即可戳穿），后者是**价值判断**（无法证伪）⇒ 前者的洗白成本高得多；叠加 M3 的「`exempt_evidence` 须指向存在的文件」+ U7 的证据形态 + V11 的 census ⇒ 洗白面被压到与 `one-way` 同级或更低。
+
+## 7. 实施期实测：为什么需要 `no-single-baseline`（ADR 背景段引用的证据）
+
+**样本**：`role-gate`（角色感知权限）。
+
+| 量测 | 结果 |
+|---|---|
+| 教学面规模 | `prompts/build.md` 的 `## 角色矩阵` **608 行** / 97 处 `role` 提及 |
+| 教学面基线 | `git log --diff-filter=A -- prompts/build.md` ⇒ **只有一个提交** `132f389`；且 `132f389` == `git rev-list --max-parents=0 HEAD`（初始提交）⇒ **原生** |
+| 实现面基线 | `lib/role-lease.ts`（`c713a58`）/ `lib/role-identity.ts`（`0152534`）/ `lib/role-policy.ts` + `plugins/role-gate.ts`（`1d1f42f`）/ `scripts/role-switch.ts`（`57326f7`）⇒ **都晚于**初始提交 ⇒ 有基线 |
+| 退教学面的代价 | 隔离副本删该段 ⇒ **39 处红**（对比：`plan-delegate` 的「三步」只有 4 处红）+ 悬空引用（`## 输出` / `§HANDOFF` / `§越权处理` 都写「⇒ 按 §需要用户裁决时 …」，该节在角色段内 ⇒ 须**重写**） |
+| 退实现面的代价 | 留下「教学说按角色限写、工具层不限」的矛盾（**v2.44 形态**：prompt 与权限层互相矛盾） |
+| 结论 | 两面基线**不一致** ⇒ **没有单一可回退状态** ⇒ 退役 = 重写（需 ADR + change），不是清单 |
+
+⇒ 同时修正了 `.rddf/rollback/README.md` 的边界判别式：**不是「能力面 vs 内核」，而是「有没有（单一的）回退基线」** —— `plan-delegate` 能做成清单，靠的是「有基线」（那五项放行 2026-11-13 才加），不是「它是能力面」。
+
 ## 6. 本报告的边界
 
 - 本报告是**誊写**：审查者（metis / oracle / critic）的原文不在本文件内，只保留**结论与逐条处置**；过程细节以各轮 subagent 输出为准（不进决策文档，符合「正文三层分离」）。

@@ -4,14 +4,14 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | **Proposed**（2026-11-20；oracle 1 轮 `APPROVE` + critic 1 轮 `APPROVE_WITH_CONDITIONS`（无 BLOCKER，8 条 SHOULD_FIX 已闭合）⇒ 已决为 Proposed；实施落地后转 `Accepted`） |
+| Status | **Proposed**（2026-11-20 首轮：oracle `APPROVE` + critic `APPROVE_WITH_CONDITIONS`，8 条 SHOULD_FIX 已闭合；2026-11-21 增量：新增 `no-single-baseline` 类，oracle / critic 各 1 轮增量复审。实施落地后转 `Accepted`） |
 | Date | 2026-11-20 |
 | Author | architect（主会话） |
 | Parent | `ADR-commit-verification-gate`（「回滚 ≠ 彻底删除」+ V12 的机械载体）＋ `ADR-plan-delegate-engineering-session`（「形式可逆 ≠ 实质可逆」的实测）＋ `ADR-plan-multi-session-collaboration`（首个自包含清单） |
 | 关联 change | 尚未立项 ⇒ `backlog: rollback-manifest-enforcement`（planner 立项后回填 AC 映射） |
 | AC 映射 | 待立项后回填（当前以本文 **V1–V10** 为准） |
 | 审稿报告 | `.rddf/reviews/adr-rollback-manifest-enforcement-review.md`（审查完成后誊写，审查者只读） |
-| 修订 | **2026-11-20**：oracle 1 轮（`APPROVE` + 4 条前置）→ critic 1 轮（`APPROVE_WITH_CONDITIONS`，8 条 SHOULD_FIX）均逐条处置（M1 排除 registry 自身 / 「修订 ADR 新增机制」登记为 U6 / `last_drill` 与 `retired_evidence` 入 state 表 / 空壳清单与自证证据入 M5 / V4 点名单一真源 / D6 只约束新增 + 退役时改述 / 自指闭环 D6b）—— 逐轮处置见审稿报告，本文只保留**结论** |
+| 修订 | **2026-11-21**：实施期实测发现豁免闭集缺「无单一可回退状态」这一类（`role-gate` 的教学面自初始提交即存在）⇒ 新增 `exempt_class=no-single-baseline`（成立性归 U7）+ 背景段补论证；oracle → critic **增量**各 1 轮。**2026-11-20**：oracle 1 轮（`APPROVE` + 4 条前置）→ critic 1 轮（`APPROVE_WITH_CONDITIONS`，8 条 SHOULD_FIX）均逐条处置（M1 排除 registry 自身 / 「修订 ADR 新增机制」登记为 U6 / `last_drill` 与 `retired_evidence` 入 state 表 / 空壳清单与自证证据入 M5 / V4 点名单一真源 / D6 只约束新增 + 退役时改述 / 自指闭环 D6b）—— 逐轮处置见审稿报告，本文只保留**结论** |
 | 回滚清单 | **无**（`state: declared`）—— 本 ADR 的退役 = 撤守卫 + 删 registry 条目，属**低不可逆性**；按 D5 它以 `declared` 状态登记，实施落地后才转 `active`。**这是本 ADR 自指纪律的示范**，不是遗漏 |
 
 ## 背景与问题
@@ -28,6 +28,8 @@
 **闭合边界（必须写明，防误读）**：本 ADR **只能机判闭合 ①**（该有的清单在不在 / 映射是否完整）；对 **② 它只闭合「前置条件」**（机制落地时不得没有清单/豁免，见 D5 的落地 tripwire）——**检测「退役是否彻底」仍是 U3 / 评审**。不要按「② 也必须变红」来读本文。
 
 **为什么现在做**：L1 的三份清单已验证格式泛化（含一个触到骨架的机制）⇒ 强制化的前置条件（格式稳定）已具备；再晚做，每新增一个机制就多一笔存量债。
+
+**清单做不到什么（实施期实测，证据见审稿报告 §7）**：清单的隐含前提是「存在一个可回退的先前状态」。**没有单一可回退状态**的机制（教学面自初始提交即存在、实现面被多个增量重塑过，回退任一面都会留下 prompt 与权限层的矛盾）⇒ 退役是**重写**，不是回退 ⇒ 需要 `no-single-baseline` 这个合法状态（否则会被硬塞进某个豁免类，或永远红）。
 
 ## 决策
 
@@ -46,7 +48,7 @@
 |---|---|---|
 | M1 | **集合相等（双向）** | `docs/adr/*.md` 全集 == registry 引用的 ADR 全集；**除 `registry.json` 外**的 `.rddf/rollback/*.json` 全集 == `state=active` 的 mechanism 全集（⚠ 不排除 registry 自身 ⇒ 落地首日恒红） |
 | M2 | **指针有效 + 有范围** | `state=active` 的 `adr_primary` 必须存在、必须落在 `docs/adr/`、且 == 对应清单的 `adr` 字段（两处同改才绿） |
-| M3 | **豁免闭集 + 前提可判** | `exempt_class ∈ {no-mechanism, one-way, not-implemented, superseded}`；**所有豁免类**：`exempt_evidence` 必须指向**存在的**文件（把「任意写一句」的表态成本从 0 变成 >0）；`not-implemented`：`watch[]` 非空且**每条**路径当前**都不得存在**（任一存在 ⇒ 实现已落地 ⇒ `not-implemented` 是谎言 ⇒ 红）；`superseded`：`exempt_evidence` 指向存在的 successor |
+| M3 | **豁免闭集 + 前提可判** | `exempt_class ∈ {no-mechanism, one-way, not-implemented, superseded, no-single-baseline}`（`no-single-baseline` = **无单一可回退状态 ⇒ 退役=重写**）；多类同时成立时**按实际理由归类** —— 能举出**混合基线的 `git log` 事实证据**（教学面自初始提交即存在 / 实现面被多个增量重塑）时**不报 `one-way`**；成立性按所报类对应的 **U 条目或机器前提**评审；**所有豁免类**：`exempt_evidence` 必须指向**存在的**文件（把「任意写一句」的表态成本从 0 变成 >0）；`not-implemented`：`watch[]` 非空且**每条**路径当前**都不得存在**（任一存在 ⇒ 实现已落地 ⇒ `not-implemented` 是谎言 ⇒ 红）；`superseded`：`exempt_evidence` 指向存在的 successor |
 | M4 | **落地 tripwire（`declared` 的出口）** | `state=declared` 必须带 `watch[]`（实现合入后**将存在**的路径）；其中**任一**路径已存在 ⇒ 该条目必须已转 `active`（有清单）或合法 `exempt` ⇒ 否则红 |
 | M5 | **清单形态（防空壳）** | `edits[].find ≠ edits[].replace`（no-op 替换不算回滚）；`verify.commands` 至少一条 == `DEFAULT_VERIFY` 之一**或** ∈ registry 的 `verify_allowlist[]`（闭集、显式声明）；`exempt_evidence` **不得**指向 `adr_primary` 或 `registry.json`（自证不算证据） |
 | M6 | **退役证据可判** | `state=retired` 的 `retired_at` 形状合法（ISO 日期）+ `retired_evidence` 指向**存在的**文件 |
@@ -77,7 +79,7 @@
 | `declared` | 不需要 | `watch[]` | `watch[]` 非空；**任一**路径已存在 ⇒ 必须已转 `active` 或合法 `exempt` |
 | `active` | **必须存在** | `adr_primary`、清单 `adr` 一致、清单 `last_drill{sha,at,result}`（baseline 三份在实施批次回填） | M1 + M2 + M5 |
 | `retired` | **不得存在**（执行后删除） | `retired_at`（ISO 日期）+ `retired_evidence`（机读路径字段，**须存在**；`notes` 只留人读，不参与判定） | M1（清单集合不含它）+ M6 |
-| `exempt` | 不需要 | `exempt_class`、`exempt_evidence`（**须存在**） | M3 |
+| `exempt` | 不需要 | `exempt_class`、`exempt_evidence`（**须存在**） | M3（`no-single-baseline` 的成立性见 U7） |
 
 - `retired` ⇒ **删除清单文件**：退役后的清单 `find` 必然不匹配 ⇒ 留着会让 `planDrill` 恒红 ⇒ 恒红的守卫会被绕过。退役证据 = `retired_at` + `notes` 指向的评审/演练报告（git 历史为兜底）。
 - `declared` **不是零成本恒绿口**：`watch[]` 是实现落地后将出现的路径（例：`plugins/foo.ts`）⇒ 实现一落地，路径就存在 ⇒ 该条目**必须**同批转 `active`（或给合法豁免）⇒ 否则红。这把「评审义务」变成机械信号。
@@ -123,7 +125,7 @@
 
 **正面**
 - 「该有的清单在不在」从**人读**变**机判**：新增 ADR 不给清单/豁免 ⇒ 套件红。
-- 存量债**可见**（14 篇全登记）而不阻塞；新增债不许欠。
+- 存量债**可见**（15 篇全登记，含本文）而不阻塞；新增债不许欠。
 - 三层命名把「映射完整」「清单可执行」「退役后自洽」分开 ⇒ 不再用「套件绿」冒充「可退役」。
 - 与既有守卫**不重叠**：`planDrill` / drill 的能力原样保留，本 ADR 只补 presence 层。
 
@@ -134,7 +136,7 @@
 - 豁免的语义成立性（U2）**仍靠评审** ⇒ 强制化只解决了「忘了表态」，没解决「表态错」。
 
 **风险**
-- **误报成本落在每次 `bun test`**：若 baseline 登记不全 ⇒ 立刻红。缓解：本 ADR 实施时一次性把 14 篇登记完（V5）。
+- **误报成本落在每次 `bun test`**：若 baseline 登记不全 ⇒ 立刻红。缓解：本 ADR 实施时一次性把 15 篇登记完（V5）。
 - **`exempt` 变成默认选项**（全部标 `no-mechanism` ⇒ 恒绿）。缓解：M3 要求**所有豁免类的 `exempt_evidence` 指向存在的文件**（表态成本 > 0）+ `not-implemented` 的 `watch[]` 每条都不得存在；M4 让 `declared` 也有落地 tripwire；另外 V7 对「存在即证明在跑」的实现（`lib/role-*` / `plugins/commit-gate.ts` 等）断言**不得**标 `no-mechanism` —— 该枚举手维护，**如实登记为弱判据**。
 - **`.rddf/state/adr-*.md` 在扫描面之外**（含 Status Accepted 的 `adr-front-agent-redesign.md`）⇒ 永久管外，登记为已知盲区。
 
@@ -144,9 +146,9 @@
 
 - [ ] **V1 映射集合相等（双向）**：`docs/adr/*.md` 全集 == registry 的 ADR 全集；`.rddf/rollback/*.json` 全集 == `state=active` 的 mechanism 全集。**变红**：新增一篇 ADR 不登记 ⇒ 红；删一份清单不登记 ⇒ 红（现有「≥2 份」断言抓不到这一支）。
 - [ ] **V2 指针有效且有范围**：`active` 的 `adr_primary` 存在、在 `docs/adr/` 内、且 == 清单的 `adr`。**变红**：把 `adr` 指向另一篇存在但无关的 ADR ⇒ 红。
-- [ ] **V3 豁免闭集 + 前提可判**：`exempt_class` 取闭集；**所有豁免类**的 `exempt_evidence` 指向存在的文件；`not-implemented` ⇒ `watch[]` 非空且**每条**路径当前**都不得存在**（任一存在 ⇒ 红）；`superseded` ⇒ evidence 指向存在的 successor。**变红**：写 `exempt_class: "later"` ⇒ 红；`not-implemented` 的 `watch[]` 里有一条已存在 ⇒ 红；`exempt_evidence` 指向不存在的路径 ⇒ 红。
+- [ ] **V3 豁免闭集 + 前提可判**：`exempt_class` 取闭集（含 `no-single-baseline`）；**所有豁免类**的 `exempt_evidence` 指向存在的文件；`not-implemented` ⇒ `watch[]` 非空且**每条**路径当前**都不得存在**（任一存在 ⇒ 红）；`superseded` ⇒ evidence 指向存在的 successor。**变红**：写 `exempt_class: "later"` ⇒ 红；`not-implemented` 的 `watch[]` 里有一条已存在 ⇒ 红；`exempt_evidence` 指向不存在的路径 ⇒ 红。
 - [ ] **V4 必填性单一真源**：**治理面必填性**（`adr` 存在且 == `adr_primary`、`verify.commands` 非空、`last_drill` 形状）只在 `tests/rollback-manifests.test.ts` 断言；`lib/rollback-drill.ts` 的 schema **保持最小**（只保证 drill 能跑）并在注释里声明「必填性由 registry 守卫负责，schema 不重复」。**变红**：在 schema 里另加一份必填性断言（第二真源）⇒ 红；注释里的分工声明缺失 ⇒ 红。
-- [ ] **V5 baseline 完整**：14 篇 ADR 全有 registry 条目（一次性核对）。**变红**：删一条 ⇒ V1 红。
+- [ ] **V5 baseline 完整**：15 篇 ADR 全有 registry 条目（一次性核对）。**变红**：删一条 ⇒ V1 红。
 - [ ] **V6 生命周期 + 落地 tripwire**：`declared` 的 `watch[]` 非空且**任一已存在 ⇒ 必须已非 `declared`**；`active` 必须有清单 + `last_drill`；`retired` 不得有清单且 `retired_at` + `retired_evidence` 齐（证据路径须存在）。**变红**：`declared` 的 watch 路径已落地却不转 `active` ⇒ 红；退役后保留清单 ⇒ 红；`retired` 缺 `retired_at` / 证据路径不存在 ⇒ 红。
 - [ ] **V7 弱判据（如实登记）**：对「存在即证明在跑」的实现（`lib/role-identity.ts` / `lib/role-lease.ts` / `lib/role-policy.ts` / `plugins/role-gate.ts` / `plugins/delegate.ts` / `plugins/commit-gate.ts` / `plugins/subagent-contract.ts` / `plugins/model-fallback.ts`）断言其对应条目**不得**标 `no-mechanism`。**变红**：把 `role-gate` 标 `no-mechanism` ⇒ 红。⚠ 该枚举**手维护** ⇒ 弱判据（新增插件不会自动被覆盖）；若能从 `plugins/` + `lib/` 目录派生则升级，否则维持自登。
 - [ ] **V8 证据时效**：`last_drill {sha, at, result}` 形状合法；清单文件在 `sha` 之后被改过 ⇒ 字段必须同批更新。**操作口径** = `commit → drill → 回填 sha → amend`（或两次提交）。**变红**：改清单不改 `sha` ⇒ 红。⚠ 无 git 环境 ⇒ 本判据静默跳过（fail-open，须在守卫注释登记）。
@@ -165,5 +167,6 @@
 | U4 | 机制**改名**（语义变、文件名不变） | 无机械信号 ⇒ 登记备查 |
 | U5 | `adr_related[]` 的归属诚实性（把新机制挂进旧 ADR 的 related 里，M1/M2 仍绿） | 只登记、不加判据（加判据需语义判断） |
 | U6 | **修订**既有 ADR 时**新增**一个机制（ADR 集合不变 ⇒ M1 零信号） | 评审：修订 ADR 时须说明「新增/撤掉了哪个机制」 |
+| U7 | `no-single-baseline` 的成立性（是否真的没有单一可回退状态） | 评审：须能指出「教学面自初始提交即存在 / 实现面被多个增量重塑」的具体证据（`git log --diff-filter=A` 的输出存档） |
 
 **范围外（已知盲区）**：`.rddf/state/adr-*.md`（含 Status Accepted 的 `adr-front-agent-redesign.md`）不在扫描面；`docs/adr/archive/**` 若建立归档目录，需另立决定（本期无该目录）。
