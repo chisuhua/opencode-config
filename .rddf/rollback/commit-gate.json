@@ -2,7 +2,7 @@
   "version": 1,
   "mechanism": "commit-gate",
   "adr": "docs/adr/ADR-commit-verification-gate.md",
-  "notes": "覆盖面 = 隔离副本演练（.rddf/reviews/commit-gate-rollback-drill.md）的『实验 C』清单：机制文件 9 件 + 守卫期望同批（EXPECTED 3 项 + 落点完整性守卫整块）。⚠ 步骤 1/2（opencode.jsonc 档位、prompts/build.md 与 MAD 的措辞）及其 `git commit *`=allow 断言**尚未纳入**（实测未做 ⇒ 不写进清单）；格式已支持（`edits` 逐段替换），待后续补。⚠ 保留项：tests/commit-gate-d9-registration.test.ts（V10 载体）与 .rddf/commit-gate.json（声明文件）—— 删前者会让『V10 载体存在』断言红，删后者会让『缺门禁声明』红（实测见报告实验 D/G）。 ⚠ 与 `.rddf/commit-gate.json`（门禁**声明**）**同名不同义**：本文件是**回滚清单**。",
+  "notes": "覆盖面 = 三步回滚的**完整清单**（ADR-commit-verification-gate「回滚路径」+ V12）：步骤 1（opencode.jsonc.opencode-go 档位）+ 步骤 2（prompts/build.md、docs/MULTI-AGENT-DESIGN.md、同批措辞的其它投影，**以及断言这些措辞的守卫** —— `tests/config-guards.test.ts` 的 build shell 断言 allow ⇒ ask）+ 步骤 3（机制文件 9 件删除 + 守卫期望同批的另外 4 条 edits：EXPECTED 3 项 + 落点完整性整块）。⚠ **计数口径**：步骤 1 = 1 条、步骤 2 = 24 条、步骤 3 = 4 条（合计 29）。ADR 把「守卫期望同批」描述为**横跨三步**（它能断言的是步骤 1 的档位与步骤 2 的措辞）⇒ 与上表计数不冲突，只是同一批编辑的两种视角。步骤 1/2 一律**逐段**改（ADR 形态约束）：整文件还原会连带回退门禁之后的无关变更（演练实验 B/F 实测 11 红 / 8+ 红），且 opencode.jsonc 是符号链接 ⇒ 改的是目标文件 opencode.jsonc.opencode-go。⚠ **保留项（drill 实测得出，不是偏好）**：① tests/commit-gate-d9-registration.test.ts（V10 载体；删 ⇒『V10 载体存在』红，实验 D）；② .rddf/commit-gate.json（门禁声明；删 ⇒『缺门禁声明』红，实验 G）；③ MAD §2.8.8（D9 索引段）—— 本 ADR 保留 ⇒ 三处登记仍成立；④ MAD §3.4 的 **D9⑯ 指针行**（`commit-gate-d9-registration.test.ts` 的 AC5 以『§2.8.8 之外仍提到 D9⑯』为前提 ⇒ 删则该用例红）。⑤ 父篇 ADR 的 2026-11-18 修订行回退到原状时**顺带修掉一个表格断裂**（`:43` 修订行尾多出一个 `|`）。⚠ 与 `.rddf/commit-gate.json`（门禁**声明**）**同名不同义**：本文件是**回滚清单**。",
   "delete": [
     "plugins/commit-gate.ts",
     "lib/commit-gate.ts",
@@ -34,6 +34,131 @@
       "path": "tests/config-guards.test.ts",
       "find": "  test(\"治理面落点完整性：`git commit` 验证门改造的每个落点都已落地（内容锚点）\", () => {\n    const ROOT = path.join(import.meta.dir, \"..\")\n    const read = (rel: string) => readFileSync(path.join(ROOT, rel), \"utf8\")\n    const build = read(path.join(\"prompts\", \"build.md\"))\n    const mad = read(path.join(\"docs\", \"MULTI-AGENT-DESIGN.md\"))\n    const anchors: Array<[string, string, string]> = [\n      [\"prompts/build.md §输出\", build, \"由工具层验证门决定\"],\n      [\"prompts/build.md §输出 commit 调用形态（单独成段）\", build, \"单独成段\"],\n      [\"prompts/build.md 点名条款\", build, \"`git commit` 由工具层验证门决定；`git push`\"],\n      [\"prompts/build.md 增强层 commit 契约\", build, \"commit 由全局规则约束\"],\n      [\"MAD §3.4 标题（纪律对象收窄为 push）\", mad, \"现仅适用 `git push`\"],\n      [\"MAD §3.4 历史残留处置\", mad, \"历史残留处置\"],\n      [\"MAD §2.6 pause/commit 契约\", mad, \"工具层验证门决定、`git push` 等用户确认\"],\n      [\"MAD §2.8.7 D5②（部分闭合）\", mad, \"已由 `docs/adr/ADR-commit-verification-gate.md` D5 部分闭合\"],\n      [\"MAD §4.4.1（commit 段退役 + force-push deny）\", mad, \"`git commit` 段已退役\"],\n      [\"MAD §4.4.1（门禁在场性体检）\", mad, \"在场性\"],\n      [\"ADR D9②（门禁在场性检测面）\", read(path.join(\"docs\", \"adr\", \"ADR-commit-verification-gate.md\")), \"**检测面**（2026-11-20 补）\"],\n      [\"MAD §4.4.3（前缀匹配 ⇒ 全部形态）\", mad, \"force-push `deny` 必须列全**D4 定义的全部形态**\"],\n      [\"MAD 版本摘要\", mad, \"2026-11-18 变更\"],\n      [\"lib/delegate-core.ts 后端 brief\", read(path.join(\"lib\", \"delegate-core.ts\")), \"`git commit` 由工具层验证门决定\"],\n      [\"docs/dual-session-delegation.md\", read(path.join(\"docs\", \"dual-session-delegation.md\")), \"由工具层验证门决定\"],\n      [\"父篇 ADR :43（执行点改写）\", read(path.join(\"docs\", \"adr\", \"ADR-role-aware-permissions.md\")), \"已由**工具层验证门**覆盖\"],\n      [\"tests/role-exemptions.test.ts D5②（部分闭合）\", read(path.join(\"tests\", \"role-exemptions.test.ts\")), \"D5 **部分闭合**\"],\n    ]\n    for (const [label, text, needle] of anchors) {\n      expect(text, `落点未落地：${label}（缺「${needle}」）`).toContain(needle)\n    }\n    // ⚠ 负向：旧措辞不得残留（防回退）\n    expect(build, \"prompts/build.md 仍残留旧措辞「不要主动 `git commit`」\").not.toContain(\"不要主动 `git commit`\")\n    expect(mad, \"MAD 仍残留旧措辞「`git commit` 之所以是 `ask`」\").not.toContain(\"`git commit` 之所以是 `ask`\")\n  })\n",
       "replace": ""
+    },
+    {
+      "path": "opencode.jsonc.opencode-go",
+      "find": "          \"git push --force*\": \"deny\",\n          \"git push -f*\": \"deny\",\n          \"git push * --force*\": \"deny\",\n          \"git push * -f*\": \"deny\",\n          \"git push +*\": \"deny\",\n          \"git push * +*\": \"deny\",\n          \"git push --mirror*\": \"deny\",\n          \"git push * --mirror*\": \"deny\",\n          \"git commit *\": \"allow\",\n          \"git commit\": \"allow\",\n",
+      "replace": "          \"git commit *\": \"ask\",\n          \"git commit\": \"ask\",\n"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "- **`git commit` 由工具层验证门决定**（`plugins/commit-gate.ts`：仓库声明的验证命令全绿 + 暂存区非空 + 暂存内容落在当前角色的写集内 ⇒ 放行；否则**工具层直接拒绝**并给出缺项）⇒ 验证绿即可直接提交，**不必**逐次问用户。`git push` 仍**必须**等用户确认。**问不到时**（非交互环境 / 用户不答）\n  ⇒ 按 §需要用户裁决时 **停机并交付裁决请求**（列出候选路径 + 结束回合 + 本回合**零写**）；\n  **不得**以「用户已明确要求提交」作为免除 **`git push`** 确认的理由 —— **确认一次是确认，不是申请许可**。\n- ⚠ **`git commit` 必须「单独成段」**（门禁的**调用形态**约束，`ADR-commit-verification-gate` D5⑧）：命令串**含 commit 段**、且出现**引号外**的 `;` / `&&` / `||` / `|` / `&` / 换行，去空段后段数 > 1 ⇒ **工具层直接拒绝整条调用**（末位 `&` = 后台执行，**即使单段也拒**；末位 `;` / 换行只是**空命令** ⇒ 放行）。\n  这**不是故障、是 fail-closed 设计**（理由一句话：shell 权限是**整串前缀匹配** ⇒ 整串以 `git commit ` 开头会命中 `git commit *: allow`，**其余任意段都搭便车** —— `git push --force` / `rm -rf` / `cd 别的仓` … ⇒ 「无害后缀白名单」枚举不干净 ⇒ 只能拒）。\n  ⇒ **调用形态**：一次 shell 调用**只放一条命令** —— `git add` 与 `git commit` **分两次调用**；commit 之后想看结果（`git log` / `git status`）**另起一次调用**；要输出就**让工具回传**，不要靠 `| tail` / `&& echo` 串接。\n  ⚠ **不得**用 `bash -c` / `eval` 等**解释器包装**合段（D5⑪ 的解释器闭口**同样拒**）—— **拆成两次调用是唯一出路**。\n  ⚠ **不算**段分隔符：引号**内**的 `|`（如 `-m \"fix: a|b\"`）、**重定向**（`> f` / `< f` / `2>&1`）、**heredoc 正文**（`git commit -F - <<'MSG' … MSG` 的正文是数据）⇒ 这些形态不受影响。",
+      "replace": "- 不要主动 `git commit` / `git push` —— 等用户确认。**问不到时**（非交互环境 / 用户不答）\n  ⇒ 按 §需要用户裁决时 **停机并交付裁决请求**（列出候选路径 + 结束回合 + 本回合**零写**）；\n  **不得**以「用户已明确要求提交」作为免除确认的理由 —— **确认一次是确认，不是申请许可**。"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "- **§输出**（「`git commit` 由工具层验证门决定；`git push` —— **等用户确认**」）。",
+      "replace": "- **§输出**（「不要主动 `git commit` / `git push` —— **等用户确认**」）。"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "commit（工具层验证门；`git push` 仍先确认）",
+      "replace": "commit（默认先确认）"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "- **commit 由全局规则约束** —— 全局「`git commit` 由工具层验证门决定、`git push` 等用户确认」**优先**：验证绿 ⇒ 直接 commit → 再继续；验证红 ⇒ 工具层拒绝（按缺项修正）；`git push` 仍先向用户确认。",
+      "replace": "- **commit 仍受全局规则约束** —— 全局「不要主动 commit，等用户确认」**优先**：先向用户确认 → commit → 再继续。"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "<!-- capability:build\nedit: all\nedit-wildcard: allow\nshell: allow-ask-and-deny\ndelegate: no\n-->",
+      "replace": "<!-- capability:build\nedit: all\nedit-wildcard: allow\nshell: allow-ask\ndelegate: no\n-->"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等，**提交面亦受写集约束**）",
+      "replace": "会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等）"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "> **2026-11-18 变更**：`git commit` 的审批点从**权限弹窗（ask）**搬到**工具层验证门**（`plugins/commit-gate.ts`，见 `docs/adr/ADR-commit-verification-gate.md`）⇒ §3.4 的纪律对象收窄为 **`git push`**；§4.4.1 的 `git commit` ask 段退役，force-push 收紧为 `deny`（四形态 → **八条**，见 ADR D4）\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **pause / commit 契约**：`rdd-builder` 的 P0 / P2.5 是 HARD pause（agent 不替用户拍板）；P2 的 COMMIT GATE 与全局「`git commit` 由工具层验证门决定、`git push` 等用户确认」冲突时**全局规则优先**；",
+      "replace": "- **pause / commit 契约**：`rdd-builder` 的 P0 / P2.5 是 HARD pause（agent 不替用户拍板）；P2 的 COMMIT GATE 与全局「不主动 commit，等用户确认」冲突时**全局规则优先**；"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "—— **已由 `docs/adr/ADR-commit-verification-gate.md` D5 部分闭合**（限**顶层命令串**的 `git commit` 子命令识别）；残余见该 ADR 的 D9（间接提交 / 解析盲区 / 插件缺席）。",
+      "replace": "不在范围。"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "### 3.4 用户侧的批准纪律（宿主「Allow always」的边界）—— 现仅适用 `git push`",
+      "replace": "### 3.4 用户侧的批准纪律（宿主「Allow always」的边界）"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "**2026-11-18 起**：`git commit` **不再有权限弹窗**（审批点迁到工具层验证门，`docs/adr/ADR-commit-verification-gate.md` D1）\n⇒ 本节纪律**只针对 `git push`** 的弹窗。\n\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "§4.4.1 里 `git push` 之所以是 `ask`，是因为 `prompts/build.md` §输出 的「`git push` 等用户确认」**只有在权限层有执行点时才可执行**",
+      "replace": "§4.4.1 里 `git commit` / `git commit *` 之所以是 `ask`，是因为 `prompts/build.md` §输出 的「不要主动 commit —— 等用户确认」**只有在权限层有执行点时才可执行**"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "**纪律（读者是「人」，不是 agent）**：不要对 `git push` 的权限弹窗点 **Allow always**。",
+      "replace": "**纪律（读者是「人」，不是 agent）**：不要对 `git commit` / `git push` 的权限弹窗点 **Allow always**。"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "**历史残留处置（2026-11-18）**：`git commit` 的弹窗虽已取消，但**曾点过 Allow always 的持久化批准仍在**宿主状态库\n⇒ 若将来恢复 `ask` 档，它会**立即命中**（即恢复弹窗但不再询问）⇒ 一次性清除该批准。\n\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "**`git push --force` 的额外一层**：`opencode.jsonc` 已把 force-push **八条**设为 `deny`\n（`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*` ＋ `git push +*` / `git push * +*` / `git push --mirror*` / `git push * --mirror*`\n—— 后四条是 `+refspec` 与 `--mirror` 两种强推形态）\n⇒ `deny` **按设计**不会被 Allow always 放行（这是它相对 `ask` 的价值）；⚠ 但「持久化 allow 与 config `deny` 的优先级」**无源码锚点**（宿主合并算法未查明）⇒ 如实登记为该 ADR 的 D9⑧ ⇒ **工具层再兜一层**（下段）。\n**缓解已落地**：同一插件在工具层对 force push **再兜一层**（`lib/push-gate.ts` + `lib/commit-gate.ts::scanForcePush` 单一真源：\n`git push` 之后出现强推指示符 ⇒ 拒；覆盖 `--force*` / `--mirror*`（**含长选项缩写** `--mirro`）/ 短选项簇（`-uf`）/\n**前导 `+` 的 refspec** / **带引号**形态）⇒ 权限层怎么合并都不影响结果；该兜底是 config 八条的**严格超集**\n（短选项簇与带引号形态 config 的 glob 表达不了）。\n⚠ **引号包住的 `git` 子命令**（`git \"commit\" -m x`）走 **fail-closed 误拒**（`parseGitSubcommandIndex` 的 `quoted` 检查；方向安全，记作已知误拒面）⇒ 见 `docs/adr/ADR-commit-verification-gate.md` **D9⑯**。\n⚠ **跳过带值选项**（`-o` / `--push-option` / `--receive-pack` / `--exec` / `--repo`）⇒ `git push -o +ci origin main`（合法、非强推）**不**误拒\n（**工具层**口径）；⚠ 但 **config 层表达不了「跳带值」** ⇒ 该串在**权限层**就命中 `git push * +*` ⇒ 被 deny（**假阳性**，方向 fail-closed）⇒ 登记为 ADR D4 的已知限制。\n",
+      "replace": "⚠ **引号包住的 `git` 子命令**（`git \"commit\" -m x`）走 **fail-closed 误拒**（`parseGitSubcommandIndex` 的 `quoted` 检查；方向安全，记作已知误拒面）⇒ 见 `docs/adr/ADR-commit-verification-gate.md` **D9⑯**。\n"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "（2026-11-17 核查：`permission` 表 230 行无 `git commit`；2026-11-18 追加核查项：**`git push` 的持久化 allow 与 config `deny` 的优先级**）。",
+      "replace": "（2026-11-17 核查：`permission` 表 230 行无 `git commit`）。"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "**`git commit` 段已退役（2026-11-18）**：此前是「不属不可逆类」的 `ask`（v2.44），目的是让 prompt 的「等用户确认」**有可执行点**。\n现改为 **`allow`** —— 审批点搬到**工具层验证门**（`plugins/commit-gate.ts`）：仓库声明的验证命令全绿 + 暂存区非空 + 暂存内容落在当前角色的写集内 ⇒ 放行；否则**工具层直接拒绝**并给出缺项（`docs/adr/ADR-commit-verification-gate.md`）。\n⚠ **门禁「在场性」体检**（2026-11-20 补，ADR D9②）：插件缺席 ⇒ 门禁**不存在**（不是「放松」，是「没装」）⇒ `lib/commit-gate-doctor.ts` / `scripts/commit-gate-doctor.ts` 问宿主「`commit-gate` 插件是否 `active`」⇒ 未加载 ⇒ **判红**（退出码 1）而不是静默通过；⚠ **检测 ≠ 拦截**（doctor 不拦提交，只让失败可见）＋ **宿主不可达 ⇒ 判定不可得**（skip / 退出码 2，不算失败）。\n\n**新增 `deny`（force push）**：`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*`\n—— shell 是**整串前缀匹配** ⇒ flag 在末位的形态也必须显式列出，否则落 catch-all `*: allow`（⇒ 无人值守时直接推出去）；\n且 `deny` **不会**被宿主的 Allow always 放行（这是它相对 `ask` 的价值）。\n**工具层兜底**：`lib/push-gate.ts` 对同一组形态（含短选项簇）在 `tool.execute.before` 再拒一次 ⇒ 不依赖宿主的授权合并顺序（ADR D4 / D9⑧）。⚠ 该兜底**不进** capability 投影（投影按 config 的 ask/deny 计数派生）⇒ 投影说「可以」而工具层拒的情形会有**带指引的错误文案**，方向 fail-safe。\n\n",
+      "replace": "另有一条**不属「不可逆」类**的 `ask`：`git commit` / `git commit *`（v2.44）。它的目的不是拦破坏，而是让 `prompts/build.md` §输出 的「不要主动 commit —— 等用户确认」**有可执行点**（此前 prompt 规则被权限层否决，模型自行 commit）。⚠ 它**有用户侧的批准纪律与不可机械核的残留**，见 §3.4。\n\n"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "**已知残留**：shell 是整串前缀匹配（⇒ §4.4.1 的 force-push `deny` 必须列全**D4 定义的全部形态**（八条，含 flag 在末位者与 `+refspec` / `--mirror`）），",
+      "replace": "**已知残留**：shell 是整串前缀匹配，"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "lines.push(\"3. `git commit` 由工具层验证门决定（验证绿即可提交，不必问用户）；`git push` —— 提交由用户确认后另行发起。\")",
+      "replace": "lines.push(\"3. 不要 git commit / git push —— 提交由用户确认后另行发起。\")"
+    },
+    {
+      "path": "docs/dual-session-delegation.md",
+      "find": "| 提交 / 推送 | ❌ | 提交：`git commit` 由工具层验证门决定（验证绿即可提交）；推送：`git push` 等用户确认后另行发起 |",
+      "replace": "| 提交 / 推送 | ❌ | ❌（等用户确认后另行发起） |"
+    },
+    {
+      "path": "docs/adr/ADR-role-aware-permissions.md",
+      "find": "**事实性修正，不改决策** |；**2026-11-18**：`:43` 的执行点由「权限层 ask」改为「工具层验证门」（`docs/adr/ADR-commit-verification-gate.md`）",
+      "replace": "**事实性修正，不改决策** |"
+    },
+    {
+      "path": "docs/adr/ADR-role-aware-permissions.md",
+      "find": "| 禁 `git commit`（实施类） | ✅ | 已由**工具层验证门**覆盖（`docs/adr/ADR-commit-verification-gate.md` D2③：暂存内容须落在角色写集内）；原「权限层 ask 覆盖」已于 2026-11-18 退役 |",
+      "replace": "| 禁 `git commit`（实施类） | ✅ | 已由权限层 ask 覆盖（v2.44） |"
+    },
+    {
+      "path": "tests/role-exemptions.test.ts",
+      "find": " *   - **D5②** shell 层 **pattern 盲区**（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）—— 已由\n *     `docs/adr/ADR-commit-verification-gate.md` D5 **部分闭合**（限顶层命令串的 `git commit` 子命令识别）；\n *     残余：间接提交 / 解析盲区 / 插件缺席（见该 ADR 的 D9）。\n",
+      "replace": " *   - **D5②** shell 层 **pattern 盲区**（`git -c … commit` / `GIT_AUTHOR_NAME=x git commit`）不在范围。\n"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  // ⚠ **2026-11-18（`ADR-commit-verification-gate` D1）**：`git commit` 的审批点已从**权限弹窗（ask）**\n  //   搬到**工具层验证门**（`plugins/commit-gate.ts`）⇒ 档位改为 `allow`；\n  //   **publish 维持人工**（用户裁决：push 一律严格），**force-push 八条收紧为 `deny`**\n  //   （shell 是整串前缀匹配 ⇒ flag 在末位的形态也必须显式列出；\n  //     Rev 2 补 `+refspec` / `--mirror` ⇒ **四条扩为八条** —— 计数定义见 ADR D4）。\n  //   ⚠ build **不在** `GUARDED_AGENTS` 里 ⇒ 它的 shell 是手写在配置里的 ⇒ 用本判据钉住。\n  test(\"build 的 shell：`git commit` ⇒ allow（验证门接管）；`git push` ⇒ ask；force-push 八条 ⇒ deny\", () => {\n    const shell = config.agent.build.permission.shell as Record<string, string>\n    expect(shell[\"git commit *\"], \"`git commit *` 应为 allow（审批点已搬到工具层验证门）\").toBe(\"allow\")\n    expect(shell[\"git commit\"], \"裸 `git commit` 应为 allow\").toBe(\"allow\")\n    // ⚠ publish 仍需人工确认（两条规则成对 ⇒ 防止只加一条）\n    expect(shell[\"git push *\"], \"`git push *` 仍应是 ask\").toBe(\"ask\")\n    expect(shell[\"git push\"], \"`git push` 仍应是 ask\").toBe(\"ask\")\n    // ⚠ force-push **八条**（含 flag 在末位者 + Rev 2 的 `+refspec` / `--mirror`）必须 deny\n    const forceDenies = [\n      \"git push --force*\",\n      \"git push -f*\",\n      \"git push * --force*\",\n      \"git push * -f*\",\n      \"git push +*\",\n      \"git push * +*\",\n      \"git push --mirror*\",\n      \"git push * --mirror*\",\n    ]\n    for (const pat of forceDenies) {\n      expect(shell[pat], `缺 force-push deny 规则「${pat}」`).toBe(\"deny\")\n    }\n    // ⚠ **顺序**：新增的 deny 必须排在 `git push *`（ask）**之后** ⇒ last-match-wins 才落 deny\n    const keys = Object.keys(shell)\n    const askIdx = keys.indexOf(\"git push *\")\n    expect(askIdx).toBeGreaterThanOrEqual(0)\n    // ⚠ **全部 8 条**都要排在 `git push *` 之后（不只新增的 4 条 —— 旧 4 条被挪到前面同样会让\n    //   `--force` 形态退回 ask，而「存在」断言照样绿 ⇒ 顺序即策略，必须逐条钉住）\n    for (const pat of forceDenies) {\n      const idx = keys.indexOf(pat)\n      expect(idx, `缺 force-push deny 规则「${pat}」`).toBeGreaterThan(askIdx)\n    }\n  })\n\n",
+      "replace": "  // ⚠ **build 的 `git commit` 必须是 ask 档**（v2.43）：prompt 层说「不要主动 commit —— 等用户确认」，\n  //   而实测（2026-11-17，2/2 复现）模型**自行 commit** 并自述\n  //   「`git commit` **在本仓权限配置里不属于 ask 档**」⇒ **prompt 与权限层冲突**，\n  //   模型优先信权限配置 ⇒ prompt 规则被否决。\n  //   ⇒ 权限层把它列为 ask（**唯一能真正生效的一层**）⇒ 非交互环境被拒 / 交互环境走确认。\n  //   ⚠ build **不在** `GUARDED_AGENTS` 里（那六个是只读 subagent，`git commit` 对它们是 **deny**）\n  //     ⇒ 它的 shell 是手写在配置里的 ⇒ 用本判据钉住，防止将来被人删掉。\n  test(\"build 的 shell：`git commit` / `git commit *` 必须是 ask 档（prompt 的「等用户确认」要靠它生效）\", () => {\n    const shell = config.agent.build.permission.shell as Record<string, string>\n    expect(shell[\"git commit *\"], \"缺 `git commit *` 的 ask 规则\").toBe(\"ask\")\n    expect(shell[\"git commit\"], \"缺裸 `git commit` 的 ask 规则\").toBe(\"ask\")\n    // ⚠ 与 `git push` 同档（两条规则成对 ⇒ 防止只加一条）\n    expect(shell[\"git push *\"]).toBe(\"ask\")\n    expect(shell[\"git push\"]).toBe(\"ask\")\n  })\n\n"
     }
   ],
   "drill_env": {

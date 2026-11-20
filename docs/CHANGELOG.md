@@ -10,6 +10,16 @@
 
 ---
 
+> **v2.55 回滚清单补全：commit-gate 的步骤 1/2（2026-11-20）**：
+> v2.54 的清单只覆盖**步骤 3**（删机制文件 + 守卫期望同批）⇒ 本次把 ADR「回滚路径」的**步骤 1 / 2** 也清单化，三步同批可执行。
+> **步骤 1**（`opencode.jsonc.opencode-go`，符号链接的**目标文件**）：`git commit` / `git commit *` ⇒ `ask`；移除 force-push **8 条** deny。
+> **步骤 2**（25 条 `edits`，逐段替换）：`prompts/build.md`（§输出 commit 两条 ⇒ 旧一条 / v2.50 的「单独成段」段 / 点名条款 / 角色矩阵 `builder` 行 / 增强层 commit 契约 / `capability:build` ⇒ `allow-ask` / `no-role` 行）+ `docs/MULTI-AGENT-DESIGN.md`（§3.4 / §2.6 / §2.8.7 D5② / §4.4.1 / §4.4.3 / 版本摘要行）+ 同批措辞的其它投影（`lib/delegate-core.ts` 后端 brief / `docs/dual-session-delegation.md` / 父篇 ADR `:43` + 修订行 / `tests/role-exemptions.test.ts` D5② 头注释）+ `tests/config-guards.test.ts` 的 build shell 断言（allow ⇒ ask，force-push 八条断言删除）。
+> **实测**：`bun scripts/rollback-drill.ts .rddf/rollback/commit-gate.json` ⇒ **PASS**（隔离 clone：`bun test tests/` **809 pass / 0 fail**；anchors 29/29）；`--keep` 检视副本 ⇒ 9 件已删、保留项仍在。
+> **drill 暴露的两个保留项**（如实登记，非偏好）：① `MAD §3.4` 的 **D9⑯ 指针行**必须保留（V10 载体的 AC5 以「§2.8.8 之外仍提到 D9⑯」为前提）；② `.rddf/commit-gate.json`（门禁声明）与 `tests/commit-gate-d9-registration.test.ts`（V10 载体）保留（各自有守卫断言其存在）。
+> 同步：`ADR-commit-verification-gate` 的回滚路径补「可执行真源」+ 步骤 2 覆盖面补齐 + **V12 勾选**（证据与未覆盖项写在 V12 内）。
+>
+> ---
+>
 > **v2.54 回滚可达性：机械验证原型（2026-11-20）**：
 > 把「机制退役后仓库还自洽吗？」从**散文**（ADR 的「回滚路径」段）变成**可重复的一条命令**。
 > 起因：v2.53 的隔离副本演练是**手工**做的（7 次实验），结论躺在 `/tmp`，不可重复。
