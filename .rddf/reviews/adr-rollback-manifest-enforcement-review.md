@@ -117,6 +117,17 @@
 - ⚠ **该路径的机器覆盖从「登记那一刻」才开始** ⇒ **「这个无 ADR 的机制该不该进 registry」这个触发器本身仍无机器信号** ⇒ 归评审（与 U6 同类）。
 - ⇒ `.rddf/rollback/README.md` 已登记该发现（「机制 ⇒ ADR **并不成立**」段）。
 
+## 6c. 增量审查 3（第 4 轮，**用户批准**：2026-11-21）—— 新增 `state = unmanifested`
+
+**动因（实测）**：现有 5 个豁免类**全部**是「该机制**不该**有清单」的判断；而 9 篇既有 ADR 是「**该有但还没写**」—— 硬塞进任何一类都是谎（U2 评审会当场否掉）⇒ 实施期无处安放 ⇒ 需要一个**债**状态。
+
+| 轮次 | 结论 | 处置 |
+|---|---|---|
+| oracle（增量 3） | `APPROVE` | ① **M7 补区分性判据**（否则 `unmanifested` 比 `exempt` 约束更少 ⇒ 新的逃逸口）：`pending_backlog` **按机制命名**（债文件集合 == `unmanifested` 集合，双向）+ `watch[]` 每条**当前存在**（在跑锚点；与 M4 的 `declared` 对偶 ⇒ 两态机器可分）+ 指针闭集；② **D3 提为规范句**（`unmanifested` 仅限 baseline 存量 ⇒ 防逃逸口从后果段升到规范段）；③ **V11 census 加 `unmanifested` 计数**（否则 9 笔债在退化信号里不可见 ⇒ 无 ratchet 压力）；④ **工件完整性告警**：本轮脚本中途崩 ⇒ 规范正文未落盘（只有元数据与后果段）⇒ 已重跑落盘（8 处）；⑤ 未采纳「`declared` 改名」（要动 ~8 处且与既有术语耦合）⇒ 改在 D5 写**两态不变式**（机器可分才是实质）；⑥ 已采纳「`unmanifested` 允许迁移边」 |
+| critic（增量 3，第 4 轮） | `APPROVE_WITH_CONDITIONS`（无 BLOCKER，2 SHOULD_FIX） | ① M7③ 的「**同时根治** exempt/declared/retired 的悬空指针洞」是**高估陈述**（M7③ 的主体只校验 `unmanifested`）⇒ 二选一：改措辞，**或**上提为独立 **M8**（指针闭集校验对**全部状态**生效）⇒ **采纳 M8**（成本低、真的堵住洞）；M2 保留 `active` 专属的「== 清单 `adr`」；② D3 的「`unmanifested` 仅限 baseline」**未如实登记其不可机判性**（评审面约束，机器判不了「新增 ADR 冒充存量」）⇒ 补登记 + 新增 **U9** |
+
+**本轮净结论**：状态机 = `{declared, unmanifested, active, retired, exempt}`；`declared`（watch 指向**未来**路径）与 `unmanifested`（watch 指向**现有**路径）是**机器可分的对偶**；`unmanifested` = **债**（逐机制债指针 `pending/<mechanism>.md` + 在跑锚点）**不是豁免**；指针闭集校验上提为 **M8**（全部状态）。
+
 ## 6. 本报告的边界
 
 - 本报告是**誊写**：审查者（metis / oracle / critic）的原文不在本文件内，只保留**结论与逐条处置**；过程细节以各轮 subagent 输出为准（不进决策文档，符合「正文三层分离」）。
