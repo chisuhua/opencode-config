@@ -147,7 +147,14 @@
 - plan 派发会**更频繁**触发后端 session 在其 workRoot 写 `.rddf/state/role.json`（`current_role=builder`）—— 与主会话 role 镜像可能打架（本篇不改其语义，仅登记为残留）。
 - D2 的"task 必须引用存在的计划文件"是**运行时新增校验**：plan 手上没有计划文件时，派发会被拒（这是有意的强制，但会让 plan 的首次派发多一步）。
 
-**回滚口径**（本篇整体可逆，按此三步回退即可回到现状）：① 撤掉 plan agent 级的五项 delegate `allow`（plan 立刻失去 delegate 工具，回到"无工程出口"）；② 把 `sessions` 的过滤撤回（全量列举恢复）；③ `owner_agent` 保持写入但读取侧按缺失兼容读（旧数据语义不变，无需回滚数据）。已落盘的 pair/ledger 行保留即可 —— 字段是**增量**的，不影响既有读者。
+**回滚口径**（本篇整体可逆，按此三步回退即可回到现状 —— ⚠ **形式上成立、实质上已半退役，见下方订正**）：① 撤掉 plan agent 级的五项 delegate `allow`（plan 立刻失去 delegate 工具，回到"无工程出口"）；② 把 `sessions` 的过滤撤回（全量列举恢复）；③ `owner_agent` 保持写入但读取侧按缺失兼容读（旧数据语义不变，无需回滚数据）。已落盘的 pair/ledger 行保留即可 —— 字段是**增量**的，不影响既有读者。
+
+> ⚠ **订正（2026-11-20，隔离副本实测）**：上面的口径是 **2026-11-13 的快照**，此后四个增量（本文 D7 派发优先级 / `ADR-backend-handoff-role-class` / `ADR-delegate-base-channel` / `ADR-resume-precheck-guidance`）**都建立在「plan 是派发主体」之上**。
+> - **形式上仍成立**：只做三步 + **3 处同步**（撤回 D3 的 owner 过滤用例 / 把「放行主体」守卫收窄为 front-only / 同步 `capability:plan` 机读块）⇒ 套件确实绿（实测 `1028 pass / 0 fail`；另有 1 处**clone 假红** = 缺 gitignored 运行态 `.rddf/state/role.json`）。
+> - **但那是实质上的「半退役」**：此时 `prompts/plan.md` 仍在教 plan 派发工程 session、`docs/` 仍在说「plan 也是放行主体」、20 余处守卫仍要求 plan 覆盖派发契约 ⇒ **prompt 与权限层互相矛盾**（模型读到 plan.md 会尝试派发、被权限层拒 ⇒ **复现 v2.44 事故形态**）。要实质退役，还须做「教学退役 + 文档转述 + 守卫收窄 + 悬空指针清理」。
+> - **可执行真源**：`.rddf/rollback/plan-delegate.json`（**48 条** `edits` = 最小集 5 条 + 实质退役 43 条；`bun scripts/rollback-drill.ts .rddf/rollback/plan-delegate.json` ⇒ 隔离副本里 `bun test tests/` **1024 pass / 0 fail**）。实验留痕：`.rddf/reviews/plan-delegate-rollback-drill.md`（实验 A/B/C 三组）。
+> - **退役的是能力面**：配置关闸 + 教学退役 + 守卫收窄；**代码内核保留**（D2 `plan_ref` / D5 `owner_agent` / D7 优先级 / `role_class` 仍在，惰性）⇒ 彻底退役内核需连带回退那四个增量（≈11k 行代码与测试）⇒ 属**重构**，不属清单能力范围。
+> - **残留（实测登记）**：① `prompts/plan.md` 的**消费侧**三小节（架构内容分流 / delegate 返回值 / 交回后的收尾三问）保留 ⇒ 成为**死教学**（plan 不再派发却仍在讲怎么读派发结果；AC21 / AC21b 等守卫仍钉着它们）；② D3 的「配额 owner 无关」不变式**失去双 owner 的直接覆盖**（唯一断言随 D3 撤回，约束仅存于代码注释）；③ 存量 plan-owned 后端在 owner 过滤退役后对 front **可见**，但仍受 D7.3 / D7.8 的跨 owner-kind 硬拒保护（至 plan 会话消亡）。
 
 **行为收紧（D7.3 + D7.8）**
 - 跨 owner-kind 的 resume 由**软信号**改为**硬拒**：front 不再能接管 plan 的后端、plan 不再能接管 front 的后端。同 owner-kind 的跨会话 resume（"隔天回来继续"）**不受影响** —— 判据用 owner-kind 而非 session id，正是为了保住这条既有正当用法。

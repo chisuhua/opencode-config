@@ -1,0 +1,266 @@
+{
+  "version": 1,
+  "mechanism": "plan-delegate",
+  "adr": "docs/adr/ADR-plan-delegate-engineering-session.md",
+  "notes": "覆盖面 = 「**plan 侧工程派发**」这一**能力面**的退役（ADR 回滚口径的三步 + 让仓库自洽所必需的同步面）。步骤 ① 配置：plan agent 级五项 delegate 放行撤掉（顶层仍全 deny ⇒ plan 无工程出口）；步骤 ② 代码：`sessions` 的 owner 过滤撤回（全量列举恢复）；步骤 ③ `owner_agent` 保持写入、读取侧按缺失兼容读（**ADR 口径如此**，无需回滚数据）。同步面（不改就红或就悬空）：`prompts/plan.md` 的委派**发起侧**教学退役（通道 / 选类表 / 派发参数 / 五条硬规则 —— 保留 `capability:plan` 机读块，它是配置的逐字投影）、`prompts/build.md` 的 planner 行、`prompts/front.md` 的「看不到它的后端」句（owner 过滤退役后失真）、`docs/MULTI-AGENT-DESIGN.md` 的 plan 卡片、front 卡片的「plan 也是放行主体」句与派发优先级行、`docs/SUBAGENT-ORCHESTRATION.md` 的 §2.2 门控句、§8.1 派发主体、agent 表 plan 行、归属行的 sessions 过滤句、已知限制 #4（owner 过滤的代价，已消解）与 #5（标注 plan 已退役），以及 `prompts/build.md` 的 base 取法指向与运行身份表的「派发侧要求」指向（⇒ 改为 front.md）+ 对应守卫 AC7 的指向断言，以及**守卫从「两个派发方」收窄为「front」**（role-class 投影 / class-write / HANDOFF 词表 / 必填参数 / base 通道 / accepted-roots 投影 / V10·V11 等）。⚠ **残留（如实登记，五项）**：① **代码内核保留**（D2 `plan_ref` / D5 `owner_agent` / D7 优先级 / `role_class` 仍在，惰性）⇒ 退役的是**能力面**；彻底退役内核需连带回退 role_class / base-channel / resume-precheck / D7 四个增量（≈11k 行代码与测试）⇒ 属重构，不属清单能力范围。② `plan.md` 的**消费侧**三小节（架构内容分流 / delegate 返回值 / 交回后的收尾三问）**保留** ⇒ 成为**死教学**（plan 不再派发，却仍在讲「怎么读派发结果」）；AC21 / AC21b 等守卫仍钉着它们 ⇒ 彻底清理需连带撤回那些守卫。③ D3 的「配额 owner 无关」不变式**失去双 owner 的直接覆盖**（唯一断言随 D3 一并撤回）⇒ 约束仅以代码注释保留。④ 存量 plan-owned 后端：owner 过滤退役后它们对 front **可见**（不再是「隐藏」），但仍受 D7.3 / D7.8 的跨 owner-kind 硬拒保护，直到 plan 会话消亡（亡主例外）。⑤ **ADR 散文 ↔ 清单之间无机判**（只有订正块的人读指针）—— 清单漂移由 `tests/rollback-manifests.test.ts` 兜住，ADR↔清单的对应关系靠人读。⑥ 「同步面」的枚举**本身**易漏（critic 实测指出「索引 / 汇总转述面」整类漏了 8 处）⇒ 本清单按「配置 / 代码 / prompt / 文档 / 守卫」五面逐面扫过，但**清单化时必须实测**（清单漏一处 ⇒ 副本里套件红 ⇒ 立刻暴露），不能只照 ADR 口径抄。⚠ **顺序有意义**：edits 按声明顺序应用（同文件内）—— plan.md 的整节替换必须先于节内其它编辑。⚠ ADR 的「回滚口径（三步即可回到现状）」是 2026-11-13 的快照：**形式上仍成立**（三步 + 3 处同步 ⇒ 套件可绿），**实质上已半退役**（prompt / 文档 / 守卫仍宣称 plan 能派发 ⇒ prompt 与权限层互相矛盾 ⇒ 复现 v2.44 事故形态）⇒ 本清单的 48 条 = 最小集 5 条 + 实质退役 43 条（实验留痕：`.rddf/reviews/plan-delegate-rollback-drill.md`）。",
+  "delete": [],
+  "edits": [
+    {
+      "path": "opencode.jsonc.opencode-go",
+      "find": "        \"subagent\": \"allow\",\n        \"question\": \"allow\",\n        \"delegate\": \"allow\",\n        \"delegate_dispatch\": \"allow\",\n        \"delegate_sessions\": \"allow\",\n        \"delegate_suspend\": \"allow\",\n        \"delegate_cancel\": \"allow\",\n",
+      "replace": "        \"subagent\": \"allow\",\n        \"question\": \"allow\",\n"
+    },
+    {
+      "path": "lib/delegate-async.ts",
+      "find": "      \"**只读**列出**本会话名下**的后端工程 session 及其状态与证据（不投递任何 prompt，不污染后端）。\" +\n      \"只列 owner = 调用方会话的后端（`ADR-plan-delegate-engineering-session` D3）；\" +\n",
+      "replace": "      \"**只读**列出后端工程 session 及其状态与证据（不投递任何 prompt，不污染后端）。\" +\n"
+    },
+    {
+      "path": "lib/delegate-async.ts",
+      "find": "      // owner 过滤**只发生在本工具的展示层**（`ADR-plan-delegate-engineering-session` D3）：\n      // `listDelegatedSessions` / `countActiveBackends` / dispatch 超限诊断保持 owner 无关。\n      const ownerSessionID = toolContext?.sessionID\n      const allBackends = await listDelegatedSessions(ctx)\n      const backends = ownerSessionID\n        ? allBackends.filter((b: any) => (b as any)?.metadata?.front_session_id === ownerSessionID)\n        : allBackends\n",
+      "replace": "      // ⚠️ **owner 过滤已退役**（`ADR-plan-delegate-engineering-session` D3）：本工具**全量列举**\n      // （`listDelegatedSessions` / `countActiveBackends` / dispatch 超限诊断本就 owner 无关）。\n      const allBackends = await listDelegatedSessions(ctx)\n      const backends = allBackends\n"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "## 委派工程实施（delegate / dispatch）\n\n工程实施**只有一条通道**：`delegate` 插件的五个工具（`delegate` / `dispatch` / `sessions` / `suspend` / `cancel`）。`subagent` **不能**用来拉可写 agent 干实施（它没有登记、台账、单槽、scope 检测、停机证据门控）。\n\n| 你要什么 | 用哪个 |\n|---|---|\n| 派一个任务、当场拿结果 | `delegate`（同步：建/复用 → 投递 → 等 → 返回） |\n| 并发多任务、先不等 | `dispatch`（异步：投递后立即返回） |\n| 查后端状态（只读） | `sessions` |\n| 先切走、稍后继续 | `suspend` |\n| 目标作废 | `cancel` |\n\n**选类：本次派发是哪一个角色类的工作**（`role_class`，缺省 `builder`）：\n\n| 任务形态 | `role_class` | 后端能写什么 |\n|---|---|---|\n| 实施代码 / 测试 / 修 bug | `builder` | 简报 `scope` **减去架构文档目录**（窄目标派发被拒；宽 scope 下写 arch 路径被拒）。产出 `.rddf/reviews/<change>-arch-review.md` 的任务，**`scope` 必须包含该路径**（否则 findings 只落响应正文） |\n| 写改 ADR / 架构文档（可含自己跑 oracle→critic 收口） | `architect` | 架构文档目录 + `.rddf/reviews/**` + `.rddf/config/arch-docs.json` |\n| 只取证与判决（跑测试取证、写验收报告），不改实现 | `verifier` | `.rddf/reviews/**` + `.rddf/state/verifier/**`（记账落点；**派发时 `scope` 必须同时包含这两个目录** —— 上限 ≠ 授权）。**必须声明 `<base>`（必填；git ref，如 `HEAD~1` 或 commit sha）**：取证命令要判「环境信号 vs 判据信号」时需要基线；不声明 ⇒ **派发即被拒**（不再等到后端才 `blocked`）。**resume 时由调用方重填** —— 要沿用同一基线，请用当初简报里印出的 sha |\n\n<!-- 机读投影：下面这块是 `opencode.jsonc` 里本 agent 的**能力面**（edit / shell / delegate）——\n     守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。\n     plan.md「与 build 的关键区别」表的能力面陈述若与本块不符 ⇒ AC24 红（**只覆盖那一张表**）。 -->\n<!-- capability:plan\nedit: *.rddf/plan-topics/*, *.rddf/state/plan-sessions.json, .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md\nedit-wildcard: ask\nshell: allow-deny\ndelegate: yes\n-->\n<!-- 机读投影：下面这块是 `lib/delegate-core.ts::VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` 的**逐字副本** ——\n     守卫按**精确比对**校验（多一个路径 / 少一个路径 / 改一个字符 ⇒ 红）。\n     散文措辞不再承担「写集对不对」的判据（措辞是开集的，换个说法就能绕过）。\n     图例：`allow:` 是**前缀根**（语义 = 散文的 `X/**`）；`owns:` 是**文件名模式**（`<name>` / `*` 为占位符）。\n     需要对齐时：bun -e 'import {verifierWriteSetBlock} from \"./lib/delegate-core.ts\"; console.log(verifierWriteSetBlock())' 打印后整块替换。 -->\n<!-- role-class-write-set:verifier\nallow: .rddf/reviews, .rddf/state/verifier\nowns: .rddf/state/verifier/<name>.json, .rddf/state/verifier/<name>.audit.jsonl, .rddf/state/verifier/.ac-verdict-*.json, .rddf/state/verifier/.ac-verification.jsonl, .rddf/state/verifier/.ac-verifier-blocked.jsonl, .rddf/state/verifier/rdd-verify-context-<name>.json\n-->\n\n- **换类不能原地换**：同一 session 的能力在创建时定型 ⇒ 需要别的类 ⇒ 由后端 handoff 交回，再**重新派发**（新 session 的模型上下文不继承，计划要点要重贴）。\n- **选错类有两种失败形态**（它无权改别的类）：\n  - ① **窄目标**（`scope` 越界，如 `architect + src/**`、`builder + docs/adr`）⇒ **派发被拒**（硬拒发生在建 session 之前，你拿到的是错误、**不是** `HANDOFF:`）。\n    ⇒ **先读错误信息再归因**（同一信号有多种成因，别一律改派）：\n    - 类 × scope 不相容 ⇒ **改派**（换 `role_class`）；\n    - `scope` 自身写错（手滑多一个字符、路径越出工程根）⇒ 修正后**原类重派**；\n    - 错误信息指向 `scripts/arch-docs-init.sh`（本工程没有架构文档目录）⇒ **先初始化**，不是改派（改派 builder 也写不了架构文档）。\n  - ② **宽目标**（`scope` 是架构文档目录的祖先，如 `.`）⇒ 后端写越界路径被**权限拒** ⇒ 后端 `HANDOFF:` 交回 ⇒ 收到首行时先判「是类选错，还是计划缺信息」，再决定**重派**哪一类。\n- **scope 与类必须相容**：`scope` 的**每一项**都要 ⊆ 该类的允许集，**任一项越界即被硬拒**（不是「有交集即放行」）——派发前先自查，别等被拒。\n- **收回后复核**：后端返回后用 `git status` 复核是否改了 scope 外的文件（越界必须点名告知用户）。\n- 该字段现在**始终生效**：缺省 `builder`；非法值（`null` / 空串 / 其它）直接抛；`kind=knowledge` 与它互斥。\n- 你自己**不写** ADR / 验收报告：`architect` / `verifier` 类也是**派发**出去的（写动作只发生在后端 session 内）。\n\n**派发参数**：必填 `project_dir`（工程根绝对路径）、`task`（任务原话）、`goal`（一句话目标）、\n`scope`（允许变更的路径前缀数组）、`acceptance`（可判定的验收判据）。选填参数的语义见\n`prompts/front.md` 的参数表与工具 description（两处均已由守卫钉住，**不在此复制**）。\n其中 `base`（本次派发的基线）**对 `role_class=verifier` 是必填**（不填 ⇒ 派发被拒）。\n**基线身份由派发方持有**：相对 ref（`HEAD~1`）会随 HEAD 漂移 ⇒ **派发前先自己\n`git rev-parse <ref>^{commit}` 解析出 sha 并记下**，把**这个 sha** 填进 `base`（40 位 sha 是合法 ref）\n⇒ 派发与后续 `resume` 用**同一个 sha** ⇒ 基线不漂；跨会话只需把这个 sha 传下去。\n\n**五条硬规则**：\n\n1. **派可写实施必须带 `plan_ref`**：引用一个**已存在**的计划文件（accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`）。没有计划就不要派 —— 先写计划。知识类（只读）后端不带 `plan_ref`。\n\n<!-- 机读投影：下面这块是 `lib/delegate-core.ts::PLAN_REF_ROOTS` 的**逐字副本** ——\n     守卫按**精确比对**校验（多一个根 / 少一个根 / 改一个字符 ⇒ 红）。\n     accepted roots 是 `validatePlanRef` 的**运行期判据**（闭集）⇒ 投影多写一个根 = 假承诺。\n     需要对齐时：bun -e 'import {planRefRootsBlock} from \"./lib/delegate-core.ts\"; console.log(planRefRootsBlock())' 打印后整块替换。 -->\n<!-- accepted-roots:plan-ref\n.rddf/plans/**\n.rddf/improvements/**\n.rddf/roadmap/**\nopenspec/changes/*/proposal.md\n-->\n2. **同一工作树同时只允许一个后端在跑**（单槽，与谁派发无关）。派发被拒时错误信息会给出**占槽者 session id** —— 那不是你派的后端，别去动它。\n   - **plan 优先**（`ADR-plan-delegate-engineering-session` D7）：若占槽者是 **front** 的后端，plan **不自动抢占**（不替 front 决定何时停）—— 按拒绝信息里的 `owner=front` 提示走：① 请 front 侧 release；② 由用户协调；③ 等它自己跑完。若占槽者也是 plan 的（你自己的另一个会话），照常 `suspend` 它再派。\n3. **`dispatch` 返回 ≠ 任务完成**：它只证明简报已投递并被确认消费。要结论：用 `sessions` 查，或改用 `delegate` 同步等。\n4. **切换是四步**：`sessions` 找占槽者 → `suspend(X)`（保留上下文，之后可 resume）→ 失败才 `cancel(X)`（终止，永久不可 resume）→ 再派。\n5. **`HANDOFF:` 首行 = 交回，不是完成** ⇒ 走下方「交回后的收尾三问」小节（证据优先级 + 三条 resume 禁令）。\n\n**派不出去 / 被拒时**：把约束写回计划（补不变量、补 acceptance），并告诉用户卡在哪；**不要**改用 `subagent` 拉可写 agent 绕过门控。\n\n",
+      "replace": "## 委派工程实施（delegate / dispatch）—— **已退役**\n\n> 本机制（`docs/adr/ADR-plan-delegate-engineering-session.md`）已退役：**plan 不再是派发主体**\n> （配置不再放行 `delegate` 五项）⇒ 派发工程的唯一出口是 `front`。\n\n<!-- capability:plan\nedit: *.rddf/plan-topics/*, *.rddf/state/plan-sessions.json, .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md\nedit-wildcard: ask\nshell: allow-deny\ndelegate: yes\n-->\n\n"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "delegate: yes\n",
+      "replace": "delegate: no\n"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "| **派发工程实施** | 自己写 | ⚠️ 可**委托**工程 session 实施（`delegate` / `dispatch`），**自己不写代码** |\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "\n> **委托实施 ≠ 自己实施**：写动作只发生在**被派发的工程 session 内**；你仍不 `edit src/**`、不进 builder 角色、不做实施类 commit（那些都在后端 session 里做）。",
+      "replace": ""
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "4. **不写代码。** 你的输出是 markdown 计划 + （可选）小段示例片段，不超过 50 行。要落地实施 ⇒ **委托**工程 session（见下节），不是自己动手。",
+      "replace": "4. **不写代码。** 你的输出是 markdown 计划 + （可选）小段示例片段，不超过 50 行。"
+    },
+    {
+      "path": "prompts/front.md",
+      "find": "你在 `sessions` 里**看不到**它的后端，suspend 也会被归属门控拒。",
+      "replace": "退役后 `sessions` **不再按 owner 过滤** ⇒ 你**看得到**它的后端；但 `suspend` 仍被归属门控拒，`resume` / `cancel` 仍被跨 owner-kind 硬拒（D7.3 / D7.8）。"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "；**可委托工程 session 实施**（`delegate` / `dispatch`，见 `prompts/plan.md` 的委派实施章节）—— **委托实施 ≠ 自己实施**：写动作只发生在被派发的后端 session 内",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **职责**：只读探索、评估取舍、产出可验证的计划；**可委托**工程 session 实施（v2.17 起）\n",
+      "replace": "- **职责**：只读探索、评估取舍、产出可验证的计划\n"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **delegate 通道**（v2.17）：与 `front` **并列**的放行主体 —— agent 级放行 `delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel`（顶层仍全 `deny`，门控边界唯一）。派**可写实施**时必须带 `plan_ref`（引用已存在的计划文件；accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md`）—— 见 `docs/adr/ADR-plan-delegate-engineering-session.md`\n",
+      "replace": "- **delegate 通道**（v2.17 起；**plan 已退役**，放行主体只剩 `front`）：`delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel`（顶层仍全 `deny`，门控边界唯一）。`plan_ref`（引用已存在的计划文件）在**代码层**仍是运行期判据（`validatePlanRef`）：accepted roots：`.rddf/plans/**`、`.rddf/improvements/**`、`.rddf/roadmap/**`、`openspec/changes/*/proposal.md` —— 见 `docs/adr/ADR-plan-delegate-engineering-session.md`\n"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "  7. 需要落地实施 ⇒ **委托**工程 session（`delegate` / `dispatch`），带 `plan_ref`（**委托实施 ≠ 自己实施**：写动作只发生在后端 session 内）\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "`front` 与 `plan`（planner 角色）**并列**放行同一通道；plan 派**可写实施**时必须带 `plan_ref`：",
+      "replace": "`front` 放行该通道："
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "门控：顶层 `permission` 五项**全 `deny`**；`front` 与 `plan` 在 agent 级各 `allow` 五项。",
+      "replace": "门控：顶层 `permission` 五项**全 `deny`**；`front` 在 agent 级 `allow` 五项（`plan` 已退役派发主体 —— 见 `ADR-plan-delegate-engineering-session`）。"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"delegate 通道的放行主体：顶层全 deny + front / plan 各自放行五项（ADR-plan-delegate-engineering-session D1）\", () => {",
+      "replace": "  test(\"delegate 通道的放行主体：顶层全 deny + front 放行五项；plan 已退役（不再放行）\", () => {"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    for (const agent of [\"front\", \"plan\"]) {\n      const perm = (config.agent[agent] as any).permission",
+      "replace": "    for (const agent of [\"front\"]) {\n      const perm = (config.agent[agent] as any).permission"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    for (const agent of [\"build\", \"explore\", \"librarian\", \"oracle\", \"metis\", \"critic\"]) {\n      const perm = (config.agent[agent] as any)?.permission",
+      "replace": "    for (const agent of [\"plan\", \"build\", \"explore\", \"librarian\", \"oracle\", \"metis\", \"critic\"]) {\n      const perm = (config.agent[agent] as any)?.permission"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"plan.md 含委派实施的规则与边界句；build.md planner 行同句（V10 / V11）\", () => {\n    const planMd = readFileSync(path.join(ROOT, \"prompts\", \"plan.md\"), \"utf8\")\n    for (const needle of [\"plan_ref\", \"dispatch` 返回 ≠ 任务完成\", \"单槽\", \"委托实施 ≠ 自己实施\"]) {\n      expect(planMd, `plan.md 缺少「${needle}」`).toContain(needle)\n    }\n    const buildMd = readFileSync(path.join(ROOT, \"prompts\", \"build.md\"), \"utf8\")\n    // build.md 有两张 planner 表（增强层 + 角色矩阵）；边界句必须在**角色矩阵**那张上\n    const plannerRows = buildMd.split(\"\\n\").filter((l) => l.startsWith(\"| `planner` |\"))\n    expect(plannerRows.length, \"build.md 找不到 planner 行\").toBeGreaterThan(0)\n    const matrixRow = plannerRows.find((l) => l.includes(\"起草、讨论\"))\n    expect(matrixRow, \"build.md 找不到角色矩阵的 planner 行\").toBeTruthy()\n    expect(matrixRow as string, \"build.md 的 planner 行缺边界句\").toContain(\"委托实施 ≠ 自己实施\")\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"accepted roots：真源（delegate-core.ts 的 PLAN_REF_ROOTS）与三份投影的**机读块**逐字一致（闭集）\", () => {",
+      "replace": "  test(\"accepted roots：真源（delegate-core.ts 的 PLAN_REF_ROOTS）与两份投影的**机读块**逐字一致（闭集）\", () => {"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    for (const rel of [\"prompts/plan.md\", \"docs/MULTI-AGENT-DESIGN.md\", \"docs/SUBAGENT-ORCHESTRATION.md\"]) {",
+      "replace": "    for (const rel of [\"docs/MULTI-AGENT-DESIGN.md\", \"docs/SUBAGENT-ORCHESTRATION.md\"]) {"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"plan.md 的 verifier 派发要求含「必须声明可解析 <base>」（缺它 ⇒ 派发即被拒；不再等到后端 blocked）\", () => {\n    const PLAN = readFileSync(path.join(import.meta.dir, \"..\", \"prompts\", \"plan.md\"), \"utf8\")\n    const row = PLAN.split(\"\\n\").find((l) => l.includes(\"`verifier`\") && l.includes(\".rddf/state/verifier\"))!\n    expect(row).toContain(\"`<base>`\")\n    expect(row).toMatch(/必须声明/)\n    expect(row).toContain(\"blocked\")\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    // plan.md 硬规则 #5 已改为引用\n    expect(PLAN_MD).toContain(`走下方「${TITLE}」小节`)\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC1：两份完整表的 builder 行一致（都含「减去架构文档目录」）且三行齐\", () => {\n    for (const rows of [PLAN_TABLE, BUILD_TABLE]) {",
+      "replace": "  test(\"AC1：build.md 的完整表 builder 行含「减去架构文档目录」且三行齐\", () => {\n    for (const rows of [BUILD_TABLE]) {"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC2：两份表的 architect / verifier 行一致；front.md 出现三个类名与 architect 落点\", () => {\n    for (const rows of [PLAN_TABLE, BUILD_TABLE]) {",
+      "replace": "  test(\"AC2：build.md 表的 architect / verifier 行；front.md 出现三个类名与 architect 落点\", () => {\n    for (const rows of [BUILD_TABLE]) {"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    // 两表的 verifier 行**必须一致**（D3 修订后允许集已是两项：产品落点 + 记账落点）\n    const [planVerifier, buildVerifier] = [PLAN_TABLE, BUILD_TABLE].map((rows) =>\n      rows.find((l) => l.includes(\"`verifier`\"))!,\n    )\n    for (const token of [\".rddf/reviews\", \".rddf/state/verifier\"]) {\n      expect(planVerifier).toContain(token)\n      expect(buildVerifier).toContain(token)\n    }",
+      "replace": "    // build.md 表的 verifier 行（plan 已退役派发主体 ⇒ 不再有两表可比）\n    const buildVerifier = BUILD_TABLE.find((l) => l.includes(\"`verifier`\"))!\n    for (const token of [\".rddf/reviews\", \".rddf/state/verifier\"]) {\n      expect(buildVerifier).toContain(token)\n    }"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC3：「选错类」的两种失败形态在 plan.md 与 front.md 都写到（结构锚定，非词频）\", () => {\n    // plan.md：定位「选错类有两种失败形态」后的两条子 bullet\n    const planLines = PLAN_MD.split(\"\\n\")\n    const anchor = planLines.findIndex((l) => l.includes(\"选错类有两种失败形态\"))\n    expect(anchor).toBeGreaterThan(-1)\n    const narrowIdx = planLines.findIndex((l, i) => i > anchor && l.includes(\"① **窄目标**\"))\n    const wideIdx = planLines.findIndex((l, i) => i > anchor && l.includes(\"② **宽目标**\"))\n    expect(narrowIdx).toBeGreaterThan(-1)\n    expect(wideIdx).toBeGreaterThan(narrowIdx)\n    const narrow = planLines.slice(narrowIdx, wideIdx).join(\"\\n\") // 含续行\n    const wide = planLines[wideIdx]\n    expect(narrow).toContain(\"派发被拒\")\n    expect(narrow).toContain(\"改派\")\n    // 归因句：三种成因都要写到（类不相容 / scope 写错 / archRoots 为空 ⇒ 先初始化）\n    expect(narrow).toContain(\"类 × scope 不相容\")\n    expect(narrow).toContain(\"原类重派\")\n    expect(narrow).toContain(\"arch-docs-init.sh\")\n    expect(wide).toContain(\"交回\")\n    expect(wide).toContain(\"重派\")\n    // front.md：role_class 字段说明行内两种形态齐\n    const frontRow = FRONT_MD.split(\"\\n\").find((l) => l.includes(\"填错有两种形态\"))!\n    expect(frontRow).toContain(\"窄目标\")\n    expect(frontRow).toContain(\"派发被拒\")\n    expect(frontRow).toContain(\"改派\")\n    expect(frontRow).toContain(\"宽目标\")\n    expect(frontRow).toContain(\"交回\")\n    expect(frontRow).toContain(\"重派\")\n  })\n",
+      "replace": "  test(\"AC3：「选错类」的两种失败形态在 front.md 写到（结构锚定，非词频）\", () => {\n    // plan.md 已退役派发主体 ⇒ 该要求只对 front.md 生效\n    const frontRow = FRONT_MD.split(\"\\n\").find((l) => l.includes(\"填错有两种形态\"))!\n    expect(frontRow).toContain(\"窄目标\")\n    expect(frontRow).toContain(\"派发被拒\")\n    expect(frontRow).toContain(\"改派\")\n    expect(frontRow).toContain(\"宽目标\")\n    expect(frontRow).toContain(\"交回\")\n    expect(frontRow).toContain(\"重派\")\n  })\n"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    expect(PLAN_MD).toContain(\"始终生效\")\n    expect(FRONT_MD).toContain(\"始终生效\")\n    expect(PLAN_MD).toContain(\"kind=knowledge\")\n    expect(PLAN_MD).toContain(\"互斥\")",
+      "replace": "    // plan.md 已退役派发主体 ⇒ 该口径只对 front.md 生效\n    expect(FRONT_MD).toContain(\"始终生效\")"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    // plan.md 选类表 verifier 行\n    const planRow = PLAN_MD.split(\"\\n\").find((l) => l.includes(\"`verifier`\") && l.includes(\".rddf/reviews\"))!\n    expect(planRow).toContain(\".rddf/state/verifier\")\n    expect(planRow).toContain(\"scope\")\n    expect(planRow).toMatch(/scope[^|]*必须/)\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC7：三处文本一致（plan 选类表 / front §3.1 / build 运行身份表）含写集与 scope 义务\", () => {",
+      "replace": "  test(\"AC7：两处文本一致（front §3.1 / build 运行身份表）含写集与 scope 义务\", () => {"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    for (const [rel, text] of [\n      [\"prompts/plan.md\", PLAN_MD2],\n      [\"prompts/front.md\", FRONT_MD2],\n    ] as const) {\n      const missing = kinds.filter((k) => !text.includes(k as string))",
+      "replace": "    for (const [rel, text] of [[\"prompts/front.md\", FRONT_MD2]] as const) {\n      const missing = kinds.filter((k) => !text.includes(k as string))"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    for (const [rel, text] of [\n      [\"prompts/plan.md\", PLAN_MD2],\n      [\"prompts/front.md\", FRONT_MD2],\n    ] as const) {\n      const missing = requiredNames.filter((n) => !text.includes(n))",
+      "replace": "    for (const [rel, text] of [[\"prompts/front.md\", FRONT_MD2]] as const) {\n      const missing = requiredNames.filter((n) => !text.includes(n))"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC10-①：plan.md 的 verifier 行必须写明 base 必填\", () => {\n    const row = PLAN_T.split(\"\\n\").find((l) => l.includes(\"`verifier`\") && l.includes(\".rddf/state/verifier\"))\n    expect(row, \"plan.md 的 verifier 选类行未找到\").toBeTruthy()\n    expect(row!, \"verifier 行未提 base\").toContain(\"base\")\n    expect(row!, \"verifier 行未说「必填」\").toContain(\"必填\")\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC10-②：plan.md 的派发参数段必须写明 resume 须重填 base（且跨 resume 用当初的 sha）\", () => {\n    const start = PLAN_T.indexOf(\"**派发参数**\")\n    expect(start, \"plan.md 缺「派发参数」段\").toBeGreaterThan(-1)\n    const seg = PLAN_T.slice(start, PLAN_T.indexOf(\"\\n\\n\", start) + 2)\n    expect(seg, \"派发参数段未提 resume\").toContain(\"resume\")\n    expect(seg, \"派发参数段未提 base\").toContain(\"base\")\n    expect(seg, \"派发参数段未说明跨 resume 要用当初的 sha\").toContain(\"sha\")\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    expect(buildRow).toContain(\".rddf/state/verifier/**\")\n    expect(buildRow).toContain(\"plan.md\")",
+      "replace": "    expect(buildRow).toContain(\".rddf/state/verifier/**\")\n    // 派发侧措辞的落点：plan 已退役派发主体 ⇒ 由 front.md §3.1 承担\n    expect(buildRow).toContain(\"front.md\")"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC19（结构比对）：三份 prompt 的 verifier 写集**机读块** == lib 渲染的规范块（逐字 + 唯一）\", () => {",
+      "replace": "  test(\"AC19（结构比对）：两份 prompt（build / front）的 verifier 写集**机读块** == lib 渲染的规范块（逐字 + 唯一）\", () => {"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    for (const rel of [\"prompts/build.md\", \"prompts/plan.md\", \"prompts/front.md\"]) {",
+      "replace": "    for (const rel of [\"prompts/build.md\", \"prompts/front.md\"]) {"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    // D2b 的第二个落点：派发侧（plan.md 选类表 builder 行）—— 缺它 ⇒ 派发方无义务依据\n    const planBuilder = PLAN_MD.split(\"\\n\").find((l) => l.includes(\"`builder`\") && l.includes(\"架构文档目录\"))!\n    expect(planBuilder).toContain(\"scope\")\n    expect(planBuilder).toMatch(/scope[^|]*必须包含/)\n    expect(planBuilder).toContain(\"只落响应正文\")\n",
+      "replace": "    // D2b 的第二个落点（plan.md 选类表 builder 行）随 plan 退役派发主体而撤回\n"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC9：§审查配对 builder（架构面）行含「scope 必须包含」+「未包含时只落响应正文」；plan.md 选类表 builder 行同款\", () => {",
+      "replace": "  test(\"AC9：§审查配对 builder（架构面）行含「scope 必须包含」+「未包含时只落响应正文」\", () => {"
+    },
+    {
+      "path": "tests/delegate-async.test.ts",
+      "find": "  test(\"owner 过滤：两个 owner 互不可见，但全局配额计数含两者（D3 硬约束）\", async () => {\n    const dirA = repo(\"owner-a\")\n    const dirB = repo(\"owner-b\")\n    const { ctx, sessions } = createFakeCtx()\n    registerCaller(sessions, \"ses_plan_test\", \"plan\", dirB)\n    // plan 侧派发实施必须带 plan_ref（D2）\n    mkdirSync(path.join(dirB, \".rddf\", \"plans\"), { recursive: true })\n    writeFileSync(path.join(dirB, \".rddf\", \"plans\", \"p.md\"), \"p\")\n    const a = await run(dispatchToolDefinition(ctx), baseInput(dirA, \"goal-a\"))\n    const b = await run(\n      dispatchToolDefinition(ctx),\n      { ...baseInput(dirB, \"goal-b\"), plan_ref: \".rddf/plans/p.md\" },\n      \"ses_plan_test\",\n    )\n    const frontList = await run(sessionsToolDefinition(ctx), {}, \"ses_front_test\")\n    const planList = await run(sessionsToolDefinition(ctx), {}, \"ses_plan_test\")\n    expect(frontList.items.map((i: any) => i.session_id)).toContain(a.session_id)\n    expect(frontList.items.map((i: any) => i.session_id)).not.toContain(b.session_id)\n    expect(planList.items.map((i: any) => i.session_id)).toContain(b.session_id)\n    expect(planList.items.map((i: any) => i.session_id)).not.toContain(a.session_id)\n    // 全局配额**owner 无关**：两个 owner 的后端都计入\n    expect(await countActiveBackends(ctx)).toBe(2)\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "| `plan` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 设计者 / 规划者（**只读**，可**委托**工程 session 实施） | `prompts/plan.md` |",
+      "replace": "| `plan` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 设计者 / 规划者（**只读**，**无工程出口** —— 派发由 `front` 承担） | `prompts/plan.md` |"
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "`sessions` **按 owner 过滤**（过滤只发生在 sessions 的 execute 内；全局配额统计与 dispatch 超限诊断保持 owner 无关）。",
+      "replace": "`sessions` **全量列举**（owner 过滤已退役；全局配额统计与 dispatch 超限诊断本就 owner 无关）。"
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "| 4 | `sessions` 按 owner 过滤后失去「全机后端」运维视图 | 候选增强 `scope: owner|all`，v1 不做 |",
+      "replace": "| 4 | ~~`sessions` 按 owner 过滤后失去「全机后端」运维视图~~ | **已消解**（owner 过滤退役 ⇒ 运维视图恢复） |"
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "| 5 | plan 的后端转 `suspended` 后，front 仍可占用该工作树（plan resume 时才冲突） | 未加规则，登记备查 |",
+      "replace": "| 5 | plan 的后端转 `suspended` 后，front 仍可占用该工作树（plan resume 时才冲突） | 未加规则，登记备查（⚠ plan 已退役派发主体 ⇒ 当前无 plan 后端；内核规则仍在） |"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "；**v2.17 起 `plan` 也是放行主体**（同一通道，不新建第二套协议；ADR `docs/adr/ADR-plan-delegate-engineering-session.md`）",
+      "replace": "；⚠ **v2.17 起 `plan` 曾是放行主体，2026-11-20 已退役**（同一通道，不新建第二套协议；ADR `docs/adr/ADR-plan-delegate-engineering-session.md`）"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **派发优先级**（v2.18，`ADR-plan-delegate-engineering-session` D7）：**plan 优先、但不抢占**",
+      "replace": "- **派发优先级**（v2.18，`ADR-plan-delegate-engineering-session` D7；⚠ plan 已退役派发主体 ⇒ 当前只剩 front 一个 owner-kind，D7 的跨 kind 规则随之内联）：**plan 优先、但不抢占**"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "（`prompts/plan.md` 选类表已要求必声明；",
+      "replace": "（`prompts/front.md` 的 `role_class` 参数行已要求必声明；"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "**派发侧要求见 plan.md 选类表**",
+      "replace": "**派发侧要求见 front.md §3.1**"
+    }
+  ],
+  "drill_env": {
+    "seed_files": [
+      {
+        "path": ".rddf/state/role.json",
+        "content": "{\n  \"current_role\": \"general\",\n  \"updated_at\": \"2026-11-20T00:00:00Z\"\n}\n"
+      }
+    ]
+  },
+  "verify": {
+    "commands": [
+      [
+        "bun",
+        "test",
+        "tests/"
+      ]
+    ]
+  }
+}

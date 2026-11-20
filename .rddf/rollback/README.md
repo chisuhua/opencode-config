@@ -61,6 +61,16 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 |---|---|---|---|
 | `commit-gate.json` | commit 工具层验证门（`ADR-commit-verification-gate`） | delete 9 + edits 29 | `809 pass / 0 fail`（隔离副本） |
 | `plan-topics.json` | plan 侧多会话协作：`plan-worker` + topic checker（`ADR-plan-multi-session-collaboration`） | delete 4 + edits 14 | `983 pass / 0 fail`（隔离副本） |
+| `plan-delegate.json` | plan 侧工程派发（`ADR-plan-delegate-engineering-session`）—— **能力面**退役 | delete 0 + edits 48 | `1024 pass / 0 fail`（隔离副本） |
+
+## 「骨架机制」怎么退役（plan-delegate 的实测结论）
+
+`plan-delegate` 是第一个**触到骨架**的清单。它退役的是 **plan 这一派发主体**（能力面），不是 delegate 子系统本身：
+
+- **能做**：配置关闸（撤 plan 的五项 delegate 放行）+ 代码回退一处（`sessions` 的 owner 过滤）+ 退役 prompt 的**发起侧**教学（通道 / 选类表 / 派发参数 / 硬规则）+ **20 余处守卫从「两个主体」收窄为「一个」**。
+- **不能做（不属清单能力范围）**：退役**内核**（D2 `plan_ref` / D5 `owner_agent` / D7 优先级 / `role_class`）—— 那要连带回退四个其它 ADR 的增量（≈11k 行代码与测试）⇒ 是**重构**，不是清单。
+- **代价**：① 守卫覆盖面**变窄**（对象从 front+plan 变成 front）⇒ 这是**收窄**，不是放宽 —— 但每处收窄都是一次判断（本次 48 条 edits 里 20 余条是这类判断）；② 退役后 `plan.md` 的**消费侧**三小节成为**死教学**（plan 不再派发却仍在讲怎么读派发结果）⇒ 登记为残留。
+- **教训**：ADR 的「回滚口径」是**写它那天**的快照。实测（留痕 `.rddf/reviews/plan-delegate-rollback-drill.md`）：「三步即可回到现状」**形式上成立**（三步 + 3 处同步 ⇒ 套件可绿），**实质上已半退役**（prompt / 文档 / 守卫仍宣称 plan 能派发 ⇒ prompt 与权限层互相矛盾 ⇒ 复现 v2.44 事故形态）⇒ 判据不是「套件绿不绿」，而是「prompt / 文档 / 守卫是否还在宣称那个能力」。
 
 ## 保留项（实测得出，不是偏好）
 
@@ -74,4 +84,9 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 
 清单擅长**增量机制**：一组自包含文件 + 可逐段回退的措辞投影。
 
-不适合的是**骨架机制**（改它等于改产品形态）：`role-gate`（`lib/role-*` 1055 行 + 9 个测试文件 + `prompts/build.md` 的整个角色矩阵）与 `delegate`（`lib/delegate-*` 5261 行 + 约 5900 行测试 + 13 份文档）。它们的「回滚」不是删文件 + 改措辞，而是**代码级回退**（例：撤回 `sessions` 的 owner 过滤会连带改 `lib/delegate-core.ts` 的多处判定并使大批用例失去断言对象）⇒ 属重构，不属清单能力范围。真要退役其中某个**增量**（如 `ADR-plan-delegate-engineering-session` 的三步、或 `role_class` 的校验增量），应另立清单并承担上述风险。
+**触到骨架的机制**要分两层看（`plan-delegate` 是第一个实测样本）：
+
+- **能力面退役**（可做）：撤配置放行 + 回退一两处代码 + 退役 prompt 教学 + **把守卫从「两个主体」收窄为「一个」**。`plan-delegate` 就是这样做的（37 条 edits）⇒ 仓库仍自洽，退役后 plan 无工程出口、派发唯一出口是 front。
+- **内核退役**（不属清单范围）：把 delegate / role-gate 的**实现**删掉 —— `role-gate`（`lib/role-*` 1198 行 + 9 个测试文件 + `prompts/build.md` 的整个角色矩阵）与 `delegate`（`lib/delegate-*` 5261 行 + 约 5900 行测试 + 13 份文档）⇒ 它们的退役不是「删文件 + 改措辞」，而是**代码级回退**（例：撤回 `sessions` 的 owner 过滤会连带改 `lib/delegate-core.ts` 的多处判定并使大批用例失去断言对象）⇒ 属重构。
+
+⚠ **清单之间会耦合**：每个清单只对**它写就时的树**有效；在真实仓执行过一次回滚后，其它清单可能因措辞已变而失效（`tests/rollback-manifests.test.ts` 会立刻红）。回滚是**单向**操作。

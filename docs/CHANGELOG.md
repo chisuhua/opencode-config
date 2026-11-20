@@ -10,6 +10,16 @@
 
 ---
 
+> **v2.56 回滚清单第三个机制：plan 侧工程派发（能力面退役）（2026-11-20）**：
+> `.rddf/rollback/plan-delegate.json`（delete 0 + edits 48）—— 退役「plan 是派发主体」这一**能力面**：`ADR-plan-delegate-engineering-session` 的回滚三步（撤 plan 的五项 delegate 放行 / `sessions` 撤回 owner 过滤 / `owner_agent` 兼容读）+ 让仓库自洽所必需的同步面（`prompts/plan.md` 的委派**发起侧**教学退役、`prompts/build.md` 的 planner 行、`prompts/front.md` 的「看不到它的后端」句、`MAD` 的 plan 卡片、`SUBAGENT-ORCHESTRATION` §2.2 与 §8.1，**以及 20 余处守卫从「两个派发方」收窄为「front」**）。
+> **实测**：`bun scripts/rollback-drill.ts .rddf/rollback/plan-delegate.json` ⇒ **PASS**（隔离副本：`bun test tests/` **1024 pass / 0 fail** = 真仓 1031 − **5** 条被撤回的守卫用例 − **2** 条清单漂移守卫用例（在 drill 副本里整组 skip，因副本正是「清单已执行完」的状态））。
+> **核心发现（如实登记）**：ADR 的「回滚口径（三步即可回到现状）」是 **2026-11-13 的快照** ⇒ 实测结论（留痕 `.rddf/reviews/plan-delegate-rollback-drill.md`，实验 A/B/C）：**形式上仍成立** —— 三步 + 3 处同步（撤回 D3 用例 / 放行主体守卫收窄 / 同步 `capability:plan`）⇒ 套件可绿（`1028 pass / 0 fail`，另有 1 处 **clone 假红** = 缺 gitignored 运行态）；**实质上已半退役** —— 此时 plan.md 仍在教 plan 派发、文档仍说 plan 是放行主体、20 余处守卫仍要求 plan 覆盖派发契约 ⇒ **prompt 与权限层互相矛盾**（复现 v2.44 事故形态）⇒ 实质退役另需 43 条 edits（教学退役 + 文档转述 + 守卫收窄 + 悬空指针清理）⇒ 合计 **48 条**。已据此订正该 ADR（补「可执行真源」+ 同步面清单 + 残留声明 + 就地标记）。
+> ⚠ **残留（5 项）**：① **代码内核保留**（D2 `plan_ref` / D5 `owner_agent` / D7 优先级 / `role_class` 惰性保留）⇒ 退役的是能力面，彻底退役内核需连带回退四个增量（≈11k 行代码与测试）⇒ 属重构；② `plan.md` 的**消费侧**三小节保留 ⇒ 死教学（AC21 / AC21b 仍钉着它们）；③ D3 的「配额 owner 无关」不变式**失去双 owner 直接覆盖**；④ 存量 plan-owned 后端在过滤退役后对 front **可见**，但仍受 D7.3 / D7.8 硬拒保护；⑤ ADR 散文 ↔ 清单之间**无机判**（只有人读指针）。
+> 附带（git 卫生）：`.rddf/state/ledger.jsonl`（角色租约 / 派发事实台账，含活的 session id 与绝对路径）与 `.rddf/state/verifier/`（verifier 记账落点；产品落点是 `.rddf/reviews/`）**加入 `.gitignore`**（与既有的 `pair.json` / `role-claims.json` / `plan-sessions.json` 同类）；`cli.json` 按用户指示提交。
+> 附带（门禁稳健性）：`tests/commit-gate-doctor.test.ts` 的活体断言对「可达但插件列表缺项」也重试（取数层重试，判定逻辑未动）—— 依据：宿主重载插件的窗口内插件列表会短暂缺项 ⇒ 假红会把所有提交卡住。
+>
+> ---
+>
 > **v2.55 回滚清单补全：commit-gate 的步骤 1/2（2026-11-20）**：
 > v2.54 的清单只覆盖**步骤 3**（删机制文件 + 守卫期望同批）⇒ 本次把 ADR「回滚路径」的**步骤 1 / 2** 也清单化，三步同批可执行。
 > **步骤 1**（`opencode.jsonc.opencode-go`，符号链接的**目标文件**）：`git commit` / `git commit *` ⇒ `ask`；移除 force-push **8 条** deny。
