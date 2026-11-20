@@ -1485,6 +1485,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "commit-gate.ts",
         // v2.47（ADR-commit-verification-gate D4/D9⑧）：force push 的工具层兜底（纯逻辑）
         "push-gate.ts",
+        // ADR-commit-verification-gate D9②：门禁「在场性」的机械化（插件加载失败 ⇒ 门禁静默消失）
+        "commit-gate-doctor.ts",
         // ADR-plan-multi-session-collaboration D2：协作 topic 的派生状态 + fork/join 判据
         "plan-topics.ts",
       ],

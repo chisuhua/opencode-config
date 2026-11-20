@@ -10,6 +10,26 @@
 
 ---
 
+> **v2.49 commit 门禁在场性体检（2026-11-20，`ADR-commit-verification-gate` D9②）**：
+> 2026-11-20 实测：`plugins/commit-gate.ts` 在宿主里**加载失败**（`SyntaxError: Export named 'isForceFlagToken' not found`
+> —— 宿主进程自 11-18 00:52 常驻，`lib/push-gate.ts`（16:55）/ `lib/commit-gate.ts`（19:01）的改动**没让进程内模块缓存失效**
+> ⇒ 旧版 push-gate 配新版 commit-gate）⇒ **门禁静默消失**：commit 照常通过、仓库的验证命令也没人跑，
+> 而当时 **206 个单测全绿**。修复 = `opencode service restart`（重启后 `/api/plugin` 里 `commit-gate` 回到 `active`）。
+> D9② 此前只有**登记**（「插件缺席 ⇒ 门禁不存在」）没有**检测** ⇒ 本次补三块：
+> ① `lib/commit-gate-doctor.ts` + `scripts/commit-gate-doctor.ts`：**门禁在场性**判定（`pass` / `fail` / `skip`，
+>    退出码 `0/1/2`）—— 问运行中的宿主「`commit-gate` 插件是不是 `active`」；`skip` = 宿主不可达（**不可判定 ≠ 健康**）。
+> ② `tests/commit-gate-doctor.test.ts`（9 例纯逻辑 + 3 例 CLI 出口码 + 2 例活体分支，每次运行**恰执行其中 1 例活体**）：活体层挂在 `bun test tests/` 里 ⇒
+>    而 `bun test tests/` 是 `.rddf/commit-gate.json` 的 `verify_commands` 之一 ⇒ **每次运行测试都会尝试体检门禁本身是否在场**
+>    （⚠ 措辞边界：宿主在门禁的验证上下文里不可达时 ⇒ 该次**判定不可得**（skip，不判失败）⇒「每次都会**尝试**」成立，
+>    「每次都**体检到**」不成立；已实测门禁同款上下文（`execFile`/无 TTY/cwd=仓根）下宿主**可达** ⇒ 活体例执行而非 skip）。
+> ③ `tests/commit-gate-plugin.test.ts`（11 例）：**直接 import 插件文件**（宿主加载的是同一文件、同一张模块图）
+>    ⇒ 接线层（hook 注册 / force push 兜底 / 命令闭口 / fail-closed / 三判据在真实 git 暂存区上的落地）首次有覆盖。
+>    判别力已用变异验证：摘掉 force push 兜底 ⇒ 旧纯逻辑测试 188 例**全绿**、新测试**红**；
+>    复现事故同形的导出名不匹配 ⇒ 旧 `commit-gate.test.ts` **141 例全绿**、新测试在 import 阶段**红**（错误文本与宿主一致）。
+> `tests/config-guards.test.ts` 的「新增文件闸门」同步登记 `lib/commit-gate-doctor.ts`。
+>
+> ---
+>
 > **v2.48 plan 侧多会话离线协作（2026-11-20，`ADR-plan-multi-session-collaboration`）**：
 > 新增 `plan-worker`（`mode: subagent`）—— plan 主会话可用 `subagent` 派**并行子会话**推进 `.rddf/plan-topics/<topic>/nodes/<id>/` 的 TODO/RESULT；
 > 新增 `lib/plan-topics.ts` + `scripts/plan-topic-check.ts`（`check` / `scope-check` / `lock` 三子命令，退出码 `0/1/2/3`）作为 fork/join 与派生状态的**机械判据**。
