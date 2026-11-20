@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "mechanism": "commit-gate",
+  "adr": "docs/adr/ADR-commit-verification-gate.md",
+  "notes": "覆盖面 = 隔离副本演练（.rddf/reviews/commit-gate-rollback-drill.md）的『实验 C』清单：机制文件 9 件 + 守卫期望同批（EXPECTED 3 项 + 落点完整性守卫整块）。⚠ 步骤 1/2（opencode.jsonc 档位、prompts/build.md 与 MAD 的措辞）及其 `git commit *`=allow 断言**尚未纳入**（实测未做 ⇒ 不写进清单）；格式已支持（`edits` 逐段替换），待后续补。⚠ 保留项：tests/commit-gate-d9-registration.test.ts（V10 载体）与 .rddf/commit-gate.json（声明文件）—— 删前者会让『V10 载体存在』断言红，删后者会让『缺门禁声明』红（实测见报告实验 D/G）。 ⚠ 与 `.rddf/commit-gate.json`（门禁**声明**）**同名不同义**：本文件是**回滚清单**。",
+  "delete": [
+    "plugins/commit-gate.ts",
+    "lib/commit-gate.ts",
+    "lib/push-gate.ts",
+    "lib/commit-gate-doctor.ts",
+    "scripts/commit-gate-doctor.ts",
+    "tests/commit-gate-doctor.test.ts",
+    "tests/commit-gate-plugin.test.ts",
+    "tests/commit-gate.test.ts",
+    "tests/push-gate.test.ts"
+  ],
+  "edits": [
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "        // v2.47（ADR-commit-verification-gate D2/D5）：commit 验证门的纯逻辑（命令识别 + 三判据）\n        \"commit-gate.ts\",\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "        // v2.47（ADR-commit-verification-gate D4/D9⑧）：force push 的工具层兜底（纯逻辑）\n        \"push-gate.ts\",\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "        // ADR-commit-verification-gate D9②：门禁「在场性」的机械化（插件加载失败 ⇒ 门禁静默消失）\n        \"commit-gate-doctor.ts\",\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"治理面落点完整性：`git commit` 验证门改造的每个落点都已落地（内容锚点）\", () => {\n    const ROOT = path.join(import.meta.dir, \"..\")\n    const read = (rel: string) => readFileSync(path.join(ROOT, rel), \"utf8\")\n    const build = read(path.join(\"prompts\", \"build.md\"))\n    const mad = read(path.join(\"docs\", \"MULTI-AGENT-DESIGN.md\"))\n    const anchors: Array<[string, string, string]> = [\n      [\"prompts/build.md §输出\", build, \"由工具层验证门决定\"],\n      [\"prompts/build.md §输出 commit 调用形态（单独成段）\", build, \"单独成段\"],\n      [\"prompts/build.md 点名条款\", build, \"`git commit` 由工具层验证门决定；`git push`\"],\n      [\"prompts/build.md 增强层 commit 契约\", build, \"commit 由全局规则约束\"],\n      [\"MAD §3.4 标题（纪律对象收窄为 push）\", mad, \"现仅适用 `git push`\"],\n      [\"MAD §3.4 历史残留处置\", mad, \"历史残留处置\"],\n      [\"MAD §2.6 pause/commit 契约\", mad, \"工具层验证门决定、`git push` 等用户确认\"],\n      [\"MAD §2.8.7 D5②（部分闭合）\", mad, \"已由 `docs/adr/ADR-commit-verification-gate.md` D5 部分闭合\"],\n      [\"MAD §4.4.1（commit 段退役 + force-push deny）\", mad, \"`git commit` 段已退役\"],\n      [\"MAD §4.4.1（门禁在场性体检）\", mad, \"在场性\"],\n      [\"ADR D9②（门禁在场性检测面）\", read(path.join(\"docs\", \"adr\", \"ADR-commit-verification-gate.md\")), \"**检测面**（2026-11-20 补）\"],\n      [\"MAD §4.4.3（前缀匹配 ⇒ 全部形态）\", mad, \"force-push `deny` 必须列全**D4 定义的全部形态**\"],\n      [\"MAD 版本摘要\", mad, \"2026-11-18 变更\"],\n      [\"lib/delegate-core.ts 后端 brief\", read(path.join(\"lib\", \"delegate-core.ts\")), \"`git commit` 由工具层验证门决定\"],\n      [\"docs/dual-session-delegation.md\", read(path.join(\"docs\", \"dual-session-delegation.md\")), \"由工具层验证门决定\"],\n      [\"父篇 ADR :43（执行点改写）\", read(path.join(\"docs\", \"adr\", \"ADR-role-aware-permissions.md\")), \"已由**工具层验证门**覆盖\"],\n      [\"tests/role-exemptions.test.ts D5②（部分闭合）\", read(path.join(\"tests\", \"role-exemptions.test.ts\")), \"D5 **部分闭合**\"],\n    ]\n    for (const [label, text, needle] of anchors) {\n      expect(text, `落点未落地：${label}（缺「${needle}」）`).toContain(needle)\n    }\n    // ⚠ 负向：旧措辞不得残留（防回退）\n    expect(build, \"prompts/build.md 仍残留旧措辞「不要主动 `git commit`」\").not.toContain(\"不要主动 `git commit`\")\n    expect(mad, \"MAD 仍残留旧措辞「`git commit` 之所以是 `ask`」\").not.toContain(\"`git commit` 之所以是 `ask`\")\n  })\n",
+      "replace": ""
+    }
+  ],
+  "drill_env": {
+    "seed_files": [
+      {
+        "path": ".rddf/state/role.json",
+        "content": "{\n  \"current_role\": \"general\",\n  \"updated_at\": \"2026-11-20T00:00:00Z\"\n}\n"
+      }
+    ]
+  },
+  "verify": {
+    "commands": [
+      [
+        "bun",
+        "test",
+        "tests/"
+      ]
+    ]
+  }
+}

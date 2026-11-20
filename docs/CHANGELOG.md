@@ -10,6 +10,18 @@
 
 ---
 
+> **v2.54 回滚可达性：机械验证原型（2026-11-20）**：
+> 把「机制退役后仓库还自洽吗？」从**散文**（ADR 的「回滚路径」段）变成**可重复的一条命令**。
+> 起因：v2.53 的隔离副本演练是**手工**做的（7 次实验），结论躺在 `/tmp`，不可重复。
+> 新增：`lib/rollback-drill.ts`（清单 schema / 路径安全 / `find` 唯一性 / 禁止部分应用 / 演练环境准备）+ `scripts/rollback-drill.ts`（CLI，退出码 `0/1/2`）+ `.rddf/rollback/commit-gate.json`（首个清单）+ `tests/rollback-drill.test.ts`（26 例）。用法：`bun scripts/rollback-drill.ts .rddf/rollback/commit-gate.json`（⚠ `package.json` 是 gitignored ⇒ 不提供 npm script 快捷方式）。
+> **判据（fail-closed）**：schema 非法 ⇒ 拒；`delete` 目标**必须存在**；`edits.find` 必须**恰好出现 1 次**（0 次 ⇒ 漂移；≥2 次 ⇒ 无从确定）⇒ 清单与代码**同漂**，措辞一改 drill 立刻红，不会静默变 no-op；**不做部分应用**（先全量校验，任一条不满足 ⇒ 一个字节都不写）。
+> **安全**：只在**临时 clone** 里动手（断言副本在 `tmpdir` 下且 ≠ 真仓）；验证命令带 `ROLLBACK_DRILL_CHILD=1`，嵌套调用默认**拒绝**（防 drill 里跑 drill 的递归）。
+> **实测**：`bun scripts/rollback-drill.ts .rddf/rollback/commit-gate.json` ⇒ `PASS`（隔离副本里 `bun test tests/` 全绿），复现 v2.53 手工演练的结论。
+> ⚠ **已知限制（如实登记）**：① drill 基于 **HEAD**（`git clone` 只含已提交内容）⇒ **未提交改动不参与**；② 清单目前只覆盖 v2.53「实验 C」的**步骤 3** 清单（9 件 + 守卫期望同批），**步骤 1/2**（配置档位 / prompt / MAD 措辞）未纳入（格式已支持 `edits`，待补）；③ 保留项写进清单 `notes`（`tests/commit-gate-d9-registration.test.ts` = V10 载体、`.rddf/commit-gate.json` = 声明文件，删则各自有守卫变红 —— 实测见演练报告实验 D/G）。
+> 同步：`tests/config-guards.test.ts` 的「新增文件闸门」登记 `lib/rollback-drill.ts`。
+>
+> ---
+>
 > **v2.53 commit-gate 回滚路径演练（2026-11-20，`ADR-commit-verification-gate` V12）**：
 > critic 第 2 轮指出「回滚路径未含 doctor ⇒ V12『三步回滚后 `bun test tests/` 绿』不可执行」⇒ 在**隔离副本**里做了 7 次实验（A–G）（绝不在宿主正在加载的 `lib/`/`plugins/` 路径上动手）。
 > 结果（全部实测，报告 `.rddf/reviews/commit-gate-rollback-drill.md`）：

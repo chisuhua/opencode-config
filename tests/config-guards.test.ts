@@ -1492,6 +1492,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "commit-gate-doctor.ts",
         // ADR-plan-multi-session-collaboration D2：协作 topic 的派生状态 + fork/join 判据
         "plan-topics.ts",
+        // v2.54（回滚可达性原型）：清单 schema / plan / apply / 演练环境准备
+        "rollback-drill.ts",
       ],
     }
     for (const [dir, expected] of Object.entries(EXPECTED)) {
