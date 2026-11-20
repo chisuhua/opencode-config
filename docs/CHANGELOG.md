@@ -10,6 +10,20 @@
 
 ---
 
+> **v2.50 commit 调用形态约束进 prompt（2026-11-20，`ADR-commit-verification-gate` D5⑧）**：
+> 用户反馈「最近有会话里出现 `commit-gate: git commit 必须单独成段 ⇒ 拒绝`」⇒ 核实：**不是插件故障**，是 D5⑧ 的既定 fail-closed 规则在正常工作
+> （门禁当天 07:22 才从 `failed` 恢复 `active` ⇒ agent 在此前两天形成了「commit 后顺手接管道」的惯性）。
+> 但 `prompts/build.md` §输出 只写了门禁的**语义**判据（验证绿 + 暂存区非空 + 写集），**没写「commit 必须单独成段」这条调用形态约束**
+> ⇒ 只读 build.md 的 agent 无从预知 `git commit -m "…" 2>&1 | tail -20` 会被**整条调用**拒 ⇒ 反复撞墙。
+> 处置：**只补 agent 侧处方，不动门禁**（`lib/commit-gate.ts` / `plugins/commit-gate.ts` 一字未改，D5⑧ 口径不放宽）——
+> `prompts/build.md` §输出 新增一条：规则 + 一句话理由（shell 权限整串前缀匹配 ⇒ 其余段搭便车）+ 调用形态处方
+> （add 与 commit 分两次调用 / 后续动作另起调用 / 不靠 `| tail`）+ 解释器包装禁令（D5⑪ 同样拒）+ 三个例外（引号内 `|`、重定向含 `< f`、heredoc 正文是数据）；
+> `tests/config-guards.test.ts` 落点完整性守卫新增 1 条锚点（「单独成段」）⇒ 把这条 prompt 约束钉住，防与门禁口径漂移。
+> 已实测 8 个命令形态（管道 / `&&` / `git -C` / 引号内 `|` / 输出重定向 / 输入重定向 / heredoc / 末位 `;`）全部与实现一致。
+> 审查：oracle（治理面 PASS-WITH-NOTES，notes 全吸收）+ critic（build APPROVE，0 BLOCKER / 0 SHOULD_FIX / 3 NIT，NIT 2 条已吸收）。
+>
+> ---
+>
 > **v2.49 commit 门禁在场性体检（2026-11-20，`ADR-commit-verification-gate` D9②）**：
 > 2026-11-20 实测：`plugins/commit-gate.ts` 在宿主里**加载失败**（`SyntaxError: Export named 'isForceFlagToken' not found`
 > —— 宿主进程自 11-18 00:52 常驻，`lib/push-gate.ts`（16:55）/ `lib/commit-gate.ts`（19:01）的改动**没让进程内模块缓存失效**

@@ -157,6 +157,7 @@ describe("守卫漂移检测：配置 == 规则真源", () => {
     const mad = read(path.join("docs", "MULTI-AGENT-DESIGN.md"))
     const anchors: Array<[string, string, string]> = [
       ["prompts/build.md §输出", build, "由工具层验证门决定"],
+      ["prompts/build.md §输出 commit 调用形态（单独成段）", build, "单独成段"],
       ["prompts/build.md 点名条款", build, "`git commit` 由工具层验证门决定；`git push`"],
       ["prompts/build.md 增强层 commit 契约", build, "commit 由全局规则约束"],
       ["MAD §3.4 标题（纪律对象收窄为 push）", mad, "现仅适用 `git push`"],
