@@ -275,10 +275,20 @@
 - **Rev 3：词值还原会波及全部判定**（命令词定位 / 子命令解析 / 提交形态闭口 / D4 的 `detectForcePush` / D5⑪ 的 `mentionsCommitOrForcePush` —— 五处共用同一 tokenizer）⇒ 改动**必须**配全量回归（`bun test tests/`）+ V18 的变红演练；还原只改**词值**，不改 `quoted` / `leadingQuote` 标记（否则形态闭口的判定依据被动摇）。
 
 **回滚路径（三步，**不可只退一半**）**
-1. `opencode.jsonc`：build shell 的 `git commit*` ⇒ 改回 `ask`；force-push **8 条** deny 移除（Rev 1 + Rev 2 同批，恢复原状）；
-2. `prompts/build.md` §输出 + 点名条款 + 角色表/矩阵 ⇒ 改回「不要主动 commit —— 等用户确认」；`docs/MULTI-AGENT-DESIGN.md` §3.4 / §4.4.1 ⇒ 改回原措辞；
-3. `plugins/commit-gate.ts` / `lib/commit-gate.ts` ⇒ 删除或停用（插件缺席 ⇒ 门禁不存在，与 D9② 一致）。
-   ⚠ **同批停用 doctor**（2026-11-20 补，承 D9② 的检测面）：`lib/commit-gate-doctor.ts` / `scripts/commit-gate-doctor.ts` / `tests/commit-gate-doctor.test.ts` / `tests/commit-gate-plugin.test.ts`，**并同步** `tests/config-guards.test.ts` 的 EXPECTED 清单（新增文件闸门）⇒ 否则回滚后宿主**重载后**、可达环境下**活体例必红**（插件缺失 ⇒ `fail`；⚠ 磁盘删除 ≠ 宿主卸载 ⇒ 未重载的宿主仍可能报 `active`）⇒ V12「三步回滚后 `bun test tests/` 绿」**不可执行**。
+
+> ⚠ **形态约束（2026-11-20 隔离副本演练实测，`.rddf/reviews/commit-gate-rollback-drill.md`）**：
+> 步骤 1 / 2 一律**逐条 / 逐段**改，**不得**用 `git checkout <旧提交> -- <文件>` 整文件还原
+> （会把门禁之后的**无关变更**一起回退：模型清单 / 能力面块 / 技能清单 / `plan-worker` 等 agent ⇒ 实测 11 红）；
+> 且 `opencode.jsonc` 在本仓是**符号链接** ⇒ 还原**链接**静默无效，要改的是目标文件 `opencode.jsonc.opencode-go`。
+
+1. `opencode.jsonc.opencode-go`（**符号链接的目标文件**）：build shell 的 `git commit` / `git commit *` ⇒ 改回 `ask`；force-push **8 条** deny 移除（Rev 1 + Rev 2 同批，恢复原状）。**只改这几行**，不整文件还原。
+2. `prompts/build.md`（§输出 的 commit 两条 ⇒ 旧的「不要主动 commit —— 等用户确认」一条；点名条款；角色矩阵 `builder` 行；rdd-* 增强层 commit 契约）+ `docs/MULTI-AGENT-DESIGN.md`（§3.4 / §2.6 / §4.4.1）⇒ **逐段**改回原措辞。⚠ `MAD §2.8.8`（D9 索引段）**保留** —— 本 ADR 保留 ⇒ 三处登记仍成立。
+3. 删除或停用 **9 件**（缺一件 ⇒ `bun test` 因 import 失败 / 悬空载体而红）：`plugins/commit-gate.ts`、`lib/commit-gate.ts`、`lib/push-gate.ts`（插件 import 它）、`lib/commit-gate-doctor.ts`（承 D9② 的检测面）、`scripts/commit-gate-doctor.ts`、`tests/commit-gate-doctor.test.ts`、`tests/commit-gate-plugin.test.ts`、以及两个**引用 lib 的老单测** `tests/commit-gate.test.ts` / `tests/push-gate.test.ts`。
+   **同批复原守卫期望**（`tests/config-guards.test.ts` —— ⚠ 这一块**横跨三步的回退对象**：它能断言的是步骤 2 的措辞与步骤 1 的档位 ⇒ 随**整批**同改，不是只跟步骤 3 的删文件走）：「新增文件闸门」EXPECTED 移除 3 项（`commit-gate.ts` / `push-gate.ts` / `commit-gate-doctor.ts`）；移除「治理面落点完整性」守卫整块（它断言的正是 build.md / MAD 的门禁措辞）；「`git commit *` ⇒ `allow`」一条改回 `ask`。
+   ⚠ **保留** `tests/commit-gate-d9-registration.test.ts`（= **V10 的机械载体**；本 ADR 保留 ⇒ 三处登记守卫仍成立；删它会让「V10 载体存在」断言红 —— 实测）。
+   ⚠ **保留** `.rddf/commit-gate.json`（本仓门禁声明）：插件退役后 `readDeclaration` 不再被调用 ⇒ **惰性无害**；而 `tests/config-guards.test.ts` 有一条守卫仍断言它**存在**且 `verify_commands` 逐条相等 ⇒ **删它必须同批改那条守卫**（演练 C 的绿**未覆盖**该分支 ⇒ 属未实测路径，本批不纳入）。
+
+**实测（2026-11-20，隔离副本）**：按上面「9 件 + 守卫期望同批 + 保留声明」执行 ⇒ `783 pass / 0 fail` ⇒ **步骤 3 的清单可执行**；⚠ 步骤 1 / 2 的逐条 / 逐段改动**未手工执行** ⇒ **V12 仍未闭合**（状态见 V12）。
 ⚠ **只退一半 ⇒ 复现 v2.44**（`docs/CHANGELOG.md:41-42`）：若只把配置改回 `ask`、而 §输出仍写「commit 由验证门决定」⇒ prompt 与权限层**互相矛盾**，模型信更具体的配置 ⇒ 行为退化成「不 commit」（与原状语义相近，但文档不一致 ⇒ 守卫会红）。
 ⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。
 
@@ -310,6 +320,7 @@
   **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。
 - [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [ ] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。
+  **部分证据（2026-11-20 隔离副本演练，`.rddf/reviews/commit-gate-rollback-drill.md`）**：步骤 3 的**完整清单**（9 件 + 守卫期望同批 + 保留 V10 载体）= 实测 `783 pass / 0 fail`；⚠ 步骤 1 / 2 的**逐条 / 逐段改动未手工执行**（只移除了断言这些措辞的守卫）⇒ **本项保持未勾**。
 - [x] **V13 heredoc 跨行引号 ⇒ 不得漏判**：`bash -c "line1\n<<'EOF'\n" ; git commit -m x` ⇒ **拒**（理由应为「单独成段」/解释器闭口，**不是**「暂存区为空」）。**变红**：退回逐行 `stripHeredocs` ⇒ V13 红。
 - [x] **V14 heredoc 正文仍是数据 ⇒ 不得误拒**：`git commit -F - <<'MSG' … MSG` ⇒ **放行**；标记行尾部保留（`… <<'MSG'` 之后的 `&& …` 仍参与判定）；正文含 `git commit` 且段首 `bash x.sh` ⇒ **不拦**。**变红**：不剥离正文 ⇒ V14 红。
 - [x] **V15 跨行引号合法提交 ⇒ 放行**：`git commit -m "a\nb"` ⇒ 放行；`"bash" -c …`（引号包住的解释器名）⇒ 仍拒。

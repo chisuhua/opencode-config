@@ -11,7 +11,7 @@
 ---
 
 > **v2.53 commit-gate 回滚路径演练（2026-11-20，`ADR-commit-verification-gate` V12）**：
-> critic 第 2 轮指出「回滚路径未含 doctor ⇒ V12『三步回滚后 `bun test tests/` 绿』不可执行」⇒ 在**隔离副本**里做了 6 次实验（绝不在宿主正在加载的 `lib/`/`plugins/` 路径上动手）。
+> critic 第 2 轮指出「回滚路径未含 doctor ⇒ V12『三步回滚后 `bun test tests/` 绿』不可执行」⇒ 在**隔离副本**里做了 7 次实验（A–G）（绝不在宿主正在加载的 `lib/`/`plugins/` 路径上动手）。
 > 结果（全部实测，报告 `.rddf/reviews/commit-gate-rollback-drill.md`）：
 > ① **V12 可达** —— 「删 9 件机制文件 + 同步 EXPECTED 3 项 + 移除落点完整性守卫整块 + **保留** d9-registration 守卫」⇒ **783 pass / 0 fail**；
 > ② **「改回原措辞」不能整文件还原** —— `git checkout <旧提交> -- build.md/MAD/opencode.jsonc` 会把门禁之后的**无关变更**一起回退（实测 11 红，其中 4 条是模型清单 / 能力面块 / 技能清单 / agent 取值）；
