@@ -87,10 +87,10 @@
 - [x] H2 既有口径零回归（`git diff` 复核 + delegate/front 断言绿）
 - [x] H3 ADR 回填：关联 change / AC 映射 / 实施记录（注明 V15 基线 23（+6 ⇒ 29）+ 补 2 条不可机判项）
 - [x] H4 审稿报告补「实施后核验」段
-- [ ] H5 归档前置机械件（verifier verdict == pass + e2e 记录存在）
+- [x] H5 归档前置机械件（verifier verdict == pass + e2e 记录存在）
 
 ## 块 I — 人工 e2e（主会话执行）
 
-- [ ] I1 `opencode debug agents` 列出 `plan-worker` / `mode=subagent`；plan 工具清单含 `subagent`
-- [ ] I2 九探针（六正向 + 三负向）留证 → `.rddf/reviews/plan-multi-session-collaboration-e2e.md`
-- [ ] I3 两 plan 会话抢锁 + 全 done 后释放
+- [x] I1 `opencode debug agents` 列出 `plan-worker` / `mode=subagent`；plan 工具清单含 `subagent`
+- [~] I2 九探针**部分**取证（②④ 有证据；③ 不可取证（无 printenv）；①⑤⑥ 未执行；⑦⑨ 配置级；⑧ 修正为「跨 topic 不被拒」）→ `.rddf/reviews/plan-multi-session-collaboration-e2e.md`
+- [~] I3 **协议级**部分取证（原子 `mkdir` 第二次失败 + `lock` 只读报告）；两真实会话并发未执行
