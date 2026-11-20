@@ -67,7 +67,7 @@
      守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。
      plan.md「与 build 的关键区别」表的能力面陈述若与本块不符 ⇒ AC24 红（**只覆盖那一张表**）。 -->
 <!-- capability:plan
-edit: .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md
+edit: *.rddf/plan-topics/*, *.rddf/state/plan-sessions.json, .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md
 edit-wildcard: ask
 shell: allow-deny
 delegate: yes
@@ -203,6 +203,78 @@ openspec/changes/*/proposal.md
   - ⚠ 与上面的「切换是四步」**不是同一件事**：那四条处理「抢占**运行中**的后端」；这里是「接回**已交回**的后端」。交回后**不需要也不应先 `suspend`**（`state=idle`、槽已释放）。
 - **交回后不接管实施**：只做路由（改计划草案 / 重派 / 问用户），不得自己上手做被交回的那部分。
 
+
+## 多会话协作（plan 侧离线协作）
+
+当任务大到单会话放不下时，**你自己是根会话**：用 `subagent` 派 `plan-worker` 子会话并行推进，自己负责调度与 join。ADR：`docs/adr/ADR-plan-multi-session-collaboration.md`。
+
+#### 目录与单一写者
+
+协作区：`.rddf/plan-topics/<topic-slug>/`（**入 git**）。每文件恰一写者：
+
+| 文件 | 写者 | 内容 |
+|---|---|---|
+| `TOPIC.md` | 父（你） | 目标、边界、全局约束 |
+| `graph.json` | 父（你，唯一） | 节点表（schema 见下） |
+| `nodes/<id>/BRIEF.md` | 父（你） | 该节点的输入契约与期望交付 |
+| `nodes/<id>/TODO.md` | **该子会话** | 勾选式 todo |
+| `nodes/<id>/RESULT.md` | **该子会话** | 结论与交付物（末行 `## STATUS: COMPLETE`） |
+
+`node id` 必须匹配 `^[a-z0-9][a-z0-9._-]{0,63}$`，且**不得**以 `.lock` / `.env` / `.bak` 结尾或以 `backup` 开头（会被 `.gitignore` 误伤）。
+
+#### `graph.json`
+
+```jsonc
+{ "version": 1, "topic": "<slug>", "nodes": [{
+  "id": "a1", "title": "…", "deps": ["a0"], "owner": "parent|child",
+  "status": "pending|blocked_by_deps|done", "progress": "todo|partial|complete",
+  "attempts": [{ "agent": "plan-worker", "started_at": "…", "finished_at": "…",
+                 "precheck": { "at": "…", "exit": 0 }, "baseline": "<sha>" }],
+  "deliverables": ["nodes/a1/RESULT.md"], "brief_sha256": "<可选>"
+}] }
+```
+
+**`progress` 与 `status` 正交（别混）**：
+
+- `progress` = 纯磁盘派生：`TODO.md` 全勾 **且** `RESULT.md` 有实质正文 ⇒ `complete`（零 checkbox ⇒ `todo`）。
+- `status` = 门控有效值：`complete ∧ deps 全 done ∧ deliverables 非空且路径存在` ⇒ `done`；否则 `blocked_by_deps` / `pending`。
+- ⇒ 子**先干完而依赖未完成** ⇒ `progress=complete` / `status=blocked_by_deps`，**这是合法状态**，不是错误。
+- `graph.json` 里的 `status`/`progress` 只是缓存，判据以派生为准；缓存与派生分叉 = 违规。
+
+#### 派发前 / 收尾后都跑 checker
+
+```bash
+bun scripts/plan-topic-check.ts check .rddf/plan-topics/<topic> [--json] [--allow-empty]
+bun scripts/plan-topic-check.ts scope-check .rddf/plan-topics/<topic> <node-id> --baseline <sha>
+bun scripts/plan-topic-check.ts lock .rddf/plan-topics/<topic>
+```
+
+- 退出码：`0` 全绿 / `1` 有违规 / `2` 用法错 / `3` `graph.json` 缺失或不可解析。
+- **派发前**跑 `check`，并把 `{at, exit}` 写进该节点的 `attempts[].precheck`（这是「跳过检查」事后可判的唯一凭据 —— 本期**不建**派发事前闸门）。
+- **收尾后**跑 `check` + `scope-check` 核对子会话有无越界写（`scope-check` 需要基线：派发前 `git rev-parse HEAD^{commit}` 解析出 sha）。
+
+#### fork / join / 续接 / 重建
+
+- **fork**：deps 全 `done` 且 `BRIEF.md` 存在的节点才可派发。同一轮内多次 `subagent(agent="plan-worker", background=true)` ⇒ 并行。
+- **join**：子会话完成时宿主会往你的会话投一条 `<subagent sessionID=… state=completed>` 合成消息 ⇒ 你被唤醒，继续下一波。
+- **续接（resume）**：同一父会话内 `subagent(sessionID=…)` ⇒ 子丢弃自己的上下文继续。**仅限同一父会话**。
+- **重建（rebuild）**：父会话死亡 / 换根会话时宿主**拒绝**续接 ⇒ 只能新派一个子会话，让它读 `BRIEF.md` + `TODO.md` 按 node 重建进度。**不要**承诺「跨会话续接」。
+
+#### 同 topic 独占锁
+
+多根 plan 会话并行时，不同 topic 各写各的；**同一 topic 必须独占**：
+
+- 获取：`mkdir .rddf/state/plan-topics/<slug>.lock`（原子），成功后把 `session id` 写进该目录的 `owner` 文件。
+- 释放：**所有节点 `done` 后** `rmdir` 该锁目录（不写释放 = 默认死锁）。
+- 接管：持有者已死时**须人确认**才可接管，不自动抢占。
+
+#### 运行态绑定
+
+`.rddf/state/plan-sessions.json`（gitignored）：`{ "<session_id>": { topic, node, role, parent_session_id, heartbeat } }`。写入用**原子替换**（临时文件 + rename）。这是 `lock` 子命令三方核对的输入。
+
+#### 子结果只回指针
+
+子会话的最终消息只含「node id + RESULT 路径 + 2–4 行摘要」。**不要**让子把全文复述回来 —— 父上下文会被撑爆。
 
 ## 计划文件输出
 

@@ -81,7 +81,7 @@ export const CLONE_GUARD: Array<[string, string]> = [
  * **相对路径写 CWD** 的绕过在 front 侧仍然成立（`sort * -o*` 要求 `-o` 前有空格）。
  * 把它纳入真源既补上了这个洞，也让 front 与 subagent 的守卫不再各写各的。
  */
-export const GUARDED_AGENTS = ["front", "explore", "oracle", "metis", "critic", "librarian"] as const
+export const GUARDED_AGENTS = ["front", "explore", "oracle", "metis", "critic", "librarian", "plan-worker"] as const
 
 export type GuardedAgent = (typeof GUARDED_AGENTS)[number]
 

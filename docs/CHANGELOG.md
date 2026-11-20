@@ -10,6 +10,18 @@
 
 ---
 
+> **v2.48 plan 侧多会话离线协作（2026-11-20，`ADR-plan-multi-session-collaboration`）**：
+> 新增 `plan-worker`（`mode: subagent`）—— plan 主会话可用 `subagent` 派**并行子会话**推进 `.rddf/plan-topics/<topic>/nodes/<id>/` 的 TODO/RESULT；
+> 新增 `lib/plan-topics.ts` + `scripts/plan-topic-check.ts`（`check` / `scope-check` / `lock` 三子命令，退出码 `0/1/2/3`）作为 fork/join 与派生状态的**机械判据**。
+> 关键语义：`progress`（纯磁盘派生）与 `status`（门控有效值）**正交** —— 子先干完而依赖未完成是**合法状态**（`progress=complete` / `status=blocked_by_deps`），不误报。
+> 关键防提权：**不**把 `plan` 改 `mode: "all"`（否则 build 的 `subagent: allow` 可拉起带 `delegate`/`question` 的 plan 会话 ⇒ 绕过 `plan_ref` 强制与父仲裁）；改为新增窄权限 `plan-worker`：
+> 进 `GUARDED_AGENTS`（shell 三段式只读、首键 deny、白名单**无** `bun`/`node`）、`subagent`/`delegate*`/`question`/`skill`/`lsp`/`external_directory` 全 deny、**无 `ask` 档**（无人值守）。
+> 上游语义 6 条锚点（P1–P6）进 `scripts/check-upstream-anchors.sh`（**运行时 23 → 29**；`grep -c` 只数静态行会漏掉 A7 循环展开）；第 7 条 delegate 单槽属本仓语义，由 delegate 测试覆盖。
+> 同步：`docs/MULTI-AGENT-DESIGN.md`（模型表 + agent 卡片）、`docs/SUBAGENT-ORCHESTRATION.md`（模型表 + 通道）、`.gitignore`（`.rddf/state/plan-sessions.json`）。
+> 测试：`tests/plan-topics.test.ts`（31 例：schema / node id 黑名单 / DAG / progress 与 status 正交 / 缓存分叉 / brief 完整性 / 孤儿 / 空 topic / CLI 退出码 / scope-check fixture 仓 / lock）+ `tests/config-guards.test.ts` 的 AC3–AC9 守卫。
+
+---
+
 > **v2.47 技能清单自动发现（2026-11-19，`scripts/rdd-skills.sh`）**：清单原为**写死的镜像**（28 项），
 > 上游新增 skill 必须手工补一行 —— 2026-11-19 新增 `session-lesson-mining` 时脚本仍报 `28/28`，
 > 新技能**静默缺席**（既不报错，也不进 `missing[]`，因为判定集里根本没有它）。处置：

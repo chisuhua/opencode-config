@@ -1464,7 +1464,7 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
     const EXPECTED: Record<string, string[]> = {
       prompts: [
         "build.md", "plan.md", "front.md", "explore.md", "librarian.md", "oracle.md", "metis.md",
-        "general.md", "critic.md", "context-builder.md",
+        "general.md", "critic.md", "context-builder.md", "plan-worker.md",
       ],
       docs: [
         "MULTI-AGENT-DESIGN.md", "CHANGELOG.md", "SUBAGENT-ORCHESTRATION.md",
@@ -1485,6 +1485,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "commit-gate.ts",
         // v2.47（ADR-commit-verification-gate D4/D9⑧）：force push 的工具层兜底（纯逻辑）
         "push-gate.ts",
+        // ADR-plan-multi-session-collaboration D2：协作 topic 的派生状态 + fork/join 判据
+        "plan-topics.ts",
       ],
     }
     for (const [dir, expected] of Object.entries(EXPECTED)) {
@@ -4301,4 +4303,116 @@ describe("oracle 审查域声明（v2.40）", () => {
    *   可逃逸 ⇒ 靠 review 兜底。升级为语义级检测的成本远超收益（文本守卫的固有粒度，同族其余判据亦然）。
    * - **「判定行以 `判定:` 开头」是文本**：钉规则句存在，不验 oracle 真的按行首匹配（行为层）。
    */
+})
+
+/**
+ * plan 侧多会话协作（ADR-plan-multi-session-collaboration D4 / D5 / D7）
+ *
+ * 覆盖：AC3（plan-worker 形态）/ AC4（可派者集合）/ AC5（GUARDED_AGENTS）/
+ *      AC8（plan edit 顺序）/ AC9（.gitignore 双向 + node id 反向）。
+ * AC6 由「新增文件闸门」的 EXPECTED 覆盖；AC7（capability 块）由 AC23 覆盖。
+ */
+describe("plan 侧多会话协作：plan-worker 与协作区", () => {
+  const agent = config.agent as Record<string, any>
+  const pw = agent["plan-worker"]
+  const planPerm = agent["plan"].permission as Record<string, any>
+
+  test("AC3：plan-worker 形态（mode / edit 恰好一条 / 六 action deny / shell 三段式 / 无 bun node）", () => {
+    expect(pw, "缺少 plan-worker agent").toBeTruthy()
+    expect(pw.mode).toBe("subagent")
+    expect(pw.prompt, "plan-worker 的 prompt 必须指向 {file:./prompts/plan-worker.md}").toBe("{file:./prompts/plan-worker.md}")
+
+    const edit = typeof pw.permission.edit === "string" ? {} : (pw.permission.edit as Record<string, string>)
+    expect(edit["*"], "plan-worker 的 edit 通配必须是 deny").toBe("deny")
+    const allows = Object.entries(edit)
+      .filter(([k, v]) => k !== "*" && v === "allow")
+      .map(([k]) => k)
+    expect(allows.length, `plan-worker 的 edit allow 应恰好 1 条，实际：${allows.join(", ")}`).toBe(1)
+    expect(allows[0]).toContain(".rddf/plan-topics/")
+
+    for (const a of [
+      "subagent", "question", "skill", "lsp", "external_directory",
+      "delegate", "delegate_dispatch", "delegate_sessions", "delegate_suspend", "delegate_cancel",
+    ]) {
+      expect(pw.permission[a], `plan-worker 的 ${a} 应为 deny（无人值守，无 ask 档）`).toBe("deny")
+    }
+
+    const shell = pw.permission.shell as Record<string, string>
+    expect(Object.keys(shell)[0], "plan-worker 的 shell 首键必须是 *").toBe("*")
+    expect(shell["*"]).toBe("deny")
+    for (const g of ["* > *", "tee *", "sort -o*"]) {
+      expect(shell[g], `plan-worker 的 shell 缺守卫 ${g}`).toBe("deny")
+    }
+    const bunAllows = Object.entries(shell).filter(([k, v]) => v === "allow" && /^(bun|node)(\s|$)/.test(k))
+    expect(bunAllows.map(([k]) => k), "plan-worker 的 shell 不得 allow bun/node（checker 只能父会话跑）").toEqual([])
+  })
+
+  test("AC4：可派者集合 == {build, plan}；无 subagent 键的 agent 闭集 == ['title']；plan-worker 自身 deny", () => {
+    const top = (config.permission ?? {}) as Record<string, unknown>
+    expect("subagent" in top, "顶层 permission 出现 subagent 键 ⇒ 本断言前提失效，须同步复核").toBe(false)
+
+    const allows: string[] = []
+    const missing: string[] = []
+    for (const [id, a] of Object.entries(agent)) {
+      const perm = (a as any)?.permission
+      if (!perm || perm.subagent === undefined) {
+        missing.push(id)
+        continue
+      }
+      if (perm.subagent === "allow") allows.push(id)
+    }
+    expect(allows.sort(), "显式 subagent:allow 的 agent 集合只能有 build / plan").toEqual(["build", "plan"])
+    expect(missing.sort(), "无 subagent 键的 agent 闭集（新增无键 agent 必须做一次决定）").toEqual(["title"])
+
+    expect(pw.permission.subagent).toBe("deny")
+    const frontSub = agent.front.permission.subagent as Record<string, string>
+    expect(frontSub["plan-worker"], "front 的 subagent 清单不得含 plan-worker").toBeUndefined()
+  })
+
+  test("AC5：GUARDED_AGENTS 含 plan-worker", () => {
+    expect(GUARDED_AGENTS as readonly string[]).toContain("plan-worker")
+  })
+
+  test("AC8：plan 的 edit 首键 '*'，两条新项在 '*' 之后（last-match-wins）", () => {
+    const edit = planPerm.edit as Record<string, string>
+    expect(Object.keys(edit)[0]).toBe("*")
+    const keys = Object.keys(edit)
+    expect(keys.indexOf("*.rddf/plan-topics/*")).toBeGreaterThan(0)
+    expect(keys.indexOf("*.rddf/state/plan-sessions.json")).toBeGreaterThan(0)
+  })
+
+  test("AC9：.gitignore 双向 + node id 反向（fixture 仓，不触真实仓）", () => {
+    const fixture = mkdtempSync(path.join(tmpdir(), "plan-ignore-"))
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: fixture })
+      writeFileSync(path.join(fixture, ".gitignore"), readFileSync(path.join(import.meta.dir, "..", ".gitignore"), "utf8"))
+      for (const rel of [
+        ".rddf/state/plan-sessions.json",
+        ".rddf/plan-topics/demo/nodes/a1/RESULT.md",
+        ".rddf/plan-topics/demo/nodes/foo.lock/RESULT.md",
+        ".rddf/plan-topics/demo/nodes/x.bak/RESULT.md",
+        ".rddf/plan-topics/demo/nodes/backup1/RESULT.md",
+      ]) {
+        const abs = path.join(fixture, rel)
+        mkdirSync(path.dirname(abs), { recursive: true })
+        writeFileSync(abs, "x")
+      }
+      const checkIgnore = (rel: string): number => {
+        try {
+          execFileSync("git", ["check-ignore", "-q", rel], { cwd: fixture, stdio: "ignore" })
+          return 0
+        } catch (e) {
+          return (e as { status?: number }).status ?? 1
+        }
+      }
+      expect(checkIgnore(".rddf/state/plan-sessions.json"), "运行态绑定必须被 gitignore").toBe(0)
+      expect(checkIgnore(".rddf/plan-topics/demo/nodes/a1/RESULT.md"), "协作产物不得被 gitignore").not.toBe(0)
+      // 黑名单 node id 会被既有 .gitignore 规则误伤 ⇒ 字符集必须排除
+      expect(checkIgnore(".rddf/plan-topics/demo/nodes/foo.lock/RESULT.md"), ".lock 结尾会被 .rddf/**/*.lock 误伤").toBe(0)
+      expect(checkIgnore(".rddf/plan-topics/demo/nodes/x.bak/RESULT.md"), ".bak 结尾会被 *.bak 误伤").toBe(0)
+      expect(checkIgnore(".rddf/plan-topics/demo/nodes/backup1/RESULT.md"), "backup 前缀会被 backup*/ 误伤").toBe(0)
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
 })

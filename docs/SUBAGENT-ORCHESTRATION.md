@@ -19,9 +19,10 @@
 | `front` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 用户交互内核（只读，工程行动经 delegate） | `prompts/front.md` |
 | `explore` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 代码库定位 | `prompts/explore.md` |
 | `librarian` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 外部文档 / 上游源码 | `prompts/librarian.md` |
-| `metis` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 计划前 gap 分析（六节） | `prompts/metis.md` |
+| `metis` | subagent | `opencode-go/deepseek-v4.1-flash` | 计划前 gap 分析（六节） | `prompts/metis.md` |
 | `general` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 杂活兜底（不可再委派） | `prompts/general.md` |
 | `context-builder` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | **critic prompt 机械搬运工**（见「metis 与 context-builder」一节） | `prompts/context-builder.md` |
+| `plan-worker` | subagent | `opencode-go/deepseek-v4.1-flash` | plan 侧离线协作（只推进自己 node 的 TODO/RESULT，不派生） | `prompts/plan-worker.md` |
 | `oracle` | subagent | `kimi-code/kimi-for-coding`（`variant: max`） | 顾问 + 对抗式审查（会怎么坏） | `prompts/oracle.md` |
 | `critic` | subagent | `kimi-code/kimi-for-coding` | 第二审（与既有 ADR / 契约的冲突） | `prompts/critic.md` |
 | `title` | primary(hidden) | `commandcode/deepseek/deepseek-v4.1-flash` | 会话标题生成 | — |
@@ -50,6 +51,17 @@
 | `cancel` | `delegate_cancel` | 终止（**先确认真的停了**才墓碑） |
 
 门控：顶层 `permission` 五项**全 `deny`**；`front` 与 `plan` 在 agent 级各 `allow` 五项。**唯一性指门控边界唯一，不是工具名唯一**（`docs/adr/ADR-front-multi-backend.md` D1 + `ADR-plan-delegate-engineering-session.md` D1）。
+
+### 2.3 plan 侧离线协作（`subagent` 的第二种用法，**不是** delegate 通道）
+
+`plan` 作为根会话可以**并行**派 `plan-worker` 子会话推进离线讨论（ADR `docs/adr/ADR-plan-multi-session-collaboration.md`）：
+
+- **会话树 / 并行 / 完成唤醒 / 续接** 全部是宿主 `subagent` 的内建能力（`parentID` + 完成合成消息 + `sessionID` 续接）⇒ **不新建派发通道**，不占 delegate 的 `workRoot` 单槽。
+- **协作区**：`.rddf/plan-topics/<topic>/`（入 git）—— `TOPIC.md` / `graph.json` / `nodes/<id>/{BRIEF,TODO,RESULT}.md`，**每文件恰一写者**（父写 TOPIC/graph/BRIEF，子写 TODO/RESULT）。
+- **判据**：`bun scripts/plan-topic-check.ts check <topic>`（派生状态 + fork/join：无环 / 悬空 dep / 重复 id / 孤儿 / 缓存分叉 / brief 完整性）+ `scope-check`（越界写，**需基线**）+ `lock`（独占锁只读报告）。
+- **`progress` 与 `status` 正交**：子先干完而依赖未完成是**合法状态**（`progress=complete` / `status=blocked_by_deps`），checker 不得报错。
+- **锁**：`mkdir .rddf/state/plan-topics/<slug>.lock`（原子）+ 全节点 done 后 `rmdir`（不释放 = 默认死锁）；持有者已死时**须人确认**才可接管。
+- **本期不做**：派发**事前**闸门（技术上可行 —— `plugins/subagent-contract.ts` 的 L1 硬门挂在同一钩子上 —— 但属**范围决定**）；每节点精确写域（宿主 `subagent` 不传 permissions ⇒ `edit` 白名单只能到 topic 树粒度）。
 
 ## 3. 审查链与档位
 

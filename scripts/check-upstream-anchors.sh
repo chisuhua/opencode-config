@@ -144,6 +144,33 @@ check "A13b session 域钩子不可失败" "packages/core/src/plugin/hooks.ts" \
   'readonly session: NoFailures' \
   "L2（session.prompt 钩子）只能检测不能拦 ⇒ 不得在此抛错"
 
+# ── P 族：plan 侧多会话协作（ADR-plan-multi-session-collaboration 前置事实 ①–⑥）──────────
+# 依据：该 ADR 的 D3/D4/D6 与「已知不可机判清单」全部押在这些宿主语义上；
+#       上游任一改动会静默击穿降级表述 ⇒ 必须以语义锚点钉住（只写语义，不写行号）。
+check "P1 primary agent 拒绝作 subagent" "packages/core/src/tool/plugin/subagent.ts" \
+  'cannot run as a subagent' \
+  "plan 是 primary ⇒ 子会话不能是 plan 本身（ADR D4 新增 plan-worker 的前提）"
+
+check "P2 建子会话设 parentID" "packages/core/src/tool/plugin/subagent.ts" \
+  'parentID: context\.sessionID' \
+  "父子会话树是宿主内建（ADR D3 不新造派发通道的前提）"
+
+check "P3 完成合成消息投回父会话" "packages/core/src/session/subagent-completion.ts" \
+  'sessions\.synthetic' \
+  "join（子完成唤醒父）是宿主内建能力（ADR D3）"
+
+check "P4 resume 校验 parentID" "packages/core/src/tool/plugin/subagent.ts" \
+  'existing\.parentID !== context\.sessionID' \
+  "续接仅限同一父会话（ADR D6 不承诺跨会话续接的判据）"
+
+check "P5 子会话权限取 agent 自身配置" "packages/core/src/permission.ts" \
+  'merge\(agent\?\.permissions' \
+  "权限是 agent 级静态、不是每会话级 ⇒ 单写者只能到 topic 树粒度（ADR 残留 #1）"
+
+check "P6 Wildcard 的 * 跨斜杠" "packages/core/src/util/wildcard.ts" \
+  'replace\(/\\\*/g, "\.\*"\)' \
+  "edit 白名单是前缀语义 ⇒ .rddf/plan-topics/* 覆盖 nodes/<id>/（ADR D4 / 残留 #1）"
+
 echo "----"
 if [ "$FAIL" -gt 0 ]; then
   echo "RESULT: DRIFT（$FAIL/$N 个锚点不成立）⇒ 重新核对 ADR 的技术前提，勿只改行号"

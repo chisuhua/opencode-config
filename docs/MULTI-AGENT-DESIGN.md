@@ -69,10 +69,11 @@
 | **explore** | subagent | 本地代码搜索 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.1 | 1,000,000† |
 | **librarian** | subagent | 外部文档/依赖调研 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.1 | 1,000,000† |
 | **oracle** | subagent | 架构咨询 | `kimi-code/kimi-for-coding`（`variant: max`） | —（未设） | 1,048,576 |
-| **metis** | subagent | 计划前差距分析 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.3 | 1,000,000† |
+| **metis** | subagent | 计划前差距分析 | `opencode-go/deepseek-v4.1-flash` | 0.3 | 1,000,000† |
 | **general** | subagent | 多面手 fallback | `commandcode/deepseek/deepseek-v4.1-flash` | 0.2 | 1,000,000† |
 | **critic** | subagent | 对抗式审稿 | `kimi-code/kimi-for-coding` | 0.1 | 1,048,576 |
 | **context-builder** | subagent | critic prompt 组装器 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.1 | 1,000,000† |
+| **plan-worker** | subagent | plan 侧离线协作子会话（只推进自己 node 的 TODO/RESULT） | `opencode-go/deepseek-v4.1-flash` | 0.2 | 1,000,000† |
 | **front** | primary | 用户交互内核 / 委托出口 | `minimax-cn/MiniMax-M3.1-Flash` | 0.1 | 1,000,000 |
 | **title** | primary（hidden） | 会话标题/摘要生成 | `commandcode/deepseek/deepseek-v4.1-flash` | —（未设） | 1,000,000† |
 
@@ -256,6 +257,15 @@ openspec/changes/*/proposal.md
 - **调用方式**：**窄条件** —— 只在「**diff 很大**（>200 行 / 跨多文件）**且调用方已想清楚 `intent`**」时用（`prompts/build.md` §三种组装方式 方式 A）；其余走手填 / `scripts/build_critic_prompt.sh` 骨架。`/critic-review` 命令走**脚本骨架**，不是它
 - **不再 `hidden`（v2.18）**：v1.4 设 hidden 是为"不让它出现在用户手选的 agent 列表里"；但它同时被从**父模型的「Available subagents」清单**里滤掉了（`subagent.ts:289-303` 的 `!agent.hidden`）⇒ 实测采纳率仅 12%（310 个 critic prompt 中仅 22 个真的用了它的输出）。v2.18 移除 hidden ⇒ 回到选择面
 - **可见 ≠ 可调**：它在所有持有 `subagent` 工具的 agent 清单里可见（build / plan / front），但 **front 执行期被权限拒绝**（白名单不含它）；**流程上只有 build 有推荐路径**（plan 无 critic 下游，见 §2.2 `plan` 卡片）
+
+#### `plan-worker` —— plan 侧离线协作的子会话（ADR-plan-multi-session-collaboration）
+- **核心 prompt**：`prompts/plan-worker.md`
+- **职责**：只推进父会话分配给自己 node 的 `TODO.md` / `RESULT.md`（`.rddf/plan-topics/<topic>/nodes/<id>/`）；不做别的 node、不改 `TOPIC.md` / `graph.json` / `BRIEF.md`
+- **模型**：`opencode-go/deepseek-v4.1-flash`（轻量；只做局部推进）
+- **权限**：`edit` 仅 `.rddf/plan-topics/*`（`*: deny`）；`shell` 三段式只读（进 `GUARDED_AGENTS`，白名单**无** `bun` / `node` ⇒ checker 只能父会话跑）；`subagent` / `delegate*` / `question` / `skill` / `lsp` / `external_directory` 全 deny；**无 `ask` 档**（无人值守）
+- **关键约束**：最终消息只回「指针 + 摘要」（保护父上下文）；压缩后先读盘；不派生 / 不问用户 / 不派工程
+- **可派者**：只有 `build` 与 `plan` 的 `subagent: "allow"` 能拉起它；`front` 的 map 白名单（5 个只读）不含它；其余 agent 的 `subagent` 全 deny ⇒ 无深度 2 嫁接路径
+- **为什么不是「把 plan 改成 mode:all」**：那会让 build 拉起带 `delegate`/`question` 的 plan 子会话 ⇒ 绕过父篇 `plan_ref` 强制与父仲裁，且允许孙会话
 
 #### `title` —— 会话标题/摘要生成 ⭐v1.4 新增
 - **职责**：opencode 内部为会话生成标题/摘要，调用频率高、单次很短
