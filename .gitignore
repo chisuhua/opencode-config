@@ -34,6 +34,10 @@ skills.disable/
 # 双 session 运行时状态（pair 登记表：活的 session id，非版本化）
 .rddf/state/pair.json
 .rddf/state/role-claims.json
+# 角色租约 / 派发事实台账（append-only 运行态：活的 session id + 绝对路径，非版本化）
+.rddf/state/ledger.jsonl
+# verifier 的**记账落点**（verdict 缓存 / 轮次 / 审计）；产品落点 = `.rddf/reviews/`（那才是入库物）
+.rddf/state/verifier/
 # plan 侧多会话协作的运行态绑定（活的 session id ↔ topic/node，非版本化）
 .rddf/state/plan-sessions.json
 

@@ -118,7 +118,29 @@ async function fetchWithRetry(attempts = 3): Promise<{ reachable: boolean; entri
   return last
 }
 
-const live = await fetchWithRetry()
+/**
+ * ⚠ **可达 ≠ 稳定**：宿主**重载插件**的窗口内，插件列表会**短暂缺项**
+ * ⇒ 「可达但列表里没有 commit-gate」也是**瞬态**，不是「门禁不存在」的真结论。
+ * （2026-11-20 实测：doctor 与套件**并行**跑时曾假红，串行即 PASS；套件内也偶发一次。）
+ * ⇒ 对「缺项」也重试（与「不可达」同理）；连续 N 次仍缺 ⇒ 才判红。
+ *
+ * ⚠ **为什么在测试层重试、而不是改 doctor 的判定**：doctor 的语义是「宿主列表里没有 ⇒ fail」
+ *   （D9② 的严格形态，**不可放松**）⇒ 重试只发生在**取数**环节（同一份列表读三次），
+ *   判定逻辑一字未动。
+ * ⚠ 成本不对称：这条断言在**默认门禁**里 ⇒ 一次假红会把所有提交卡住；漏判（真红被放过）
+ *   的代价只是「这一轮没抓到」，下一轮还会抓。
+ */
+async function fetchStable(attempts = 3): Promise<{ reachable: boolean; entries: PluginEntry[]; error?: string }> {
+  let last = await fetchWithRetry()
+  for (let i = 0; i < attempts; i++) {
+    if (!last.reachable || findLocalPlugin(last.entries)) return last
+    await new Promise((r) => setTimeout(r, 1500))
+    last = await fetchWithRetry()
+  }
+  return last
+}
+
+const live = await fetchStable()
 
 describe("活体：运行中宿主的 commit-gate 插件", () => {
   test.skipIf(!live.reachable)(
