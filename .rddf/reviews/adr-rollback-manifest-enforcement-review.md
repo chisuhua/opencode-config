@@ -98,6 +98,25 @@
 
 ⇒ 同时修正了 `.rddf/rollback/README.md` 的边界判别式：**不是「能力面 vs 内核」，而是「有没有（单一的）回退基线」** —— `plan-delegate` 能做成清单，靠的是「有基线」（那五项放行 2026-11-13 才加），不是「它是能力面」。
 
+## 6b. 增量审查 2（第 3 轮，**用户批准**：2026-11-21）—— M2 指针闭集 + V8 判据形态
+
+**动因**：第二份清单（`model-fallback`）暴露 **M2 指针闭集缺口** —— 该机制**无 ADR**（决策记录 = 验收报告）⇒ 只认 `docs/adr/` ⇒ 它无法合法登记。另在实现期推演中发现 **V8 按提交号比对会自指回归**（回填 `sha` 本身要再提交 ⇒ 永远「晚于」⇒ 永远红）⇒ 判据形态必须写实。
+
+| 轮次 | 结论 | 处置 |
+|---|---|---|
+| oracle（增量 2） | `APPROVE` | ① **M1/M2 不同步的实现陷阱**：M1「ADR 全集」若把 `reviews/` 指针也统计 ⇒ 落地首日恒红 ⇒ M1/V1 补闭集界定（只统计 `docs/adr/` 的 `adr_primary`）；② V8 实现注记（解析后剥顶层 `last_drill` + **深比较**，不做字节比较/正则剥文本）；③ 否掉「V8 只比 `delete`/`edits`」（漏 `verify`、前向兼容性差）；④ 否掉「`adr_primary` 在初始提交即存在」（机制年龄 ≠ ADR 年龄）；⑤ 建议 U8 加「report basename == mechanism」弱判据 —— **主会话判定不做**（`commit-gate` 的决策记录叫 `commit-verification-gate-review.md` ≠ mechanism 名 ⇒ 会假红） |
+| critic（增量 2，第 3 轮） | **REJECT**（1 BLOCKER + 2 SHOULD_FIX + 2 NIT） | **BLOCKER**：V2 仍写「在 `docs/adr/` 内」⇒ 与放宽后的 M2 **自相矛盾**（文档内对同一闭集两套判据）⇒ V2 对齐 M2 + 补 reviews 指针变红演练；SHOULD_FIX：登记**触发器**本身无机器信号（如实登记为评审面，与 U6 同类）+ NIT：M1/V1 口径收窄到 `adr_primary`、V8 格式化噪声记账 |
+| critic（复审，验 BLOCKER 闭合） | `APPROVE_WITH_CONDITIONS`（1 SHOULD_FIX） | BLOCKER **已真正闭合**（全文无旧闭集残留）；SHOULD_FIX：新增的「格式化会红」代价条目与 V8 的「解析 + 深比较 ⇒ 防 key 序/缩进假红」**自相矛盾** ⇒ 收窄为「残余噪声只有数组元素重排与字符串内换行」 |
+
+**本轮的净结论**：M2 = 决策记录闭集（`docs/adr/` ∪ `.rddf/reviews/*-verify.md`）；M1 = 只管 `docs/adr/` 的 `adr_primary` 集合相等；M2 + U8 = 管指针闭集与 reviews 指针的语义相关性（评审面）；V8 = 按内容比对（剥 `last_drill`）+ 深比较。
+
+## 8. 实施期实测（第二条）：**机制 ⇒ ADR 并不成立**
+
+- `model-fallback` **没有 ADR** —— 其验收报告 `.rddf/reviews/model-fallback-verify.md` 自述「本仓库无 ADR（§arch-docs 判定态 3）」，决策记录 = 该报告（2026-11-06 architect 设计 + 用户选定的 D 方案 + 11 条判据）。
+- ⇒ 清单的 `adr` 字段允许指向**验收报告**；⇒ L2 的 M2 指针闭集必须包含 `.rddf/reviews/*-verify.md`（第 3 轮增量已改）。
+- ⚠ **该路径的机器覆盖从「登记那一刻」才开始** ⇒ **「这个无 ADR 的机制该不该进 registry」这个触发器本身仍无机器信号** ⇒ 归评审（与 U6 同类）。
+- ⇒ `.rddf/rollback/README.md` 已登记该发现（「机制 ⇒ ADR **并不成立**」段）。
+
 ## 6. 本报告的边界
 
 - 本报告是**誊写**：审查者（metis / oracle / critic）的原文不在本文件内，只保留**结论与逐条处置**；过程细节以各轮 subagent 输出为准（不进决策文档，符合「正文三层分离」）。
