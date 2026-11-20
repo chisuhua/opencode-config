@@ -65,7 +65,7 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 
 ## 「骨架机制」怎么退役（plan-delegate 的实测结论）
 
-`plan-delegate` 是第一个**触到骨架**的清单。它退役的是 **plan 这一派发主体**（能力面），不是 delegate 子系统本身：
+`plan-delegate` 是第一个**触到骨架**的清单 —— 但它能做，靠的是「**有回退基线**」（plan 的五项 delegate 放行是 2026-11-13 才加的），不是「它是能力面」。
 
 - **能做**：配置关闸（撤 plan 的五项 delegate 放行）+ 代码回退一处（`sessions` 的 owner 过滤）+ 退役 prompt 的**发起侧**教学（通道 / 选类表 / 派发参数 / 硬规则）+ **20 余处守卫从「两个主体」收窄为「一个」**。
 - **不能做（不属清单能力范围）**：退役**内核**（D2 `plan_ref` / D5 `owner_agent` / D7 优先级 / `role_class`）—— 那要连带回退四个其它 ADR 的增量（≈11k 行代码与测试）⇒ 是**重构**，不是清单。
@@ -82,11 +82,19 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 
 ## 哪些机制适合做清单（边界）
 
-清单擅长**增量机制**：一组自包含文件 + 可逐段回退的措辞投影。
+**真正的判别式不是「能力面 vs 内核」，而是「有没有回退基线」**：
 
-**触到骨架的机制**要分两层看（`plan-delegate` 是第一个实测样本）：
+| 机制类型 | 可做清单？ | 为什么 | 实测样本 |
+|---|---|---|---|
+| **后加机制**（有「引入之前」的状态可回退） | ✅ | 回退目标是一个**真实存在过**的状态 ⇒ 逐段 `find/replace` 即可到达 | `commit-gate` / `plan-topics` / `plan-delegate` |
+| **原生机制**（自初始提交就在） | ❌ | **没有回退目标** ⇒ 所谓「退役」= 从零设计一个没有它的状态 = **重写** ⇒ 需 ADR + change，不是清单 | `role-gate`（见下） |
 
-- **能力面退役**（可做）：撤配置放行 + 回退一两处代码 + 退役 prompt 教学 + **把守卫从「两个主体」收窄为「一个」**。`plan-delegate` 就是这样做的（37 条 edits）⇒ 仓库仍自洽，退役后 plan 无工程出口、派发唯一出口是 front。
-- **内核退役**（不属清单范围）：把 delegate / role-gate 的**实现**删掉 —— `role-gate`（`lib/role-*` 1198 行 + 9 个测试文件 + `prompts/build.md` 的整个角色矩阵）与 `delegate`（`lib/delegate-*` 5261 行 + 约 5900 行测试 + 13 份文档）⇒ 它们的退役不是「删文件 + 改措辞」，而是**代码级回退**（例：撤回 `sessions` 的 owner 过滤会连带改 `lib/delegate-core.ts` 的多处判定并使大批用例失去断言对象）⇒ 属重构。
+**原生机制的实测数据（2026-11-20，隔离副本）**：
+- `## 角色矩阵` 段在 `prompts/build.md` 里 **608 行**、97 处 `role` 提及；删掉它 ⇒ **39 处红**（而 `plan-delegate` 的「三步」只有 4 处红）。
+- `git log --diff-filter=A -- prompts/build.md` ⇒ 最早版本 = **`132f389`（初始提交）** ⇒ 角色系统**没有「之前」**；`auto_switch_window` / 授权窗口同样自 `132f389` 起就在。
+- 删掉后会留**悬空引用**：`## 输出`、`§HANDOFF`、`§越权处理` 都 `⇒ 按 §需要用户裁决时 …`，而该节在角色段内 ⇒ 必须**重写**这些引用，不是删掉就完。
+- `role_class` 增量同样不可清单化：跨 **19 个文件**（`lib/delegate-core.ts` 64 处、`tests/delegate-core.test.ts` 58 处）；其 ADR 的回滚口径是「**停传** `role_class`」（**运行期用法**），不是代码/文档回退。
+
+⇒ **结论**：清单适合**后加机制**（能指出「退回到哪天」）；**原生机制**的退役是一次**产品形态变更**，必须走 ADR + change。
 
 ⚠ **清单之间会耦合**：每个清单只对**它写就时的树**有效；在真实仓执行过一次回滚后，其它清单可能因措辞已变而失效（`tests/rollback-manifests.test.ts` 会立刻红）。回滚是**单向**操作。
