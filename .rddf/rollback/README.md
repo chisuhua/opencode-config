@@ -47,6 +47,14 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 
 **drill 基于 HEAD**：`git clone` 只含**已提交**内容 ⇒ 未提交改动不参与。改完清单要**先提交**再跑，否则测的是旧 HEAD。
 
+## 与默认套件的关系（零成本漂移守卫）
+
+`bun test tests/` 里有一条 `tests/rollback-manifests.test.ts`：用**同一个判据**（`planDrill`）在**当前工作树**上做内存校验（毫秒级、零写盘）—— `delete` 目标存在 / `find` 恰好 1 次 / 无路径重叠 / `mechanism` 与文件名一致 / `adr` 存在 / `verify` 非空。
+
+⇒ 任何改动让某条清单漂移，**本次 `bun test` 立刻红**，不必等有人想起来跑 drill。
+
+⚠ 它在 drill 的副本里**跳过**（`ROLLBACK_DRILL_CHILD=1`）：副本正是「清单已执行完」的状态，`find` 必然不再匹配 ⇒ 在那里跑会恒红。**真演练**（clone + 跑验证命令，≈30s/清单）仍按需手动执行 —— 本守卫证明「清单**现在**可执行」，drill 证明「执行后**仓库仍自洽**」，两者不能互替。
+
 ## 现有清单
 
 | 清单 | 机制 | 规模 | 实测 |
