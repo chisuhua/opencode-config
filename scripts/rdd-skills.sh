@@ -39,7 +39,11 @@ set -uo pipefail
 # （guide skill 已归档，见 rdd-workflow ADR-0063）；2026-11-20 移除 `execute`
 # （execute skill 已归档，见 rdd-workflow 的 openspec change `retire-execute-skill`；
 #  与 guide 退役同型 —— 归档到 docs/legacy/；execute 无对应 CLI，其能力由
-#  执行该 change 的 agent 承担）。
+#  执行该 change 的 agent 承担）；2026-11-20 移除 `status`（status skill 已归档
+#  到 docs/legacy/skills/status/，见 rdd-workflow 的 openspec change
+#  `retire-status-skill`；与 guide/execute 退役同型 —— 其能力由 `rddf status`
+#  CLI 承担，增强层探测不受影响）。移除时已核对本清单其余 26 项与上游
+#  `package.json::skills[]` 逐一一致。
 RDD_SKILLS_BUILTIN=(
   add-improve
   contract-check
@@ -65,7 +69,6 @@ RDD_SKILLS_BUILTIN=(
   roadmap
   session-lesson-mining
   spoke-system-prompt-injection
-  status
   sync-hub
   watch-hub
 )
