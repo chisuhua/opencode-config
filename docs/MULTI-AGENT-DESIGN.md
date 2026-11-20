@@ -37,7 +37,7 @@
 
 **"Specialist > Generalist"** —— 每个 agent 在自己的领域内最大化深度，跨领域任务通过委派完成。
 
-- **少而精**：10 个 agent（3 primary：build / plan / title + 7 subagent），每个有明确边界
+- **少而精**：12 个 agent（4 primary：build / front / plan / title + 8 subagent：explore / librarian / oracle / metis / general / critic / context-builder / plan-worker），每个有明确边界
 - **单职责**：每个 agent 的 prompt 中明确"什么是我做的、什么不是"
 - **可验证**：所有 agent 配置 schema 合规（v2 归一化 0 错误 0 警告，`opencode debug config` 可复核）
 - **可演进**：所有 prompt 走 file 引用，修改 prompt 不动 JSON

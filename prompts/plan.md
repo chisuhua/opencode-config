@@ -245,6 +245,7 @@ openspec/changes/*/proposal.md
 
 ```bash
 bun scripts/plan-topic-check.ts check .rddf/plan-topics/<topic> [--json] [--allow-empty]
+bun scripts/plan-topic-check.ts ready .rddf/plan-topics/<topic> [--json]      # 可派发节点（deps 全 done + BRIEF 存在）
 bun scripts/plan-topic-check.ts scope-check .rddf/plan-topics/<topic> <node-id> --baseline <sha>
 bun scripts/plan-topic-check.ts lock .rddf/plan-topics/<topic>
 ```
@@ -255,7 +256,7 @@ bun scripts/plan-topic-check.ts lock .rddf/plan-topics/<topic>
 
 #### fork / join / 续接 / 重建
 
-- **fork**：deps 全 `done` 且 `BRIEF.md` 存在的节点才可派发。同一轮内多次 `subagent(agent="plan-worker", background=true)` ⇒ 并行。
+- **fork**：先跑 `ready` 拿可派节点（deps 全 `done` + `BRIEF.md` 存在 + 自身非 done），再同一轮内多次 `subagent(agent="plan-worker", background=true)` ⇒ 并行。**不要**自己猜依赖是否满足。
 - **join**：子会话完成时宿主会往你的会话投一条 `<subagent sessionID=… state=completed>` 合成消息 ⇒ 你被唤醒，继续下一波。
 - **续接（resume）**：同一父会话内 `subagent(sessionID=…)` ⇒ 子丢弃自己的上下文继续。**仅限同一父会话**。
 - **重建（rebuild）**：父会话死亡 / 换根会话时宿主**拒绝**续接 ⇒ 只能新派一个子会话，让它读 `BRIEF.md` + `TODO.md` 按 node 重建进度。**不要**承诺「跨会话续接」。

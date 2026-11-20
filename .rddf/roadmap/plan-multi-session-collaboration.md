@@ -2,7 +2,7 @@
 
 > 决策：`docs/adr/ADR-plan-multi-session-collaboration.md`（**Accepted** 2026-11-20；oracle `治理面判定: PASS-WITH-NOTES` → critic `APPROVE` / `mergeable: yes`，无 BLOCKER / 无 SHOULD_FIX）
 > 审稿报告：`.rddf/reviews/adr-plan-multi-session-collaboration-review.md`
-> 关联 change：待立项（`backlog: plan-multi-session-collaboration`）⇒ 立项后回填本行与 ADR 的「关联 change」/「AC 映射」两行
+> 关联 change：**已立项并归档** —— `openspec/changes/archive/2026-11-20-plan-multi-session-collaboration/`；验收报告 `.rddf/reviews/plan-multi-session-collaboration-verify.md`（verdict=pass，第 2 轮）
 > 本文件是 **builder 的输入**：canonical 的 `.rddf/plans/plan-multi-session-collaboration.md`（TDD 5 步）与 `openspec/changes/plan-multi-session-collaboration/{proposal.md,design.md,tasks.md}` 由 **builder** 生成（工件归属：`rdd-workflow-writing-plans` / `rdd-builder` owns）。本文件**不替代**它们。
 > ⚠ **本路径未启用 `add-improve` / `rdd-planner`**：`rdd-planner` 前置（`.rddf/state/.arch-handoff.json`）不存在；`add-improve` 的 HARD-GATE（YAML frontmatter + 7 段 + `**主题**` 精确匹配 `.rddf/roadmap.md` 的 Phase Skeleton Theme 列）与本仓形态（24 个 improvement 全 5 段无 frontmatter、且**无** `.rddf/roadmap.md`）**不可兼容** ⇒ 走**内置流程**。
 > 修订记录：**第 2 版** —— 按 metis gap 分析（1 轮，planner 固定审查配对）修订：① `done` 语义拆成 `progress` / `status` 两字段（原 A5/A9/A10 互相矛盾，会建出误报 checker）；② 补 `graph.json` schema；③ 锚点数以脚本自报为准（运行时基线 23：静态 16 行 + A7 循环展开）；④ V02b 改派生有效值 + 无键 agent 闭集；⑤ scope-check 改 fixture 仓 + 基线；⑥ 锁补释放、`plan-sessions.json` 补消费者；⑦ e2e 补负向探针与证据结构判据；⑧ 归档前置补机械件。

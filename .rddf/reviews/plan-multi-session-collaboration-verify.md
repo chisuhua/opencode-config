@@ -97,3 +97,32 @@ AC18 要求 `.rddf/state/verifier/plan-multi-session-collaboration.json` 的 ver
 **环境噪音（已复位，非本次变更）**：复审期间 `opencode run` 的 model-fallback 改写配置（explore / librarian / general / title 的 model），已 `git checkout -- opencode.jsonc.opencode-go` 恢复到已提交状态；重跑全绿。
 
 **结论：`pass`**（已用轮次 2 / 3）。AC18 满足 ⇒ 允许 `openspec archive`。
+
+---
+
+## 7. 归档后债务清理（第 3 轮，2026-11-20）
+
+用户要求「还有遗漏/债务吗」⇒ 全量盘点后**已修**：
+
+| # | 债务 | 类型 | 处置 |
+|---|---|---|---|
+| 1 | `checkTopic` 对**非法 node id** 仍做磁盘派生（`nodes/../evil/TODO.md` 可读到 topic 外） | **真缺陷（安全/正确性）** | 派生类检查改用「只含合法 id」的图；新增测试「非法 id 不产 cache_mismatch」 |
+| 2 | `dispatchableNodes` 是**死导出**（tasks 声称的 `assertDispatchable` 未接任何入口） | 半截实现 | 接 CLI `ready <topic>` 子命令 —— D2 判据 2（deps 未全 done 不得派发）有了机械载体；新增 3 例测试 |
+| 3 | `scope-check` 的 `before` 过滤**恒真**（多一次 `git ls-tree` 且误导读者） | 死逻辑 | 删除，`changed = diff ∪ untracked` |
+| 4 | `graph.json` 的 `attempts` 元素**不校验结构** | schema 过松 | 加 `agent` / `started_at` 必填校验 + 3 例负向测试 |
+| 5 | `lock` 的 `sessions[owner ?? ""]` | 小边界 | 改为 `owner && …` |
+| 6 | 测试文件末尾 `import` + 冗余 `writeNode(tmpTopic(), id)` | 代码卫生 | import 移顶部；删冗余 |
+| 7 | `docs/MULTI-AGENT-DESIGN.md` 写「10 个 agent」（实际 12） | 既有文档漂移 | 改为 12（4 primary + 8 subagent） |
+| 8 | roadmap 的「关联 change：待立项」 | 归档后漂移 | 改为已归档路径 |
+
+**登记为债务、本轮不修**（写明理由，交用户决定）：
+
+| # | 项 | 为什么不修 |
+|---|---|---|
+| 1 | `.rddf/state/plan-sessions.json` **无写入脚本** | 父会话可用 `edit` 写（`plan` 的 edit 白名单已放行该文件）；补脚本需定义原子写的触发点，属新功能 |
+| 2 | `prompts/plan.md` 与 `prompts/plan-worker.md` 的**共同纪律段重复**（ADR 残留 #3） | 需先定「共同段」的抽取规则，否则守卫会误伤措辞差异 |
+| 3 | `countCheckboxes` 对**缩进 fenced code**（`  ``` `）不剥离 | 边界极窄（TODO.md 惯例顶格），且可用 `isNonEmptyResult` 兜底 |
+| 4 | `.rddf/plan-topics/e2e-probe/graph.json` 缓存故意过期 | 作为 e2e 证据（证明 checker 抓分叉）；可随时删 |
+| 5 | `.rddf/state/ledger.jsonl` 未被 gitignore | **范围外既有缺口**，只记录不清理 |
+
+**清理后回归**：`bun test tests/` → **972 pass / 0 fail**（27 文件 / 4158 断言）；`check-upstream-anchors.sh` → `RESULT: OK（29/29）`；`agent-guard-gen --check` 无漂移。

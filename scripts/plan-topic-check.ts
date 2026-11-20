@@ -16,7 +16,7 @@
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
-import { PlanTopicError, checkTopic, loadGraph, type Violation } from "../lib/plan-topics.ts"
+import { PlanTopicError, checkTopic, dispatchableNodes, loadGraph, type Violation } from "../lib/plan-topics.ts"
 
 interface Options {
   json: boolean
@@ -30,6 +30,7 @@ function usage(msg: string): never {
   process.stderr.write(
     [
       "plan-topic-check check <topic-dir> [--json] [--allow-empty]",
+      "plan-topic-check ready <topic-dir> [--json]",
       "plan-topic-check scope-check <topic-dir> <node-id> --baseline <ref|sha> [--json]",
       "plan-topic-check lock <topic-dir> [--json]",
     ].join("\n") + "\n",
@@ -117,21 +118,14 @@ function cmdScopeCheck(opts: Options): number {
 
   let changed: string[]
   try {
-    const baselinePaths = git(root, ["ls-tree", "-r", "--name-only", "--full-tree", opts.baseline!])
-      .split("\n")
-      .filter(Boolean)
-    // 当前工作树相对基线改动（已跟踪，路径相对 root）
+    // 「变更」= 相对基线有差异的已跟踪文件 + 全部未跟踪文件（`git diff` 不含未跟踪）
     const diffPaths = git(root, ["diff", "--name-only", opts.baseline!])
       .split("\n")
       .filter(Boolean)
-    // 未跟踪文件（git diff 看不到）
     const untracked = git(root, ["ls-files", "--others", "--exclude-standard"])
       .split("\n")
       .filter(Boolean)
-    const before = new Set(baselinePaths)
-    // 「变更」= 相对基线有差异的已跟踪文件 + 全部未跟踪文件
-    const after = new Set([...diffPaths, ...untracked])
-    changed = [...after].filter((p) => !before.has(p) || diffPaths.includes(p))
+    changed = [...new Set([...diffPaths, ...untracked])]
   } catch (e) {
     return emitViolations(opts, [
       { code: "git_error", detail: `git diff/ls-files 失败（基线 ${opts.baseline}）：${(e as Error).message.trim()}` },
@@ -151,8 +145,31 @@ function cmdScopeCheck(opts: Options): number {
   return emitViolations(opts, violations)
 }
 
-// ── lock ─────────────────────────────────────────────────────────────────────
+// ── ready ────────────────────────────────────────────────────────────────────
 
+/** D2 判据 2 的机械载体：列出当前可派发的节点（deps 全 done + BRIEF 存在 + 自身非 done） */
+function cmdReady(opts: Options): number {
+  const [topicDir] = opts.positional
+  if (!topicDir) usage("ready 需要 <topic-dir>")
+
+  let ready: string[]
+  try {
+    const g = loadGraph(topicDir)
+    ready = dispatchableNodes(g, topicDir)
+  } catch (e) {
+    if (e instanceof PlanTopicError) {
+      process.stderr.write(`${e.code}: ${e.message}\n`)
+      return 3
+    }
+    throw e
+  }
+  if (opts.json) emitJson({ ready })
+  else if (ready.length === 0) process.stdout.write("无可派发节点\n")
+  else process.stdout.write(ready.join("\n") + "\n")
+  return 0
+}
+
+// ── lock ─────────────────────────────────────────────────────────────────────
 function cmdLock(opts: Options): number {
   const [topicDir] = opts.positional
   if (!topicDir) usage("lock 需要 <topic-dir>")
@@ -171,10 +188,10 @@ function cmdLock(opts: Options): number {
   const present = existsSync(lockDir)
   const owner = present && existsSync(ownerFile) ? readFileSync(ownerFile, "utf8").trim() : null
   let binding: unknown = null
-  if (existsSync(sessionsFile)) {
+  if (owner && existsSync(sessionsFile)) {
     try {
       const sessions = JSON.parse(readFileSync(sessionsFile, "utf8")) as Record<string, unknown>
-      binding = sessions[owner ?? ""] ?? null
+      binding = sessions[owner] ?? null
     } catch {
       binding = { error: "plan-sessions.json 不可解析" }
     }
@@ -195,6 +212,8 @@ function main(): number {
   switch (cmd) {
     case "check":
       return cmdCheck(opts)
+    case "ready":
+      return cmdReady(opts)
     case "scope-check":
       return cmdScopeCheck(opts)
     case "lock":

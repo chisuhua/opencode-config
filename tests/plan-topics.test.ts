@@ -3,7 +3,7 @@
  *
  * 运行：bun test tests/
  */
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { execFileSync, spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -111,6 +111,10 @@ describe("graph.json schema（不可解析 ⇒ exit 3）", () => {
       { version: 1, topic: "t", nodes: [node({ deliverables: "x" as any })] },
       { version: 1, topic: "t", nodes: [node({ deps: "x" as any })] },
       { version: 1, topic: "t", nodes: [node({ attempts: "x" as any })] },
+      // attempts 元素结构（D5：agent / started_at 必填）
+      { version: 1, topic: "t", nodes: [node({ attempts: [{ agent: 1 } as any] })] },
+      { version: 1, topic: "t", nodes: [node({ attempts: [{ started_at: "x" } as any] })] },
+      { version: 1, topic: "t", nodes: [node({ attempts: ["x" as any] })] },
     ]
     for (const g of cases) {
       expect(() => parseGraph(JSON.stringify(g))).toThrow(PlanTopicError)
@@ -136,7 +140,6 @@ describe("graph.json schema（不可解析 ⇒ exit 3）", () => {
 describe("node id 合法性", () => {
   test("合法 id", () => {
     for (const id of ["a1", "node-1", "x.y", "a_b", "a".repeat(64)]) {
-      writeNode(tmpTopic(), id) // 仅为占位，真正断言在 assertValidNodeId
       expect(() => assertValidNodeId(id)).not.toThrow()
     }
   })
@@ -395,6 +398,50 @@ describe("CLI 退出码与 --json", () => {
   })
 })
 
+// ── ready（D2 判据 2 的载体）────────────────────────────────────────────────
+
+describe("ready：可派发节点", () => {
+  test("deps 未完成不列出；deps 全 done + BRIEF 存在才列出", () => {
+    const d = tmpTopic()
+    writeNode(d, "a0", { brief: "# b\n" })
+    writeNode(d, "a1", { brief: "# b\n" })
+    writeGraph(d, [node({ id: "a0" }), node({ id: "a1", deps: ["a0"] })])
+    let r = cli(["ready", d, "--json"])
+    expect(r.status).toBe(0)
+    expect(JSON.parse(r.stdout).ready).toEqual(["a0"])
+
+    writeNode(d, "a0", { brief: "# b\n", todo: "- [x] a\n", result: "done\n" })
+    makeDeliverable(d, "nodes/a0/RESULT.md")
+    writeGraph(d, [
+      node({ id: "a0", status: "done", progress: "complete", deliverables: ["nodes/a0/RESULT.md"] }),
+      node({ id: "a1", deps: ["a0"] }),
+    ])
+    r = cli(["ready", d, "--json"])
+    expect(JSON.parse(r.stdout).ready).toEqual(["a1"])
+  })
+
+  test("无 BRIEF 的节点不可派发", () => {
+    const d = tmpTopic()
+    writeGraph(d, [node({ id: "a1" })])
+    mkdirSync(path.join(d, "nodes", "a1"), { recursive: true })
+    const r = cli(["ready", d, "--json"])
+    expect(JSON.parse(r.stdout).ready).toEqual([])
+  })
+})
+
+// ── 非法 id 的安全边界 ──────────────────────────────────────────────────────
+
+describe("非法 node id 不触发磁盘派生（不读 topic 外文件）", () => {
+  test("缓存写成 complete 但 id 非法 ⇒ 只报 invalid_node_id，不报 cache_mismatch", () => {
+    const d = tmpTopic()
+    // 若派生被跑：d/nodes/../evil/TODO.md 读不到 ⇒ todo ≠ complete ⇒ cache_mismatch
+    writeGraph(d, [node({ id: "../evil", progress: "complete", status: "done" })])
+    const c = codes(d)
+    expect(c).toContain("invalid_node_id")
+    expect(c).not.toContain("cache_mismatch")
+  })
+})
+
 // ── B scope-check（fixture 仓）──────────────────────────────────────────────
 
 function makeGitRepo(): string {
@@ -479,7 +526,6 @@ describe("lock 子命令（只读）", () => {
 
 // ── cleanup ─────────────────────────────────────────────────────────────────
 
-import { afterAll } from "bun:test"
 afterAll(() => {
   for (const d of tmpDirs) {
     try {

@@ -158,6 +158,17 @@ export function assertSchema(g: unknown): asserts g is Graph {
     if (!Array.isArray(node.attempts)) {
       throw new PlanTopicError("schema_invalid", `${where}.attempts 必须是数组`)
     }
+    for (const [j, a] of (node.attempts as unknown[]).entries()) {
+      if (typeof a !== "object" || a === null || Array.isArray(a)) {
+        throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}] 必须是对象`)
+      }
+      const att = a as Record<string, unknown>
+      if (typeof att.agent !== "string") throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].agent 必须是字符串`)
+      if (typeof att.started_at !== "string") throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].started_at 必须是字符串`)
+      if (att.finished_at !== undefined && typeof att.finished_at !== "string") {
+        throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].finished_at 必须是字符串（可选）`)
+      }
+    }
     if (!Array.isArray(node.deliverables) || node.deliverables.some((d) => typeof d !== "string")) {
       throw new PlanTopicError("schema_invalid", `${where}.deliverables 必须是字符串数组`)
     }
@@ -402,10 +413,18 @@ export function missingDeliverables(g: Graph, topicDir: string): Violation[] {
   return out
 }
 
-/** 节点是否可派发：deps 全 done ∧ BRIEF.md 存在 */
+/** 节点是否可派发：deps 全 done ∧ BRIEF.md 存在 ∧ 自身非 done（非法 id 一律排除） */
 export function dispatchableNodes(g: Graph, topicDir: string): string[] {
-  const status = deriveStatus(g, topicDir)
-  return g.nodes
+  const nodes = g.nodes.filter((n) => {
+    try {
+      assertValidNodeId(n.id)
+      return true
+    } catch {
+      return false
+    }
+  })
+  const status = deriveStatus({ ...g, nodes }, topicDir)
+  return nodes
     .filter((n) => n.deps.every((d) => status.get(d) === "done"))
     .filter((n) => existsSync(path.join(topicDir, "nodes", n.id, "BRIEF.md")))
     .filter((n) => status.get(n.id) !== "done")
@@ -458,10 +477,23 @@ export function checkTopic(topicDir: string, opts: { allowEmpty?: boolean } = {}
     else throw e
   }
 
-  out.push(...assertCacheConsistent(g, topicDir))
-  out.push(...assertBriefIntegrity(g, topicDir))
-  out.push(...assertNoOrphanNodes(g, topicDir))
-  out.push(...missingDeliverables(g, topicDir))
+  // ⚠ **只对合法 id 的节点做磁盘派生**：非法 id（`..` / 含 `/` / 黑名单）拼出的路径可能逃出 topic 根
+  //   ⇒ 若用它拼 `nodes/<id>/TODO.md`，会把 topic 外的文件读进判定。
+  const safeNodes: Node[] = []
+  for (const n of g.nodes) {
+    try {
+      assertValidNodeId(n.id)
+      safeNodes.push(n)
+    } catch {
+      /* 已在上面收集为 invalid_node_id */
+    }
+  }
+  const safeGraph: Graph = { version: g.version, topic: g.topic, nodes: safeNodes }
+
+  out.push(...assertCacheConsistent(safeGraph, topicDir))
+  out.push(...assertBriefIntegrity(safeGraph, topicDir))
+  out.push(...assertNoOrphanNodes(safeGraph, topicDir))
+  out.push(...missingDeliverables(safeGraph, topicDir))
 
   return out
 }
