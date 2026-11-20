@@ -166,7 +166,7 @@ describe("守卫漂移检测：配置 == 规则真源", () => {
       ["MAD §2.8.7 D5②（部分闭合）", mad, "已由 `docs/adr/ADR-commit-verification-gate.md` D5 部分闭合"],
       ["MAD §4.4.1（commit 段退役 + force-push deny）", mad, "`git commit` 段已退役"],
       ["MAD §4.4.1（门禁在场性体检）", mad, "在场性"],
-      ["ADR D9②（门禁在场性检测面）", read(path.join("docs", "adr", "ADR-commit-verification-gate.md")), "commit-gate-doctor.ts"],
+      ["ADR D9②（门禁在场性检测面）", read(path.join("docs", "adr", "ADR-commit-verification-gate.md")), "**检测面**（2026-11-20 补）"],
       ["MAD §4.4.3（前缀匹配 ⇒ 全部形态）", mad, "force-push `deny` 必须列全**D4 定义的全部形态**"],
       ["MAD 版本摘要", mad, "2026-11-18 变更"],
       ["lib/delegate-core.ts 后端 brief", read(path.join("lib", "delegate-core.ts")), "`git commit` 由工具层验证门决定"],

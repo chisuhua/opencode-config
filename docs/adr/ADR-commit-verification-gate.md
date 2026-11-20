@@ -278,6 +278,7 @@
 1. `opencode.jsonc`：build shell 的 `git commit*` ⇒ 改回 `ask`；force-push **8 条** deny 移除（Rev 1 + Rev 2 同批，恢复原状）；
 2. `prompts/build.md` §输出 + 点名条款 + 角色表/矩阵 ⇒ 改回「不要主动 commit —— 等用户确认」；`docs/MULTI-AGENT-DESIGN.md` §3.4 / §4.4.1 ⇒ 改回原措辞；
 3. `plugins/commit-gate.ts` / `lib/commit-gate.ts` ⇒ 删除或停用（插件缺席 ⇒ 门禁不存在，与 D9② 一致）。
+   ⚠ **同批停用 doctor**（2026-11-20 补，承 D9② 的检测面）：`lib/commit-gate-doctor.ts` / `scripts/commit-gate-doctor.ts` / `tests/commit-gate-doctor.test.ts` / `tests/commit-gate-plugin.test.ts`，**并同步** `tests/config-guards.test.ts` 的 EXPECTED 清单（新增文件闸门）⇒ 否则回滚后宿主**重载后**、可达环境下**活体例必红**（插件缺失 ⇒ `fail`；⚠ 磁盘删除 ≠ 宿主卸载 ⇒ 未重载的宿主仍可能报 `active`）⇒ V12「三步回滚后 `bun test tests/` 绿」**不可执行**。
 ⚠ **只退一半 ⇒ 复现 v2.44**（`docs/CHANGELOG.md:41-42`）：若只把配置改回 `ask`、而 §输出仍写「commit 由验证门决定」⇒ prompt 与权限层**互相矛盾**，模型信更具体的配置 ⇒ 行为退化成「不 commit」（与原状语义相近，但文档不一致 ⇒ 守卫会红）。
 ⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。
 
