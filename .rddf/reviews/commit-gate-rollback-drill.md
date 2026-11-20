@@ -1,0 +1,61 @@
+# commit-gate 回滚路径演练（隔离副本，2026-11-20）
+
+> **判据来源**：`docs/adr/ADR-commit-verification-gate.md` 的「回滚路径（三步，**不可只退一半**）」与 **V12**（「三步回滚后 `bun test tests/` 绿」）。
+> **动机**：critic 第 2 轮指出「回滚路径未含 doctor ⇒ V12 不可执行」，本 drill 回答**完整清单是什么**、以及**「改回原措辞」能不能整文件还原**。
+> **纪律**（本次事故固化）：演练全部在**隔离副本** `/tmp/opencode/rollback-drill` 里做 —— 绝不在宿主正在加载的 `lib/` / `plugins/` 路径上动手（否则宿主会缓存坏实例，见 CHANGELOG v2.52）。
+
+## 0. 方法与基线
+
+- 副本 = `git clone /home/ubuntu/.config/opencode`（HEAD `3e6bcad`）。
+- 补一个 gitignored 运行态文件（`.rddf/state/role.json`），否则 `SUBAGENT-ORCHESTRATION.md 路径存在` 守卫因「克隆副作用」假红。
+- **基线（副本、未改动）**：`996 pass / 1 skip / 0 fail`（与线上一致）。
+- 对照组：另建 `/tmp/opencode/control`（同 HEAD、未改动）⇒ `tests/config-guards.test.ts` 125 pass / 0 fail。
+- 「门禁落地前」的基线提交 = `2ab546e`（`4b31d19` 的父，即引入门禁前的状态）。
+
+## 1. 六次实验（全部实测）
+
+| # | 实验 | 结果 | 结论 |
+|---|---|---|---|
+| **A** | 只删 doctor 的 4 件，**不同步** `config-guards` 的 EXPECTED 清单 | `1 fail`：`新增文件闸门 → lib/ 清单里的文件不存在了：commit-gate-doctor.ts` | ADR 新增的那句「**并同步** EXPECTED 清单」**必要且正确** |
+| **B** | 三步回滚，但 `prompts/build.md` / `docs/MULTI-AGENT-DESIGN.md` / `opencode.jsonc` 用 **`git checkout <旧提交> -- <文件>` 整文件还原** | `11 fail`：5 条属机制真回滚（落点完整性锚点、EXPECTED 2 项、d9 三处登记 4 条）+ **4 条与门禁无关**（模型清单 / 能力面块 / `rdd-skills` 同步）+ 2 条混合 | **「改回原措辞」不能整文件还原** —— 会把门禁之后的**无关变更**一起回退 |
+| **C** | **只回滚机制**：删 9 件机制文件 + 同步 EXPECTED 3 项 + 移除「治理面落点完整性」守卫整块；**保留** ADR 与 `tests/commit-gate-d9-registration.test.ts` | **`783 pass / 0 fail`** | **V12 可达**（在该清单下）✔ |
+| **D** | 在 C 基础上**再删** `tests/commit-gate-d9-registration.test.ts` | `1 fail`：`ADR-commit-verification-gate V10 宣称为机械载体的路径真实存在（改名 ⇒ 悬空必红）` | ADR **保留** ⇒ 它的三处登记守卫**必须保留** |
+| **E** | 步骤 1 用 `git checkout 2ab546e -- opencode.jsonc` 还原配置 | **无变化（静默无效）** | `opencode.jsonc` 是**符号链接** ⇒ 还原链接不还原目标 |
+| **F** | 步骤 1 改为还原**目标**文件 `opencode.jsonc.opencode-go` | `8+ fail`（含 `git commit * 应为 allow`、以及 `找不到 agent: plan-worker` —— 旧配置早于该 agent） | 步骤 1 也必须**逐条改**，且**改目标文件** |
+
+## 2. 「C 的完整清单」（V12 可达的最小充分集，实测）
+
+**机制文件（9 件，删）**
+
+```
+plugins/commit-gate.ts
+lib/commit-gate.ts
+lib/push-gate.ts          ← ADR 现在的 step 3 漏了这件（插件 import 它）
+lib/commit-gate-doctor.ts
+scripts/commit-gate-doctor.ts
+tests/commit-gate-doctor.test.ts
+tests/commit-gate-plugin.test.ts
+tests/commit-gate.test.ts   ← ADR 未列（它 import lib/commit-gate.ts，留着则 import 失败）
+tests/push-gate.test.ts     ← ADR 未列（同上）
+```
+
+**守卫期望同批复原（`tests/config-guards.test.ts`）**
+
+- 「新增文件闸门」EXPECTED 移除 3 项（`commit-gate.ts` / `push-gate.ts` / `commit-gate-doctor.ts`）；
+- 「治理面落点完整性」守卫**整块移除**（它断言的是 build.md / MAD 的门禁措辞，措辞回退后必红）；
+- 「build 的 shell：`git commit *` ⇒ allow」一条**同批改回 `ask`**（实测 F）；
+- **保留** `tests/commit-gate-d9-registration.test.ts` 与 V10 载体守卫（ADR 与 MAD §2.8.8 保留 ⇒ 三处登记仍成立；删它 ⇒ 实测 D 红）。
+
+**明确不做**：整文件还原 `prompts/build.md` / `docs/MULTI-AGENT-DESIGN.md` / `opencode.jsonc`（实测 B / F 各触发无关红）。
+
+## 3. 未实测的残留（如实登记）
+
+- **步骤 2 的「逐段改措辞」未手工执行**：只移除了断言这些措辞的守卫（C 的清单里）。**推断**逐段改不会引入新红 —— 依据：B 里的 4 条无关红全部来自「与门禁无关的段落被整文件回退」（模型清单 / 能力面块 / 技能清单 / agent 取值），而逐段改不触碰这些段落。**该推断未用实测闭合。**
+- **`.rddf/commit-gate.json`**：ADR 的回滚路径未提它。插件退役后无人读它 ⇒ 惰性；但留着会让「本仓声明了门禁」悬空 ⇒ 建议删或注明。
+
+## 4. 对 ADR 回滚路径的订正建议（**未应用**，需评审）
+
+1. **步骤 1**：改为「**逐条**改 `opencode.jsonc` 的**目标文件**（本仓是符号链接 ⇒ `opencode.jsonc.opencode-go`）」：`git commit` / `git commit *` ⇒ `ask`；移除 force-push 八条 deny。**不得整文件还原**（旧版早于 `plan-worker` 等 agent ⇒ 实测 8+ 红）。
+2. **步骤 2**：改为「**逐段**改」build.md（§输出 commit 两条 → 旧一条；点名条款；角色矩阵 `builder` 行；增强层 commit 契约）与 MAD（§3.4 / §2.6 / §4.4.1）。**不得整文件还原**（实测 4 条无关红）。
+3. **步骤 3**：文件清单补全为上面的 **9 件**；「同批」补「EXPECTED 3 项 + 落点完整性守卫整块 + `git commit *` = allow 断言」；**保留** d9-registration 守卫（ADR 保留 ⇒ 三处登记仍成立）。
+4. 新增一条：`.rddf/commit-gate.json` 删或注明（见 §3）。
