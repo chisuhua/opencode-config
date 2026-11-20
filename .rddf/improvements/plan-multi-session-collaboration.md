@@ -69,7 +69,7 @@
 | # | 判据 |
 |---|---|
 | AC15 | `opencode debug agents` 列出 `plan-worker` 且 `mode=subagent`；`plan` 工具清单含 `subagent`（V13） |
-| AC16 | 九探针全部留证（`I2①`–`I2⑨`，含**三条负向**：子写 `lib/x.ts` 被拒 / 子写别的 topic 被拒 / 子写 `..` 穿越被拒）；记录落 `.rddf/reviews/plan-multi-session-collaboration-e2e.md`，每条含「取证命令」+「原始输出」（V12） |
+| AC16 | 九探针留证（`I2①`–`I2⑨`）；负向：子写 `lib/x.ts` / `..` 穿越**被拒**（配置级）；**跨 topic 写不被拒**（topic 树粒度 = ADR 残留 #1，靠 `scope-check` 事后核对）；记录落 `.rddf/reviews/plan-multi-session-collaboration-e2e.md`（V12） |
 | AC17 | 两真实 plan 会话抢同 topic ⇒ 第二个被拒；全节点 done 后锁可释放（V11） |
 
 **证据结构判据**（可机械）：`test -f .rddf/reviews/plan-multi-session-collaboration-e2e.md` 且 `grep -c '^| I2'` ≥ 9 且 `grep -c 'V11\|V13'` ≥ 2。

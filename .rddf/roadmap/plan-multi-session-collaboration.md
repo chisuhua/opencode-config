@@ -181,7 +181,7 @@ graph.json = {
 |---|---|---|---|---|---|
 | I1 | 验 | 配置生效：`opencode debug agents` 列出 `plan-worker` 且 `mode=subagent`；`plan` 工具清单含 `subagent` | 记录 | V13 | H1 |
 | I2 | 验 | **六正向 + 三负向**探针（步骤见 §3.3）：① 同轮 `background` 派两个；② `parent_id` == 根 id；③ 子内 `$OPENCODE_SESSION_ID` == 子 id；④ 两条完成合成消息到父；⑤ 父 `subagent(sessionID=…)` 续接成功且子读得到 `TODO.md`；⑥ 父死后新根**不能**续接；**⑦ 子写 `lib/x.ts` ⇒ 被拒**；**⑧ 子写 `.rddf/plan-topics/<other>/…` ⇒ 被拒**；**⑨ 子写 `.rddf/plan-topics/../state/role.json` ⇒ 被拒** | `.rddf/reviews/plan-multi-session-collaboration-e2e.md` | V12 | I1 |
-| I3 | 验 | 独占锁：两真实 plan 会话抢同 topic ⇒ 第二个被拒；**全节点 done 后锁可释放** | 同 I2 文件 | V11 | I2 |
+| I3 | 验 | 独占锁（协议级）：原子 `mkdir` 第二次失败 + checker `lock` 只读报告；**全节点 done 后锁可释放** | 同 I2 文件 | V11 | I2 |
 
 ---
 
@@ -229,9 +229,9 @@ graph.json = {
 | I2⑤ | 父 `subagent(sessionID=<child>)` | 子读得到自己的 `TODO.md` | 子消息 |
 | I2⑥ | 父死 ⇒ 新根 `subagent(sessionID=<old child>)` | **被拒** | 错误信息 |
 | **I2⑦** | 子会话 edit `lib/x.ts` | **权限拒** | 子消息 |
-| **I2⑧** | 子会话 edit 别的 topic 路径 | **权限拒**（注：同 topic 内跨 node **不会**被拒 —— ADR 残留 #1） | 子消息 |
+| **I2⑧** | 子会话 edit 别的 topic 路径 | **不会被拒**（`edit` allow = `*.rddf/plan-topics/*` ⇒ topic 树粒度；ADR 残留 #1）⇒ 如实记录 | 子消息 / 配置 |
 | **I2⑨** | 子会话 edit `.rddf/plan-topics/../state/role.json` | **权限拒**（Wildcard 前缀不匹配） | 子消息 |
-| V11 | 两真实 plan 会话抢同 topic；全节点 done 后释放 | 第二个 `mkdir` 失败；释放后 `rmdir` 成功 | 两会话消息 |
+| V11 | 独占锁（**协议级**）：原子 `mkdir` 第二次失败；checker `lock` 只读报告；全节点 done 后释放 | 「第二个会话写入被拒」靠 prompt 协议（非权限门）；`mkdir` 原子性可取证 | 两会话消息 + `lock` 输出 |
 | V13 | `opencode debug agents` | 列出 `plan-worker` / `mode=subagent` | 命令输出 |
 
 ### 3.4 验收顺序（早失败早停）

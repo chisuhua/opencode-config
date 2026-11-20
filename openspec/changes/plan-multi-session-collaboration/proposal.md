@@ -52,8 +52,8 @@
 | AC13 | `lock` 子命令只读报告（存在性 / owner / 与 `plan-sessions.json` 绑定一致），不修改文件 | 自动 | V11 辅助 |
 | AC14 | 既有口径零回归：`plan_ref` / `.rddf/plans/` 口径 diff 为空；delegate 五项权限断言绿；front subagent 顺序守卫绿 | 自动 | V14 |
 | AC15 | `opencode debug agents` 列出 `plan-worker` 且 `mode=subagent`；`plan` 工具清单含 `subagent` | 人工 | V13 |
-| AC16 | 九探针留证（`I2①`–`I2⑨`，含三条负向：`lib/x.ts` / 别的 topic / `..` 穿越均被拒）；记录落 `.rddf/reviews/plan-multi-session-collaboration-e2e.md`，每条含「取证命令」+「原始输出」 | 人工 | V12 |
-| AC17 | 两真实 plan 会话抢同 topic ⇒ 第二个被拒；全节点 done ⇒ 锁可释放 | 人工 | V11 |
+| AC16 | 九探针留证（`I2①`–`I2⑨`）；负向：`lib/x.ts` 与 `..` 穿越**被拒**（配置级：`edit` allow 仅 `*.rddf/plan-topics/*`）；**跨 topic 写不被拒**（topic 树粒度 = ADR 残留 #1，靠 `scope-check` 事后核对）；记录落 `.rddf/reviews/plan-multi-session-collaboration-e2e.md` | 人工 | V12 |
+| AC17 | 锁为**协议级**（非权限门）：原子 `mkdir` 第二次失败 + checker `lock` 只读报告；「第二个会话写入被拒」靠 prompt 协议 + 事后核对；全节点 done ⇒ 锁可释放 | 人工 | V11 |
 | AC18 | 归档前置：`.rddf/state/verifier/plan-multi-session-collaboration.json` 存在且 verdict == `pass` | 机械 | 用户口径 |
 
 **证据结构判据（可机械）**：`test -f .rddf/reviews/plan-multi-session-collaboration-e2e.md` 且 `grep -c '^| I2'` ≥ 9 且含 `V11` / `V13` 行。
