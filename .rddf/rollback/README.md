@@ -62,6 +62,7 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 | `commit-gate.json` | commit 工具层验证门（`ADR-commit-verification-gate`） | delete 9 + edits 29 | `809 pass / 0 fail`（隔离副本） |
 | `plan-topics.json` | plan 侧多会话协作：`plan-worker` + topic checker（`ADR-plan-multi-session-collaboration`） | delete 4 + edits 14 | `983 pass / 0 fail`（隔离副本） |
 | `plan-delegate.json` | plan 侧工程派发（`ADR-plan-delegate-engineering-session`）—— **能力面**退役 | delete 0 + edits 48 | `1024 pass / 0 fail`（隔离副本） |
+| `model-fallback.json` | 模型降级链插件（**无 ADR** ⇒ 决策真源 = 验收报告） | delete 5 + edits 14 | `998 pass / 0 fail`（隔离副本，零悬空引用） |
 
 ## 「骨架机制」怎么退役（plan-delegate 的实测结论）
 
@@ -79,6 +80,12 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 - `tests/commit-gate-d9-registration.test.ts`（commit-gate 的 V10 载体）与 `.rddf/commit-gate.json`（门禁声明）—— 各有守卫断言其存在；
 - `docs/MULTI-AGENT-DESIGN.md` 的 §2.8.8（D9 索引段）与 §3.4 的 **D9⑯ 指针行** —— 载体用例以「索引段之外仍提到 D9⑯」为前提。
 - `.rddf/plan-topics/**` / `.rddf/state/plan-sessions.json`（plan-topics）—— 已落盘的协作文档是版本化产物，退役后停止写入即可。
+
+## 机制 ⇒ ADR **并不成立**（实测）
+
+`model-fallback` **没有 ADR**（它的验收报告自述「本仓库无 ADR（§arch-docs 判定态 3）」，决策记录 = 该报告）。
+⇒ 本仓存在**无 ADR 的机制** ⇒ 清单的 `adr` 字段允许指向**验收报告 / 其他决策记录**（`model-fallback.json` 即指向 `.rddf/reviews/model-fallback-verify.md`）。
+⚠ 这同时暴露 `ADR-rollback-manifest-enforcement` 的 **M2 口径缺口**：`adr_primary`「必须落在 `docs/adr/`」对这类机制**不成立** ⇒ 该机制无法合法登记 ⇒ 待补口径（已登记为实施期发现）。
 
 ## 哪些机制适合做清单（边界）
 
