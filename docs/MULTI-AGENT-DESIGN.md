@@ -881,6 +881,7 @@ bash 采 `* + 危险命令 ask` 模式（catch-all 在前、具体规则在后�
 
 **`git commit` 段已退役（2026-11-18）**：此前是「不属不可逆类」的 `ask`（v2.44），目的是让 prompt 的「等用户确认」**有可执行点**。
 现改为 **`allow`** —— 审批点搬到**工具层验证门**（`plugins/commit-gate.ts`）：仓库声明的验证命令全绿 + 暂存区非空 + 暂存内容落在当前角色的写集内 ⇒ 放行；否则**工具层直接拒绝**并给出缺项（`docs/adr/ADR-commit-verification-gate.md`）。
+⚠ **门禁「在场性」体检**（2026-11-20 补，ADR D9②）：插件缺席 ⇒ 门禁**不存在**（不是「放松」，是「没装」）⇒ `lib/commit-gate-doctor.ts` / `scripts/commit-gate-doctor.ts` 问宿主「`commit-gate` 插件是否 `active`」⇒ 未加载 ⇒ **判红**（退出码 1）而不是静默通过；⚠ **检测 ≠ 拦截**（doctor 不拦提交，只让失败可见）＋ **宿主不可达 ⇒ 判定不可得**（skip / 退出码 2，不算失败）。
 
 **新增 `deny`（force push）**：`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*`
 —— shell 是**整串前缀匹配** ⇒ flag 在末位的形态也必须显式列出，否则落 catch-all `*: allow`（⇒ 无人值守时直接推出去）；

@@ -22,8 +22,10 @@
  *
  * ## 修法提示（fail 时打印）
  *
- *   宿主进程里的模块缓存在 `lib/*.ts` 改动后不会失效 ⇒ 必须重启宿主：
+ *   宿主进程里的模块缓存在 `lib/*.ts` / `plugins/*.ts` 改动后不会失效 ⇒ 必须重启宿主：
  *   `opencode service restart`（然后重跑本脚本确认）。
+ *   ⚠ 含**内容不变**的 `cp` / `touch` 还原（也会改 mtime ⇒ 触发宿主重载）；
+ *   ⚠ **变异测试**（故意写坏代码）不要放在宿主正在加载的插件依赖路径上 —— 会被缓存成坏实例。
  */
 import { fetchPluginList, evaluateLiveness, type LivenessResult } from "../lib/commit-gate-doctor.ts"
 

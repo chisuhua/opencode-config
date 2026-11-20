@@ -229,7 +229,7 @@
 | # | 免宣称 | 防什么 / 不防什么 / 缓解 |
 |---|---|---|
 | ① | **声明文件可被改写 / 被弱化** | 防「未验证就提交」；**不防**把 `verify_commands` 改成 `[["true"]]` 之类空壳（且能在**同一次提交**里改，因为 builder 写集含 `**`）；缓解：守卫**逐条相等**断言本仓声明的期望命令清单（不是「非空」） |
-| ② | **插件缺席 ⇒ 门禁不存在** | 防未验证提交；**不防**插件未加载 / `--standalone` / 未 `service restart`；缓解：层 2 真宿主验 + 文档登记（同 `role-gate` D5⑥） |
+| ② | **插件缺席 ⇒ 门禁不存在** | 防未验证提交；**不防**插件未加载 / `--standalone` / 未 `service restart`；**检测面**（2026-11-20 补）：`lib/commit-gate-doctor.ts` + `scripts/commit-gate-doctor.ts` 问宿主「`commit-gate` 插件是否 `active`」⇒ 未加载 ⇒ **判红**（退出码 1）而非静默（挂在 `bun test tests/` ⇒ 每次运行测试都会**尝试**体检）；⚠ **检测 ≠ 拦截**（doctor 不拦提交，只让失败可见）＋ **宿主不可达 ⇒ 判定不可得**（skip / 退出码 2 ⇒ 不算失败，**不可判定 ≠ 健康**）；⚠ **史实**（同一形态真实发生过）：2026-11-20 本仓宿主进程的模块缓存固化了旧版 `lib/push-gate.ts` ⇒ 插件加载失败 ⇒ 门禁静默消失**两天**，而 206 个单测全绿（纯逻辑测试覆盖不到**接线层** ⇒ 接线层覆盖见 `tests/commit-gate-plugin.test.ts`）；缓解：机械体检（doctor）+ 层 2 真宿主验 + 文档登记（同 `role-gate` D5⑥） |
 | ③ | **间接提交不在门禁内** | 防顶层 `git commit` 与 `$(...)`；**不防** `bash x.sh`（**脚本文件内**的提交）/ `make commit` / 自研包装脚本；缓解：D5⑪ 已封「解释器 + 串内提到 commit」的形态（`bash -c` / `eval` / `ssh` / `xargs` / `docker exec`）⇒ 残余只剩「脚本文件内容」 |
 | ④ | **其它仓库不受门禁** | 防本仓未验证提交；**不防**后端在 `project_dir` 指向的任意目录提交（无声明 ⇒ 放行）；缓解：声明文件随仓走 |
 | ⑤ | **非交互路径能力扩张** | ask ⇒ 硬拒 ⇒ 变成「门禁放行即可」；**不防**无人复核（无人可点 Always，也无人复核）；缓解：②（角色写集）+ ①（验证绿）两道门仍在 |
@@ -282,7 +282,7 @@
 ⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。
 
 **风险**
-- 门禁依赖插件与声明 ⇒ 任一缺席 ⇒ 静默无门禁（D9①②④）⇒ 层 2 真宿主验 + 守卫。
+- 门禁依赖插件与声明 ⇒ 任一缺席 ⇒ 静默无门禁（D9①②④）⇒ 层 2 真宿主验 + 守卫 + **在场性体检**（doctor 检出「静默」本身；⚠ **检测 ≠ 拦截**）。
 - 角色写集判据（③）依赖 `ROLE_WRITE_POLICY` 语义 ⇒ 某角色写集被改宽 ⇒ 其可提交范围随之变宽（单一真源 ⇒ 一处改动两处生效；既是优点也是耦合点）。
 
 ## Verification（可勾选验收判据，前瞻）
@@ -319,3 +319,5 @@
 - [x] **V18 命令词的引用 / 转义还原**：`"git" commit -m x` / `g\it commit -m x` / `$'git' commit -m x` / `$"git" commit -m x` / `git c\ommit -m x` ⇒ **被识别为 commit**（不得漏判）；⚠ `$'\x67it' commit -m x`（转义序列表）**不在**本判据内 ⇒ 登记 D9⑮；`git commit -m 'a\b'` / `git commit -m "a\\b"` ⇒ 放行；`echo a\ b` ⇒ 仍是**一个** token（还原不得把词切开）；
 ⚠ `git\ commit -m x`（转义**空格** ⇒ 词值是 `git commit`，bash **不执行**）⇒ **不得**被识别为 commit（单段无子命令）——
 防「先按空白切词、再逐词剥转义」这类潦草实现。**变红**：还原逻辑删掉 / 只做引号不做转义 ⇒ V18 红；按空白先切词再剥转义 ⇒ V18 红。
+- [x] **V19 门禁在场性体检**（2026-11-20 补，承 D9②）：`bun scripts/commit-gate-doctor.ts` ⇒ 宿主里 `commit-gate` 为 `active` ⇒ **PASS**（退出码 0）；插件 `failed` 或从宿主插件列表里缺失 ⇒ **FAIL**（退出码 1，**红**）；宿主不可达 ⇒ **SKIP**（退出码 2，**不算失败**、不可判定 ≠ 健康）。**变红**：把 `evaluateLiveness` 的 `failed` 分支改成恒 `pass` ⇒ V19 红；把插件从宿主插件列表里摘掉 ⇒ V19 红；把 `skip` 当 `pass` 上报 ⇒ V19 红。
+  **实测结论（2026-11-20）**：`bun scripts/commit-gate-doctor.ts` ⇒ PASS（退出码 0，宿主里 `commit-gate` = `active`）；替身 CLI 喂三种宿主状态 ⇒ `active` → 0 / `failed` → 1 / 不可达 → 2（机械载体 `tests/commit-gate-doctor.test.ts`）。
