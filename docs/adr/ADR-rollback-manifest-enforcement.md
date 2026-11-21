@@ -9,9 +9,9 @@
 | Author | architect（主会话） |
 | Parent | `ADR-commit-verification-gate`（「回滚 ≠ 彻底删除」+ V12 的机械载体）＋ `ADR-plan-delegate-engineering-session`（「形式可逆 ≠ 实质可逆」的实测）＋ `ADR-plan-multi-session-collaboration`（首个自包含清单） |
 | 关联 change | 尚未立项 ⇒ `backlog: rollback-manifest-enforcement`（planner 立项后回填 AC 映射） |
-| AC 映射 | 待立项后回填（当前以本文 **V1–V14** 为准） |
+| AC 映射 | 待立项后回填（当前以本文 **V1–V16** 为准） |
 | 审稿报告 | `.rddf/reviews/adr-rollback-manifest-enforcement-review.md`（审查完成后誊写，审查者只读） |
-| 修订 | **2026-11-21（第 6 轮，用户批准）**：清 10 条存量债的实测给出**组**这个粒度 ⇒ ① **组清单**能力：registry 条目加 `manifest_ref`（多机制可指向同一份清单）+ M1 第二子句改「清单集合 == {`manifest_ref` 去重集}」+ M2 改「清单声明的决策记录集合 == 指向它的条目的 `adr_primary` 集合（双向）」⇒ 清单 schema 加 `adr_related[]` + V15 + U11（组边界归评审）；② **baseline 按组重写**：10 条债 → **8 条合 3 组**（G1 delegate 槽位/停机/归属/取消释放内核链 4 条、G2 knowledge+delivery 2 条、G3 role_class+写集 2 条）+ **2 条判为「退役 = 重写」**（`role-session-identity` / `canonical-root-normalization`：教学面在原生段 + 实现面被 8 个（身份/租约）/ 5 个（`canonicalRoot`）生产文件依赖 ⇒ 归 `no-single-baseline` 豁免，证据 `.rddf/reviews/rollback-exempt-role-identity-canonical.md` + U12）。**2026-11-21（第 5 轮，用户批准）**：L2 **实施落地**后收口三处口径分歧 —— ① **新增 `state=proving` 过渡态**（实施期实测的**自举死锁**：机制落地的那个 commit 里，条目无法同时满足「`declared` 的 watch 路径尚不存在」与「`active` 的演练证据已回填」—— 证据只能由**已提交**的清单跑出来 ⇒ 必然晚一个 commit ⇒ 没有过渡态就永远转不了 `active`）⇒ M9 + D5 表行 + V14 + U10；② **V8 的判据形态**由「`git show` + 深比较」改为「**内容哈希**」（去掉 `last_drill` 后的 sha256）—— 同一谓词、**零 git / 零成本 / 不占真实仓预算 / 无自指回归**（按提交号比对会永远「晚于」）；③ **D4 的归类数字订正**为实测（**5 active / 10 unmanifested / 1 exempt / 0 declared**；`canonical-root-normalization` 的 change 已于 2026-11-10 归档 ⇒ 实现已落地 ⇒ 从 `not-implemented` 豁免改归 `unmanifested`）。**2026-11-21（第 4 轮）**：实施期发现**豁免闭集装不下 9 篇「机制在跑、清单待写」的 ADR**（现有 5 类都是「该机制**不该**有清单」的判断 ⇒ 硬塞即谎）⇒ 新增 `state=unmanifested`（**债**而非豁免）：必填 `pending_backlog`（存在性可机判）+ M7 + V13；D4 归类口径改「按真实性质归类」。**2026-11-21（第 3 轮）**：第二份清单（`model-fallback`）暴露 **M2 指针闭集缺口**（机制可以没有 ADR ⇒ 决策真源在 `.rddf/reviews/`）⇒ M2 改「决策记录闭集」+ U8 登记；并把 **V8 的判据形态**写实（按内容比对、排除 `last_drill` 字段 —— 按提交号比对会自指回归）。**2026-11-21**：实施期实测发现豁免闭集缺「无单一可回退状态」这一类（`role-gate` 的教学面自初始提交即存在）⇒ 新增 `exempt_class=no-single-baseline`（成立性归 U7）+ 背景段补论证。**2026-11-20**：首版 —— 逐条处置见审稿报告，本文只保留**结论** |
+| 修订 | **2026-11-21（第 7 轮，用户批准）**：清单加**结构化退役** `retire[]` —— 组清单（G1）演练实测：`proving` 要求 `watch[]` 每条存在，而组清单的退役面正是删掉那两个 watch 文件 ⇒ drill 恒红；且 literal `edits` 的 `find` 必须锚定条目**当前状态文本**（`proving` / `active` 随证据流转 ⇒ 状态自指）⇒ 清单表达不了「把条目转 `retired`」⇒ D5 补机械退役通道 + 结构化操作的六条 fail-closed 约束 + V16 + U10③。**2026-11-21（第 6 轮，用户批准）**：清 10 条存量债的实测给出**组**这个粒度 ⇒ ① **组清单**能力：registry 条目加 `manifest_ref`（多机制可指向同一份清单）+ M1 第二子句改「清单集合 == {`manifest_ref` 去重集}」+ M2 改「清单声明的决策记录集合 == 指向它的条目的 `adr_primary` 集合（双向）」⇒ 清单 schema 加 `adr_related[]` + V15 + U11（组边界归评审）；② **baseline 按组重写**：10 条债 → **8 条合 3 组**（G1 delegate 槽位/停机/归属/取消释放内核链 4 条、G2 knowledge+delivery 2 条、G3 role_class+写集 2 条）+ **2 条判为「退役 = 重写」**（`role-session-identity` / `canonical-root-normalization`：教学面在原生段 + 实现面被 8 个（身份/租约）/ 5 个（`canonicalRoot`）生产文件依赖 ⇒ 归 `no-single-baseline` 豁免，证据 `.rddf/reviews/rollback-exempt-role-identity-canonical.md` + U12）。**2026-11-21（第 5 轮，用户批准）**：L2 **实施落地**后收口三处口径分歧 —— ① **新增 `state=proving` 过渡态**（实施期实测的**自举死锁**：机制落地的那个 commit 里，条目无法同时满足「`declared` 的 watch 路径尚不存在」与「`active` 的演练证据已回填」—— 证据只能由**已提交**的清单跑出来 ⇒ 必然晚一个 commit ⇒ 没有过渡态就永远转不了 `active`）⇒ M9 + D5 表行 + V14 + U10；② **V8 的判据形态**由「`git show` + 深比较」改为「**内容哈希**」（去掉 `last_drill` 后的 sha256）—— 同一谓词、**零 git / 零成本 / 不占真实仓预算 / 无自指回归**（按提交号比对会永远「晚于」）；③ **D4 的归类数字订正**为实测（**5 active / 10 unmanifested / 1 exempt / 0 declared**；`canonical-root-normalization` 的 change 已于 2026-11-10 归档 ⇒ 实现已落地 ⇒ 从 `not-implemented` 豁免改归 `unmanifested`）。**2026-11-21（第 4 轮）**：实施期发现**豁免闭集装不下 9 篇「机制在跑、清单待写」的 ADR**（现有 5 类都是「该机制**不该**有清单」的判断 ⇒ 硬塞即谎）⇒ 新增 `state=unmanifested`（**债**而非豁免）：必填 `pending_backlog`（存在性可机判）+ M7 + V13；D4 归类口径改「按真实性质归类」。**2026-11-21（第 3 轮）**：第二份清单（`model-fallback`）暴露 **M2 指针闭集缺口**（机制可以没有 ADR ⇒ 决策真源在 `.rddf/reviews/`）⇒ M2 改「决策记录闭集」+ U8 登记；并把 **V8 的判据形态**写实（按内容比对、排除 `last_drill` 字段 —— 按提交号比对会自指回归）。**2026-11-21**：实施期实测发现豁免闭集缺「无单一可回退状态」这一类（`role-gate` 的教学面自初始提交即存在）⇒ 新增 `exempt_class=no-single-baseline`（成立性归 U7）+ 背景段补论证。**2026-11-20**：首版 —— 逐条处置见审稿报告，本文只保留**结论** |
 | 回滚清单 | `.rddf/rollback/rollback-manifest-enforcement.json`（`state: active`）—— 本 ADR 的退役 = 撤守卫 + 删 registry + 删本清单，属**低不可逆性**。⚠ **退役清单必须删本清单自身**：清单描述的是「如何撤掉 L2」⇒ L2 撤掉后它再无用途，且它的 `delete` 目标已不存在 ⇒ 漂移守卫对它恒红 ⇒ 必须同批删 |
 
 ## 背景与问题
@@ -89,6 +89,7 @@
   - `declared` = 已签未落地（本文落地前；落地后转 `active` ⇒ 实测 **0** 条）。
   - ⚠ **实施期订正（第一批 · 数字）**：本文初稿把 `canonical-root-normalization` 归为 `not-implemented` 豁免（其 ADR 的 Status 行写「未实施」）⇒ **实施期核实：其 change 已于 2026-11-10 归档** ⇒ 实现**已落地** ⇒ 不是 `not-implemented`。
   - ⚠ **实施期订正（第二批 · 粒度）**：清这 10 条债的实测给出**组**这个粒度 —— **8 条**按内核耦合合成 3 组（各组一份清单），另 **2 条**（`role-session-identity` / `canonical-root-normalization`）经依赖图核实为**退役 = 重写**（身份/租约被 7 个生产文件依赖、根归一被 5 个依赖 ⇒ 退役要连带回退 delegate 的两根基模型与两个门禁插件）⇒ 归 `no-single-baseline` 豁免。⇒ 豁免从 1 条增至 **3** 条，但**每条都带可查证的证据文件**（M3 的表态成本 > 0）。
+  - ⚠ **实施期订正（第三批 · G1 落地，第 7 轮）**：G1 的组清单已写（`delegate-slot-kernel`）⇒ registry 中该组转 `proving`（演练回填后 `active`）⇒ 上文「`unmanifested` 8 条」是**签批时的快照**；当前数字以 registry / census 为准（G2/G3 仍为 `unmanifested`）。
 - 新增/修订 ADR：只允许 `active` / `proving`（**带清单 + `manifest_ref`**）或闭集 `exempt_class`（**新登记的机制先落 `proving`**，演练回填后转 `active` —— 见 D5 的自举死锁段）。
 - ⚠ **`unmanifested` 仅限 baseline 存量**（本次实施期一次性登记）—— 它**不是**新增 ADR 的出口。⚠ **本句是评审面约束**（机器判不了「这条是不是 baseline 存量」；新增 ADR 冒充存量只能靠评审拦）⇒ 与 U6 同类，如实登记见 U9。
 - **不得**逐篇补清单：`role-aware-permissions` 的「回滚」是**切换失败的回退语义**、`front-multi-backend` 的「不可回滚」是**单向门表述** ⇒ 关键词口径会把它们判成假阳性（实测 7 篇命中里 2 篇是假的）。
@@ -104,12 +105,17 @@
 | `unmanifested` | **不得存在** | `pending_backlog`（**须存在**）、`watch[]`（每条**当前都存在**） | M7（债可见；**不是**豁免 ⇒ 不得用它躲清单） |
 | `exempt` | 不需要 | `exempt_class`、`exempt_evidence`（**须存在**） | M3（`no-single-baseline` 的成立性见 U7） |
 
-- `retired` ⇒ **删除清单文件**：退役后的清单 `find` 必然不匹配 ⇒ 留着会让 `planDrill` 恒红 ⇒ 恒红的守卫会被绕过。退役证据 = `retired_at` + `notes` 指向的评审/演练报告（git 历史为兜底）。
+- `retired` ⇒ **删除清单文件**：退役后的清单 `find` 必然不匹配 ⇒ 留着会让 `planDrill` 恒红 ⇒ 恒红的守卫会被绕过。`retired_evidence`（**机读字段**）= 该条目的 `adr_primary`（**退役依据出处**）；演练 / 评审报告走 `notes`（人读）+ git 历史兜底 —— 两者**不同物**，不共用一个字段（第 7 轮口径统一）。
 - `declared` **不是零成本恒绿口**：`watch[]` 是实现落地后将出现的路径（例：`plugins/foo.ts`）⇒ 实现一落地，路径就存在 ⇒ 该条目**必须**同批转 `active`（或给合法豁免）⇒ 否则红。这把「评审义务」变成机械信号。
 - **两态不变式（机器可分的对偶）**：`declared` = 机制**未落地**（`watch[]` 指向未来路径，任一存在 ⇒ 必须离态）；`unmanifested` = 机制**已落地、清单未写**（`watch[]` 指向现有路径，锚点腐烂 ⇒ 红，逼迫重新表态）。
 - **自举死锁 ⇒ `proving` 过渡态（实施期实测）**：机制**落地**的那个 commit 里，条目无法同时满足「`declared` 的 watch 路径尚**不存在**」（M4 的落地 tripwire）与「`active` 的演练证据**已回填**」（D5 的必填）—— **证据只能由已提交的清单跑出来 ⇒ 必然晚一个 commit** ⇒ 二选一 ⇒ 永远转不了 `active` ⇒ 登记表本身无法完成一次登记。`proving` = **已落地 + 清单已写 + 演练待回填**：证据**可缺失**（存在即须新鲜 ⇒ V8 照判），回填 ⇒ 转 `active`。
 - **`proving` 的允许迁移边**：回填证据 ⇒ `active`；重新定性为「不该有清单」⇒ `exempt`（须给闭集 class + 证据）；机制退役 ⇒ `retired`（删清单 + `retired_at` + 证据）。
 - `unmanifested` 的**允许迁移边**：写清单 ⇒ `active`；重新定性为「不该有清单」⇒ `exempt`（须给闭集 class + 证据）；机制退役 ⇒ `retired`（删清单 + `retired_at` + 证据）。
+- `active` 的**允许迁移边**（第 7 轮补齐）：机制退役 ⇒ `retired`（清单 `retire[]` 转态 + 同批自删）；清单内容变 ⇒ `proving`（V8 哈希不匹配 ⇒ 红 ⇒ 重跑演练后回填）。
+- **退役的机械通道 = 清单的 `retire[]`**（第 7 轮，实施期实测倒逼）：清单加 `retire?: string[]`（机制名列表）—— drill 在隔离副本里按**结构**（解析 JSON 对象，不做文本替换）把条目转 `retired`：`retired_at` = 演练日期、`retired_evidence` = 该条目的 `adr_primary`、撤 `watch` / `manifest_ref` / `pending_backlog`。**为什么不能用 `edits`**：literal `find` 必须逐字锚定条目**当前状态**（`proving` / `active` 随证据流转）⇒ 同一份清单无法同时适用于过渡态与稳态（实测：G1 清单锚 `proving`，回填证据转 `active` 后 `find` 命中 0 次 ⇒ 漂移守卫恒红）⇒ **状态自指**。结构化操作只依赖条目**身份**（mechanism），不依赖可变字段。
+- **`retire[]` 的 fail-closed 约束**（`planDrill` 判，不猜意图；**编号与 V16 逐条对齐**）：① registry 存在且可解析；② 名字在 registry 中存在（**组内重名 ⇒ 红**）；③ 来源态 ∈ {`active`, `proving`}（已是 `retired` ⇒ 红：重复退役只会掩盖漂移）；④ 该条目的 `manifest_ref` == 本清单的 `mechanism`（**不得跨清单改别人的条目**）；⑤ 清单不得同时 `delete` 掉 `registry.json`（唯一例外 = **L2 自身清单**：`mechanism == rollback-manifest-enforcement`，它退役整个登记面 ⇒ 不用 `retire[]`；**该清单若同时声明 `retire[]` ⇒ 红**）；⑥ 清单的 `edits` 不得触碰 `registry.json`（同一文件两条写入的胜负未定义）。⚠ **校验材料 = 应用前的 registry 原文**（在 `edits` 模拟**之前**读）—— 否则 `edits` 改 registry 会以另一种形态制造状态自指。⚠ `unmanifested` 的退役仍走人工（无清单可承载 ⇒ 删债指针 + 转 `retired` 两步）。⚠ **部分退役**（组里只退一部分）⇒ 清单须**同批**更新（`retire[]` 去掉已退役者、`delete` / `edits` 收窄到剩余面），否则漂移守卫红（重复退役 / 目标不存在）。
+- **真执行 = 在真实仓重跑 `applyDrill`，禁止搬运旧 drill 副本的产物**：`retired_at` 取**实际执行**当天；把旧副本里已转 `retired` 的 `registry.json` 拷回真实仓会让日期撒谎且机器判不了（与 U10② 同族，见 U10③）。
+- **退役完整性由 M1 兜住（不另设判据）**：清单 `retire[]` 掉自己的全部指向者后若还留着自身 ⇒ 它成了**孤儿清单**（refs 去重集不含它）⇒ M1 红 ⇒ 逼清单自删（与 D5「`retired` ⇒ 删除清单」一致）。
 - 豁免不得成为洗白通道：`exempt_class` 闭集之外的值 ⇒ 红；`exempt_evidence` 必须指向存在的文件（表态成本 > 0）。豁免条目**只增不减**本身不红（避免为绿而逼人补假清单），但新增豁免需在评审里说明（U2）。
 
 ### D6 单向树，不成环
@@ -117,6 +123,7 @@
 - ADR → registry：ADR 元数据加**机读行** `<!-- rollback: mechanism=<name> -->`（可选，仅用于人读导航）。
 - registry → 清单 / ADR：单向引用。
 - **清单不反向读 ADR 正文**；**新增** ADR 正文**不写清单路径**（避免改名级联与第二真源）。
+- **`retire[]` 不构成反向引用**（第 7 轮）：清单由此获得的只是**退役操作声明**（按 `mechanism` 身份），它**不读** registry / ADR 的内容做判断；状态真源仍只在 registry，且写通道被 V16 ⑤⑥ 收敛为唯一一条结构化路径（`delete` / `edits` 触碰 `registry.json` 均红）⇒ 是对写入面的**收窄**，不是 D6 树的反向边。
 - ⚠ **既有 ADR 已在正文写了清单路径**（`ADR-commit-verification-gate` 的「可执行真源」段）⇒ 不追溯改写；但**退役执行时**必须同批改述仍活着的 ADR 里指向该清单的句子（否则退役后文档仍在宣称一个已撤掉的清单 —— 正是本文要治的病）。
 
 ### D6b 自指闭环（本文自己怎么登记）
@@ -151,6 +158,8 @@
 | B. 只约定、不强制（现状 + README 说明） | 否决 | 已在 L1 证明不可靠：`plan-delegate` 的清单是「有人想起来才做」的结果；且 L1 的计数守卫对「删一份」零判别力 |
 | C. 按 ADR 散文解析「回滚」段推导 | 否决 | 实测 7 篇命中里 **2 篇假阳性**（切换回退 / 单向门）⇒ 分类器准确率连现状都不支撑；且散文换句式即失效 |
 | F. registry 顶层 `groups[]` / 清单 `members[]`（**人读**的组声明） | 否决 | 第二真源（D6 单向树：组名已住在清单的 `mechanism` 字段、成员已由 `manifest_ref` 反查得到 ⇒ V15 已机判）；「谁在组里」的正确性归 U11 评审，人读表只会让人改表而不改清单 |
+| G. 放宽 M7：`proving` 不查 `watch` 存在性（与 `active` 对齐） | 否决（第 7 轮） | 省一次修订，代价是**永久撤掉过渡态的「机制已落地」机器锚**（那是 `proving` 自称已落地的唯一客观校验）⇒ 半退役机制可在过渡态无限期不红（正是 M7 要治的病）；且**不解决**状态自指（退役的 registry 面仍靠手工两步）。**不对称代价**：A 付一次结构化操作，G 付一条判据的永久缺口 |
+| H. 反序证据流：先回填证据进 `active` 再 drill | 否决（第 7 轮） | 倒置 V8 的 `commit → drill → 回填` 因果 ⇒ 证据在验证之前写进清单 = **声称**而非实测；drill 若红则证据已撒谎（U10② 的放大版）；同样不解决手工两步 |
 | E. 不加过渡态（`declared` / `active` 二选一，实施期实测**自举死锁**） | 否决 | 机制落地的那个 commit 里，`declared` 的落地 tripwire（M4）与 `active` 的证据必填（D5）**互斥** ⇒ 条目永远转不了 `active` ⇒ 登记表本身无法完成一次登记 ⇒ 机制可登记但**不可激活** |
 | D. 每机制一个声明文件 + 派生索引（避免单文件合并冲突） | 否决（本期） | 并发冲突只在「两个 agent 同时改 registry」时出现（本仓单主会话为主）；代价是多一层派生及其漂移判据。若将来并行度上升可再议 |
 
@@ -180,7 +189,7 @@
 
 ## Verification（可勾选验收判据，前瞻）
 
-> 形态：V1–V14 全部**可机判**（毫秒级、不 clone、不跑 drill）；U1/U2 只能评审。**关键判据必须配变红演练**（各条已内联突变动作）。
+> 形态：V1–V16 全部**可机判**（毫秒级、不 clone、不跑 drill；V16 的 ①–⑥ 在 `planDrill` 里判）；U1/U2 只能评审。**关键判据必须配变红演练**（各条已内联突变动作）。
 
 - [ ] **V1 映射集合相等（双向）**：`docs/adr/*.md` 全集 == registry 中**落在 `docs/adr/` 的 `adr_primary` 全集**（`adr_related[]` 与 `.rddf/reviews/` 指针均不参与本判据）；`.rddf/rollback/*.json` 全集 == {`state ∈ {active, proving}` 条目的 `manifest_ref`}（**去重**后的引用集；**清单已写、证据待回填**的过渡态**也占一份清单** ⇒ 不能漏；组清单 ⇒ 多条机制指向同一份 ⇒ 必须去重后再比）。**变红**：新增一篇 ADR 不登记 ⇒ 红；删一份清单不登记 ⇒ 红（现有「≥2 份」断言抓不到这一支）。
 - [ ] **V2 指针有效且有范围**：**任何状态**的 `adr_primary` 都存在、且**在决策记录闭集内**（`docs/adr/` ∪ `.rddf/reviews/*-verify.md` —— 与 M8 同闭集）；**`active` 另须** == 清单的 `adr`。**变红**：把 `adr` 指向另一篇存在但无关的 ADR ⇒ 红；把 `model-fallback` 的 `adr` 改指另一份**存在的** `-verify.md` ⇒ 红（reviews 指针同样受「== 清单 `adr`」与 M2 闭集约束）。
@@ -196,6 +205,7 @@
 - [ ] **V14 过渡态（`proving`）可判**：`proving` ⇒ 清单存在 + `adr_primary` == 清单 `adr` + `watch[]` 非空且每条当前存在 + **无** `pending_backlog` + `last_drill` 可缺失（存在即须新鲜）。**变红**：`proving` 缺清单 ⇒ 红；`watch[]` 指向已不存在的路径 ⇒ 红；`proving` 却挂了 `pending_backlog` ⇒ 红；回填了**陈旧**证据（哈希不匹配）⇒ 红；`proving` 缺清单却出现在「清单集合 == `active`∪`proving`」的左侧 ⇒ 红（M1 第二子句）。
 - [ ] **V13 债指针可查 + 债是逐机制的**：`state=unmanifested` 的 `pending_backlog` = `pending/<mechanism>.md` 且存在；`watch[]` 每条当前都存在；该机制**无清单**；债文件集合 == `unmanifested` 机制集合（双向）。**变红**：指针指向不存在的文件 ⇒ 红；`unmanifested` 却有清单 ⇒ 红；两个 `unmanifested` 共指一份债文件 ⇒ 红；`watch[]` 指向已不存在的路径 ⇒ 红。
 - [ ] **V15 组清单归属判定**：每个 `active` / `proving` 条目有 `manifest_ref` 指向**存在的**清单文件；该清单声明的决策记录集合（`adr` ∪ `adr_related[]`）== 指向它的 **`active` ∪ `proving`** 条目的 `adr_primary` 集合（**双向**；⚠ 含 `proving` —— 否则过渡态与 M9 互斥 ⇒ 债永远还不清）。**变红**：两条机制指向不同清单却声明同一 ADR ⇒ 红；清单声明了没人指的 ADR ⇒ 红；`active` 条目缺 `manifest_ref` ⇒ 红；`manifest_ref` 指向不存在的文件 ⇒ 红；清单的 `mechanism` ≠ 文件名 ⇒ 红。
+- [ ] **V16 结构化退役（`retire[]`）可判**：`planDrill` 对每个 `retire[]` 名字 fail-closed，**校验材料 = 应用前的 registry 原文**（在 `edits` 模拟之前读）—— ① registry 存在且可解析；② 条目存在；③ 来源态 ∈ {`active`, `proving`}；④ 该条目 `manifest_ref` == 本清单 `mechanism`；⑤ 与 `delete` 含 `registry.json` 互斥（唯一例外 = `mechanism == rollback-manifest-enforcement` 的 L2 自身清单，它不用 `retire[]`）；⑥ 与 `edits` 触碰 `registry.json` 互斥。**变红**：`retire` 一个不存在的机制 / 已 `retired` 的机制 / 别的清单的条目 ⇒ 红；组内重名 ⇒ 红；清单既删 registry 又声明 `retire[]` ⇒ 红；`edits` 改 registry 又声明 `retire[]` ⇒ 红。⚠ 应用后的 `retired_evidence`（= 该条目 `adr_primary`）存在性由 **M6** 复查（不重复断言）；退役完整性（是否漏退某指向者）由 **M1** 的孤儿清单判据兜住（不另设判据）。
 - [ ] **V11 退化可见性（census）**：守卫输出打印 `active / proving / unmanifested / exempt / declared / retired` **六态**计数（`unmanifested` = **存量债**的规模；`proving` = **过渡态的堆积**（长期停在这里 = 未完成的登记））—— 两者的规模若在退化信号里不可见，就**没有 ratchet 压力**（给人读评审一个一瞥即见的退化信号）。**变红**：输出缺失 ⇒ 红；计数与 registry 不符 ⇒ 红。⚠ 只做可见性，**不做**「active 只增不减」之类的计数断言（与 `retired` 生命周期冲突）。
 
 **已知不可机判（不得宣称覆盖）**
@@ -211,7 +221,7 @@
 | U7 | `no-single-baseline` 的成立性（是否真的没有单一可回退状态） | 评审：须能指出「教学面自初始提交即存在 / 实现面被多个增量重塑」的具体证据（`git log --diff-filter=A` 的输出存档） |
 | U8 | `adr_primary` 指向 `.rddf/reviews/` 时，它**是否真对应本机制**（路径存在 ≠ 相关） | 评审 |
 | U9 | `unmanifested` 的「仅限 baseline 存量」成立性（新增 ADR 冒充存量） | 评审（机器只能给审计线索：与 baseline diff 比对） |
-| U10 | ① `proving` 的**停留时长**（机器判不了「该不该停在这个过渡态」）② `content_hash` 的**真实性**（机器判不了「这个哈希是不是真跑出来的」） | 评审：census 计数暴露 + **评审过程钩**（「`proving` 跨一个评审周期仍未转 `active` ⇒ 评审必须说明原因」）+ 变更评审时核对演练记录 |
+| U10 | ① `proving` 的**停留时长**（机器判不了「该不该停在这个过渡态」）② `content_hash` 的**真实性**（机器判不了「这个哈希是不是真跑出来的」）③ `retired_at` 的**真实性**（把旧 drill 副本里已转 `retired` 的 `registry.json` 拷回真实仓 ⇒ 日期撒谎，机器判不了） | 评审：census 计数暴露 + **评审过程钩**（「`proving` 跨一个评审周期仍未转 `active` ⇒ 评审必须说明原因」）+ 变更评审时核对演练记录；③ 的纪律写进 D5「真执行 = 重跑 `applyDrill`，禁止搬运旧产物」 |
 | U11 | **组边界**的正确性（哪些机制**必须同批**退役 —— 机器判不了「这两个机制的内核是不是真的耦合」） | 评审 **rubric（标准形）**：① **调用点行号级依赖证据**（如「`cancel`（`:2369`）调用 `waitStopped`」—— 不接受「它们有关联」这类散文）；② **反向代价确认**（组划错 ⇒ 退役连带撤掉不该撤的东西 ⇒ 须说明该连带面有多大）。⚠ **不设机判**：组内 `watch[]` 交集为空**不是**判据（耦合走**调用链**，不走 watch 锚点） |
 | U12 | `no-single-baseline` 对 `role-session-identity` / `canonical-root-normalization` 的**成立性**（是否真的「混合基线 ⇒ 退役=重写」） | 评审 **rubric（三测）**：**T1 教学原生**：`git log --diff-filter=A -- <教学文件>` 的最早提交 = 初始提交？；**T2 删后可达性**：隔离副本里删掉该机制**全部落点**后，剩余红色是否**全部**属于该机制自身的判据测试？（是 ⇒ 可清单化；出现**无关**的结构性红 / 悬空引用 ⇒ 退役 = 重写）；**T3 依赖归属**：grep 该机制面的 import 方，若命中**另一条已登记条目**（尤其 `active`）⇒ 在「与该条目**合组**」与「**豁免**」之间二选一（联合退役能到达真实历史态 ⇒ 合组；联合也不行 ⇒ 豁免）。另须给出「教学面自初始提交即存在」+「实现面被多个增量重塑」的**具体 git 事实**（存档于 `.rddf/reviews/rollback-exempt-role-identity-canonical.md`） |
 

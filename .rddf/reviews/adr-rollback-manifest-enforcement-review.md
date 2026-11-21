@@ -154,6 +154,21 @@
 
 **本轮的净结论**：registry 支持 **1:N 的组清单**（条目加 `manifest_ref`；M1 按**去重引用集**比；M2/M9/V15 的 scope 一律 **{active ∪ proving}**）；baseline = **8 条债合 3 组**（G1 delegate 槽位/停机/归属/取消释放内核链 4 条、G2 knowledge+delivery 2 条、G3 role_class+写集 2 条）+ **2 条判为「退役 = 重写」⇒ `exempt` / `no-single-baseline`**（证据 `.rddf/reviews/rollback-exempt-role-identity-canonical.md`，含 **T1/T2/T3** 评审 rubric）；另订正 `ADR-canonical-root-normalization` 的 Status（自述「未实施」与事实矛盾）。
 
+## 6f. 增量审查 6（第 7 轮，**用户批准**：2026-11-21）—— 清单的**结构化退役** `retire[]`
+
+**动因（实施期实测）**：G1 组清单在 `proving` 阶段**无法通过 drill** —— ① `proving` 要求 `watch[]` 每条当前存在（`lib/rollback-registry.ts:439-446`），而该清单的退役面正是删掉那两个 watch 文件（`lib/delegate-async.ts`）⇒ M7 恒红；② 清单唯一能改 registry 的手段是字面 `find/replace`，而 `find` 必须锚定条目**当前状态文本**（`proving`/`active` 随证据流转）⇒ **状态自指**（实测：锚 `proving` 的 find 在回填证据转 `active` 后命中 0 次）。取证全文见 `.rddf/reviews/rollback-g1-discovery.md`（隔离 clone 里把 4 条临时置 `active` 后同一份清单 ⇒ 877 pass / 0 fail）。
+
+**用户裁决**：路径 A（清单加结构化 `retire[]`），否决 B（放宽 M7）/ C（反序证据流）。
+
+| 轮次 | 结论 | 处置 |
+|---|---|---|
+| oracle（增量 6） | **APPROVE**（0 阻断 + 4 中等 + 1 可选） | **中等 1**：D5 与 V16 的约束编号不一致（D5 四条 / V16 五条且错位）⇒ 统一为**六条并逐条对齐**（V16 为真源回改 D5）；**中等 2**：`retired_evidence` 双口径（旧 D5「notes 指向的评审报告」vs 新「= `adr_primary`」）⇒ 回改旧 bullet：机读字段恒 = `adr_primary`（退役依据出处），演练/评审报告走 `notes` + git 历史，**两者不同物**；**中等 3**：钉死校验时序（校验材料 = **应用前**的 registry 原文，在 `edits` 模拟之前）+ 新增 **⑥ `edits` 不得触碰 `registry.json`**（同一文件两条写入胜负未定义）；**中等 4**：在 U10 增 **③ `retired_at` 的真实性不可判**（禁止搬运旧 drill 副本产物）；**可选**：把 ⑤ 的例外身份锁到 `mechanism == rollback-manifest-enforcement`（并明确该清单同时声明 `retire[]` ⇒ 红） |
+| critic（增量 6，第 7 轮） | `APPROVE_WITH_CONDITIONS`（**0 BLOCKER**，2 SHOULD_FIX + 3 NIT，`mergeable: yes` / `scope_exceeded: false`） | **SHOULD_FIX 1**：`retire[]` 与 **D6 单向树**的关系未定位（严格读 D6「registry → 清单」会把它判成反向边；第 6 轮否 F 时引的正是 D6）⇒ D6 补一条：`retire[]` 只是**退役操作声明**（按 mechanism 身份，不读内容），状态真源仍只在 registry，且 ⑤⑥ 把写通道收敛为唯一一条 ⇒ 是**收窄**不是反向边；**SHOULD_FIX 2**：被否的 B/C 未登记进选项表（与本文第 5/6 轮补 E/F 的惯例不一致）⇒ 补 **G（放宽 M7）/ H（反序证据流）** 两行 + 否决理由；**NIT**：① 抬头「V16 的 ①–⑤」→ ①–⑥；② `retire[]` 组内重名 ⇒ 红（fail-closed 写实）；③ 补 `active → retired` 的显式迁移边 |
+
+**审查结论**：0 BLOCKER ⇒ 不触发复审；2 SHOULD_FIX + 3 NIT **全部在本文已处置**（见上表「处置」列的落地文本）。
+
+**本轮的净结论**：清单 schema 加 `retire?: string[]` —— drill 在隔离副本里按**结构**（不做文本替换）把 `retire[]` 列出的条目转 `retired`（`retired_at` = 执行日、`retired_evidence` = 该条目 `adr_primary`、撤 `watch`/`manifest_ref`/`pending_backlog`）；**六条 fail-closed 约束**（存在可解析 / 条目存在且不重名 / 来源态 ∈ {active, proving} / 同清单归属 / 与删 registry 互斥 / 与 edits 碰 registry 互斥），校验材料 = **应用前**的 registry 原文；退役完整性由 **M1 孤儿清单判据**兜住（不另设判据）；`retired_at` 真实性登记为 **U10③**（弱判据）。**实现（`lib/rollback-drill.ts`）+ G1 清单改写 + 负例测试 = 下一批 builder**。
+
 ## 6. 本报告的边界
 
 - 本报告是**誊写**：审查者（metis / oracle / critic）的原文不在本文件内，只保留**结论与逐条处置**；过程细节以各轮 subagent 输出为准（不进决策文档，符合「正文三层分离」）。
