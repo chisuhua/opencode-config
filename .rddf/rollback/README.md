@@ -66,7 +66,24 @@ bun scripts/rollback-registry.ts --json     # 机读
 
 退出码：`0` 全绿 / `1` 有判据不通过 / `2` registry 缺失或 schema 非法（**不可判定**，不当通过）。
 
-**六态**（判据编号见 `docs/adr/ADR-rollback-manifest-enforcement.md` 的 M1–M8）：
+**组清单（1:N）**：机制之间存在**不可拆的内核耦合**时，退役必须同批 ⇒ 一份清单覆盖**一组**机制。
+⇒ registry 条目用 **`manifest_ref`** 指向所属清单（`active` / `proving` 必填）；**多个机制可指向同一份清单**；
+清单的 `mechanism` 字段 = **组名**；清单用 `adr` ∪ `adr_related[]` **逐条声明**组内各机制的决策记录
+（M2 的**集合相等（双向）**：清单声明集 == 指向它的条目的 `adr_primary` 集 ⇒ 既不能声明没人指的 ADR，也不能漏声明）。
+⚠ **组的边界是评审面**（ADR 的 U11）：须给出**调用点行号级依赖证据**；组划错 ⇒ 退役会连带撤掉不该撤的东西。
+
+**存量债的分组（实测内核耦合 ⇒ 3 组）**：
+
+| 组 | 成员 | 为什么同组（证据） |
+|---|---|---|
+| **G1 `delegate-slot-kernel`** | `front-multi-backend` / `front-stop-confirmation` / `front-stop-ownership` / `front-cancel-release` | `cancel`（CR）调用 `waitStopped`（SC，`lib/delegate-async.ts:2369`）与 `releaseSlotAuthorized`（SO，`:2451`）；`markCancelPending`（CR，`:2575`）是 MB 的 reconcile 排除条件 |
+| **G2 `delegate-knowledge-delivery`** | `front-knowledge-capability` / `delegate-delivery-evidence` | 共用 `kind` 契约与 ledger / `outcome` 枚举 |
+| **G3 `role-class-write-set`** | `backend-handoff-role-class` / `class-write-scope-alignment` | 共用 `classAllowRoots`（`lib/delegate-core.ts:903`）与 3 份 prompt 的同一行 |
+
+⚠ 另有 **2 条已判为「退役 = 重写」⇒ 豁免**（`no-single-baseline`，证据 `.rddf/reviews/rollback-exempt-role-identity-canonical.md`）：
+`role-session-identity` / `canonical-root-normalization` —— 教学面落在 `prompts/build.md` 的**原生**角色矩阵段内（实测删段 ⇒ 39 处红 + 引用悬空 ⇒ 没有 `find/replace` 形态），且连带面落在**已登记为 active 的机制**上 ⇒「回退到先前状态」的前提不成立。
+
+**六态**（判据编号见 `docs/adr/ADR-rollback-manifest-enforcement.md` 的 M1–M9）：
 
 | 状态 | 含义 | 清单 | 证据 | 债指针 |
 |---|---|---|---|---|

@@ -78,6 +78,14 @@ export interface RegistryEntry {
   watch?: string[]
   /** 仅 `unmanifested` 必填：逐机制债指针（必须 = `pending/<mechanism>.md`）。 */
   pending_backlog?: string
+  /**
+   * **该机制所属清单**的文件名（`.rddf/rollback/<name>.json`）—— `active` / `proving` 必填。
+   *
+   * ⚠ **多个机制可指向同一份清单**（**组清单**，ADR D1 / M1 / M2）：机制之间存在
+   * **不可拆的内核耦合**时，退役必须同批 ⇒ 一份清单覆盖一组机制。
+   * ⚠ 清单的 `mechanism` 字段 = **组名**（不是某个成员的机制名）。
+   */
+  manifest_ref?: string
   exempt_class?: string
   exempt_evidence?: string
   retired_at?: string
@@ -327,41 +335,102 @@ export function checkRegistry(root: string, reg: RegistryFile, opts: CheckOption
     if (!adrFiles.includes(c)) problems.push({ code: "M1", mechanism: c, detail: "registry 指向的 ADR 不存在" })
   }
 
-  // ── M1（第二子句）：清单文件集合 == (active ∪ proving) 的 mechanism 集合（双向）────
-  const manifestMechanisms = new Set(manifests.keys())
-  const withManifest = new Set(
-    reg.entries.filter((e) => e.state === "active" || e.state === "proving").map((e) => e.mechanism),
-  )
-  for (const name of manifestMechanisms) {
-    if (!withManifest.has(name)) {
+  // ── M1（第二子句）：清单文件集合 == {active ∪ proving 条目的 manifest_ref}（去重）────
+  //   组清单 ⇒ 多条机制指向同一份清单 ⇒ 集合比对按**去重后的引用集**；
+  //   反向：每个 active/proving 条目必须有 manifest_ref 指向**存在的**清单文件。
+  const referenced = new Set<string>()
+  for (const e of reg.entries) {
+    if (e.state !== "active" && e.state !== "proving") continue
+    if (!e.manifest_ref) {
+      problems.push({
+        code: "M1",
+        mechanism: e.mechanism,
+        detail: `${e.state} 条目缺 manifest_ref（须指向存在的清单文件）`,
+      })
+      continue
+    }
+    if (!manifests.has(e.manifest_ref)) {
+      problems.push({
+        code: "M1",
+        mechanism: e.mechanism,
+        detail: `manifest_ref 指向不存在的清单：${e.manifest_ref}`,
+      })
+      continue
+    }
+    referenced.add(e.manifest_ref)
+  }
+  for (const name of manifests.keys()) {
+    if (!referenced.has(name)) {
       problems.push({
         code: "M1",
         mechanism: name,
-        detail: "清单文件存在但 registry 无对应条目（须登记为 active / proving）",
+        detail: "清单文件存在但无 active/proving 条目指向它（孤儿清单）",
+      })
+    }
+    // V15：清单的 mechanism == 文件名（组清单的 mechanism = 组名）
+    const mm = manifests.get(name)!
+    if (mm.m.mechanism !== name) {
+      problems.push({
+        code: "M1",
+        mechanism: name,
+        detail: `清单的 mechanism（${mm.m.mechanism}）!= 文件名（${name}）`,
       })
     }
   }
-  for (const m of withManifest) {
-    if (!manifestMechanisms.has(m)) {
-      problems.push({ code: "M1", mechanism: m, detail: "registry 条目缺对应的清单文件" })
+
+  // ── M2（集合相等 · 双向）：清单**声明**的决策记录集合 == 指向它的条目的 adr_primary 集 ──
+  const declaredAdrs = (name: string): Set<string> => {
+    const m = manifests.get(name)!.m
+    return new Set([m.adr, ...(m.adr_related ?? [])].filter((x): x is string => typeof x === "string"))
+  }
+  for (const name of manifests.keys()) {
+    const pointing = reg.entries.filter(
+      (e) => e.manifest_ref === name && (e.state === "active" || e.state === "proving"),
+    )
+    if (pointing.length === 0) continue // 孤儿清单已由 M1 报
+    const declared = declaredAdrs(name)
+    const pointed = new Set(pointing.map((e) => e.adr_primary))
+    for (const d of declared) {
+      if (!pointed.has(d)) {
+        problems.push({
+          code: "M2",
+          mechanism: name,
+          detail: `清单声明的决策记录没有条目指向它：${d}`,
+        })
+      }
+    }
+    for (const p of pointed) {
+      if (!declared.has(p)) {
+        problems.push({
+          code: "M2",
+          mechanism: name,
+          detail: `条目的 adr_primary 未被清单声明：${p}`,
+        })
+      }
     }
   }
 
   // ── 逐状态判据 ──────────────────────────────────────────────────────────
   for (const e of reg.entries) {
-    const manifest = manifests.get(e.mechanism)
+    const manifest = e.manifest_ref ? manifests.get(e.manifest_ref) : undefined
     switch (e.state) {
       case "proving": {
         // 过渡态：清单已写、机制已落地、**演练证据待回填**
         if (!manifest) {
-          problems.push({ code: "M2", mechanism: e.mechanism, detail: "proving 条目缺清单（应为 .rddf/rollback/<mechanism>.json）" })
-          break
-        }
-        if (manifest.m.adr !== e.adr_primary) {
           problems.push({
             code: "M2",
             mechanism: e.mechanism,
-            detail: `清单的 adr（${manifest.m.adr ?? "(无)"}）!= registry 的 adr_primary（${e.adr_primary}）`,
+            detail: "proving 条目缺清单（manifest_ref 未指向存在的清单）",
+          })
+          break
+        }
+        // M2/M9：adr_primary ∈ 该清单**声明**的决策记录集合（∈ 关系；集合相等在清单级判）
+        const declared = declaredAdrs(e.manifest_ref!)
+        if (!declared.has(e.adr_primary)) {
+          problems.push({
+            code: "M2",
+            mechanism: e.mechanism,
+            detail: `清单未声明本机制的 adr_primary（${e.adr_primary}；清单声明：${[...declared].join(" / ") || "(无)"}）`,
           })
         }
         if (e.pending_backlog) {
@@ -384,14 +453,20 @@ export function checkRegistry(root: string, reg: RegistryFile, opts: CheckOption
       }
       case "active": {
         if (!manifest) {
-          problems.push({ code: "M2", mechanism: e.mechanism, detail: "active 条目缺清单（应为 .rddf/rollback/<mechanism>.json）" })
-          break
-        }
-        if (manifest.m.adr !== e.adr_primary) {
           problems.push({
             code: "M2",
             mechanism: e.mechanism,
-            detail: `清单的 adr（${manifest.m.adr ?? "(无)"}）!= registry 的 adr_primary（${e.adr_primary}）`,
+            detail: "active 条目缺清单（manifest_ref 未指向存在的清单）",
+          })
+          break
+        }
+        // M2：adr_primary ∈ 该清单**声明**的决策记录集合（组清单 ⇒ 逐条声明）
+        const declared = declaredAdrs(e.manifest_ref!)
+        if (!declared.has(e.adr_primary)) {
+          problems.push({
+            code: "M2",
+            mechanism: e.mechanism,
+            detail: `清单未声明本机制的 adr_primary（${e.adr_primary}；清单声明：${[...declared].join(" / ") || "(无)"}）`,
           })
         }
         // V8：证据形状 + 内容比对（active ⇒ 证据**必填**）
@@ -405,7 +480,7 @@ export function checkRegistry(root: string, reg: RegistryFile, opts: CheckOption
       }
       case "unmanifested": {
         if (manifest) {
-          problems.push({ code: "M7", mechanism: e.mechanism, detail: "unmanifested 条目不得有清单（写了就转 active）" })
+          problems.push({ code: "M7", mechanism: e.mechanism, detail: "unmanifested 条目不得有清单（写了就转 active / proving）" })
         }
         const want = `${PENDING_DIR}${e.mechanism}.md`
         if (e.pending_backlog !== want) {

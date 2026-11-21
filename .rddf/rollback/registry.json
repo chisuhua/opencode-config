@@ -5,36 +5,41 @@
       "mechanism": "commit-gate",
       "adr_primary": "docs/adr/ADR-commit-verification-gate.md",
       "state": "active",
-      "notes": "commit 工具层验证门；三步回滚（撤放行 / 撤 sessions 过滤 / 兼容读）已清单化并实测。"
+      "notes": "commit 工具层验证门；三步回滚（撤放行 / 撤 sessions 过滤 / 兼容读）已清单化并实测。",
+      "manifest_ref": "commit-gate"
     },
     {
       "mechanism": "plan-topics",
       "adr_primary": "docs/adr/ADR-plan-multi-session-collaboration.md",
       "state": "active",
-      "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。"
+      "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。",
+      "manifest_ref": "plan-topics"
     },
     {
       "mechanism": "plan-delegate",
       "adr_primary": "docs/adr/ADR-plan-delegate-engineering-session.md",
       "state": "active",
-      "notes": "plan 侧工程派发的**能力面**退役（内核保留、惰性）。"
+      "notes": "plan 侧工程派发的**能力面**退役（内核保留、惰性）。",
+      "manifest_ref": "plan-delegate"
     },
     {
       "mechanism": "rollback-manifest-enforcement",
       "adr_primary": "docs/adr/ADR-rollback-manifest-enforcement.md",
-      "state": "active",
-      "notes": "本机制自身：退役 = 撤守卫 + 删 registry + 删本清单（自清单见 `.rddf/rollback/rollback-manifest-enforcement.json`）。`proving` → `active` 的过渡已完成（演练证据已回填；隔离副本里退役后 `bun test tests/` 1032 pass / 1 skip / 0 fail ⇒ 退役本机制后仓库自洽）。",
+      "state": "proving",
+      "notes": "本机制自身：退役 = 撤守卫 + 删 registry + 删本清单（自清单见 `.rddf/rollback/rollback-manifest-enforcement.json`）。`proving` = **过渡态**（已落地、清单已写、**演练证据待回填**）—— 自举死锁的解法：证据只能由**已提交**的清单跑出来 ⇒ 必然晚一个 commit。",
       "watch": [
         "lib/rollback-registry.ts",
         "scripts/rollback-registry.ts",
         "tests/rollback-registry.test.ts"
-      ]
+      ],
+      "manifest_ref": "rollback-manifest-enforcement"
     },
     {
       "mechanism": "model-fallback",
       "adr_primary": ".rddf/reviews/model-fallback-verify.md",
       "state": "active",
-      "notes": "⚠ **本机制无 ADR** ⇒ 决策记录 = 验收报告（不参与 M1 的 docs/adr 集合比对）。"
+      "notes": "⚠ **本机制无 ADR** ⇒ 决策记录 = 验收报告（不参与 M1 的 docs/adr 集合比对）。",
+      "manifest_ref": "model-fallback"
     },
     {
       "mechanism": "front-multi-backend",
@@ -44,7 +49,7 @@
         "plugins/delegate.ts",
         "lib/delegate-core.ts"
       ],
-      "notes": "delegate 核心族：退役面横跨 role_class / base-channel / resume-precheck 三个增量。",
+      "notes": "**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
       "pending_backlog": ".rddf/rollback/pending/front-multi-backend.md"
     },
     {
@@ -54,7 +59,7 @@
       "watch": [
         "lib/delegate-async.ts"
       ],
-      "notes": "停机证据判据与 front-multi-backend 同族（共享同一份停机/归属判据）。",
+      "notes": "**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
       "pending_backlog": ".rddf/rollback/pending/front-stop-confirmation.md"
     },
     {
@@ -64,7 +69,7 @@
       "watch": [
         "lib/role-lease.ts"
       ],
-      "notes": "归属与槽位释放：与 front-cancel-release 部分取代关系 ⇒ 退役面需一并定。",
+      "notes": "**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
       "pending_backlog": ".rddf/rollback/pending/front-stop-ownership.md"
     },
     {
@@ -74,7 +79,7 @@
       "watch": [
         "lib/delegate-async.ts"
       ],
-      "notes": "cancel 放行：部分取代 front-multi-backend / front-stop-* 三篇 ⇒ 拆不开。",
+      "notes": "**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
       "pending_backlog": ".rddf/rollback/pending/front-cancel-release.md"
     },
     {
@@ -84,7 +89,7 @@
       "watch": [
         "lib/delegate-core.ts"
       ],
-      "notes": "只读后端门控：与 role_class 共用同一 brief 字段（kind=engineering/knowledge）。",
+      "notes": "**G2 delegate-knowledge-delivery** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
       "pending_backlog": ".rddf/rollback/pending/front-knowledge-capability.md"
     },
     {
@@ -94,18 +99,16 @@
       "watch": [
         "lib/delegate-core.ts"
       ],
-      "notes": "交付证据枚举（outcome）：与 base-channel 的 `unverified` 联动 ⇒ 退役面需一并定。",
+      "notes": "**G2 delegate-knowledge-delivery** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
       "pending_backlog": ".rddf/rollback/pending/delegate-delivery-evidence.md"
     },
     {
       "mechanism": "role-session-identity",
       "adr_primary": "docs/adr/ADR-role-session-identity.md",
-      "state": "unmanifested",
-      "watch": [
-        "lib/role-identity.ts"
-      ],
-      "notes": "会话身份归一：与 role-aware-permissions 同族（教学面原生 ⇒ 见 no-single-baseline）。",
-      "pending_backlog": ".rddf/rollback/pending/role-session-identity.md"
+      "state": "exempt",
+      "notes": "退役 = **重写** ⇒ 清单做不到（`no-single-baseline`）：① 教学面落在 `prompts/build.md` 的**原生**角色矩阵段内（`git log --diff-filter=A -- prompts/build.md` ⇒ `132f389` 初始提交）⇒ 回退教学面 = 删原生段 ⇒ 实测 39 处红 + 引用悬空 ⇒ 没有 `find/replace` 形态；② 连带面落在**已登记为 active 的机制**上 ⇒「回退到先前状态」的前提不成立。证据：`.rddf/reviews/rollback-exempt-role-identity-canonical.md`（含 U12 的 T1/T2/T3 评审 rubric）。",
+      "exempt_class": "no-single-baseline",
+      "exempt_evidence": ".rddf/reviews/rollback-exempt-role-identity-canonical.md"
     },
     {
       "mechanism": "backend-handoff-role-class",
@@ -114,7 +117,7 @@
       "watch": [
         "lib/role-policy.ts"
       ],
-      "notes": "role_class 交接：跨 19 个文件（lib/delegate-core.ts 64 处）⇒ 退役面未定。",
+      "notes": "**G3 role-class-write-set** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
       "pending_backlog": ".rddf/rollback/pending/backend-handoff-role-class.md"
     },
     {
@@ -124,19 +127,16 @@
       "watch": [
         "lib/role-policy.ts"
       ],
-      "notes": "写集口径：散在 3 份 prompt 的选类表 + lib/role-policy.ts 的 classAllowRoots。",
+      "notes": "**G3 role-class-write-set** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
       "pending_backlog": ".rddf/rollback/pending/class-write-scope-alignment.md"
     },
     {
       "mechanism": "canonical-root-normalization",
       "adr_primary": "docs/adr/ADR-canonical-root-normalization.md",
-      "state": "unmanifested",
-      "watch": [
-        "tests/canonical-root.test.ts",
-        "lib/delegate-core.ts"
-      ],
-      "notes": "canonical_root 归一：决定 pair/ledger/role.json 的落盘基准 ⇒ 与 role-session-identity 耦合。",
-      "pending_backlog": ".rddf/rollback/pending/canonical-root-normalization.md"
+      "state": "exempt",
+      "notes": "退役 = **重写** ⇒ 清单做不到（`no-single-baseline`）：① 教学面落在 `prompts/build.md` 的**原生**角色矩阵段内（`git log --diff-filter=A -- prompts/build.md` ⇒ `132f389` 初始提交）⇒ 回退教学面 = 删原生段 ⇒ 实测 39 处红 + 引用悬空 ⇒ 没有 `find/replace` 形态；② 连带面落在**已登记为 active 的机制**上 ⇒「回退到先前状态」的前提不成立。证据：`.rddf/reviews/rollback-exempt-role-identity-canonical.md`（含 U12 的 T1/T2/T3 评审 rubric）。",
+      "exempt_class": "no-single-baseline",
+      "exempt_evidence": ".rddf/reviews/rollback-exempt-role-identity-canonical.md"
     },
     {
       "mechanism": "role-aware-permissions",

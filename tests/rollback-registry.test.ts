@@ -81,6 +81,7 @@ describe("机制登记表：判别力（每条判据都有反例）", () => {
     mechanism: "x",
     adr_primary: "docs/adr/ADR-x.md",
     state: "active",
+    manifest_ref: "x", // active ⇒ manifest_ref 必填（组清单：多机制可指向同一份）
   }
   const okManifest = {
     version: 1,
@@ -117,14 +118,15 @@ describe("机制登记表：判别力（每条判据都有反例）", () => {
     expect(problems.some((p) => p.code === "M8" && p.detail.includes("决策记录闭集"))).toBe(true)
   })
 
-  test("M2：active 条目缺清单 ⇒ 红；清单的 adr 不一致 ⇒ 红", () => {
-    const missing = fixture([okEntry])
+  test("M2：active 条目缺清单 ⇒ 红；清单未声明本机制的 adr_primary ⇒ 红", () => {
+    const missing = fixture([{ ...okEntry, manifest_ref: undefined }])
     expect(missing.problems.some((p) => p.code === "M2")).toBe(true)
 
     const mismatch = fixture([okEntry], {
       manifests: { x: { ...okManifest, adr: "docs/adr/ADR-other.md" } },
+      adrs: ["docs/adr/ADR-x.md", "docs/adr/ADR-other.md"],
     })
-    expect(mismatch.problems.some((p) => p.code === "M2" && p.detail.includes("清单的 adr"))).toBe(true)
+    expect(mismatch.problems.some((p) => p.code === "M2" && p.detail.includes("未被清单声明"))).toBe(true)
   })
 
   test("M3：豁免类不在闭集内 ⇒ 红；证据不存在 ⇒ 红", () => {
@@ -211,11 +213,61 @@ describe("机制登记表：判别力（每条判据都有反例）", () => {
     expect(stale.problems.some((p) => p.code === "V8" && p.detail.includes("实质改动过"))).toBe(true)
   })
 
-  test("M1（第二子句）：清单文件存在但无 active/proving 条目 ⇒ 红（清单必须被登记）", () => {
+  test("M1（第二子句）：清单文件存在但无 active/proving 条目指向 ⇒ 红（孤儿清单）", () => {
     const { problems } = fixture([{ ...okEntry, state: "exempt", exempt_class: "no-mechanism", exempt_evidence: "docs/adr/ADR-x.md" }], {
       manifests: { x: okManifest },
     })
-    expect(problems.some((p) => p.code === "M1" && p.detail.includes("清单文件存在但 registry 无对应条目"))).toBe(true)
+    expect(problems.some((p) => p.code === "M1" && p.detail.includes("孤儿清单"))).toBe(true)
+  })
+
+  test("V15：组清单归属判定（manifest_ref 缺失 / 悬空 / mechanism≠文件名 / 声明集双向）", () => {
+    // ① active 缺 manifest_ref ⇒ 红
+    const noRef = fixture([{ ...okEntry, manifest_ref: undefined }], { manifests: { x: okManifest } })
+    expect(noRef.problems.some((p) => p.code === "M1" && p.detail.includes("缺 manifest_ref"))).toBe(true)
+
+    // ② manifest_ref 指向不存在的清单 ⇒ 红
+    const dangling = fixture([{ ...okEntry, manifest_ref: "nope" }], { manifests: { x: okManifest } })
+    expect(dangling.problems.some((p) => p.code === "M1" && p.detail.includes("指向不存在的清单"))).toBe(true)
+
+    // ③ 清单的 mechanism ≠ 文件名 ⇒ 红
+    const nameMismatch = fixture([okEntry], {
+      manifests: { x: { ...okManifest, mechanism: "other" } },
+    })
+    expect(nameMismatch.problems.some((p) => p.code === "M1" && p.detail.includes("!= 文件名"))).toBe(true)
+
+    // ④ 清单声明了没人指向的 ADR ⇒ 红
+    const unclaimed = fixture([okEntry], {
+      manifests: { x: { ...okManifest, adr_related: ["docs/adr/ADR-other.md"] } },
+      adrs: ["docs/adr/ADR-x.md", "docs/adr/ADR-other.md"],
+    })
+    expect(unclaimed.problems.some((p) => p.code === "M2" && p.detail.includes("没有条目指向它"))).toBe(true)
+
+    // ⑤ 条目的 adr_primary 未被清单声明 ⇒ 红
+    const undeclared = fixture([okEntry], {
+      manifests: { x: { ...okManifest, adr: "docs/adr/ADR-other.md" } },
+      adrs: ["docs/adr/ADR-x.md", "docs/adr/ADR-other.md"],
+    })
+    expect(undeclared.problems.some((p) => p.code === "M2" && p.detail.includes("未被清单声明"))).toBe(true)
+  })
+
+  test("组清单：两个机制指向同一份清单 ⇒ 绿（1:N 合法），且各指各的 ADR", () => {
+    const group = {
+      version: 1,
+      mechanism: "g1",
+      adr: "docs/adr/ADR-x.md",
+      adr_related: ["docs/adr/ADR-y.md"],
+      delete: ["a.txt"],
+    }
+    const { problems } = fixture(
+      [
+        { ...okEntry, mechanism: "x", manifest_ref: "g1" },
+        { ...okEntry, mechanism: "y", adr_primary: "docs/adr/ADR-y.md", manifest_ref: "g1" },
+      ],
+      { manifests: { g1: group }, adrs: ["docs/adr/ADR-x.md", "docs/adr/ADR-y.md"] },
+    )
+    const codes = problems.map((p) => p.code)
+    expect(codes.includes("M1")).toBe(false)
+    expect(codes.includes("M2")).toBe(false)
   })
 
   test("contentHash 排除 last_drill 字段（回填证据不改变哈希 ⇒ 无自指回归）", () => {

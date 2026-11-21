@@ -52,8 +52,14 @@ export interface Manifest {
   version: 1
   /** 机制名（用于报告 / 与 `.rddf/rollback/<mechanism>.json` 对齐） */
   mechanism: string
-  /** 关联 ADR（可选，仅用于报告） */
+  /** 关联 ADR（可选，仅用于报告）—— **组清单**：组内核的引入 ADR */
   adr?: string
+  /**
+   * **组清单**声明的其余决策记录（`ADR-rollback-manifest-enforcement` 的 M2）：
+   * 组内各机制的 ADR 逐条列在这里 ⇒ 机器判「清单声明集 == 指向它的条目的
+   * `adr_primary` 集（双向）」⇒ 一份清单不能声明没人指的 ADR，也不能漏声明。
+   */
+  adr_related?: string[]
   /** 覆盖面说明（可选，人会读） */
   notes?: string
   /** 删除的文件（仓库内相对路径） */
@@ -103,6 +109,14 @@ export function parseManifest(raw: string): Manifest {
     throw new DrillError("schema_invalid", "mechanism 必须是非空字符串")
   }
   if (m.adr !== undefined && typeof m.adr !== "string") throw new DrillError("schema_invalid", "adr 必须是字符串")
+  if (m.adr_related !== undefined) {
+    if (!Array.isArray(m.adr_related)) throw new DrillError("schema_invalid", "adr_related 必须是数组")
+    for (const [i, a] of m.adr_related.entries()) {
+      if (typeof a !== "string" || a.length === 0) {
+        throw new DrillError("schema_invalid", `adr_related[${i}] 必须是非空字符串`)
+      }
+    }
+  }
   if (m.notes !== undefined && typeof m.notes !== "string") throw new DrillError("schema_invalid", "notes 必须是字符串")
 
   const del = m.delete ?? []
@@ -175,6 +189,7 @@ export function parseManifest(raw: string): Manifest {
     version: 1,
     mechanism: m.mechanism,
     ...(m.adr !== undefined ? { adr: m.adr as string } : {}),
+    ...(m.adr_related !== undefined ? { adr_related: m.adr_related as string[] } : {}),
     ...(m.notes !== undefined ? { notes: m.notes as string } : {}),
     delete: del as string[],
     edits: edits as ManifestEdit[],

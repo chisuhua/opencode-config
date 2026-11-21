@@ -2,6 +2,7 @@
 
 - **机制**：`front-multi-backend`
 - **决策记录**：`docs/adr/ADR-front-multi-backend.md`
+- **组**：**G1 delegate-slot-kernel** —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带全组 ⇒ 一份**组清单**覆盖全组
 - **状态**：`unmanifested` —— 机制**在跑**、**回滚清单待写**（⚠ 这是**债**，不是豁免：机制真实存在且可退役，只是清单还没写）
 - **为什么不现在写**：delegate 核心族的退役面横跨 `role_class` / `base-channel` / `resume-precheck` 三个增量（实测 `plan-delegate` 的退役连带 20 余处守卫收窄）⇒ 先定「退役到哪一层」再写清单，否则清单会给出假承诺。
 - **清单要覆盖的落点**（五类）：配置（`opencode.jsonc.opencode-go` 的 delegate 放行）/ 代码（`lib/delegate-core.ts` + `lib/delegate-async.ts` + `plugins/delegate.ts`）/ prompt（`front.md` `plan.md` `build.md` 的 delegate 段）/ 文档（MAD + SUBAGENT-ORCHESTRATION + front-delegate-*）/ 守卫（`config-guards` 的 delegate 族 + `tests/delegate-*.test.ts`）

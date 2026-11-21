@@ -2,6 +2,7 @@
 
 - **机制**：`front-stop-ownership`
 - **决策记录**：`docs/adr/ADR-front-stop-ownership.md`
+- **组**：**G1 delegate-slot-kernel** —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带全组 ⇒ 一份**组清单**覆盖全组
 - **状态**：`unmanifested` —— 机制**在跑**、**回滚清单待写**（⚠ 这是**债**，不是豁免：机制真实存在且可退役，只是清单还没写）
 - **为什么不现在写**：归属与槽位释放（claim_gen / 归属版本）被 `front-cancel-release` 部分取代（D2/S9/D3⑩）⇒ 退役面需三篇一起定。
 - **清单要覆盖的落点**（五类）：同上（归属/槽位子集）
