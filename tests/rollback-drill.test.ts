@@ -217,6 +217,20 @@ describe("applyDrill", () => {
     expect(existsSync(path.join(d, "b.txt"))).toBe(true)
   })
 
+  test("`replace` 里的 `$&` / `` $` `` / `$'` / `$1` 按**字面**落盘（不得被 String.replace 的替换模式解释）", () => {
+    const d = repo()
+    write(d, "c.txt", "PRE<TOKEN>POST\n")
+    // ⚠ 这些序列在 `String.prototype.replace(pattern, replacement)` 的 replacement 为**字符串**时
+    //   会被解释（`$&` ⇒ 匹配子串、`` $` `` ⇒ 匹配前文、`$'` ⇒ 匹配后文、`$1` ⇒ 捕获组）。
+    //   清单的 `replace` 是**数据**（要落盘的文本）⇒ 必须逐字生效，否则回滚结果被静默扭曲。
+    const literal = "A$&B$`C$'D$1E"
+    const m = parseManifest(
+      base({ edits: [{ path: "c.txt", find: "<TOKEN>", replace: literal }] }),
+    )
+    applyDrill(m, d)
+    expect(readFileSync(path.join(d, "c.txt"), "utf8")).toBe(`PRE${literal}POST\n`)
+  })
+
   test("有问题 ⇒ 抛，且**一个字节都不写**（禁止部分应用）", () => {
     const d = repo()
     write(d, "c.txt", "hello WORLD end\n")

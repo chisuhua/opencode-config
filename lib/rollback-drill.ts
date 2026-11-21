@@ -444,7 +444,10 @@ export function planDrill(m: Manifest, root: string): DrillPlan {
         broken = true
         break
       }
-      buf = buf.replace(e.find, e.replace)
+      // ⚠ replacement 用**函数形式**：`replace` 是清单数据，不是替换模式。
+      //   字符串形式的 replacement 会解释 `$&` / `` $` `` / `$'` / `$1`
+      //   （分别替换成匹配子串 / 匹配前文 / 匹配后文 / 捕获组）⇒ 写盘内容被静默扭曲。
+      buf = buf.replace(e.find, () => e.replace)
     }
     if (!broken) writes.push({ path: rel, before, after: buf })
   }
