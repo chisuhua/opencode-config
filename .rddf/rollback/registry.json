@@ -113,7 +113,7 @@
     {
       "mechanism": "backend-handoff-role-class",
       "adr_primary": "docs/adr/ADR-backend-handoff-role-class.md",
-      "state": "proving",
+      "state": "active",
       "watch": [
         "lib/role-policy.ts"
       ],
@@ -123,7 +123,7 @@
     {
       "mechanism": "class-write-scope-alignment",
       "adr_primary": "docs/adr/ADR-class-write-scope-alignment.md",
-      "state": "proving",
+      "state": "active",
       "watch": [
         "lib/role-policy.ts"
       ],
