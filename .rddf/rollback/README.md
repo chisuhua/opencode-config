@@ -44,6 +44,7 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 - `delete` 与 `edits` **不得指向同一路径**（判同键 = `path.posix.normalize`，`./a.txt` 与 `a.txt` 视为同一路径）；
 - `retire[]`（**结构化退役**，ADR 第 7 轮 / V16）⇒ 六条 fail-closed：registry 存在可解析、条目存在且组内不重名、来源态 ∈ {`active`,`proving`}、同清单归属、与「删整个登记面」互斥、与「edits 触碰登记面」互斥；**校验材料 = 应用前的 registry 原文**（转态按**身份**、不按可变字段 ⇒ 无状态自指）；
 - **不做部分应用**：先全内存模拟（同一个文件的多条 edits 按声明顺序作用在运行中的内容上），全过才落盘。
+- `edits.find` 是**字符串 pattern**（不是正则）⇒ 里面的正则元字符（`(`, `[`, `?`, `.` …）与 `$&` 都按**字面**匹配；`edits.replace` 也按**字面**落盘（函数式 replacement）⇒ `$&`、`` $` ``、`$'`、`$$`、`$1` 一律原样写入，**不**当作替换模式，无需转义。
 
 **安全**：只在 `mkdtempSync(tmpdir())` 下的 clone 里动手（断言副本路径 ≠ 真仓）；验证命令带 `ROLLBACK_DRILL_CHILD=1`，嵌套调用默认拒绝。
 

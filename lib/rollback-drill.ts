@@ -45,9 +45,9 @@ export class DrillError extends Error {
 export interface ManifestEdit {
   /** 仓库内相对路径 */
   path: string
-  /** 必须**恰好出现 1 次**的原文 */
+  /** 必须**恰好出现 1 次**的原文（**字符串 pattern**，非正则 ⇒ 正则元字符与 `$&` 都按字面匹配） */
   find: string
-  /** 替换成（空串 = 删除该片段） */
+  /** 替换成（空串 = 删除该片段）。**按字面写入**：`$&` / `` $` `` / `$'` / `$$` / `$1` 一律原样落盘，不当作替换模式 */
   replace: string
 }
 

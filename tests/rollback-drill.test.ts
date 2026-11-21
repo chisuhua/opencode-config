@@ -231,6 +231,36 @@ describe("applyDrill", () => {
     expect(readFileSync(path.join(d, "c.txt"), "utf8")).toBe(`PRE${literal}POST\n`)
   })
 
+  test("`find` 是**字符串 pattern**：含正则元字符与 `$&` 时按字面匹配（防未来改成 RegExp）", () => {
+    const d = repo()
+    // 正则语义下 `.*` / `[` / `(` 会改变匹配范围；字面语义下只有这一处能命中
+    const needle = "a.*b [x] (y) $&"
+    write(d, "c.txt", `head ${needle} tail\n`)
+    const m = parseManifest(base({ edits: [{ path: "c.txt", find: needle, replace: "OK" }] }))
+    applyDrill(m, d)
+    expect(readFileSync(path.join(d, "c.txt"), "utf8")).toBe("head OK tail\n")
+  })
+
+  test("`planDrill` 的 `after` 与 `applyDrill` 落盘一致（dry-run 走同一判据）+ 空串 replace 仍删片段", () => {
+    const d = repo()
+    // ① 空串 replacement ⇒ 删除该片段（防未来加 `if (e.replace)` 之类的「优化」）
+    write(d, "c.txt", "keep DROP keep\n")
+    const drop = parseManifest(base({ delete: [], edits: [{ path: "c.txt", find: "DROP", replace: "" }] }))
+    const dropAfter = planDrill(drop, d).writes[0].after
+    expect(dropAfter).toBe("keep  keep\n")
+    applyDrill(drop, d)
+    expect(readFileSync(path.join(d, "c.txt"), "utf8")).toBe(dropAfter)
+
+    // ② 含 `$` 的 replace：dry-run 的 `after` 必须与落盘结果逐字一致
+    write(d, "c.txt", "PRE<TOKEN>POST\n")
+    const literal = "A$&B$$C"
+    const lit = parseManifest(base({ delete: [], edits: [{ path: "c.txt", find: "<TOKEN>", replace: literal }] }))
+    const after = planDrill(lit, d).writes[0].after
+    expect(after).toBe(`PRE${literal}POST\n`)
+    applyDrill(lit, d)
+    expect(readFileSync(path.join(d, "c.txt"), "utf8")).toBe(after)
+  })
+
   test("有问题 ⇒ 抛，且**一个字节都不写**（禁止部分应用）", () => {
     const d = repo()
     write(d, "c.txt", "hello WORLD end\n")
