@@ -7,13 +7,12 @@
     "docs/adr/ADR-front-stop-ownership.md",
     "docs/adr/ADR-front-cancel-release.md"
   ],
-  "notes": "退役 **G1 `delegate-slot-kernel`**（4 个机制一份清单 —— 内核不可拆）：`front-multi-backend` / `front-stop-confirmation` / `front-stop-ownership` / `front-cancel-release`。\n**退役面**：撤掉**异步派发面**（`dispatch` / `sessions` / `suspend` / `cancel` 四个工具 + 槽位生命周期 + 停机证据判据 + 归属版本 `claim_gen` + 取消释放门控）⇒ front / plan 只剩**同步 `delegate`**（单槽语义保留，由 `lib/delegate-core.ts` 承担）。\n**为什么四者一份清单**（实测内核链）：`cancel`（CR）直接调用 `waitStopped`（SC，`lib/delegate-async.ts:2369`）与 `releaseSlotAuthorized`（SO，`:2451`）；`markCancelPending`（CR，`:2575`）是 MB 的 reconcile 排除条件 ⇒ 拆开退役 ⇒ 另三者编译或判据破裂。\n**保留**：同步 `delegate` 的建/复用/投递/等待/outcome 全链（`lib/delegate-core.ts`）、pair-v2 槽位表、`role_class` / 写集（它们各有自己的机制与清单）。\n⚠ **退役后**：front 失去「并发多任务 / 只读名册 / 暂停续接 / 证据门控终止」四种能力 ⇒ 只剩同步单发。这是**语义后果**，如实登记（不是遗漏）。\n⚠ **退役后删本清单自身**：它的 `delete` 目标（`lib/delegate-async.ts` 等）已不存在 ⇒ 留着会让漂移守卫恒红；registry 的 4 个条目同批转 `retired`（`retired_evidence` = 各自的 ADR）。",
+  "notes": "退役 **G1 `delegate-slot-kernel`**（4 个机制一份清单 —— 内核不可拆）：`front-multi-backend` / `front-stop-confirmation` / `front-stop-ownership` / `front-cancel-release`。\n**退役面**：撤掉**异步派发面**（`dispatch` / `sessions` / `suspend` / `cancel` 四个工具 + 槽位生命周期 + 停机证据判据 + 归属版本 `claim_gen` + 取消释放门控）⇒ front / plan 只剩**同步 `delegate`**（单槽语义保留，由 `lib/delegate-core.ts` 承担）。\n**为什么四者一份清单**（实测内核链）：`cancel`（CR）直接调用 `waitStopped`（SC，`lib/delegate-async.ts:2369`）与 `releaseSlotAuthorized`（SO，`:2451`）；`markCancelPending`（CR，`:2575`）是 MB 的 reconcile 排除条件 ⇒ 拆开退役 ⇒ 另三者编译或判据破裂。\n**保留**：同步 `delegate` 的建/复用/投递/等待/outcome 全链（`lib/delegate-core.ts`）、pair-v2 槽位表、`role_class` / 写集（它们各有自己的机制与清单）。\n⚠ **退役后**：front 失去「并发多任务 / 只读名册 / 暂停续接 / 证据门控终止」四种能力 ⇒ 只剩同步单发。这是**语义后果**，如实登记（不是遗漏）。\n**退役时的两步手工收口**（清单**刻意不做**，理由是**状态自指**）：\n① 删本清单文件 —— 退役后它的 `delete` 目标已不存在 ⇒ 漂移守卫会恒红（**fail-closed，不会静默**）；\n② registry 的 4 个条目 → `state=retired` + `retired_at` + `retired_evidence`（各自的 ADR）+ 撤 `manifest_ref` —— 否则 M1 红（条目指向已删的清单）。\n⚠ **为什么不由清单做**：registry 编辑的 `find` 必须逐字锚定条目的当前状态（`proving` / `active`），而状态又依赖演练证据 ⇒ 写成清单会陷入**状态自指**（同一份清单无法同时适用于过渡态与稳态）⇒ 与既有 4 份清单保持一致（它们同样只覆盖「机制面」）。\n⚠ 代价：退役多两步手工，但**两步都会让套件变红**（漂移守卫 / M1）⇒ 忘不了，且不会静默。",
   "delete": [
     "lib/delegate-async.ts",
     "tests/delegate-async.test.ts",
     "tests/probes/probe-cancel-release.ts",
-    "scripts/mutate-cancel-release.sh",
-    ".rddf/rollback/delegate-slot-kernel.json"
+    "scripts/mutate-cancel-release.sh"
   ],
   "edits": [
     {
@@ -190,26 +189,6 @@
       "path": "tests/delegate-tool.test.ts",
       "find": "    expect(registered.sort()).toEqual([\n      \"cancelToolDefinition\",\n      \"delegateToolDefinition\",\n      \"dispatchToolDefinition\",\n      \"sessionsToolDefinition\",\n      \"suspendToolDefinition\",\n    ])\n",
       "replace": "    expect(registered.sort()).toEqual([\"delegateToolDefinition\"])\n"
-    },
-    {
-      "path": ".rddf/rollback/registry.json",
-      "find": "  {\n      \"mechanism\": \"front-multi-backend\",\n      \"adr_primary\": \"docs/adr/ADR-front-multi-backend.md\",\n      \"state\": \"proving\",\n      \"watch\": [\n        \"plugins/delegate.ts\",\n        \"lib/delegate-core.ts\"\n      ],\n      \"notes\": \"**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。\",\n      \"manifest_ref\": \"delegate-slot-kernel\"\n    }",
-      "replace": "{\n      \"mechanism\": \"front-multi-backend\",\n      \"adr_primary\": \"docs/adr/ADR-front-multi-backend.md\",\n      \"state\": \"retired\",\n      \"retired_at\": \"2026-11-21\",\n      \"retired_evidence\": \"docs/adr/ADR-front-multi-backend.md\",\n      \"notes\": \"退役 = 执行组清单 `.rddf/rollback/delegate-slot-kernel.json`（G1 四机制同批）；退役证据 = 本机制的 ADR（决策记录保留）。\"\n    }"
-    },
-    {
-      "path": ".rddf/rollback/registry.json",
-      "find": "  {\n      \"mechanism\": \"front-stop-confirmation\",\n      \"adr_primary\": \"docs/adr/ADR-front-stop-confirmation.md\",\n      \"state\": \"proving\",\n      \"watch\": [\n        \"lib/delegate-async.ts\"\n      ],\n      \"notes\": \"**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。\",\n      \"manifest_ref\": \"delegate-slot-kernel\"\n    }",
-      "replace": "{\n      \"mechanism\": \"front-stop-confirmation\",\n      \"adr_primary\": \"docs/adr/ADR-front-stop-confirmation.md\",\n      \"state\": \"retired\",\n      \"retired_at\": \"2026-11-21\",\n      \"retired_evidence\": \"docs/adr/ADR-front-stop-confirmation.md\",\n      \"notes\": \"退役 = 执行组清单 `.rddf/rollback/delegate-slot-kernel.json`（G1 四机制同批）；退役证据 = 本机制的 ADR（决策记录保留）。\"\n    }"
-    },
-    {
-      "path": ".rddf/rollback/registry.json",
-      "find": "  {\n      \"mechanism\": \"front-stop-ownership\",\n      \"adr_primary\": \"docs/adr/ADR-front-stop-ownership.md\",\n      \"state\": \"proving\",\n      \"watch\": [\n        \"lib/role-lease.ts\"\n      ],\n      \"notes\": \"**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。\",\n      \"manifest_ref\": \"delegate-slot-kernel\"\n    }",
-      "replace": "{\n      \"mechanism\": \"front-stop-ownership\",\n      \"adr_primary\": \"docs/adr/ADR-front-stop-ownership.md\",\n      \"state\": \"retired\",\n      \"retired_at\": \"2026-11-21\",\n      \"retired_evidence\": \"docs/adr/ADR-front-stop-ownership.md\",\n      \"notes\": \"退役 = 执行组清单 `.rddf/rollback/delegate-slot-kernel.json`（G1 四机制同批）；退役证据 = 本机制的 ADR（决策记录保留）。\"\n    }"
-    },
-    {
-      "path": ".rddf/rollback/registry.json",
-      "find": "  {\n      \"mechanism\": \"front-cancel-release\",\n      \"adr_primary\": \"docs/adr/ADR-front-cancel-release.md\",\n      \"state\": \"proving\",\n      \"watch\": [\n        \"lib/delegate-async.ts\"\n      ],\n      \"notes\": \"**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。\",\n      \"manifest_ref\": \"delegate-slot-kernel\"\n    }",
-      "replace": "{\n      \"mechanism\": \"front-cancel-release\",\n      \"adr_primary\": \"docs/adr/ADR-front-cancel-release.md\",\n      \"state\": \"retired\",\n      \"retired_at\": \"2026-11-21\",\n      \"retired_evidence\": \"docs/adr/ADR-front-cancel-release.md\",\n      \"notes\": \"退役 = 执行组清单 `.rddf/rollback/delegate-slot-kernel.json`（G1 四机制同批）；退役证据 = 本机制的 ADR（决策记录保留）。\"\n    }"
     }
   ],
   "drill_env": {

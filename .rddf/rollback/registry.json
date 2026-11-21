@@ -25,7 +25,7 @@
     {
       "mechanism": "rollback-manifest-enforcement",
       "adr_primary": "docs/adr/ADR-rollback-manifest-enforcement.md",
-      "state": "proving",
+      "state": "active",
       "notes": "本机制自身：退役 = 撤守卫 + 删 registry + 删本清单（自清单见 `.rddf/rollback/rollback-manifest-enforcement.json`）。`proving` → `active` 的过渡已完成（演练证据已回填；隔离副本里退役后 `bun test tests/` 仍全绿 ⇒ 退役本机制后仓库自洽）。",
       "watch": [
         "lib/rollback-registry.ts",
