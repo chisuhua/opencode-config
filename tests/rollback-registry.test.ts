@@ -30,7 +30,7 @@ describe("机制登记表：真源在位", () => {
     expect(() => loadRegistry()).not.toThrow()
   })
 
-  test("本仓的判据全绿（M1–M8 / V1–V13）", () => {
+  test("本仓的判据全绿（M1–M9 / V1–V14）", () => {
     const { problems } = checkRegistry(ROOT, loadRegistry())
     expect(
       problems.map((p) => `[${p.code}] ${p.mechanism}：${p.detail}`),
