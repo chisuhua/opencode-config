@@ -229,6 +229,132 @@ describe("applyDrill", () => {
   })
 })
 
+// ── ⑥ `retire[]`：结构化退役（ADR-rollback-manifest-enforcement 第 7 轮 / V16）──
+
+/** 带登记面的 fixture 仓（`m1`/`m2` 属于组清单 `grp`；`other` 属于别的清单）。 */
+function registryRepo(): string {
+  const d = repo()
+  write(
+    d,
+    ".rddf/rollback/registry.json",
+    JSON.stringify(
+      {
+        version: 1,
+        entries: [
+          { mechanism: "m1", adr_primary: "docs/adr/ADR-m1.md", state: "active", watch: ["lib/m1.ts"], manifest_ref: "grp" },
+          { mechanism: "m2", adr_primary: "docs/adr/ADR-m2.md", state: "proving", watch: ["lib/m2.ts"], manifest_ref: "grp" },
+          { mechanism: "other", adr_primary: "docs/adr/ADR-other.md", state: "active", watch: ["lib/o.ts"], manifest_ref: "other-manifest" },
+        ],
+      },
+      null,
+      2,
+    ) + "\n",
+  )
+  return d
+}
+
+const regOf = (d: string): Array<Record<string, unknown>> =>
+  JSON.parse(readFileSync(path.join(d, ".rddf/rollback/registry.json"), "utf8")).entries
+
+describe("retire[]（结构化退役）", () => {
+  test("schema：retire 不是数组 / 元素非字符串 ⇒ 抛", () => {
+    expect(() => parseManifest(base({ retire: "m1" }))).toThrow(/retire 必须是数组/)
+    expect(() => parseManifest(base({ retire: [1] }))).toThrow(/retire\[0\] 必须是非空字符串/)
+    expect(() => parseManifest(base({ retire: [""] }))).toThrow(/retire\[0\] 必须是非空字符串/)
+  })
+
+  test("**状态自指回归**：同一份清单对 `active` 与 `proving` 两个来源态都成立（转态按身份，不按可变字段）", () => {
+    const d = registryRepo()
+    const m = parseManifest(base({ mechanism: "grp", retire: ["m1", "m2"] }))
+    const plan = planDrill(m, d)
+    expect(plan.problems).toEqual([])
+    applyDrill(m, d)
+    const entries = regOf(d)
+    const m1 = entries.find((e) => e.mechanism === "m1")!
+    const m2 = entries.find((e) => e.mechanism === "m2")!
+    expect(m1.state).toBe("retired")
+    expect(m2.state).toBe("retired")
+    for (const e of [m1, m2]) {
+      expect(e.retired_evidence).toBe(e.adr_primary)
+      expect(String(e.retired_at)).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(e.watch).toBeUndefined()
+      expect(e.manifest_ref).toBeUndefined()
+    }
+    // 别的清单的条目**不受影响**
+    expect(entries.find((e) => e.mechanism === "other")!.state).toBe("active")
+  })
+
+  test("retire 不存在的机制 ⇒ retire_invalid", () => {
+    const d = registryRepo()
+    const plan = planDrill(parseManifest(base({ mechanism: "grp", retire: ["nope"] })), d)
+    expect(plan.problems.map((p) => p.kind)).toContain("retire_invalid")
+    expect(plan.problems[0]!.detail).toContain("机制不存在")
+  })
+
+  test("retire 已 `retired` / `exempt` 的条目 ⇒ retire_invalid（来源态只允许 active / proving）", () => {
+    const d = registryRepo()
+    const reg = JSON.parse(readFileSync(path.join(d, ".rddf/rollback/registry.json"), "utf8"))
+    reg.entries[0].state = "retired"
+    write(d, ".rddf/rollback/registry.json", JSON.stringify(reg, null, 2) + "\n")
+    const plan = planDrill(parseManifest(base({ mechanism: "grp", retire: ["m1"] })), d)
+    expect(plan.problems.map((p) => p.kind)).toContain("retire_invalid")
+    expect(plan.problems[0]!.detail).toContain("来源态非法")
+  })
+
+  test("retire 别的清单的条目 ⇒ retire_invalid（不得跨清单改别人的条目）", () => {
+    const d = registryRepo()
+    const plan = planDrill(parseManifest(base({ mechanism: "grp", retire: ["other"] })), d)
+    expect(plan.problems.map((p) => p.kind)).toContain("retire_invalid")
+    expect(plan.problems[0]!.detail).toContain("不属于本清单")
+  })
+
+  test("retire[] 组内重名 ⇒ retire_invalid", () => {
+    const d = registryRepo()
+    const plan = planDrill(parseManifest(base({ mechanism: "grp", retire: ["m1", "m1"] })), d)
+    expect(plan.problems.map((p) => p.kind)).toContain("retire_invalid")
+    expect(plan.problems.some((p) => p.detail.includes("重名"))).toBe(true)
+  })
+
+  test("retire[] 与 delete registry.json 同列 ⇒ retire_invalid（两种退役通道互斥）", () => {
+    const d = registryRepo()
+    const m = parseManifest(
+      base({ mechanism: "grp", retire: ["m1"], delete: ["a.txt", ".rddf/rollback/registry.json"] }),
+    )
+    const plan = planDrill(m, d)
+    expect(plan.problems.map((p) => p.kind)).toContain("retire_invalid")
+    expect(plan.problems.some((p) => p.detail.includes("互斥"))).toBe(true)
+  })
+
+  test("retire[] 与 edits 触碰 registry.json 同列 ⇒ retire_invalid（同一文件两条写入）", () => {
+    const d = registryRepo()
+    const m = parseManifest(
+      base({
+        mechanism: "grp",
+        retire: ["m1"],
+        edits: [{ path: ".rddf/rollback/registry.json", find: '"version": 1', replace: '"version": 2' }],
+      }),
+    )
+    const plan = planDrill(m, d)
+    expect(plan.problems.map((p) => p.kind)).toContain("retire_invalid")
+    expect(plan.problems.some((p) => p.detail.includes("胜负未定义"))).toBe(true)
+  })
+
+  test("registry 缺失 ⇒ retire_invalid（不猜意图）", () => {
+    const d = repo()
+    const plan = planDrill(parseManifest(base({ mechanism: "grp", retire: ["m1"] })), d)
+    expect(plan.problems.map((p) => p.kind)).toContain("retire_invalid")
+    expect(plan.problems[0]!.detail).toContain("registry 不存在")
+  })
+
+  test("有问题 ⇒ applyDrill 抛，且 registry **一个字节都不写**（禁止部分应用）", () => {
+    const d = registryRepo()
+    const before = readFileSync(path.join(d, ".rddf/rollback/registry.json"), "utf8")
+    const m = parseManifest(base({ mechanism: "grp", retire: ["m1", "nope"] }))
+    expect(() => applyDrill(m, d)).toThrow(/plan_failed/)
+    expect(readFileSync(path.join(d, ".rddf/rollback/registry.json"), "utf8")).toBe(before)
+  })
+})
+
 // ── ④ 演练环境准备 ─────────────────────────────────────────────────────────
 
 describe("seedDrillEnv", () => {

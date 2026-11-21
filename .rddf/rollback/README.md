@@ -28,6 +28,7 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
   "notes": "覆盖面 + 保留项 + 为什么",  // 人读；drill 不解析
   "delete": ["plugins/x.ts"],           // 仓库内相对路径；目标必须存在
   "edits": [{ "path": "prompts/x.md", "find": "…", "replace": "…" }],
+  "retire": ["mech-a"],                  // 结构化退役：把这些机制在 registry 里转 `retired`
   "drill_env": {                        // 演练环境准备（不属于回滚步骤）
     "seed_files": [{ "path": ".rddf/state/role.json", "content": "…" }]
   },
@@ -41,6 +42,7 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 - `delete` 目标**必须存在**（不存在 ⇒ 清单已漂移）；
 - `edits.find` 在**运行中的内容**里必须**恰好出现 1 次**（0 次 = 已漂移；≥2 次 = 无从确定改哪处）⇒ 清单与代码**同漂**，措辞一改就红，不会静默变 no-op；
 - `delete` 与 `edits` **不得指向同一路径**（判同键 = `path.posix.normalize`，`./a.txt` 与 `a.txt` 视为同一路径）；
+- `retire[]`（**结构化退役**，ADR 第 7 轮 / V16）⇒ 六条 fail-closed：registry 存在可解析、条目存在且组内不重名、来源态 ∈ {`active`,`proving`}、同清单归属、与「删整个登记面」互斥、与「edits 触碰登记面」互斥；**校验材料 = 应用前的 registry 原文**（转态按**身份**、不按可变字段 ⇒ 无状态自指）；
 - **不做部分应用**：先全内存模拟（同一个文件的多条 edits 按声明顺序作用在运行中的内容上），全过才落盘。
 
 **安全**：只在 `mkdtempSync(tmpdir())` 下的 clone 里动手（断言副本路径 ≠ 真仓）；验证命令带 `ROLLBACK_DRILL_CHILD=1`，嵌套调用默认拒绝。
@@ -113,7 +115,8 @@ bun scripts/rollback-registry.ts --json     # 机读
 | `plan-topics.json` | plan 侧多会话协作：`plan-worker` + topic checker（`ADR-plan-multi-session-collaboration`） | delete 4 + edits 14 | `983 pass / 0 fail`（隔离副本） |
 | `plan-delegate.json` | plan 侧工程派发（`ADR-plan-delegate-engineering-session`）—— **能力面**退役 | delete 0 + edits 48 | `1024 pass / 0 fail`（隔离副本） |
 | `model-fallback.json` | 模型降级链插件（**无 ADR** ⇒ 决策真源 = 验收报告） | delete 5 + edits 14 | `998 pass / 0 fail`（隔离副本，零悬空引用） |
-| `rollback-manifest-enforcement.json` | **L2 强制化机制自身**（退役 = 撤守卫 + 删 registry + 删本清单） | delete 15 + edits 3 | 见清单的 `last_drill` |
+| `delegate-slot-kernel.json` | **G1 组清单**（delegate 槽位 / 停机 / 归属 / 取消释放内核链 ⇒ 4 机制同批退役） | delete 5 + edits 35 + retire 4 | 见清单的 `last_drill` |
+| `rollback-manifest-enforcement.json` | **L2 强制化机制自身**（退役 = 撤守卫 + 删 registry + 删本清单） | delete 9 + edits 3 | 见清单的 `last_drill` |
 
 > **清单清单以 `registry.json` 为准**（L2 强制化）：本表只是**人读摘要**，改清单/改机制都先改 registry。
 

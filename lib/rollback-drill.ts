@@ -19,6 +19,9 @@
  * - `delete` 的目标**必须存在**（不存在 ⇒ 清单已漂移，红）；
  * - `edits.find` 在目标文件里**必须出现恰好 1 次**（0 次 ⇒ 漂移；≥2 次 ⇒ 无法确定改哪一处 ⇒ 红）；
  * - 路径**必须**是仓库内相对路径（拒绝绝对路径与 `..`）—— 否则 drill 可能改写仓库外的文件。
+ * - `retire[]`（**结构化退役**，ADR 第 7 轮 / V16）⇒ 六条 fail-closed 约束：registry 存在可解析、
+ *   条目存在且组内不重名、来源态 ∈ {`active`,`proving`}、同清单归属、与「删登记面」互斥、
+ *   与「edits 触碰登记面」互斥；校验材料 = **应用前**的 registry 原文（不按可变字段 ⇒ 无状态自指）。
  *
  * ⚠ **已知理论面（当前不可触发）**：读写会**跟随**仓库内**被追踪的符号链接** ⇒ 若清单的 `path` 落在一条
  *   指向 clone 外的被追踪链接上，理论上可改写 clone 外文件。本仓唯一的被追踪链接
@@ -64,6 +67,18 @@ export interface Manifest {
   notes?: string
   /** 删除的文件（仓库内相对路径） */
   delete?: string[]
+  /**
+   * **结构化退役**（ADR-rollback-manifest-enforcement 第 7 轮 / V16）：机制名列表 ——
+   * drill 在隔离副本里把 registry 里对应的条目转 `retired`
+   * （`retired_at` = 执行日、`retired_evidence` = 该条目 `adr_primary`、
+   * 撤 `watch` / `manifest_ref` / `pending_backlog`）。
+   *
+   * ⚠ **为什么不用 `edits` 表达**：literal `find` 必须逐字锚定条目**当前状态文本**
+   *   （`proving` / `active` 随证据流转）⇒ 同一份清单无法同时适用于过渡态与稳态
+   *   （**状态自指**）⇒ 结构化操作只依赖条目**身份**（mechanism），不依赖可变字段。
+   * ⚠ 校验材料 = **应用前**的 registry 原文（fail-closed，六条约束见 ADR 的 V16）。
+   */
+  retire?: string[]
   /** 逐段改（禁止整文件还原 —— 实测会误伤无关变更） */
   edits?: ManifestEdit[]
   /** **演练环境准备**（不属于回滚步骤）：clone 缺 gitignored 运行态时必须先补，否则验证会假红 */
@@ -118,6 +133,14 @@ export function parseManifest(raw: string): Manifest {
     }
   }
   if (m.notes !== undefined && typeof m.notes !== "string") throw new DrillError("schema_invalid", "notes 必须是字符串")
+
+  const retire = m.retire ?? []
+  if (!Array.isArray(retire)) throw new DrillError("schema_invalid", "retire 必须是数组")
+  for (const [i, n] of retire.entries()) {
+    if (typeof n !== "string" || n.length === 0) {
+      throw new DrillError("schema_invalid", `retire[${i}] 必须是非空字符串`)
+    }
+  }
 
   const del = m.delete ?? []
   if (!Array.isArray(del)) throw new DrillError("schema_invalid", "delete 必须是数组")
@@ -192,6 +215,7 @@ export function parseManifest(raw: string): Manifest {
     ...(m.adr_related !== undefined ? { adr_related: m.adr_related as string[] } : {}),
     ...(m.notes !== undefined ? { notes: m.notes as string } : {}),
     delete: del as string[],
+    ...(retire.length > 0 ? { retire: retire as string[] } : {}),
     edits: edits as ManifestEdit[],
     ...(verify !== undefined ? { verify: verify as { commands?: string[][] } } : {}),
     ...(lastDrill !== undefined ? { last_drill: lastDrill as { sha: string; at: string; result: string; content_hash?: string } } : {}),
@@ -199,7 +223,7 @@ export function parseManifest(raw: string): Manifest {
   }
 }
 
-export type ProblemKind = "missing_file" | "find_count" | "path_overlap"
+export type ProblemKind = "missing_file" | "find_count" | "path_overlap" | "retire_invalid"
 
 export interface DrillProblem {
   kind: ProblemKind
@@ -242,6 +266,9 @@ export interface DrillPlan {
  */
 const normRel = (p: string) => path.posix.normalize(p.replace(/\\/g, "/"))
 
+/** 登记面的仓库内相对路径（`retire[]` 的作用对象）。 */
+export const REGISTRY_REL = ".rddf/rollback/registry.json"
+
 /**
  * **全量规划（只在内存里模拟，一个字节都不写）**。
  *
@@ -272,6 +299,118 @@ export function planDrill(m: Manifest, root: string): DrillPlan {
   for (const e of m.edits ?? []) {
     if (deleteSet.has(normRel(e.path))) {
       problems.push({ kind: "path_overlap", path: e.path, detail: "同一路径同时出现在 delete 与 edits ⇒ 会造成部分应用" })
+    }
+  }
+
+  // ── `retire[]`：结构化退役（ADR 第 7 轮 / V16）─────────────────────────────
+  // ⚠ **校验材料 = 应用前的 registry 原文**（必须在 edits 模拟之前读）——
+  //    否则「edits 改 registry」会以另一种形态制造状态自指。
+  // ⚠ 六条 fail-closed 约束（编号与 ADR 的 V16 逐条对齐）：① registry 存在可解析
+  //    ② 条目存在且组内不重名 ③ 来源态 ∈ {active, proving} ④ 同清单归属
+  //    ⑤ 与「删整个登记面」互斥 ⑥ 与「edits 触碰 registry」互斥。
+  if ((m.retire ?? []).length > 0) {
+    const names = m.retire!
+    const regAbs = path.resolve(root, REGISTRY_REL)
+
+    if (deleteSet.has(REGISTRY_REL)) {
+      problems.push({
+        kind: "retire_invalid",
+        path: REGISTRY_REL,
+        detail: "清单同时声明 retire[] 与 delete registry.json ⇒ 两种退役通道互斥",
+      })
+    }
+    for (const e of m.edits ?? []) {
+      if (normRel(e.path) === REGISTRY_REL) {
+        problems.push({
+          kind: "retire_invalid",
+          path: e.path,
+          detail: "清单同时声明 retire[] 与 edits 触碰 registry.json ⇒ 同一文件两条写入的胜负未定义",
+        })
+      }
+    }
+
+    if (!existsSync(regAbs)) {
+      problems.push({ kind: "retire_invalid", path: REGISTRY_REL, detail: "registry 不存在（retire[] 需要登记面）" })
+    } else {
+      let reg: unknown = null
+      try {
+        reg = JSON.parse(readFileSync(regAbs, "utf8"))
+      } catch (e: any) {
+        problems.push({ kind: "retire_invalid", path: REGISTRY_REL, detail: `registry 不是合法 JSON：${e?.message ?? e}` })
+      }
+      const entries =
+        reg && typeof reg === "object" && Array.isArray((reg as Record<string, unknown>).entries)
+          ? ((reg as Record<string, unknown>).entries as Array<Record<string, unknown>>)
+          : null
+      if (reg && !entries) {
+        problems.push({ kind: "retire_invalid", path: REGISTRY_REL, detail: "registry 缺 entries 数组" })
+      }
+      if (entries) {
+        const dup = names.filter((n, i) => names.indexOf(n) !== i)
+        if (dup.length > 0) {
+          problems.push({
+            kind: "retire_invalid",
+            path: REGISTRY_REL,
+            detail: `retire[] 内部重名：${[...new Set(dup)].join(", ")}`,
+          })
+        }
+        const byName = new Map(entries.map((e) => [String(e.mechanism), e]))
+        const today = new Date().toISOString().slice(0, 10)
+        let bad = false
+        for (const name of names) {
+          const e = byName.get(name)
+          if (!e) {
+            problems.push({ kind: "retire_invalid", path: REGISTRY_REL, detail: `retire[] 指向的机制不存在：${name}` })
+            bad = true
+            continue
+          }
+          const st = String(e.state)
+          if (st !== "active" && st !== "proving") {
+            problems.push({
+              kind: "retire_invalid",
+              path: REGISTRY_REL,
+              detail: `retire[] 的来源态非法：${name} 当前 ${st}（只允许 active / proving）`,
+            })
+            bad = true
+            continue
+          }
+          if (e.manifest_ref !== m.mechanism) {
+            problems.push({
+              kind: "retire_invalid",
+              path: REGISTRY_REL,
+              detail: `retire[] 指向的条目不属于本清单：${name}（manifest_ref=${String(e.manifest_ref)}，本清单=${m.mechanism}）`,
+            })
+            bad = true
+            continue
+          }
+          if (typeof e.adr_primary !== "string" || e.adr_primary.length === 0) {
+            problems.push({
+              kind: "retire_invalid",
+              path: REGISTRY_REL,
+              detail: `retire[] 的条目缺 adr_primary（retired_evidence 无从取值）：${name}`,
+            })
+            bad = true
+            continue
+          }
+        }
+        if (!bad) {
+          // 结构化转态：**按身份**，不按可变字段 ⇒ 无状态自指
+          for (const name of names) {
+            const e = byName.get(name)!
+            e.state = "retired"
+            e.retired_at = today
+            e.retired_evidence = e.adr_primary
+            delete e.watch
+            delete e.manifest_ref
+            delete e.pending_backlog
+          }
+          writes.push({
+            path: REGISTRY_REL,
+            before: readFileSync(regAbs, "utf8"),
+            after: JSON.stringify(reg, null, 2) + "\n",
+          })
+        }
+      }
     }
   }
 

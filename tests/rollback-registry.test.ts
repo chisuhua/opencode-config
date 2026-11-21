@@ -9,7 +9,7 @@
  *
  * ## 判据来源
  *
- * `docs/adr/ADR-rollback-manifest-enforcement.md` 的 **M1–M9 / V1–V14**；
+ * `docs/adr/ADR-rollback-manifest-enforcement.md` 的 **M1–M9 / V1–V16**；
  * 实现见 `lib/rollback-registry.ts`（纯逻辑层，判据本体在这里）。
  */
 import { describe, expect, test } from "bun:test"
@@ -30,7 +30,7 @@ describe("机制登记表：真源在位", () => {
     expect(() => loadRegistry()).not.toThrow()
   })
 
-  test("本仓的判据全绿（M1–M9 / V1–V14）", () => {
+  test("本仓的判据全绿（M1–M9 / V1–V16）", () => {
     const { problems } = checkRegistry(ROOT, loadRegistry())
     expect(
       problems.map((p) => `[${p.code}] ${p.mechanism}：${p.detail}`),
