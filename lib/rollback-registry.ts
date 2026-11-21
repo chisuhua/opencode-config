@@ -12,7 +12,7 @@
  *
  * ## 判据来源
  *
- * `docs/adr/ADR-rollback-manifest-enforcement.md`（L2 强制化 ADR）的 **M1–M8 / V1–V13**。
+ * `docs/adr/ADR-rollback-manifest-enforcement.md`（L2 强制化 ADR）的 **M1–M9 / V1–V14**。
  * 本文件是**判据的可执行形态**；ADR 是**决策真源**（两处不得各说一半 ⇒ 口径冲突回 ADR）。
  *
  * ## 设计要点
@@ -31,8 +31,8 @@ import { parseManifest, type Manifest } from "./rollback-drill.ts"
 /**
  * registry 里的状态（ADR D1）。
  *
- * ⚠ `proving` 是**过渡态**（实施期补入，ADR 待同步）：「机制已落地、清单已写、
- * **演练证据待回填**」。它解决**自举死锁**：机制落地的那个 commit 里，条目无法同时满足
+ * ⚠ `proving` 是**过渡态**：「机制已落地、清单已写、**演练证据待回填**」。
+ * 它解决**自举死锁**：机制落地的那个 commit 里，条目无法同时满足
  * 「`declared` 的 watch 路径尚不存在」与「`active` 的演练证据已回填」
  * （证据只能由**已提交**的清单跑出来 ⇒ 必然晚一个 commit）⇒ 没有过渡态就永远转不了 `active`。
  */
@@ -167,14 +167,31 @@ export function stripLastDrill(m: unknown): unknown {
 }
 
 /**
+ * **规范化**：递归排序对象的 key（数组**保持原序** —— `edits[]` 的顺序是语义的一部分）。
+ *
+ * ⚠ 键序**不是**实质改动 ⇒ 规范化后哈希与键序无关 ⇒ 重排 key 不会误判「清单变过」。
+ */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize)
+  if (value && typeof value === "object") {
+    const src = value as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const k of Object.keys(src).sort()) out[k] = canonicalize(src[k])
+    return out
+  }
+  return value
+}
+
+/**
  * 清单（**去掉 `last_drill`**）的规范内容哈希 —— V8 的判据形态。
  *
  * 为什么用哈希而不是 `git show <sha>:<file>`：后者的谓词是「该 commit 处的清单内容 == 当前内容」，
  * 哈希给的是**同一谓词**（内容是否变过）却**不依赖 git 历史** ⇒ 零 git、零成本、不占真实仓预算。
  * ⚠ 哈希**排除 `last_drill` 字段** ⇒ 回填证据本身不会改变哈希（无自指回归）。
+ * ⚠ 哈希**规范化后**（递归排序 key）计算 ⇒ 键序无关（ADR D7 / V8）。
  */
 export function contentHash(manifest: unknown): string {
-  const canonical = JSON.stringify(stripLastDrill(manifest))
+  const canonical = JSON.stringify(canonicalize(stripLastDrill(manifest)))
   return createHash("sha256").update(canonical).digest("hex")
 }
 
@@ -186,8 +203,11 @@ function listDir(root: string, rel: string): string[] {
 
 export interface CheckOptions {
   /**
-   * 读取**某个 commit 处**的文件内容（V8 的内容比对用）。未注入 ⇒ 只判形状
-   * （git 不可得时**不假装**判过 ⇒ 如实登记为「未覆盖」）。
+   * 读取**某个 commit 处**的文件内容（V8 的**可选** git 侧交叉核对）。
+   *
+   * ⚠ **不注入也不影响 V8 的判定** —— 主判据是**内容哈希**（不依赖 git）⇒
+   *   未注入时**照判**（不再 fail-open）；注入时额外核对「`sha` 处的内容 == 当前内容」
+   *   （补上「`sha` 与哈希各说各话」的那个窗口，见 ADR U10②）。
    */
   readAt?: (sha: string, rel: string) => string | null
 }
@@ -286,6 +306,14 @@ export function checkRegistry(root: string, reg: RegistryFile, opts: CheckOption
     // M5：豁免证据不得自证
     if (e.exempt_evidence && (e.exempt_evidence === e.adr_primary || e.exempt_evidence === REGISTRY_PATH)) {
       problems.push({ code: "M5", mechanism: e.mechanism, detail: "exempt_evidence 指向自身（自证不算证据）" })
+    }
+    // M7：债指针只属 `unmanifested`（全状态卫生 —— 其它状态挂着它 ⇒ 表态与状态不一致）
+    if (e.pending_backlog && e.state !== "unmanifested") {
+      problems.push({
+        code: "M7",
+        mechanism: e.mechanism,
+        detail: `pending_backlog 只属 unmanifested（当前 state=${e.state}）`,
+      })
     }
   }
 

@@ -9,7 +9,7 @@
  *
  * ## 判据来源
  *
- * `docs/adr/ADR-rollback-manifest-enforcement.md` 的 **M1–M8 / V1–V13**；
+ * `docs/adr/ADR-rollback-manifest-enforcement.md` 的 **M1–M9 / V1–V14**；
  * 实现见 `lib/rollback-registry.ts`（纯逻辑层，判据本体在这里）。
  */
 import { describe, expect, test } from "bun:test"
@@ -225,5 +225,22 @@ describe("机制登记表：判别力（每条判据都有反例）", () => {
     expect(h2).toBe(h1)
     // 实质改动 ⇒ 哈希变
     expect(contentHash({ ...base, delete: ["b.txt"] })).not.toBe(h1)
+  })
+
+  test("contentHash 规范化（递归排序 key）⇒ 键序无关（重排 key 不算实质改动）", () => {
+    const a = { version: 1, mechanism: "x", adr: "docs/adr/ADR-x.md", delete: ["a.txt"] }
+    const b = { delete: ["a.txt"], adr: "docs/adr/ADR-x.md", mechanism: "x", version: 1 }
+    expect(contentHash(b)).toBe(contentHash(a))
+    // ⚠ 数组**保持原序**（`edits[]` 的顺序是语义的一部分）⇒ 数组重排 ⇒ 哈希变
+    const arr = { version: 1, mechanism: "x", edits: [{ path: "p", find: "a", replace: "b" }, { path: "q", find: "c", replace: "d" }] }
+    const arrRev = { version: 1, mechanism: "x", edits: [{ path: "q", find: "c", replace: "d" }, { path: "p", find: "a", replace: "b" }] }
+    expect(contentHash(arrRev)).not.toBe(contentHash(arr))
+  })
+
+  test("M7：pending_backlog 只属 unmanifested（其它状态挂着它 ⇒ 红）", () => {
+    const { problems } = fixture([{ ...okEntry, pending_backlog: ".rddf/rollback/pending/x.md" }], {
+      manifests: { x: okManifest },
+    })
+    expect(problems.some((p) => p.code === "M7" && p.detail.includes("只属 unmanifested"))).toBe(true)
   })
 })

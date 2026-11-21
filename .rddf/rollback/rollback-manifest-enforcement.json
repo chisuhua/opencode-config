@@ -28,7 +28,7 @@
     },
     {
       "path": "tests/README.md",
-      "find": "| `rollback-drill.test.ts` | **回滚清单**的纯逻辑层 + CLI 退出码 + 判别力负向（少删一件 / `find` 漂移 / 路径写法差异 / 顺序语义） |\n| `rollback-manifests.test.ts` | **清单漂移守卫**（零成本）：每份清单的 schema / `mechanism`↔文件名 / `adr` 存在 / `verify` 非空 / `planDrill` 可执行 |\n| `rollback-registry.test.ts` | **机制登记表**一致性守卫（M1–M8 / V1–V13）：ADR 全集双向相等、指针闭集、豁免闭集、债指针逐机制、清单形态防空壳、`last_drill` 时效 |\n| `record-discipline.test.ts`（+ `verify_record_discipline.sh`） |",
+      "find": "| `rollback-drill.test.ts` | **回滚清单**的纯逻辑层 + CLI 退出码 + 判别力负向（少删一件 / `find` 漂移 / 路径写法差异 / 顺序语义） |\n| `rollback-manifests.test.ts` | **清单漂移守卫**（零成本）：每份清单的 schema / `mechanism`↔文件名 / `adr` 存在 / `verify` 非空 / `planDrill` 可执行 |\n| `rollback-registry.test.ts` | **机制登记表**一致性守卫（M1–M9 / V1–V14）：ADR 全集双向相等、清单集合与 `active`∪`proving` 双向、指针闭集、豁免闭集、债指针逐机制 + 全状态卫生、清单形态防空壳、`last_drill` 时效（内容哈希） |\n| `record-discipline.test.ts`（+ `verify_record_discipline.sh`） |",
       "replace": "| `record-discipline.test.ts`（+ `verify_record_discipline.sh`） |"
     },
     {
@@ -53,11 +53,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "6c79142d837ed58ce5e09620d34f9420b4cedaac",
-    "at": "2026-11-21",
-    "result": "pass",
-    "content_hash": "d429d531181334e8cbfc610ce69dec4ba3cc9daf6b833b53a7da214f97cf26c4"
   }
 }

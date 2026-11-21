@@ -22,8 +22,8 @@
     {
       "mechanism": "rollback-manifest-enforcement",
       "adr_primary": "docs/adr/ADR-rollback-manifest-enforcement.md",
-      "state": "active",
-      "notes": "本机制自身：退役 = 撤守卫 + 删 registry + 删本清单（自清单见 `.rddf/rollback/rollback-manifest-enforcement.json`）。`proving` → `active` 的过渡已完成（演练证据已回填：隔离副本里退役后 `bun test tests/` 1032 pass / 1 skip / 0 fail ⇒ 仓库仍自洽）。",
+      "state": "proving",
+      "notes": "本机制自身：退役 = 撤守卫 + 删 registry + 删本清单（自清单见 `.rddf/rollback/rollback-manifest-enforcement.json`）。`proving` = **过渡态**（已落地、清单已写、**演练证据待回填**）—— 自举死锁的解法：证据只能由**已提交**的清单跑出来 ⇒ 必然晚一个 commit。",
       "watch": [
         "lib/rollback-registry.ts",
         "scripts/rollback-registry.ts",
