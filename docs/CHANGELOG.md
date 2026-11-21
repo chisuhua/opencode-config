@@ -10,6 +10,16 @@
 
 ---
 
+> **v2.59 存量债清零（10 → 0）+ `applyDrill` 替换模式修复（2026-11-22）**：
+> **G3 `role-class-write-set` 清账**（`cd828bc` → `345a60c`）：一份组清单覆盖 2 个机制（`backend-handoff-role-class` / `class-write-scope-alignment`）⇒ `delete 2 + edits 126 + retire 2`。退役面走**路径 A「退役能力、保留字段」**：两个工具的 schema 去掉 `role_class` 参数、`RoleClass` 收窄为单成员 `"builder"`、`ROLE_CLASSES` / `isRoleClass` / `parseRoleClass` / `classAllowRoots` / `verifierAllowRootLabels` / `verifierWriteSetBlock` / `VERIFIER_*` / `assertResumeRoleClass` 删除、`assertVerifierBaseline` → `assertBaseline`；**字段保留**（`role.json` 分区 / `pair.json` / lease / `role-gate` / `commit-gate` 恒 `builder`）⇒ `role-aware-permissions` 与 `role-session-identity` 两条豁免机制行为不变。
+> **语义后果（如实登记，不是遗漏）**：① 派发方失去「让后端写架构文档」的能力（ADR 落盘改由主会话切 `architect` 治理身份）；② 后端不再有「只出证据与判决」的专属简报分支；③ `delegate-base-channel` 的「verifier 类必填 base」强制退役（base 通道保留，填了就必须可解析；副作用：builder 类填了 base 现在**真做**基线对照，此前被静默忽略）。
+> **遗留清扫（首次 drill PASS 后复核补齐，117 → 126）**：`verifierWriteSetBlock()` 的两处代码注释引用、`prompts/build.md` 的 3 处残留教学（HANDOFF 适用面 / 纯换类→blocked / 基线取法引用已撤选类表）、`docs/guard-authoring.md` §2.1 块名 / §6 示例 / §6.1 手工命令块、以及 `.rddf/config/workspace.json` 的 `checks[]`（其 `consumer_cmd` 调已删常量 ⇒ `cross-repo-check` 会误报环境故障）。
+> **`applyDrill` 缺陷修复**（`ce99c7f`，立项 `.rddf/improvements/rollback-drill-replace-pattern.md`）：`planDrill` 原用 `buf.replace(e.find, e.replace)`（**字符串** replacement）⇒ `replace` 里的 `$&` / `` $` `` / `$'` / `$1` 会被 JS 解释成匹配子串 / 匹配前文 / 匹配后文 / 捕获组 ⇒ 写盘内容不是清单声明的文本，而 drill **仍报 PASS**（验证跑的是被改坏的仓）。G3 的 126 条 edits 里有两处需承载 `$&` 与 `` $` ``（glob 转义正则 / `` new RegExp(`^${escaped}$`) ``）⇒ 当时只能改写措辞绕开。修复 = 函数形式 `replace(e.find, () => e.replace)`；配套负向用例（撤修复 ⇒ 该用例红、其余 36 绿，判别力已验）。
+> **顺带订正**：`.rddf/rollback/README.md` 的 L2 行写「delete 9」而实际 5 条（该行同时是 L2 清单 `find` 锚点 ⇒ 改数须同批改 `find` 并重跑演练，`8762f8d` + `3b25b2d`）。
+> **实测**：G3 与 L2 两份清单在隔离副本重跑 drill 均 **PASS**；`bun test tests/` **1072 pass / 1 skip / 0 fail**；census = `declared=0 unmanifested=0 proving=0 active=13 retired=0 exempt=3`。
+>
+> ---
+>
 > **v2.58 回滚可达性：组清单模型 + 存量债第一轮清偿（2026-11-21）**：
 > 清 10 条存量债的实测给出**组**这个粒度 ⇒ registry 从「一机制一清单」的 1:1 模型扩到 **1:N 的组清单**。
 > **动因（实测内核耦合）**：`cancel`（CR）直接调用 `waitStopped`（SC，`lib/delegate-async.ts:2369`）与 `releaseSlotAuthorized`（SO，`:2451`）；`markCancelPending`（CR，`:2575`）是 MB 的 reconcile 排除条件 ⇒ delegate 的槽位 / 停机 / 归属 / 取消释放是一条**不可拆**的内核链 ⇒ 拆开退役 ⇒ 另三者**编译或判据破裂** ⇒ 1:1 模型表达不了。
