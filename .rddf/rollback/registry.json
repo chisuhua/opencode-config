@@ -25,7 +25,7 @@
     {
       "mechanism": "rollback-manifest-enforcement",
       "adr_primary": "docs/adr/ADR-rollback-manifest-enforcement.md",
-      "state": "active",
+      "state": "proving",
       "notes": "本机制自身：退役 = 撤守卫 + 删 registry + 删本清单（自清单见 `.rddf/rollback/rollback-manifest-enforcement.json`）。`proving` → `active` 的过渡已完成（演练证据已回填；隔离副本里退役后 `bun test tests/` 仍全绿 ⇒ 退役本机制后仓库自洽）。",
       "watch": [
         "lib/rollback-registry.ts",
@@ -44,43 +44,43 @@
     {
       "mechanism": "front-multi-backend",
       "adr_primary": "docs/adr/ADR-front-multi-backend.md",
-      "state": "unmanifested",
+      "state": "proving",
       "watch": [
         "plugins/delegate.ts",
         "lib/delegate-core.ts"
       ],
       "notes": "**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
-      "pending_backlog": ".rddf/rollback/pending/front-multi-backend.md"
+      "manifest_ref": "delegate-slot-kernel"
     },
     {
       "mechanism": "front-stop-confirmation",
       "adr_primary": "docs/adr/ADR-front-stop-confirmation.md",
-      "state": "unmanifested",
+      "state": "proving",
       "watch": [
         "lib/delegate-async.ts"
       ],
       "notes": "**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
-      "pending_backlog": ".rddf/rollback/pending/front-stop-confirmation.md"
+      "manifest_ref": "delegate-slot-kernel"
     },
     {
       "mechanism": "front-stop-ownership",
       "adr_primary": "docs/adr/ADR-front-stop-ownership.md",
-      "state": "unmanifested",
+      "state": "proving",
       "watch": [
         "lib/role-lease.ts"
       ],
       "notes": "**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
-      "pending_backlog": ".rddf/rollback/pending/front-stop-ownership.md"
+      "manifest_ref": "delegate-slot-kernel"
     },
     {
       "mechanism": "front-cancel-release",
       "adr_primary": "docs/adr/ADR-front-cancel-release.md",
-      "state": "unmanifested",
+      "state": "proving",
       "watch": [
         "lib/delegate-async.ts"
       ],
       "notes": "**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。",
-      "pending_backlog": ".rddf/rollback/pending/front-cancel-release.md"
+      "manifest_ref": "delegate-slot-kernel"
     },
     {
       "mechanism": "front-knowledge-capability",

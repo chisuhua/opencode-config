@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "mechanism": "delegate-slot-kernel",
+  "adr": "docs/adr/ADR-front-multi-backend.md",
+  "adr_related": [
+    "docs/adr/ADR-front-stop-confirmation.md",
+    "docs/adr/ADR-front-stop-ownership.md",
+    "docs/adr/ADR-front-cancel-release.md"
+  ],
+  "notes": "退役 **G1 `delegate-slot-kernel`**（4 个机制一份清单 —— 内核不可拆）：`front-multi-backend` / `front-stop-confirmation` / `front-stop-ownership` / `front-cancel-release`。\n**退役面**：撤掉**异步派发面**（`dispatch` / `sessions` / `suspend` / `cancel` 四个工具 + 槽位生命周期 + 停机证据判据 + 归属版本 `claim_gen` + 取消释放门控）⇒ front / plan 只剩**同步 `delegate`**（单槽语义保留，由 `lib/delegate-core.ts` 承担）。\n**为什么四者一份清单**（实测内核链）：`cancel`（CR）直接调用 `waitStopped`（SC，`lib/delegate-async.ts:2369`）与 `releaseSlotAuthorized`（SO，`:2451`）；`markCancelPending`（CR，`:2575`）是 MB 的 reconcile 排除条件 ⇒ 拆开退役 ⇒ 另三者编译或判据破裂。\n**保留**：同步 `delegate` 的建/复用/投递/等待/outcome 全链（`lib/delegate-core.ts`）、pair-v2 槽位表、`role_class` / 写集（它们各有自己的机制与清单）。\n⚠ **退役后**：front 失去「并发多任务 / 只读名册 / 暂停续接 / 证据门控终止」四种能力 ⇒ 只剩同步单发。这是**语义后果**，如实登记（不是遗漏）。",
+  "delete": [
+    "lib/delegate-async.ts",
+    "tests/delegate-async.test.ts",
+    "tests/probes/probe-cancel-release.ts",
+    "scripts/mutate-cancel-release.sh"
+  ],
+  "edits": [
+    {
+      "path": "opencode.jsonc.opencode-go",
+      "find": "    \"delegate\": \"deny\",\n    \"delegate_dispatch\": \"deny\",\n    \"delegate_sessions\": \"deny\",\n    \"delegate_suspend\": \"deny\",\n    \"delegate_cancel\": \"deny\"\n",
+      "replace": "    \"delegate\": \"deny\"\n"
+    },
+    {
+      "path": "opencode.jsonc.opencode-go",
+      "find": "          \"critic\": \"allow\"\n        },\n        \"question\": \"allow\",\n        \"delegate\": \"allow\",\n        \"delegate_dispatch\": \"allow\",\n        \"delegate_sessions\": \"allow\",\n        \"delegate_suspend\": \"allow\",\n        \"delegate_cancel\": \"allow\",\n",
+      "replace": "          \"critic\": \"allow\"\n        },\n        \"question\": \"allow\",\n        \"delegate\": \"allow\",\n"
+    },
+    {
+      "path": "opencode.jsonc.opencode-go",
+      "find": "        \"subagent\": \"allow\",\n        \"question\": \"allow\",\n        \"delegate\": \"allow\",\n        \"delegate_dispatch\": \"allow\",\n        \"delegate_sessions\": \"allow\",\n        \"delegate_suspend\": \"allow\",\n        \"delegate_cancel\": \"allow\",\n",
+      "replace": "        \"subagent\": \"allow\",\n        \"question\": \"allow\",\n        \"delegate\": \"allow\",\n"
+    },
+    {
+      "path": "plugins/delegate.ts",
+      "find": "import { delegateToolDefinition } from \"../lib/delegate-core.ts\"\nimport {\n  cancelToolDefinition,\n  dispatchToolDefinition,\n  sessionsToolDefinition,\n  suspendToolDefinition,\n} from \"../lib/delegate-async.ts\"\n",
+      "replace": "import { delegateToolDefinition } from \"../lib/delegate-core.ts\"\n"
+    },
+    {
+      "path": "plugins/delegate.ts",
+      "find": "      // 同步单发面（既有语义与既有判据全部不变）\n      editor.add(delegateToolDefinition(ctx))\n      // 异步派发面（ADR-front-multi-backend：dispatch / sessions / suspend / cancel）\n      editor.add(dispatchToolDefinition(ctx))\n      editor.add(sessionsToolDefinition(ctx))\n      editor.add(suspendToolDefinition(ctx))\n      editor.add(cancelToolDefinition(ctx))\n",
+      "replace": "      // 同步单发面（唯一通道）\n      editor.add(delegateToolDefinition(ctx))\n"
+    },
+    {
+      "path": "prompts/front.md",
+      "find": "### 2.2 派发面：四个工具（+ 既有 `delegate`）\n\n| 工具 | 什么时候用 | 关键语义 |\n|---|---|---|\n| `delegate` | **要等结果**：派一个任务、当场拿 outcome | 同步：建/复用 → 投递 → 等 → 返回（既有主路径） |\n| `dispatch` | **并发多任务**：派出去先不等 | 异步：投递后**立即返回**（只等「消费确认」，不等任务完成） |\n| `sessions` | 用户问「后端怎么样了」 | **只读**：列名册 + 状态；**不投递任何 prompt**（不污染后端） |\n| `suspend` | 想「先切走、稍后回来继续」 | **暂停**：中断 + 让出槽位，但**保留上下文，之后可 resume** |\n| `cancel` | 目标作废、不再需要 | **终止**：**先确认它真的停了**才墓碑 + 让出槽位；**永久不可 resume**，再派必须新建 |\n\n**三条必须记住的语义**：\n\n1. **`dispatch` 返回 ≠ 任务完成**——它只证明「简报已投递并被确认消费」，**不证明任务跑完**。要结论必须用 `sessions` 查，或用 `delegate` 同步等。（「消费确认」也不等于「任务完成」：前者只等简报被取走。）\n2. **同一工作树同时只允许一个后端在跑**（单槽）。再派会被拒，错误信息会给出占槽后端 id —— **先 `suspend` 它再派**。\n   - ⚠️ **但占槽者是 plan 的后端时，不要 suspend**（`ADR-plan-delegate-engineering-session` D7：plan 优先）。你在 `sessions` 里**看不到**它的后端，suspend 也会被归属门控拒。正确做法：按拒绝信息里的 `owner=plan` 提示走 —— ① 请 plan 侧释放；② 改派其他工作树；③ 由用户协调。**不要**用 `cancel` 去终止它（同属跨 owner-kind 硬拒）。\n3. **切换 = 四步，由你编排**。`cancel` 有**停机证据门控**（不是「按一下就放槽」）：\n   0. `sessions` ⇒ 找到占着这个工作树的后端 X（**占槽者以台账为准**，不看 metadata）；\n   1. `suspend(X)` —— 优雅路径（保留上下文，之后可 resume）；成功 ⇒ 槽位已释放 ⇒ 跳第 4 步；\n   2. `suspend(X)` 失败 ⇒ 进第 3 步；\n   3. `cancel(X)` —— **会先确认 X 真的停了**：\n      - 成功 ⇒ 跳第 4 步；\n      - **被拒**（返回里带 `reason`）⇒ 工作树是被「**正确地**」占着的（X 可能还在写）⇒ 你二选一：\n        - **等 + 重试**：过几秒重试 `cancel(X)`（判据一致，不会越权放槽）；\n        - **强制放行**：`cancel(X, {force:true})` —— ⚠️ **必须先向用户说明「该后端可能仍在写这个工作树」**再调用（这是把风险**显式转交**给用户，不是「更快的取消」）。\n   4. `dispatch(Y)`（同一工作树）。\n   **不要**指望一个工具做完这几步。\n   - `suspend` 返回 `suspended:false` 时，**先看 `reason` 再决定动作**（不要一律重试）：\n     - `reason:\"slot_already_released\"`（或带 `idempotent:true`）：该后端**已不在占槽** ⇒ **不用再 `suspend`、也不必 `cancel`**。\n     - `reason:\"wait_no_op\"`：**可能仍在跑**（停机确认已返回但仍判定在跑 ⇒ 可能又被唤起）：**不要反复重试 `suspend`**（会再 `interrupt` 一次、再赌一次）；先停下其它派发，确认它确实在跑再走第 3 步。\n     - `reason:\"degraded_no_evidence\"`：该运行时的 `session.wait` 不可用，空闲后端无法被确认停机 ⇒ 走第 3 步（这是有意的保守侧，不是故障）。\n     - 返回里带 `foreign_instance:true`：**检测到多实例部署**（本实例看不到别的实例上的执行）⇒ 无法确认停机 ⇒ 走第 3 步。\n   - `cancel` 被拒时 `reason` 的含义：\n     - `wait_no_op` / `still_running` / `wait_timeout` / `degraded_no_evidence` / `unreadable`：**停机证据不足** ⇒ **没有**终止、**没有**释放槽位（该后端可能还在写这个工作树）⇒ 走第 3 步的重试或 `force`。\n     - `slot_already_released`（或带 `idempotent:true`）：该后端**当前不占槽** ⇒ 幂等 no-op，**不必**再 `cancel`。\n     - `slot_reclaimed` / `slot_state_changed` / `slot_entry_gone`：台账状态与你的判断不一致 ⇒ 先用 `sessions` 确认当前占槽者，**不要**硬来。\n     - 返回里带 `pinned:true`：该条目已被**钉住**（台账字段 `cancel_pending`）⇒ 下一次派发的自动回收**不会**放掉它 ⇒ 必须显式处理（重试或 `force`）；`pinned:false` 且带 `pin_reason` ⇒ 钉不住（归属已变）⇒ 先用 `sessions` 确认占槽者。\n   - 对**当前不占槽**的后端（台账 `state` 为 `idle`/`suspended`），`cancel` 是**幂等 no-op**（不终止、不墓碑）—— 槽位本就不占，无需释放。\n\n**同仓要并行 ⇒ 先准备独立工作树**：不同工程仓天然可并行；**同一个仓**要并行，必须先是不同的 git worktree（`git worktree add`），再分别 `dispatch` 到各自目录。否则同一工作树只能串行。\n\n**范围假设（必须知道）**：「不会有两个后端同时写同一工作树」的保证，前提是**后端 session 只经由这四个工具（+ `delegate`）操作**。你若在 TUI 里直接对后端 session 打字或追加指令，会产生插件看不见的排队指令，可能在后端恢复时被注入 —— **这属于明确声明的超出范围**，请避免。\n",
+      "replace": "### 2.2 派发面：同步 `delegate`（唯一通道）\n\n`delegate` 是**同步**通道：建/复用 → 投递 → 等 → 返回（拿 outcome）。\n\n**三条必须记住的语义**：\n\n1. **同一工作树同时只允许一个后端在跑**（单槽）。再派会被拒，错误信息会给出占槽后端 id。\n2. **同仓要并行 ⇒ 先准备独立工作树**：不同工程仓天然可并行；**同一个仓**要并行，必须先是不同的 git worktree（`git worktree add`），再分别派发到各自目录。否则同一工作树只能串行。\n3. **范围假设（必须知道）**：「不会有两个后端同时写同一工作树」的保证，前提是**后端 session 只经由 `delegate` 操作**。你若在 TUI 里直接对后端 session 打字或追加指令，会产生插件看不见的排队指令，可能在后端恢复时被注入 —— **这属于明确声明的超出范围**，请避免。\n\n"
+    },
+    {
+      "path": "prompts/front.md",
+      "find": "| 工具列表里没有 `delegate` / `dispatch` / `sessions` / `suspend` / `cancel` | 门控异常（这些工具只应 front 可见） | 明确告诉用户\"委托工具不可用\"，**不要**改用 shell 脚本绕过 |",
+      "replace": "| 工具列表里没有 `delegate` | 门控异常（该工具只应 front / plan 可见） | 明确告诉用户\"委托工具不可用\"，**不要**改用 shell 脚本绕过 |"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "## 委派工程实施（delegate / dispatch）\n\n工程实施**只有一条通道**：`delegate` 插件的五个工具（`delegate` / `dispatch` / `sessions` / `suspend` / `cancel`）。`subagent` **不能**用来拉可写 agent 干实施（它没有登记、台账、单槽、scope 检测、停机证据门控）。\n\n| 你要什么 | 用哪个 |\n|---|---|\n| 派一个任务、当场拿结果 | `delegate`（同步：建/复用 → 投递 → 等 → 返回） |\n| 并发多任务、先不等 | `dispatch`（异步：投递后立即返回） |\n| 查后端状态（只读） | `sessions` |\n| 先切走、稍后继续 | `suspend` |\n| 目标作废 | `cancel` |\n",
+      "replace": "## 委派工程实施（`delegate`）\n\n工程实施**只有一条通道**：`delegate` 插件（同步：建/复用 → 投递 → 等 → 返回）。`subagent` **不能**用来拉可写 agent 干实施（它没有登记、台账、scope 检测）。\n\n⚠ **同一工作树同时只允许一个后端在跑**（单槽）；同仓要并行 ⇒ 先准备独立 git worktree。\n\n"
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "### 2.2 delegate（工程型，唯一通道）\n\n五个工具由 `plugins/delegate.ts` 经 `ctx.tool.transform` 注册，**工具名 ≠ 权限项名**：\n\n| 工具 | 权限项（`options.permission`） | 语义 |\n|---|---|---|\n| `delegate` | `delegate` | 同步：建/复用 → 投递 → 等 → 返回 |\n| `dispatch` | `delegate_dispatch` | 异步：投递即返回（**≠ 任务完成**） |\n| `sessions` | `delegate_sessions` | 只读名册（**按 owner 过滤**，见「delegate 工程通道的当前态」） |\n| `suspend` | `delegate_suspend` | 暂停（保留上下文，之后可 resume） |\n| `cancel` | `delegate_cancel` | 终止（**先确认真的停了**才墓碑） |\n\n门控：顶层 `permission` 五项**全 `deny`**；`front` 与 `plan` 在 agent 级各 `allow` 五项。**唯一性指门控边界唯一，不是工具名唯一**（`docs/adr/ADR-front-multi-backend.md` D1 + `ADR-plan-delegate-engineering-session.md` D1）。\n",
+      "replace": "### 2.2 delegate（工程型，唯一通道）\n\n`delegate` 由 `plugins/delegate.ts` 经 `ctx.tool.transform` 注册，**工具名 ≠ 权限项名**：\n\n| 工具 | 权限项（`options.permission`） | 语义 |\n|---|---|---|\n| `delegate` | `delegate` | 同步：建/复用 → 投递 → 等 → 返回 |\n\n门控：顶层 `permission` **`deny`**；`front` 与 `plan` 在 agent 级 `allow`。**唯一性指门控边界唯一，不是工具名唯一**。\n\n"
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "### 8.2 槽位、归属、优先级\n\n- **单槽**：同一 `workRoot` 同时只允许一个后端在跑（`state ∈ {dispatching, active}` + 活体判定仍在跑）。判定**富化既有拒绝点**，不新建锁外预检（避免 TOCTOU 与两面「unknown 会话」口径漂移）。\n- **归属**：`owner_agent`（`front` / `plan`）落 pair / ledger / session metadata；**缺失一律按 front 解释**。`sessions` **按 owner 过滤**（过滤只发生在 sessions 的 execute 内；全局配额统计与 dispatch 超限诊断保持 owner 无关）。\n- **优先级（D7）**：**plan 优先、但不抢占**。目标工作树被**另一 owner-kind** 的活跃后端占用 ⇒ 报错**指名占用者**（`owner=plan` / `owner=front`）+ 可执行下一步。\n  - **跨 owner-kind 的 resume 硬拒**（判据用 owner-kind 而非 session id ⇒ 同 kind 的「隔天回来继续」不受影响）；owner 会话已亡 ⇒ 放行（亡主例外）。\n  - **跨 owner-kind 的 cancel 硬拒**（补齐归属门控只在 suspend 路径的缺口，否则 front 可绕过优先级直接终止 plan 的活后端）。\n  - **owner 亡主本身不消解冲突**（冲突只看后端活体）；出口是既有亡主门控回收后再派。\n  - 拒绝点落 ledger `priority_blocked`（`caller_kind` / `holder_kind` / `holder_state` / `holder_session_id` / `work_root` / `path`）。\n",
+      "replace": "### 8.2 槽位\n\n- **单槽**：同一 `workRoot` 同时只允许一个后端在跑。同步 `delegate` 在 `wait` 返回时自翻转 `idle`。\n- 同步面**没有**归属版本（`claim_gen`）与优先级门控：这些是异步派发面的语义。\n\n"
+    },
+    {
+      "path": "docs/front-delegate-architecture.md",
+      "find": "### 4.4 异步派发面的槽位模型（单槽）\n\n`dispatch` / `sessions` / `suspend` / `cancel` 与既有 `delegate` **共用同一张槽位表**\n（落 `pair.json`，键 = **`workRoot`**）。要点：\n\n| 概念 | 规则 |\n|---|---|\n| **槽位键** | `workRoot`（`abs(git rev-parse --show-toplevel)`）⇒ 同一仓的不同 linked worktree **各自一槽**；同一工作树内一次一个 |\n| **占槽态** | `dispatching`（简报已投递但**未确认消费**）/ `active`（已确认消费）。两种都占槽 |\n| **非占槽态** | `idle`（已登记未占槽）/ `suspended`（被暂停、可续）/ `tombstone`（终态） |\n| **常驻 vs 活跃** | 同一工作树可**常驻多个**后端（`idle`/`suspended`），同一时刻只有一个占槽 |\n| **切换** | **四步由 front 编排**（`ADR-front-cancel-release` D5）：`sessions` 找占槽者 → `suspend`（优雅，可续）→ 失败则 `cancel`（**证据门控**）→ 仍失败则 `cancel(force:true)`（**须先向用户说明该后端可能仍在写这个工作树**）→ `dispatch/resume`（跨 session 的 interrupt+prompt 无法与上游投递原子化） |\n| **停机证据门控** | `suspend` 与 `cancel` **共用同一条**判据（`wait` + 判活为假 +（基线在跑时）终态水位线前移）；`interrupt` 的返回值**只作诊断字段**，**不决定**是否放槽。证据不足 ⇒ `cancel` **整单拒绝**（不墓碑、不放槽）+ 落 `event:\"cancel_refused\"`；`cancel_pending` 钉住该条目 ⇒ **reconcile 不得自动放行** |\n| **投递 ≠ 消费** | `prompt()` 返回 = **已入队**；消费 = 该简报的 `message.id` 出现在 `session.context()` 的消息 id 集合里。`dispatching` 只可 `cancel`（旧简报会抢先跑） |\n| **翻转执行者** | 同步 `delegate` 在 `wait` 返回时自翻转 `idle`；`dispatch` 派发的后端靠**每次派发时的 reconcile**（锁外查活体 → 锁内重验 → 锁内翻转）。⚠️ **例外**：被 `cancel_pending` 钉住的条目**不得**被 reconcile 自动放行（刚被拒绝释放的后端可能还在写） |\n| **悬挂标记** | 登记占槽 + 实际不 busy + 超 `stalled` 阈值 ⇒ 展示层报「槽位疑似悬挂」；**回收仍由 reconcile 完成** |\n\n**锁的形态（不可违反）**：`withLock` 是**同步** `() => void`、不可重入、10s deadline ⇒\n\n1. **锁内不得 `await`**（活体查询 / `interrupt` / `prompt` 全在锁外）；\n2. **锁内不得调用自取锁的函数**（`appendLedger` / `registerSession` 会二次取锁 ⇒ 死锁）；\n   锁内只用已持锁版本：`appendLedgerLine` / `writePairs` / `writeRoleSession`。\n",
+      "replace": "### 4.4 槽位模型（单槽）\n\n`delegate` 用**单槽**：落 `pair.json`，键 = **`workRoot`**（`abs(git rev-parse --show-toplevel)`）\n⇒ 同一仓的不同 linked worktree **各自一槽**；同一工作树内一次一个。\n\n- **翻转**：同步 `delegate` 在 `wait` 返回时自翻转 `idle`。\n- **锁的形态（不可违反）**：`withLock` 是**同步** `() => void`、不可重入、10s deadline ⇒\n  1. **锁内不得 `await`**（活体查询 / `prompt` 全在锁外）；\n  2. **锁内不得调用自取锁的函数**（`appendLedger` / `registerSession` 会二次取锁 ⇒ 死锁）；\n     锁内只用已持锁版本：`appendLedgerLine` / `writePairs` / `writeRoleSession`。\n\n"
+    },
+    {
+      "path": "docs/front-delegate-testing.md",
+      "find": "lib/delegate-async.ts         异步派发面：dispatch / sessions / suspend / cancel + 槽位生命周期 + 消费确认\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/front-delegate-testing.md",
+      "find": "tests/delegate-async.test.ts  异步面单测（槽位 / 消费确认 / 暂停终止 / 名册 / 亡主接管 / steer 残留）\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/front-delegate-testing.md",
+      "find": "tests/probes/                可复跑的**回归探针**脚本（如 probe-cancel-release.ts：cancel 不得在后端仍在跑时放槽）\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/front-delegate-testing.md",
+      "find": "scripts/mutate-cancel-release.sh    变异验证：5 组故意破坏 ⇒ 对应用例必须变红\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/front-delegate-usage.md",
+      "find": "### `suspend` 失败时的三种形态（看 `reason`，不要一律重试）\n\n`suspend` 返回 `suspended:false` 时，**`reason` 决定下一步**：\n\n| `reason` | 含义 | 该做什么 |\n|---|---|---|\n| `slot_already_released`（常带 `idempotent:true`） | 该后端**已不在占槽**（此前已释放过） | **不用再 `suspend`、也不必 `cancel`** |\n| `wait_no_op` | 停机确认已返回、但仍判定**可能仍在跑**（可能被再次唤起） | **不要反复重试 `suspend`**；先停下其它派发，确认它确实在跑再走「切换四步」的第 3 步（`cancel`） |\n| `degraded_no_evidence` | 该运行时的 `session.wait` 不可用 ⇒ 无正面证据 | 走「切换四步」的第 3 步（`cancel`）（有意的保守侧，不是故障） |\n\n另有 `slot_reclaimed` / `slot_state_changed`：槽位归属在停机窗口内已被别的派发改动 ⇒\n本次**未释放**槽位 ⇒ 用 `sessions` 确认当前占槽者再决定。\n\n### 切换工作树：四步（`cancel` 有停机证据门控）\n\n`cancel` **不是**「按一下就放槽」：它会先**确认该后端真的停了**（与 `suspend` 同一条判据），\n证据不足 ⇒ **整单拒绝**（不终止、不释放槽位）⇒ 该后端**可能仍在写**这个工作树。\n\n```\n0. sessions            ⇒ 找占着这个工作树的后端 X（占槽者以台账为准，不看 metadata）\n1. suspend(X)          ⇒ 优雅路径；成功 ⇒ 槽已释放 ⇒ 跳 4\n2. suspend(X) 失败     ⇒ 进 3\n3. cancel(X)           ⇒ 证据门控\n     成功 ⇒ 跳 4\n     被拒 ⇒ 工作树被「正确地」占着（X 可能还在写）⇒ 二选一：\n       3a 等 + 重试：过几秒重试 cancel(X)\n       3b cancel(X, {force:true}) ⇒ 强制放行\n           ⇒ 必须先向用户说明「该后端可能仍在写这个工作树」\n4. dispatch(Y)         ⇒ 同一工作树\n```\n\n`cancel` 被拒时 `reason` 的含义：\n\n| `reason` | 含义 | 该做什么 |\n|---|---|---|\n| `wait_no_op` / `still_running` | 停机确认后仍判定**可能仍在跑** | 等 + 重试，或 `force:true`（先向用户说明风险） |\n| `wait_timeout` | 停机确认窗口内没拿到终态证据 | 等 + 重试，或 `force:true`（先向用户说明风险） |\n| `degraded_no_evidence` / `unreadable` | 无正面证据 / 读失败 | 等 + 重试，或 `force:true`（先向用户说明风险） |\n| `slot_already_released`（常带 `idempotent:true`） | 该后端**当前不占槽** | 幂等 no-op，**不必**再 `cancel` |\n| `slot_reclaimed` / `slot_state_changed` / `slot_entry_gone` | 台账状态与你的判断不一致 | 用 `sessions` 确认当前占槽者，**不要**硬来 |\n\n- 返回里带 `pinned:true` ⇒ 该条目已被**钉住**（`pair.json` 的 `cancel_pending`）⇒\n  下一次派发的自动回收**不会**放掉它 ⇒ 必须显式处理（重试 `cancel` 或 `force:true`）。\n  `pinned:false` 且带 `pin_reason` ⇒ 钉不住（归属在窗口内已变）⇒ 先用 `sessions` 确认占槽者。\n- `force:true` **只跳过停机证据门控**，**不跳过授权门控**（槽位已被别人认领时仍然拒绝）。\n- 台账留痕：`ledger.jsonl` 落 `event:\"cancel_refused\"` 行（被拒，带 `reason`）或\n  `event:\"cancel_forced\"` 行（强制放行）；成功终止落 `event:\"cancelled\"` 行。\n- 对**当前不占槽**的后端（台账 `state` 为 `idle`/`suspended`），`cancel` 是**幂等 no-op**\n  （不终止、不墓碑）—— 槽位本就不占，无需释放。\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/front-delegate-usage.md",
+      "find": "### 场景 G：同时推进多个任务（并发派发）\n\n> \"这三个模块的改造并行做，别一个一个等。\"\n\nfront 会用 **`dispatch`**（异步派发）分别派出去，每个后端**立即返回**、互不等待。\n\n⚠️ **`dispatch` 返回 ≠ 任务完成**——它只证明\"简报已投递并被确认取走\"，**不证明活儿干完了**。\n要结论必须问进度（场景 H）或用 `delegate` 同步等。\n\n⚠️ **同一个工作树仍是一次一个**（单槽）。三个模块在同一仓的同一工作树里 ⇒ 只能串行；\n要真并行，先给每个后端准备独立工作树（`git worktree add`），再分别 `dispatch` 到各自目录。\n\n### 场景 H：问后端进度\n\n> \"刚才那三个后端现在什么状态？\"\n\nfront 用 **`sessions`** 查看。它是**只读**的——只看不动，**不会**给后端投递任何消息（所以查多少次都不会污染后端上下文）。\n\n返回里会给出整体结论（进行中 / 已终结 / 无可验证交付）以及**每个后端的明细**。\n`无可验证交付` 的意思是\"跑完了但没找到可验证的产物\"，**不等于**\"没有产出\"（产物可能落在 git 视野外）。\n\n### 场景 I：临时切走，稍后再回来\n\n> \"先停下 A，让 B 跑；A 那个别丢，晚点接着做。\"\n\nfront 会用 **`suspend`** 暂停 A（**保留上下文**，不是杀掉），再 `dispatch`/`delegate` 让 B 上。\n之后想回到 A，用**同一个目标**续接即可，A 的历史还在。\n\n⚠️ 如果 A 刚派发、简报还没被确认取走（状态 `dispatching`），front **不能** suspend 它——\n这时只能用 `cancel`（因为那份没被取走的简报会在恢复时抢先执行）。\n\n### 场景 J：这个任务不要了\n\n> \"算了，A 那个不做了。\"\n\nfront 用 **`cancel`**。这是**终止**：后端被标为墓碑，**永久不能再续接**，再派必须新建。\n想保留上下文就改用 `suspend`。\n\n⚠️ `cancel` 会**先确认该后端真的停了**（与 `suspend` 同一条判据）：\n- 确认停机 ⇒ 墓碑 + 释放槽位（可立刻在同一工作树重派）；\n- **证据不足 ⇒ 整单拒绝**（不终止、不释放槽位）⇒ 返回里带 `reason` ⇒ 该后端**可能仍在写**这个工作树\n  ⇒ 要么等几秒重试，要么 `cancel(X, {force:true})` 强制放行（**先向用户说明「该后端可能仍在写这个工作树」**）；\n- 对**当前不占槽**的后端（台账 `state` 为 `idle`/`suspended`）⇒ 幂等 no-op（不终止、不墓碑）。\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`\"*\": deny` **必须是第一条**，v2.5 + ADR D2.1：opencode 的工具可见性判定取该 action **最后一条**匹配规则，`\"*\": deny` 放末尾会把整个 `subagent` 工具隐藏）；`delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel` allow（**唯一登记型通道**——五个 action 同挂 `delegate` 插件、各自独立放行；「唯一」指**门控边界**唯一，**不是工具名**唯一，ADR `docs/adr/ADR-front-multi-backend.md` D1）；**v2.17 起 `plan` 也是放行主体**（同一通道，不新建第二套协议；ADR `docs/adr/ADR-plan-delegate-engineering-session.md`）",
+      "replace": "`edit`/`write`/`skill` deny；`subagent` **仅 `explore` / `librarian` / `oracle` / `metis` / `critic` allow**（`\"*\": deny` **必须是第一条**，v2.5 + ADR D2.1：opencode 的工具可见性判定取该 action **最后一条**匹配规则，`\"*\": deny` 放末尾会把整个 `subagent` 工具隐藏）；`delegate` allow（**唯一登记型通道**）；**v2.17 起 `plan` 也是放行主体**（同一通道，不新建第二套协议；ADR `docs/adr/ADR-plan-delegate-engineering-session.md`）"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **门控**：五个工具各声明**独立** `options.permission`（`delegate` / `delegate_dispatch` / `delegate_sessions` / `delegate_suspend` / `delegate_cancel`）→ 全局 deny + 仅 front allow ⇒ 其余 agent 调用时答 `NO_TOOL`",
+      "replace": "- **门控**：`delegate` 声明独立 `options.permission`（`delegate`）→ 全局 deny + 仅 front / plan allow ⇒ 其余 agent 调用时答 `NO_TOOL`"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "│   ├── delegate-async.ts        # 异步派发面：dispatch/sessions/suspend/cancel + 槽位生命周期 + 消费确认\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "| **四工具门控**：`delegate_dispatch`/`delegate_sessions`/`delegate_suspend`/`delegate_cancel` 各自独立 action ⇒ 全局 deny + 仅 front allow，其余 agent 全 deny | ✅ `opencode debug agents` 实测（2026-11-09）|\n| **单槽与切换**：同一 `workRoot` 第二个活跃后端被拒（错误含占槽 id）；两 linked worktree 各派一个**都成功**；`suspend` 释放槽位后可派发；既有 `delegate` 与新工具**共用同一张槽位表** | ✅ `bun test tests/delegate-async.test.ts`（56 项，含 D12 矩阵 10 条 + AC57 往返 2 条）|\n| **消费确认**：「简报已被消费」= 其 `message.id` 出现在 `session.context()` 的消息 id 集合里；pending 的简报**不在** context；`interrupt({resume:false})` **不删** pending 行 ⇒ 幽灵注入真实存在 | ✅ Phase 0 探针 16/16（`.rddf/reviews/front-multi-backend-consume-probe.md`）|",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "│   ├── delegate.ts              # front → 工程 session 的委托工具（五个：delegate/dispatch/sessions/suspend/cancel）\n",
+      "replace": "│   ├── delegate.ts              # front → 工程 session 的委托工具（delegate）\n"
+    },
+    {
+      "path": "docs/dual-session-delegation.md",
+      "find": "| `state` | 槽位登记态（仅异步派发面）：`dispatching` / `active` / `idle` / `suspended` / `tombstone` |\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "import { dispatchToolDefinition } from \"../lib/delegate-async.ts\"\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"async 四个工具的 description：不得手抄返回字段名 / 参数名（形态约束）\", () => {\n    const asyncSrc = readFileSync(path.join(ROOT, \"lib\", \"delegate-async.ts\"), \"utf8\")\n    const tools = [\"dispatchToolDefinition\", \"sessionsToolDefinition\", \"suspendToolDefinition\", \"cancelToolDefinition\"]\n    for (const fn of tools) {\n      const start = asyncSrc.indexOf(`export function ${fn}`)\n      expect(start, `找不到 ${fn}`).toBeGreaterThan(-1)\n      const seg = asyncSrc.slice(start, start + 6000)\n      // ⚠ 必须从 `return {` **之后**找 `description:` —— properties 里每个参数也有 description:\n      const retAt = seg.indexOf(\"return {\")\n      const dStart = seg.indexOf(\"description:\", retAt >= 0 ? retAt : 0)\n      const dEnd = seg.indexOf(\"input:\", dStart)\n      const descSeg = dStart >= 0 && dEnd > dStart ? seg.slice(dStart, dEnd) : \"\"\n      expect(descSeg.length, `定位不到 ${fn} 的 description 表达式（函数被重构？请更新本判据）`).toBeGreaterThan(0)\n\n      // ① 不得含 delegate 返回契约的字段名（防跨契约抄清单）\n      const fields = DELEGATE_RESULT_FIELDS as readonly string[]\n      const copied = fields.filter((f) => new RegExp(`[\"'\\`]${f}[\"'\\`]`).test(descSeg))\n      expect(copied, `${fn} 的 description 里出现了 delegate 返回契约的字段名（应改为派生）：${copied.join(\", \")}`).toEqual([])\n\n      // ② 不得含**参数名**字面量（防手抄必填/选填清单）—— 只对有参数的工具判\n      if (fn === \"dispatchToolDefinition\") {\n        const props = dispatchToolDefinition({} as any).input?.properties ?? {}\n        const names = Object.keys(props)\n        const hardcoded = names.filter((n) => new RegExp(`[\"'\\`]${n}[\"'\\`]`).test(descSeg))\n        expect(hardcoded, `dispatch 的 description 里出现硬编码参数名（应改为从 schema 派生）：${hardcoded.join(\", \")}`).toEqual([])\n        // 且必须真的调用了派生\n        expect(descSeg, \"dispatch 的 description 必须从 requiredNames / optionalNames 派生\").toMatch(/requiredNames|optionalNames/)\n      }\n    }\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    // dispatch 的 description 是**手抄**的 ⇒ 必须另钉（它不会随 schema 自动更新）\n    const asyncSrc = readFileSync(path.join(import.meta.dir, \"..\", \"lib\", \"delegate-async.ts\"), \"utf8\")\n    const seg = asyncSrc.slice(asyncSrc.indexOf(\"export function dispatchToolDefinition\"))\n    expect(seg.slice(0, 4000), \"dispatch 的手抄 description 未提 base\").toContain(\"base\")\n    expect(seg.slice(0, 4000), \"dispatch 的手抄 description 未提 verifier\").toContain(\"verifier\")\n    expect(seg.slice(0, 4000), \"dispatch 的手抄 description 未提 resume\").toContain(\"resume\")\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    const ACTIONS = [\"delegate\", \"delegate_dispatch\", \"delegate_sessions\", \"delegate_suspend\", \"delegate_cancel\"]\n",
+      "replace": "    const ACTIONS = [\"delegate\"]\n"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "        \"delegate-core.ts\", \"delegate-async.ts\", \"model-fallback-core.ts\", \"subagent-contract-core.ts\",\n",
+      "replace": "        \"delegate-core.ts\", \"model-fallback-core.ts\", \"subagent-contract-core.ts\",\n"
+    }
+  ],
+  "drill_env": {
+    "seed_files": [
+      {
+        "path": ".rddf/state/role.json",
+        "content": "{\n  \"current_role\": \"general\",\n  \"updated_at\": \"2026-11-21T00:00:00Z\"\n}\n"
+      }
+    ]
+  },
+  "verify": {
+    "commands": [
+      [
+        "bun",
+        "test",
+        "tests/"
+      ]
+    ]
+  }
+}

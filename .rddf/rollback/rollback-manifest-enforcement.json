@@ -2,7 +2,7 @@
   "version": 1,
   "mechanism": "rollback-manifest-enforcement",
   "adr": "docs/adr/ADR-rollback-manifest-enforcement.md",
-  "notes": "退役 **L2 强制化机制**（ADR-rollback-manifest-enforcement）：删守卫（`lib/rollback-registry.ts` / `scripts/rollback-registry.ts` / `tests/rollback-registry.test.ts`）+ 删 `registry.json` + 删 8 份债指针（存量债） + **删本清单自身**（清单描述的是「如何撤掉 L2」⇒ L2 撤掉后它再无用途，且它的 `delete` 目标已不存在 ⇒ 漂移守卫会恒红 ⇒ 必须同批删），并撤回随之失效的三处登记（config-guards 的 EXPECTED.lib / tests/README 覆盖表行 / `.rddf/rollback/README` 的自清单行与 registry 指针）。⚠ 退役后**既有清单仍在**（commit-gate / plan-topics / plan-delegate / model-fallback）⇒ **回滚可达性能力本身不受影响**（L1 的 drill 与漂移守卫独立于 registry）。⚠ 退役后**新增机制不再被强制表态**（「沉默 = 违规」的承诺随之消失）—— 这是退役本机制的**语义后果**，如实登记。⚠ **退役记录落在 `.rddf/rollback/README.md`**（registry 随机制被删 ⇒ 无法在其中记 `retired` 态）；**刻意不编辑 ADR 的 Status 行** —— ADR 是**决策记录**（保留），且 Status 行的文本会随 ADR 自身状态流转而变 ⇒ 作 `find` 锚点会**自指破裂**（退役时 find 匹配不上 ⇒ 清单恒红）。",
+  "notes": "退役 **L2 强制化机制**（ADR-rollback-manifest-enforcement）：删守卫（`lib/rollback-registry.ts` / `scripts/rollback-registry.ts` / `tests/rollback-registry.test.ts`）+ 删 `registry.json` + 删剩余债指针 + **删本清单自身**（清单描述的是「如何撤掉 L2」⇒ L2 撤掉后它再无用途，且它的 `delete` 目标已不存在 ⇒ 漂移守卫会恒红 ⇒ 必须同批删），并撤回随之失效的三处登记（config-guards 的 EXPECTED.lib / tests/README 覆盖表行 / `.rddf/rollback/README` 的自清单行与 registry 指针）。⚠ 退役后**既有清单仍在**（commit-gate / plan-topics / plan-delegate / model-fallback / delegate-slot-kernel）⇒ **回滚可达性能力本身不受影响**（L1 的 drill 与漂移守卫独立于 registry）。⚠ 退役后**新增机制不再被强制表态**（「沉默 = 违规」的承诺随之消失）—— 这是退役本机制的**语义后果**，如实登记。⚠ **退役记录落在 `.rddf/rollback/README.md`**（registry 随机制被删 ⇒ 无法在其中记 `retired` 态）；**刻意不编辑 ADR 的 Status 行** —— ADR 是**决策记录**（保留），且 Status 行的文本会随 ADR 自身状态流转而变 ⇒ 作 `find` 锚点会**自指破裂**（退役时 find 匹配不上 ⇒ 清单恒红）。",
   "delete": [
     "lib/rollback-registry.ts",
     "scripts/rollback-registry.ts",
@@ -12,11 +12,7 @@
     ".rddf/rollback/pending/backend-handoff-role-class.md",
     ".rddf/rollback/pending/class-write-scope-alignment.md",
     ".rddf/rollback/pending/delegate-delivery-evidence.md",
-    ".rddf/rollback/pending/front-cancel-release.md",
-    ".rddf/rollback/pending/front-knowledge-capability.md",
-    ".rddf/rollback/pending/front-multi-backend.md",
-    ".rddf/rollback/pending/front-stop-confirmation.md",
-    ".rddf/rollback/pending/front-stop-ownership.md"
+    ".rddf/rollback/pending/front-knowledge-capability.md"
   ],
   "edits": [
     {
@@ -51,11 +47,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "6bf4d85c0bc12753c3b877e562617c771d3c34d5",
-    "at": "2026-11-21",
-    "result": "pass",
-    "content_hash": "a5faad28a5a029493762e4104c4bbff1d148ff8e1fb0ef5dd8be5cd9e85d39e4"
   }
 }
