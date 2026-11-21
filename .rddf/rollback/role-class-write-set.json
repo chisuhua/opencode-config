@@ -5,7 +5,7 @@
   "adr_related": [
     "docs/adr/ADR-class-write-scope-alignment.md"
   ],
-  "notes": "退役 **G3 `role-class-write-set`**（2 个机制一份清单 —— 同一退役面）：`backend-handoff-role-class` /\n`class-write-scope-alignment`。\n\n**退役面（路径 A：退役能力、保留字段）**：① 两个工具的 schema 去掉 `role_class` 参数（派发方不再选类；\n显式传值 ⇒ `validateBrief` 硬拒）；② `RoleClass` 收窄为单成员 `\"builder\"`，`ROLE_CLASSES` / `isRoleClass` /\n`parseRoleClass` / `classAllowRoots` / `verifierAllowRootLabels` / `verifierWriteSetBlock` /\n`VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` / `VERIFIER_BACKLOG_ROOT_FILES` / `assertResumeRoleClass`\n全部删除；③ `assertRoleClassCompatible` 只留 builder 分支（arch 窄目标拒），`assertVerifierBaseline` →\n`assertBaseline`（无类绑定）；④ 3 份 prompt 的 `role-class-write-set:verifier` 机读块 + 选类表 / 换类教学 /\n运行身份表撤销；⑤ 3 个专属守卫 describe（role_class 投影 / 能力面判据对齐 / 能力面写集对齐）+ 逐条类断言删除；\n⑥ `docs/backend-handoff-role-class.md`（本机制设计稿）整份删除。清单共 **117 条 edits**。\n\n**保留（字段，不是能力）**：`role.json` 分区 / `pair.json` / lease / `role-identity` / `role-gate` /\n`commit-gate` 的 `role_class` 字段保留且恒 `builder` ⇒ 两条豁免机制（`role-aware-permissions` 的后端判据③、\n`role-session-identity` 的分区读）行为不变、无跨机制耦合。\n\n**为什么两者一份清单**：`class-write-scope-alignment` 的产物（`VERIFIER_ALLOW_ROOTS` / `verifierWriteSetBlock`\n+ 3 份 prompt 机读块 + 3 个 describe）**就是** `role_class=verifier` 的写集上限 —— 退役选类能力必然同时撤掉它，\n且守卫是「精确字符串比对」（块留一个字节就红）⇒ **没有半撤的中间态**\n（`docs/adr/ADR-class-write-scope-alignment.md:193-194`）。\n\n**退役的机械通道**：`retire[]`（ADR 第 7 轮 / V16）把这 2 条 registry 条目转 `retired`（`retired_at` = 执行日、\n`retired_evidence` = 各自的 `adr_primary`、撤 `watch` / `manifest_ref` / `pending_backlog`），清单**同批自删**。\n⚠ 2 份 `pending/*.md` 债指针在**写清单的同一次提交**里删除（债 = 清单未写，写完即失效）⇒ 它们**不在** `delete` 里。\n\n⚠ **语义后果（如实登记，不是遗漏）**：\n  ① **派发方失去「让后端写架构文档」的能力** —— 后端恒 builder ⇒ `classPermissions` 的 arch deny 恒定生效。\n     架构文档 / ADR 的落盘改由**主会话切 `architect` 治理身份**完成（`lib/role-policy.ts` 的 architect 写集本就\n     可写 arch 路径）。\n  ② **后端不再有「只出证据与判决」的专属指令** —— 简报的 verifier 分支被删，验收类任务只在 `scope` 上区分。\n  ③ **`delegate-base-channel` 的「verifier 类必填 base」强制退役**（本路径的代价项，用户已裁决）：\n     base 通道**保留**（参数 + 形态校验 + 可解析性校验），但**不再与类绑定** —— 填了就必须可解析成 sha，\n     不填则不做基线对照。⚠ 副作用：builder 类派发**填了** base 时现在会真的做基线对照（此前被静默忽略）。\n     `delegate-base-channel` **不在** `retire[]` 里（它没有 registry 条目，用户未选合组路径 C）。\n\n⚠ **刻意保留的残留**：`role_class` 数据字段（`role.json` 分区 / `pair.json` / lease / 门禁插件）恒 `builder` ——\n退役的是**能力**（选类），不是字段；删字段会让 `plugins/role-gate.ts` 的后端判据失去锚点（后端会被当成主会话门控）\n⇒ 改了 `role-aware-permissions` 的语义。\n\n⚠ **与 G1 / G2 的文件面耦合**：本清单 **edit** `lib/delegate-async.ts` 与 `tests/delegate-async.test.ts`，\n而 G1 的清单**整份删除**这两个文件、G2 的清单也 edit `tests/delegate-async.test.ts`\n⇒ **执行顺序敏感**：本清单必须**先于** G1 / G2 执行（反之 `find` 锚点不存在）。\n这是**回滚单向性**的既有性质（`.rddf/rollback/README.md`「清单之间会耦合」），不是本清单的缺陷。\n",
+  "notes": "退役 **G3 `role-class-write-set`**（2 个机制一份清单 —— 同一退役面）：`backend-handoff-role-class` /\n`class-write-scope-alignment`。\n\n**退役面（路径 A：退役能力、保留字段）**：① 两个工具的 schema 去掉 `role_class` 参数（派发方不再选类；\n显式传值 ⇒ `validateBrief` 硬拒）；② `RoleClass` 收窄为单成员 `\"builder\"`，`ROLE_CLASSES` / `isRoleClass` /\n`parseRoleClass` / `classAllowRoots` / `verifierAllowRootLabels` / `verifierWriteSetBlock` /\n`VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` / `VERIFIER_BACKLOG_ROOT_FILES` / `assertResumeRoleClass`\n全部删除；③ `assertRoleClassCompatible` 只留 builder 分支（arch 窄目标拒），`assertVerifierBaseline` →\n`assertBaseline`（无类绑定）；④ 3 份 prompt 的 `role-class-write-set:verifier` 机读块 + 选类表 / 换类教学 /\n运行身份表撤销；⑤ 3 个专属守卫 describe（role_class 投影 / 能力面判据对齐 / 能力面写集对齐）+ 逐条类断言删除；\n⑥ `docs/backend-handoff-role-class.md`（本机制设计稿）整份删除。清单共 **126 条 edits**。\n\n**保留（字段，不是能力）**：`role.json` 分区 / `pair.json` / lease / `role-identity` / `role-gate` /\n`commit-gate` 的 `role_class` 字段保留且恒 `builder` ⇒ 两条豁免机制（`role-aware-permissions` 的后端判据③、\n`role-session-identity` 的分区读）行为不变、无跨机制耦合。\n\n**为什么两者一份清单**：`class-write-scope-alignment` 的产物（`VERIFIER_ALLOW_ROOTS` / `verifierWriteSetBlock`\n+ 3 份 prompt 机读块 + 3 个 describe）**就是** `role_class=verifier` 的写集上限 —— 退役选类能力必然同时撤掉它，\n且守卫是「精确字符串比对」（块留一个字节就红）⇒ **没有半撤的中间态**\n（`docs/adr/ADR-class-write-scope-alignment.md:193-194`）。\n\n**退役的机械通道**：`retire[]`（ADR 第 7 轮 / V16）把这 2 条 registry 条目转 `retired`（`retired_at` = 执行日、\n`retired_evidence` = 各自的 `adr_primary`、撤 `watch` / `manifest_ref` / `pending_backlog`），清单**同批自删**。\n⚠ 2 份 `pending/*.md` 债指针在**写清单的同一次提交**里删除（债 = 清单未写，写完即失效）⇒ 它们**不在** `delete` 里。\n\n⚠ **语义后果（如实登记，不是遗漏）**：\n  ① **派发方失去「让后端写架构文档」的能力** —— 后端恒 builder ⇒ `classPermissions` 的 arch deny 恒定生效。\n     架构文档 / ADR 的落盘改由**主会话切 `architect` 治理身份**完成（`lib/role-policy.ts` 的 architect 写集本就\n     可写 arch 路径）。\n  ② **后端不再有「只出证据与判决」的专属指令** —— 简报的 verifier 分支被删，验收类任务只在 `scope` 上区分。\n  ③ **`delegate-base-channel` 的「verifier 类必填 base」强制退役**（本路径的代价项，用户已裁决）：\n     base 通道**保留**（参数 + 形态校验 + 可解析性校验），但**不再与类绑定** —— 填了就必须可解析成 sha，\n     不填则不做基线对照。⚠ 副作用：builder 类派发**填了** base 时现在会真的做基线对照（此前被静默忽略）。\n     `delegate-base-channel` **不在** `retire[]` 里（它没有 registry 条目，用户未选合组路径 C）。\n\n⚠ **刻意保留的残留**：`role_class` 数据字段（`role.json` 分区 / `pair.json` / lease / 门禁插件）恒 `builder` ——\n退役的是**能力**（选类），不是字段；删字段会让 `plugins/role-gate.ts` 的后端判据失去锚点（后端会被当成主会话门控）\n⇒ 改了 `role-aware-permissions` 的语义。\n\n⚠ **与 G1 / G2 的文件面耦合**：本清单 **edit** `lib/delegate-async.ts` 与 `tests/delegate-async.test.ts`，\n而 G1 的清单**整份删除**这两个文件、G2 的清单也 edit `tests/delegate-async.test.ts`\n⇒ **执行顺序敏感**：本清单必须**先于** G1 / G2 执行（反之 `find` 锚点不存在）。\n这是**回滚单向性**的既有性质（`.rddf/rollback/README.md`「清单之间会耦合」），不是本清单的缺陷。\n",
   "retire": [
     "backend-handoff-role-class",
     "class-write-scope-alignment"
@@ -104,6 +104,16 @@
       "path": "lib/delegate-core.ts",
       "find": "          // verifier 基线闸门（design D3：**排在相容性校验之后** ⇒ 先判「你是谁」再判「你缺什么」）\n          const baseline = assertVerifierBaseline({\n            roleClass: effectiveRoleClass,\n            vcs,\n            base: brief.base,\n            workRoot,\n          })\n",
       "replace": "          // 基线闸门（**排在 scope 相容性校验之后** ⇒ 先判 scope 合规，再判 base 可解析）\n          const baseline = assertBaseline({\n            vcs,\n            base: brief.base,\n            workRoot,\n          })\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": " * 与 `verifierWriteSetBlock()` / `planRefRootsBlock()` **同形**：lib 渲染规范块 → prompt 嵌**逐字副本**\n",
+      "replace": " * 与 `planRefRootsBlock()` **同形**：lib 渲染规范块 → prompt 嵌**逐字副本**\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": " * 用途与 `verifierWriteSetBlock()` 同一范式：把「清单是闭集」这条事实从**散文句子解析**\n",
+      "replace": " * 用途与 `capabilityBlock()` 同一范式：把「清单是闭集」这条事实从**散文句子解析**\n"
     },
     {
       "path": "lib/delegate-async.ts",
@@ -256,6 +266,21 @@
       "replace": "#### 被派发后端的运行身份与交回契约\n\n被派发的工程 session（`delegate` / `dispatch` 派出的后端）**只有一类**（`builder`）—— `role_class` 的**选类能力已退役**（`ADR-backend-handoff-role-class` 回滚口径），登记字段恒 `builder`，派发方不再声明类。\n\n> ⚠ **机制未启用时的缺省口径**：若简报里没有「运行身份」段 ⇒ 按 `builder` 执行，一切以简报的 `scope` 为准；**不得因字段缺失臆造一个 class，也不得因此停下拒活**。\n\n| 面 | 允许写（结构性） |\n|---|---|\n| 写 | 简报的 `scope`，**减去架构文档目录**（窄目标派发被拒；宽 scope 下写 arch 路径被拒） |\n| 可拉 subagent | explore / librarian / oracle / metis / critic（只读） |\n| 产出 | 代码 / 测试；`acceptance` 自查结论 |\n\n- **架构文档目录不可写**（按 §架构文档范围 的**目录集口径**判定 —— 配置的 `arch_paths` ∪ fallback 目录集；被派发 session 侧用**闭合清单**实现）：显式写进 scope 会被**直接拒绝派发**；宽 scope（如 `.` / `docs`）允许派发，但写 arch 路径会收到 `Permission denied` —— 那不是故障，是**角色边界** ⇒ 按 HANDOFF 交回，不要换写法绕过。\n- **逐类后果（被派发后端）**：审查者不可用 ⇒ `HANDOFF: blocked`（架构面 critic 行）；逐 change 验收（审查者是 verifier，角色内建）不因 `subagent` 不可用而受阻；需要 `architect` 才能做的工作（写架构文档 / 改已签批 ADR 的决策）⇒ 一律 `HANDOFF: blocked`（后端只有 `builder` 一类，没有 session 内换类入口）。\n- **需要写架构文档 / 改已签批 ADR 的决策 / 独立验收 ⇒ 停下 `HANDOFF: blocked`**，交回主会话（由主会话切 `architect` / `verifier` 角色完成）。**没有 session 内换类入口**（权限在创建时定型，`resume` 不重设）。\n- **审查者不可用 ⇒ `HANDOFF: blocked`**（**本条优先于** §审查配对「审查者不可用时」的降级规则 —— 后端无人值守，自检即自审自批），**不得自审自批**。\n- `shell` **不受**本约束（`CONSTANT_DENY` 只挡 `rm -rf` / `git push` 一类，**不挡** `> file` / `tee`）⇒ 越界写盘的硬边界是 `edit`；主会话收回后须复核 `git status`。\n- **不要用窗口内自动切换**：被派发后端的 `auto_switch_window` 恒为 `null`（登记时写死），下方「授权窗口」的自动回环**只对主会话生效**；后端发现问题一律走 HANDOFF 交回主会话。\n"
     },
     {
+      "path": "prompts/build.md",
+      "find": "⚠ **本节仅适用于被派发后端**（`role_class` 的工程 session）—— 独立会话**不适用**、\n",
+      "replace": "⚠ **本节仅适用于被派发后端**（`delegate` / `dispatch` 派出的工程 session）—— 独立会话**不适用**、\n"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "**纯换类且不需改计划 ⇒ `blocked`**（换类 = 缺主会话派发决策）。\n",
+      "replace": "**需要架构文档落盘 / 独立验收且不需改计划 ⇒ `blocked`**（后端只有 builder 一类 ⇒ 那是缺主会话的角色切换决策）。\n"
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "  > **基线取法**：`<base>` 取自**派发方在简报里声明的基线**（`prompts/plan.md` 选类表已要求必声明；\n",
+      "replace": "  > **基线取法**：`<base>` 取自**派发方在简报里声明的基线**（`prompts/plan.md` 的派发参数段已要求派发前解析出 sha；\n"
+    },
+    {
       "path": "docs/MULTI-AGENT-DESIGN.md",
       "find": "- **派发能力类 `role_class`**（v2.21，`ADR-backend-handoff-role-class`）：一次派发**只做一个角色类**的工作 —— `builder`（按 scope 实施）/ `architect`（写改 ADR 与架构文档）/ `verifier`（只取证与判决）。派发方在 brief 里声明；**scope 越出该类上限 ⇒ 派发被拒**（architect 的上限 = 架构文档目录 ∪ `.rddf/reviews/**` ∪ `arch-docs.json`；verifier = `.rddf/reviews/**` ∪ `.rddf/state/verifier/**`（记账落点））；**同一 session 内不允许换类**（换类 = 后端 handoff 交回主会话后重新派发，新 session 的模型上下文不继承）。能力类落在 `role.json` 分区与 `pair.json` 登记（与治理身份 `current_role` 分开），`sessions` 可回显 —— 见 `docs/adr/ADR-backend-handoff-role-class.md`\n",
       "replace": "- **派发能力类 `role_class`（v2.21；**选类能力已于 2026-11-21 退役**，字段保留）**：离线登记里仍写 `role_class`，但**恒为 `builder`** —— 派发方不再声明类（`role_class` 已从两个工具的 schema 移除，显式传值 ⇒ 硬拒）。被派发后端**只有一类**：`scope` 减去架构文档目录（窄目标派发被拒；宽 scope 下写 arch 路径被 hard-deny）。架构文档 / 验收报告**不经派发** ⇒ 由主会话切 `architect` / `verifier` 角色完成。字段保留的理由：`role-aware-permissions` 的后端判据与 `role-session-identity` 的分区读都锚在它上面 ⇒ 删字段会改这两条豁免机制的语义 —— 见 `docs/adr/ADR-backend-handoff-role-class.md` 的回滚口径\n"
@@ -264,6 +289,21 @@
       "path": "docs/guard-authoring.md",
       "find": "```\nlib/delegate-core.ts                     ← 真源（常量，单点）\n  export const VERIFIER_OWNS_PATHS = [...]\n  export function verifierWriteSetBlock() ← 渲染器（内容完全由常量派生）\n        ↓\nprompts/build.md / plan.md / front.md   ← 投影（各嵌一块**逐字副本**）\n  <!-- role-class-write-set:verifier\n  allow: …\n  owns: …\n  -->\n        ↓\ntests/config-guards.test.ts             ← 守卫（**精确字符串比对**，不是散文解析）\n  expect(text.includes(canonical)).toBe(true)          // 逐字\n  expect(text.split(canonical).length - 1).toBe(1)      // 恰好一处（陈旧副本 ⇒ 红）\n```\n\n**为什么是「逐字块」而不是「解析散文」**：\n\n| 方案 | 判据形态 | 绕过面 |\n|---|---|---|\n| 散文正则（**旧**） | 措辞 / 共现 | 换句式即失效；且**句子截断会藏住真实缺陷**（见 §4.2） |\n| 逐字机读块（**当前**） | 精确字符串 | 多一个路径 / 少一个路径 / 改一个字符 ⇒ 必红 |\n\n本仓已有两族按此落地（**截至 2026-11-15 快照**；真源 = `lib/delegate-core.ts` 的\n`VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` / `PLAN_REF_ROOTS` 与 `tests/config-guards.test.ts`\n的 AC19 / accepted-roots 守卫）：\n\n| 族 | 真源 | 渲染器 | 投影 |\n|---|---|---|---|\n| verifier 写集 | `VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS` | `verifierWriteSetBlock()` | `prompts/{build,plan,front}.md` |\n| `plan_ref` accepted roots | `PLAN_REF_ROOTS` | `planRefRootsBlock()` | `prompts/plan.md` / `docs/MULTI-AGENT-DESIGN.md` / `docs/SUBAGENT-ORCHESTRATION.md` |\n",
       "replace": "```\nlib/delegate-core.ts                     ← 真源（常量，单点）\n  export const PLAN_REF_ROOTS = [...]\n  export function planRefRootsBlock()    ← 渲染器（内容完全由常量派生）\n        ↓\nprompts/plan.md / docs/MULTI-AGENT-DESIGN.md / docs/SUBAGENT-ORCHESTRATION.md\n                                         ← 投影（各嵌一块**逐字副本**）\n  <!-- accepted-roots:plan-ref\n  .rddf/plans/**\n  …\n  -->\n        ↓\ntests/config-guards.test.ts             ← 守卫（**精确字符串比对**，不是散文解析）\n  expect(text.includes(canonical)).toBe(true)           // 逐字\n  expect(text.split(canonical).length - 1).toBe(1)       // 恰好一处（陈旧副本 ⇒ 红）\n```\n\n**为什么是「逐字块」而不是「解析散文」**：\n\n| 方案 | 判据形态 | 绕过面 |\n|---|---|---|\n| 散文正则（**旧**） | 措辞 / 共现 | 换句式即失效；且**句子截断会藏住真实缺陷**（见 §4.2） |\n| 逐字机读块（**当前**） | 精确字符串 | 多一个路径 / 少一个路径 / 改一个字符 ⇒ 必红 |\n\n本仓按此落地的族（**截至 2026-11-21 快照**；真源 = `lib/delegate-core.ts` 的 `PLAN_REF_ROOTS`\n与 `tests/config-guards.test.ts` 的 accepted-roots 守卫）：\n\n| 族 | 真源 | 渲染器 | 投影 |\n|---|---|---|---|\n| `plan_ref` accepted roots | `PLAN_REF_ROOTS` | `planRefRootsBlock()` | `prompts/plan.md` / `docs/MULTI-AGENT-DESIGN.md` / `docs/SUBAGENT-ORCHESTRATION.md` |\n"
+    },
+    {
+      "path": "docs/guard-authoring.md",
+      "find": "    \"<!-- role-class-x\",\n",
+      "replace": "    \"<!-- block:x\",\n"
+    },
+    {
+      "path": "docs/guard-authoring.md",
+      "find": "本仓有一族事实**横跨两个仓**（例：verifier 的 owns 清单，本仓常量 ↔ 产品仓 `SKILL.md`）。\n",
+      "replace": "本仓的跨仓事实族**当前为空**（原例「verifier 的 owns 清单，本仓常量 ↔ 产品仓 `SKILL.md`」已随\n`role-class-write-set` 退役 —— 本仓侧不再有 owns 常量）⇒ **机制保留**，新增跨仓事实族时按本节。\n"
+    },
+    {
+      "path": "docs/guard-authoring.md",
+      "find": "### 6.1 跨仓核对命令（verifier owns 清单 —— 消费侧 ↔ 生产侧）\n\n**脚本为准**：`scripts/cross-repo-check.sh`（清单 `.rddf/config/workspace.json`）。它把「清单坏 / 仓缺 / 身份不符 / 命令失败 / 两侧不一致」拆成**互不混淆**的出口码 —— 手工 `diff` 做不到这点（缺仓时 `diff` 必然报差异 ⇒ 环境故障被读成业务结论）。\n\n```bash\nscripts/cross-repo-check.sh          # 用默认清单\nscripts/cross-repo-check.sh --workspace /path/to/other-workspace.json   # 换清单（多 checkout / 测试）\n```\n\n> 下面是**脚本不可用时**的等价手工式（脚本不可用 ⇒ 一律**不算通过**，按「取证不可用」处理）：\n\n```bash\n# 消费侧（本仓）：真源 → 机读块渲染，取 owns 行\ncd ~/.config/opencode && \\\n  bun -e 'import {verifierWriteSetBlock} from \"./lib/delegate-core.ts\"; console.log(verifierWriteSetBlock())' \\\n  | grep '^owns:' > /tmp/opencode/owns-opencode.txt\n\n# 生产侧（rdd-workflow 仓）：skill 的 owns 清单，经其 state_paths.py 渲染\ncd <rdd-workflow 仓> && \\\n  python3 -B -c \"from _lib.verifier.state_paths import SKILL_OWNS_PATHS; print('owns: ' + ', '.join(SKILL_OWNS_PATHS))\" \\\n  > /tmp/opencode/owns-product.txt\n\n# 比对\ndiff /tmp/opencode/owns-opencode.txt /tmp/opencode/owns-product.txt && echo \"✔ 两仓清单逐字一致\"\n```\n\n> 生产侧的对应手册：`docs/operations/verifier-state-namespace.md`（**在 `rdd-workflow` 仓**，§3「怎么加一条状态路径」）。\n",
+      "replace": "### 6.1 跨仓核对命令\n\n**脚本为准**：`scripts/cross-repo-check.sh`（清单 = `.rddf/config/workspace.json` 的 `checks[]`）。它把「清单坏 / 仓缺 / 身份不符 / 命令失败 / 两侧不一致」拆成**互不混淆**的出口码 —— 手工 `diff` 做不到这点（缺仓时 `diff` 必然报差异 ⇒ 环境故障被读成业务结论）。\n\n```bash\nscripts/cross-repo-check.sh          # 用默认清单\nscripts/cross-repo-check.sh --workspace /path/to/other-workspace.json   # 换清单（多 checkout / 测试）\n```\n\n> ⚠ **当前 `checks[]` 为空**：唯一的 `verifier-owns-parity` 已随 `role-class-write-set` 退役 ⇒ 本仓侧那个 owns 常量不存在了（脚本输出 `checks=0`）。\n> 新增跨仓事实族时：在 `checks[]` 加一条（`consumer_cmd` / `consumer_filter` / `producer_cmd` / `producer_filter`）——\n> **不要把两侧清单手抄进文档**（手抄会漂）；脚本是唯一执行面。\n"
     },
     {
       "path": "tests/delegate-core.test.ts",
@@ -599,6 +639,11 @@
       "path": "tests/real-repo-git-budget.test.ts",
       "find": "const REAL_REPO_GUARDS = [\n  {\n    file: \"tests/config-guards.test.ts\",\n    testTitle: \"AC10④：父篇 ADR 的 commit 必须是代码 commit 的祖先或同一 commit（父篇滞后必红）\",\n    budget: 3, // 2× lastCommitShaInRepo + 1× isAncestorInRepo\n  },\n]\n",
       "replace": "// ⚠ **清单当前为空**：唯一登记项（`AC10④：父篇 ADR 的 commit 必须是代码 commit 的祖先或同一 commit`）\n//   的判据对象是 `class-write-scope-alignment` 的「父篇 ADR 落改顺序」—— 该机制随\n//   `role-class-write-set` 一退役（G3），那条守卫也随之删除 ⇒ 本仓已无「触真实仓历史的用例」。\n//   机制保留：新增此类用例时在此登记，AC5/AC6 会校验 budget 计数与用例超时下限。\nconst REAL_REPO_GUARDS: Array<{ file: string; testTitle: string; budget: number }> = []\n"
+    },
+    {
+      "path": ".rddf/config/workspace.json",
+      "find": "  \"checks\": [\n    {\n      \"id\": \"verifier-owns-parity\",\n      \"consumer\": \"opencode-config\",\n      \"producer\": \"rdd-workflow\",\n      \"consumer_cmd\": [\n        \"bun\",\n        \"-e\",\n        \"import {verifierWriteSetBlock} from \\\"./lib/delegate-core.ts\\\"; console.log(verifierWriteSetBlock())\"\n      ],\n      \"consumer_filter\": \"^owns:\",\n      \"producer_cmd\": [\n        \"python3\",\n        \"-B\",\n        \"-c\",\n        \"from _lib.verifier.state_paths import SKILL_OWNS_PATHS; print('owns: ' + ', '.join(SKILL_OWNS_PATHS))\"\n      ],\n      \"producer_filter\": \"^owns:\"\n    }\n  ]\n}",
+      "replace": "  \"checks\": []\n}"
     }
   ],
   "drill_env": {
@@ -617,11 +662,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "cd828bc2d4b0c341d17e14fe8bc3ea633355a857",
-    "at": "2026-11-21",
-    "result": "pass",
-    "content_hash": "ab79b8fa582699eb786ee5dbcd4e8a371b1ba1549a1b8ce5bdf20657af7890f2"
   }
 }
