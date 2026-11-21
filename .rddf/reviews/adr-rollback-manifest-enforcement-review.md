@@ -128,6 +128,21 @@
 
 **本轮净结论**：状态机 = `{declared, unmanifested, active, retired, exempt}`；`declared`（watch 指向**未来**路径）与 `unmanifested`（watch 指向**现有**路径）是**机器可分的对偶**；`unmanifested` = **债**（逐机制债指针 `pending/<mechanism>.md` + 在跑锚点）**不是豁免**；指针闭集校验上提为 **M8**（全部状态）。
 
+## 6d. 增量审查 4（第 5 轮，**用户批准**：2026-11-21）—— L2 实施落地后的口径收口
+
+**动因**：L2 **实施已落地**（`6c79142` 实施 + `8edb45a` 证据回填 + `8b44b0a` 哈希口径 + `613401c` 重跑演练）⇒ ADR（决策真源）与可执行形态（`lib/rollback-registry.ts`）出现**三处口径分歧** ⇒ 必须收口，否则「决策真源与实现各说一半」。
+
+| 轮次 | 结论 | 处置 |
+|---|---|---|
+| oracle（增量 4） | `APPROVE` | 四问全闭合：① `proving` 的逃逸**价值**低（要停在该态必须先写过 M5 的真清单，只差一次 drill）+ census/评审兜底够用 ⇒ **不加**债指针第二前提（与 `unmanifested` 语义重叠、只加文件不加上限）；② M9 与 M2/M7/M8 是**正当的按状态分派**（实现里 `proving` 分支报 M2 code ⇒ 无第二真源）；③ V8 的严格性下降与「手改哈希」是**同一逃逸面**（已三处登记），把 `sha` 纳入哈希输入**自指不可行**；④ 转 `Accepted` 依据充分（V14/V11 已落地，U10 属**登记项**而非未落地项）。**采纳两条建议**：`contentHash` 加**递归 key 排序**（兑现「规范化」承诺）+ 清掉 ADR 里残留的旧「不区分 key 序」深比较文案 |
+| critic（增量 4，第 5 轮） | **REJECT**（1 BLOCKER + 1 SHOULD_FIX + 2 NIT） | **BLOCKER**：M1 第二子句仍写「`state=active` 的 mechanism 全集」，而 V1/V14/D5/M9/实现都按 `active`∪`proving` 判 ⇒ **文档内同一判据两套口径**（照 M1 改实现会把 `proving` 的清单判成孤儿文件 ⇒ 恒红 ⇒ 自举死锁复活）⇒ M1 改为 `state ∈ {active, proving}` + 写明「与 V1/V14/D5/M9 同口径」；SHOULD_FIX：Status/修订行混入过程日志（逐轮审查史 / 轮次计数 / SHOULD_FIX 闭合清单）⇒ **瘦身**，版本史归本报告与 changelog；NIT ×2：V11 括号重复、D7 操作口径仍写「回填 `sha`」⇒ 改「回填证据（`last_drill` 整组）」 |
+| critic（复审，验 BLOCKER 闭合） | **REJECT**（1 BLOCKER + 1 SHOULD_FIX + 2 NIT） | 上轮 BLOCKER **已真正闭合**（六处同口径：M1 / V1 / V14 / D5 标题与表行 / M9 / 实现；全文无「只算 `active`」的旧口径残留）。**新 BLOCKER**：ADR 本轮已声明「规范化 = **递归排序 key** ⇒ 键序无关」（两处），但**实现侧那一半尚未落地**（`contentHash` 仍是 `JSON.stringify` ⇒ 保文件键序 ⇒ **键序敏感**）⇒ 决策真源与实现再次各说一半 ⇒ 闭合路径二选一：① builder 批次落地实现 + 同批重算 5 份哈希；② 撤回 ADR 的两处断言。**采纳 ①**（`8b44b0a` 已落地 + `613401c` 重跑演练并回填证据）。SHOULD_FIX：D4 的「只允许 `active`」与「先落 `proving`」字面互斥 ⇒ 改为「只允许 `active` / `proving`（带清单）或闭集 `exempt_class`」；NIT ×2：修订行残留的过程句、V11 的接龙歧义 ⇒ 均已清 |
+
+**本轮的净结论**：状态机 = `{declared, unmanifested, proving, active, retired, exempt}`（**六态**）；`proving` = **过渡态**（解自举死锁：机制落地的那个 commit 里，`declared` 的落地 tripwire 与 `active` 的证据必填**互斥** ⇒ 证据必然晚一个 commit）；V8 = **内容哈希**（去掉 `last_drill` 后**规范化（递归排序 key）** ⇒ 键序无关、零 git、零成本、不占真实仓预算、无自指回归）；baseline = **5 active / 10 unmanifested / 1 exempt / 0 declared**（存量上只放过 **1** 条豁免）。
+
+**实施期的完整证据链**（均可复验）：
+① `6c79142` 实施（registry 16 条 + 守卫 17 例 + 10 份债指针 + 自清单）；② 5 份清单隔离副本演练**全部 PASS**；③ `8edb45a` 证据回填（自机制转 `active`）；④ 退役副本 `bun test tests/` = **1032 pass / 1 skip / 0 fail**（1033 用例 / 29 文件）⇒ **退役本机制后仓库仍自洽**；⑤ `8b44b0a` 落地「递归排序 key」+ M7 全状态卫生 + 两条新判别力用例（19 例）；⑥ `613401c` 按新口径**重跑** 5 份演练并回填证据（基线 `8b44b0a`）。
+
 ## 6. 本报告的边界
 
 - 本报告是**誊写**：审查者（metis / oracle / critic）的原文不在本文件内，只保留**结论与逐条处置**；过程细节以各轮 subagent 输出为准（不进决策文档，符合「正文三层分离」）。
