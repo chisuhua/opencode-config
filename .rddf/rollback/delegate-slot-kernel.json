@@ -7,12 +7,13 @@
     "docs/adr/ADR-front-stop-ownership.md",
     "docs/adr/ADR-front-cancel-release.md"
   ],
-  "notes": "退役 **G1 `delegate-slot-kernel`**（4 个机制一份清单 —— 内核不可拆）：`front-multi-backend` / `front-stop-confirmation` / `front-stop-ownership` / `front-cancel-release`。\n**退役面**：撤掉**异步派发面**（`dispatch` / `sessions` / `suspend` / `cancel` 四个工具 + 槽位生命周期 + 停机证据判据 + 归属版本 `claim_gen` + 取消释放门控）⇒ front / plan 只剩**同步 `delegate`**（单槽语义保留，由 `lib/delegate-core.ts` 承担）。\n**为什么四者一份清单**（实测内核链）：`cancel`（CR）直接调用 `waitStopped`（SC，`lib/delegate-async.ts:2369`）与 `releaseSlotAuthorized`（SO，`:2451`）；`markCancelPending`（CR，`:2575`）是 MB 的 reconcile 排除条件 ⇒ 拆开退役 ⇒ 另三者编译或判据破裂。\n**保留**：同步 `delegate` 的建/复用/投递/等待/outcome 全链（`lib/delegate-core.ts`）、pair-v2 槽位表、`role_class` / 写集（它们各有自己的机制与清单）。\n⚠ **退役后**：front 失去「并发多任务 / 只读名册 / 暂停续接 / 证据门控终止」四种能力 ⇒ 只剩同步单发。这是**语义后果**，如实登记（不是遗漏）。",
+  "notes": "退役 **G1 `delegate-slot-kernel`**（4 个机制一份清单 —— 内核不可拆）：`front-multi-backend` / `front-stop-confirmation` / `front-stop-ownership` / `front-cancel-release`。\n**退役面**：撤掉**异步派发面**（`dispatch` / `sessions` / `suspend` / `cancel` 四个工具 + 槽位生命周期 + 停机证据判据 + 归属版本 `claim_gen` + 取消释放门控）⇒ front / plan 只剩**同步 `delegate`**（单槽语义保留，由 `lib/delegate-core.ts` 承担）。\n**为什么四者一份清单**（实测内核链）：`cancel`（CR）直接调用 `waitStopped`（SC，`lib/delegate-async.ts:2369`）与 `releaseSlotAuthorized`（SO，`:2451`）；`markCancelPending`（CR，`:2575`）是 MB 的 reconcile 排除条件 ⇒ 拆开退役 ⇒ 另三者编译或判据破裂。\n**保留**：同步 `delegate` 的建/复用/投递/等待/outcome 全链（`lib/delegate-core.ts`）、pair-v2 槽位表、`role_class` / 写集（它们各有自己的机制与清单）。\n⚠ **退役后**：front 失去「并发多任务 / 只读名册 / 暂停续接 / 证据门控终止」四种能力 ⇒ 只剩同步单发。这是**语义后果**，如实登记（不是遗漏）。\n⚠ **退役后删本清单自身**：它的 `delete` 目标（`lib/delegate-async.ts` 等）已不存在 ⇒ 留着会让漂移守卫恒红；registry 的 4 个条目同批转 `retired`（`retired_evidence` = 各自的 ADR）。",
   "delete": [
     "lib/delegate-async.ts",
     "tests/delegate-async.test.ts",
     "tests/probes/probe-cancel-release.ts",
-    "scripts/mutate-cancel-release.sh"
+    "scripts/mutate-cancel-release.sh",
+    ".rddf/rollback/delegate-slot-kernel.json"
   ],
   "edits": [
     {
@@ -154,6 +155,61 @@
       "path": "tests/config-guards.test.ts",
       "find": "        \"delegate-core.ts\", \"delegate-async.ts\", \"model-fallback-core.ts\", \"subagent-contract-core.ts\",\n",
       "replace": "        \"delegate-core.ts\", \"model-fallback-core.ts\", \"subagent-contract-core.ts\",\n"
+    },
+    {
+      "path": "docs/SUBAGENT-ORCHESTRATION.md",
+      "find": "**守卫**：`tests/config-guards.test.ts`（权限矩阵 / 词表单源 / 六节三处一致 / 描述非 orphan / 本文档的**引用路径存在性**）、`tests/subagent-contract-core.test.ts`（契约纯逻辑）、`tests/delegate-async.test.ts`（派发主体 / 归属 / 优先级）。",
+      "replace": "**守卫**：`tests/config-guards.test.ts`（权限矩阵 / 词表单源 / 六节三处一致 / 描述非 orphan / 本文档的**引用路径存在性**）、`tests/subagent-contract-core.test.ts`（契约纯逻辑）。"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    for (const rel of [\n      \"docs/adr/ADR-plan-delegate-engineering-session.md\",\n      \"docs/SUBAGENT-ORCHESTRATION.md\",\n    ]) {",
+      "replace": "    for (const rel of [\n      \"docs/adr/ADR-plan-delegate-engineering-session.md\",\n    ]) {"
+    },
+    {
+      "path": "tests/role-lease-claims.test.ts",
+      "find": "import { claimSlot } from \"../lib/delegate-async.ts\"\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/role-lease-claims.test.ts",
+      "find": "  test(\"派发临界区接入：claimSlot ⇒ {ok:false, lease:{holder_session_id, holder_work_root}}\", () => {\n    const { root, workRoot } = makeState()\n    acquireLease({ stateRoot: root, workRoot, role: \"builder\", sessionID: MAIN, kind: \"main\" })\n\n    const claim = claimSlot({\n      stateRoot: root,\n      workRoot,\n      busyOf: () => false,\n      sessionID: BACK,\n      frontSessionID: MAIN,\n      ownerAgent: \"front\",\n      agent: \"build\",\n      kind: \"engineering\",\n      roleClass: \"builder\",\n    })\n    expect(claim.ok).toBe(false)\n    expect(claim.lease?.holder_session_id).toBe(MAIN)\n    expect(claim.lease?.holder_work_root).toBe(workRoot)\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/role-lease-claims.test.ts",
+      "find": "  test(\"层 1a：派发调用方把租约拒绝转成 **throw fail(...)**（错误回到调用方）\", () => {\n    const src = readFileSync(path.join(import.meta.dir, \"..\", \"lib\", \"delegate-async.ts\"), \"utf8\")\n    const branch = src.slice(src.indexOf(\"if (claim.lease)\"))\n    expect(branch.slice(0, 600)).toContain(\"throw fail(\")\n    expect(branch.slice(0, 600)).toContain(\"holder_session_id\")\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/role-lease-claims.test.ts",
+      "find": "  test(\"派发侧：主会话占 architect ⇒ 派 verifier 类后端成功\", () => {\n    const { root, workRoot } = makeState()\n    acquireLease({ stateRoot: root, workRoot, role: \"architect\", sessionID: MAIN, kind: \"main\" })\n    const claim = claimSlot({\n      stateRoot: root,\n      workRoot,\n      busyOf: () => false,\n      sessionID: BACK,\n      frontSessionID: MAIN,\n      ownerAgent: \"front\",\n      agent: \"build\",\n      kind: \"engineering\",\n      roleClass: \"verifier\",\n    })\n    expect(claim.ok).toBe(true)\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-tool.test.ts",
+      "find": "    expect(registered.sort()).toEqual([\n      \"cancelToolDefinition\",\n      \"delegateToolDefinition\",\n      \"dispatchToolDefinition\",\n      \"sessionsToolDefinition\",\n      \"suspendToolDefinition\",\n    ])\n",
+      "replace": "    expect(registered.sort()).toEqual([\"delegateToolDefinition\"])\n"
+    },
+    {
+      "path": ".rddf/rollback/registry.json",
+      "find": "  {\n      \"mechanism\": \"front-multi-backend\",\n      \"adr_primary\": \"docs/adr/ADR-front-multi-backend.md\",\n      \"state\": \"proving\",\n      \"watch\": [\n        \"plugins/delegate.ts\",\n        \"lib/delegate-core.ts\"\n      ],\n      \"notes\": \"**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。\",\n      \"manifest_ref\": \"delegate-slot-kernel\"\n    }",
+      "replace": "{\n      \"mechanism\": \"front-multi-backend\",\n      \"adr_primary\": \"docs/adr/ADR-front-multi-backend.md\",\n      \"state\": \"retired\",\n      \"retired_at\": \"2026-11-21\",\n      \"retired_evidence\": \"docs/adr/ADR-front-multi-backend.md\",\n      \"notes\": \"退役 = 执行组清单 `.rddf/rollback/delegate-slot-kernel.json`（G1 四机制同批）；退役证据 = 本机制的 ADR（决策记录保留）。\"\n    }"
+    },
+    {
+      "path": ".rddf/rollback/registry.json",
+      "find": "  {\n      \"mechanism\": \"front-stop-confirmation\",\n      \"adr_primary\": \"docs/adr/ADR-front-stop-confirmation.md\",\n      \"state\": \"proving\",\n      \"watch\": [\n        \"lib/delegate-async.ts\"\n      ],\n      \"notes\": \"**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。\",\n      \"manifest_ref\": \"delegate-slot-kernel\"\n    }",
+      "replace": "{\n      \"mechanism\": \"front-stop-confirmation\",\n      \"adr_primary\": \"docs/adr/ADR-front-stop-confirmation.md\",\n      \"state\": \"retired\",\n      \"retired_at\": \"2026-11-21\",\n      \"retired_evidence\": \"docs/adr/ADR-front-stop-confirmation.md\",\n      \"notes\": \"退役 = 执行组清单 `.rddf/rollback/delegate-slot-kernel.json`（G1 四机制同批）；退役证据 = 本机制的 ADR（决策记录保留）。\"\n    }"
+    },
+    {
+      "path": ".rddf/rollback/registry.json",
+      "find": "  {\n      \"mechanism\": \"front-stop-ownership\",\n      \"adr_primary\": \"docs/adr/ADR-front-stop-ownership.md\",\n      \"state\": \"proving\",\n      \"watch\": [\n        \"lib/role-lease.ts\"\n      ],\n      \"notes\": \"**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。\",\n      \"manifest_ref\": \"delegate-slot-kernel\"\n    }",
+      "replace": "{\n      \"mechanism\": \"front-stop-ownership\",\n      \"adr_primary\": \"docs/adr/ADR-front-stop-ownership.md\",\n      \"state\": \"retired\",\n      \"retired_at\": \"2026-11-21\",\n      \"retired_evidence\": \"docs/adr/ADR-front-stop-ownership.md\",\n      \"notes\": \"退役 = 执行组清单 `.rddf/rollback/delegate-slot-kernel.json`（G1 四机制同批）；退役证据 = 本机制的 ADR（决策记录保留）。\"\n    }"
+    },
+    {
+      "path": ".rddf/rollback/registry.json",
+      "find": "  {\n      \"mechanism\": \"front-cancel-release\",\n      \"adr_primary\": \"docs/adr/ADR-front-cancel-release.md\",\n      \"state\": \"proving\",\n      \"watch\": [\n        \"lib/delegate-async.ts\"\n      ],\n      \"notes\": \"**G1 delegate-slot-kernel** 的成员之一 —— 与同组机制**不可拆**（内核耦合）⇒ 退役必然连带同组 ⇒ 一份**组清单**覆盖全组（registry 条目用 `manifest_ref` 指向该清单）。组边界证据与评审 rubric 见 ADR 的 U11。\",\n      \"manifest_ref\": \"delegate-slot-kernel\"\n    }",
+      "replace": "{\n      \"mechanism\": \"front-cancel-release\",\n      \"adr_primary\": \"docs/adr/ADR-front-cancel-release.md\",\n      \"state\": \"retired\",\n      \"retired_at\": \"2026-11-21\",\n      \"retired_evidence\": \"docs/adr/ADR-front-cancel-release.md\",\n      \"notes\": \"退役 = 执行组清单 `.rddf/rollback/delegate-slot-kernel.json`（G1 四机制同批）；退役证据 = 本机制的 ADR（决策记录保留）。\"\n    }"
     }
   ],
   "drill_env": {
