@@ -28,7 +28,7 @@ bun test tests/delegate-tool.test.ts   # 假 ctx 端到端
 | （skip 态不假装通过，但**判别力依赖床存在** ⇒ 无该仓的检出上这一族等价于零判别力）
 | `bun test tests/`（此前它是「入库但无人执行」的第四态）；fixture 床（`E2E_BED_DIR`）不在时**明确 skip** |
 | `model-fallback-core.test.ts` | 模型降级链内核（链推进 / 冷却 / 换链） |
-| `rollback-drill.test.ts` | **回滚清单**的纯逻辑层 + CLI 退出码 + 判别力负向（少删一件 / `find` 漂移 / 路径写法差异 / 顺序语义） |
+| `rollback-drill.test.ts` | **回滚清单**的纯逻辑层 + CLI 退出码 + 判别力负向（少删一件 / `find` 漂移 / 路径写法差异 / 顺序语义 / `replace` 按字面落盘 / `find` 按字面匹配 / dry-run 与 apply 同判据） |
 | `rollback-manifests.test.ts` | **清单漂移守卫**（零成本）：每份清单的 schema / `mechanism`↔文件名 / `adr` 存在 / `verify` 非空 / `planDrill` 可执行 |
 | `rollback-registry.test.ts` | **机制登记表**一致性守卫（M1–M9 / V1–V16）：ADR 全集双向相等、清单集合与 `active`∪`proving` 双向、指针闭集、豁免闭集、债指针逐机制 + 全状态卫生、清单形态防空壳、`last_drill` 时效（内容哈希） |
 | `record-discipline.test.ts`（+ `verify_record_discipline.sh`） | **记录纪律 7 条判据**（C1 判据可机判 / C2 勾选要有证据 / C3 勘误要自足 / C4 过期段要标注 / C5 活文档指针不悬空 / C6 commit 级归因要带命令 / C7 门槛已到要带取数指针）；带 `--selftest` 判别力自测（每条必须能报出反例、且不误报正例）。保鲜期 `RECORD_EPOCH=2026-11-19` |
