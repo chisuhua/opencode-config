@@ -1,0 +1,406 @@
+{
+  "version": 1,
+  "mechanism": "delegate-knowledge-delivery",
+  "adr": "docs/adr/ADR-front-knowledge-capability.md",
+  "adr_related": [
+    "docs/adr/ADR-delegate-delivery-evidence.md"
+  ],
+  "notes": "退役 **G2 `delegate-knowledge-delivery`**（2 个机制一份清单 —— 内核耦合）：`front-knowledge-capability` /\n`delegate-delivery-evidence`。\n**退役面**：① 撤掉**只读后端（`kind=knowledge`）**这一路 —— `delegate` 的 `agent` 白名单收窄为 `build`；\n`kind` 字段（pair / ledger / 简报 / 返回值）整体退役；`validateBrief` 的 knowledge×role_class / ×grants /\n×base 互斥、scope 可省略、grants 必须为空等分支、简报的只读执行要求、登记的「只写 pair 不写 role.json」\n分支、`classPermissions` 的只读分支全部撤销；② 撤掉**交付证据（DE）** —— `outcome` 不再降级为 `unverified`，\n`host_outcome` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / `artifacts` /\n`final_is_role_opening` / `model_switched` 与 `summarizeDelivery` 整体退役。\n**为什么两件事一份清单**：DE 的判定式里含 `kind == \"engineering\"`（知识 session 的产物本就是「回答」，\n不做交付证据判定）⇒ 两者共用同一处分支 ⇒ 拆开退役 ⇒ 另一方的 find 锚点失效。\n**保留**：front **直调**五个只读 subagent 的能力（D2/D3 的白名单与 shell 加固）—— 它**不是** `kind=knowledge`\n后端派发，本组退役不动它；同步 `delegate` 的主链（建 / 复用 / 投递 / 等 / 返回）保留。\n**退役的机械通道**：`retire[]`（ADR 第 7 轮 / V16）把这 2 条 registry 条目转 `retired`，清单**同批自删**。\n⚠ **退役后**：派发方**拿不到**「宿主报成功但无交付证据」的机读信号 ⇒ 「静默失败」只能靠人读\n`last_assistant_text` 与 `changed_files` 判断。这是**语义后果**，如实登记（不是遗漏）。",
+  "retire": [
+    "front-knowledge-capability",
+    "delegate-delivery-evidence"
+  ],
+  "delete": [
+    "tests/fixtures/real-no-work-session.json",
+    ".rddf/rollback/delegate-knowledge-delivery.json"
+  ],
+  "edits": [
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "/**\n * front 可委托的 agent 白名单（ADR-front-knowledge-capability D2/D4）。\n * `build` = 工程 session（写）；其余 = 知识 session（只读）。\n */\nexport const READONLY_AGENTS = [\"explore\", \"librarian\", \"oracle\", \"metis\", \"critic\"] as const\n\nexport const ALLOWED_AGENTS = new Set<string>([\"build\", ...READONLY_AGENTS])\n\nexport type DelegateKind = \"engineering\" | \"knowledge\"\n",
+      "replace": "/**\n * front 可委托的 agent 白名单（ADR-front-knowledge-capability D2/D4 —— **退役后只剩工程 session**）。\n */\nexport const ALLOWED_AGENTS = new Set<string>([\"build\"])\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "/** kind 由 agent 推导，不由调用方声明（front 无法伪造类型）。 */\nexport function kindOfAgent(agent: string): DelegateKind {\n  return agent === \"build\" ? \"engineering\" : \"knowledge\"\n}\n\n",
+      "replace": ""
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "export function classPermissions(input: {\n  roleClass: RoleClass\n  workRoot: string\n  scope: string[]\n  kind: DelegateKind\n  grants: Array<{ action: string; resource: string; effect: string }>\n}): Array<{ action: string; resource: string; effect: string }> {\n  const editRules =\n    input.kind === \"engineering\"\n      ? scopeEditRules(input.workRoot, input.scope)\n      : [{ action: \"edit\", resource: \"*\", effect: \"deny\" }]\n  return [\n    ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: \"deny\" as const })),\n    ...editRules,\n    ...input.grants,\n    // subagent 白名单**只对可写工程 session**（D4）：知识 session 原本就没有 subagent 能力\n    // （只读 agent 的 `subagent: deny`），不得在这里顺带放开。\n    ...(input.kind === \"engineering\" ? classSubagentRules() : []),\n    // D3 修订：`builder` 的 arch 路径 deny —— **恒在数组末尾**（`evaluate` 取 findLast ⇒\n    // 任何在其后追加的 allow 都会翻盘；本数组的末尾位置是不变量，见 ADR D8）。\n    ...(input.kind === \"engineering\" && input.roleClass === \"builder\" ? archDenyRules(input.workRoot) : []),\n  ]\n}",
+      "replace": "export function classPermissions(input: {\n  roleClass: RoleClass\n  workRoot: string\n  scope: string[]\n  grants: Array<{ action: string; resource: string; effect: string }>\n}): Array<{ action: string; resource: string; effect: string }> {\n  return [\n    ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: \"deny\" as const })),\n    ...scopeEditRules(input.workRoot, input.scope),\n    ...input.grants,\n    ...classSubagentRules(),\n    // D3 修订：`builder` 的 arch 路径 deny —— **恒在数组末尾**（`evaluate` 取 findLast ⇒\n    // 任何在其后追加的 allow 都会翻盘；本数组的末尾位置是不变量，见 ADR D8）。\n    ...(input.roleClass === \"builder\" ? archDenyRules(input.workRoot) : []),\n  ]\n}"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  agent: string\n  agentProvided: boolean\n  kind: DelegateKind\n  task: string",
+      "replace": "  agent: string\n  agentProvided: boolean\n  task: string"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  const kind = kindOfAgent(agent)\n\n  // role_class（ADR D1）：**缺省只认 `undefined`**（`null` / `\"\"` 是非法值）。\n  // 知识 session 与之互斥：它不写 role.json，class 无处落（D1）。\n  const roleClass = parseRoleClass(input.role_class)\n  const roleClassProvided = input.role_class !== undefined\n  if (kind === \"knowledge\" && roleClassProvided) {\n    throw fail(\"知识 session 不接受 role_class（只读语义无能力类；见 ADR-backend-handoff-role-class D1）\")\n  }\n",
+      "replace": "  // role_class（ADR D1）：**缺省只认 `undefined`**（`null` / `\"\"` 是非法值）。\n  const roleClass = parseRoleClass(input.role_class)\n  const roleClassProvided = input.role_class !== undefined\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  // scope：工程 session 必填非空；知识 session 可省略或为空（不参与权限组装）。\n",
+      "replace": "  // scope：必填非空（**退役后只剩工程 session** ⇒ 不再有「知识 session 可省略」那一支）。\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  if (kind === \"engineering\" && scopeList.length === 0) {\n    throw fail(\"scope 必填且必须是非空字符串数组（仅工程 session 需要）\")\n  }",
+      "replace": "  if (scopeList.length === 0) {\n    throw fail(\"scope 必填且必须是非空字符串数组\")\n  }"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  const grants = validateGrants(input.grants)\n  if (kind === \"knowledge\" && grants.length > 0) {\n    throw fail(\"知识 session 不接受 grants（只读语义不允许任何预批放宽）\")\n  }\n",
+      "replace": "  const grants = validateGrants(input.grants)\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  // - knowledge 互斥：与 role_class / grants 同策略（知识 session 不做基线对照）。\n",
+      "replace": ""
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "    if (kind === \"knowledge\") {\n      throw fail(\"知识 session 不接受 base（只读 session 不做基线对照）\")\n    }\n    base = b",
+      "replace": "    base = b"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "    agent,\n    agentProvided,\n    kind,\n    task,",
+      "replace": "    agent,\n    agentProvided,\n    task,"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  if (brief.kind === \"engineering\") {\n    if (opts?.vcs === false) {\n      lines.push(\"- 基线（base）: 本工程无 VCS，基线不可用\")\n    } else if (opts?.base) {\n      lines.push(`- 基线（base）: ${opts.base.raw} → ${opts.base.sha}`)\n    }\n  }\n  lines.push(`- 类型（kind）: ${brief.kind}`)\n  if (brief.kind === \"engineering\") {\n    lines.push(`- 允许变更范围（scope）: ${brief.scope.join(\", \")}`)\n  } else {\n    lines.push(`- 允许变更范围（scope）: 无（知识 session 只读，不产生文件变更）`)\n  }\n",
+      "replace": "  if (opts?.vcs === false) {\n    lines.push(\"- 基线（base）: 本工程无 VCS，基线不可用\")\n  } else if (opts?.base) {\n    lines.push(`- 基线（base）: ${opts.base.raw} → ${opts.base.sha}`)\n  }\n  lines.push(`- 允许变更范围（scope）: ${brief.scope.join(\", \")}`)\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  if (brief.kind === \"engineering\") {\n    lines.push(\"1. 只在 scope 内改动；scope 外的文件不得写入。\")",
+      "replace": "  {\n    lines.push(\"1. 只在 scope 内改动；scope 外的文件不得写入。\")"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "    lines.push(\"   ③ 然后结束回合。`rddf` 不可用或额度耗尽（写不进）时，仍输出首行 + 完整 5 项正文。\")\n  } else {\n    lines.push(\"1. 这是只读的知识/调研任务：**不要修改任何文件**，不要 commit。\")\n    lines.push(\"2. 给出结论时标注证据（`file:line` / URL）；不确定的地方明确说不确定。\")\n    lines.push(\"3. 若任务实际需要文件变更，请在结论中说明并停下——变更必须转工程 session。\")\n    lines.push(\"4. 遇到权限被拒（Permission denied）不要换写法绕过，直接说明被拒的操作并停下。\")\n  }\n",
+      "replace": "    lines.push(\"   ③ 然后结束回合。`rddf` 不可用或额度耗尽（写不进）时，仍输出首行 + 完整 5 项正文。\")\n  }\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  agent: string,\n  kind: DelegateKind = kindOfAgent(agent),\n  ledgerRow?: any,",
+      "replace": "  agent: string,\n  ledgerRow?: any,"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "      canonical_root: root,\n      agent,\n      kind,\n      registered_at: existing?.registered_at ?? new Date().toISOString(),",
+      "replace": "      canonical_root: root,\n      agent,\n      registered_at: existing?.registered_at ?? new Date().toISOString(),"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "    if (kind === \"engineering\") {\n      writeRoleSession(root, sessionID, agent, extra?.role_class)\n    }\n",
+      "replace": "    writeRoleSession(root, sessionID, agent, extra?.role_class)\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  \"agent\",\n  \"kind\",\n  \"resumed\",\n  \"resumed_by_other_front\",\n  \"outcome\",\n  \"new_activity\",\n  \"host_outcome\",\n  \"blocked_reason\",\n  \"blocked_action\",\n  \"blocked_all\",\n  \"out_of_scope_files\",\n  \"changed_files\",\n  \"scope_check\",\n  \"last_assistant_text\",\n  \"tool_calls\",\n  \"write_tool_calls\",\n  \"artifacts\",\n  \"final_is_role_opening\",\n  \"model_switched\",\n  \"no_work_evidence\",\n  \"still_running\",",
+      "replace": "  \"agent\",\n  \"resumed\",\n  \"resumed_by_other_front\",\n  \"outcome\",\n  \"new_activity\",\n  \"blocked_reason\",\n  \"blocked_action\",\n  \"blocked_all\",\n  \"out_of_scope_files\",\n  \"changed_files\",\n  \"scope_check\",\n  \"last_assistant_text\",\n  \"still_running\","
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "/**\n * 派发方**必须**知晓的字段（漏了 ⇒ 可能把「宿主说成功但无可验证交付证据」转述成「已完成」）。\n *\n * `unverified` 的语义由 `outcome` 承载（宿主原值保留在 `host_outcome`）⇒ 两个都要知晓。\n */\nexport const DELEGATE_RESULT_CRITICAL_FIELDS: readonly string[] = [\n  \"outcome\",\n  \"host_outcome\",\n  \"blocked_reason\",\n  \"out_of_scope_files\",\n  \"last_assistant_text\",\n  \"no_work_evidence\",\n  \"artifacts\",\n]",
+      "replace": "/**\n * 派发方**必须**知晓的字段（漏了 ⇒ 可能把失败转述成「已完成」）。\n */\nexport const DELEGATE_RESULT_CRITICAL_FIELDS: readonly string[] = [\n  \"outcome\",\n  \"blocked_reason\",\n  \"out_of_scope_files\",\n  \"last_assistant_text\",\n]"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "const CRITICAL_FIELD_GLOSS: Record<string, string> = {\n  outcome: \"总体结论\",\n  host_outcome: \"宿主原值，unverified 时仍为 succeeded\",\n  blocked_reason: \"被权限拒的操作\",\n  out_of_scope_files: \"改了 scope 外的文件\",\n  last_assistant_text: \"后端最终说明，首行 HANDOFF 即交回\",\n  no_work_evidence: \"无交付证据\",\n  artifacts: \"git 可见的变更数\",\n}",
+      "replace": "const CRITICAL_FIELD_GLOSS: Record<string, string> = {\n  outcome: \"总体结论\",\n  blocked_reason: \"被权限拒的操作\",\n  out_of_scope_files: \"改了 scope 外的文件\",\n  last_assistant_text: \"后端最终说明，首行 HANDOFF 即交回\",\n}"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "/**\n * 交付面证据（静默失败检测）。\n *\n * 背景：工程 session 可能只输出角色开场白就 idle（例如模型在 run 中途被切换后重来），\n * 宿主仍把该 run 记为 succeeded → delegate 回传 succeeded，但**什么都没产出**。\n * front 只看 outcome 就会把\"没做\"转述成\"做完了\"。\n *\n * 判定（全部基于结构化事实，不猜模型意图）：\n *   - final_is_role_opening：最后一条 assistant 文本停在角色开场白（`【角色:` / `【角色：`）\n *     → agent 停在了自我介绍这一步；\n *   - model_switched：本轮窗口内出现过宿主消息 `type == \"model-switched\"`\n *     → run 中途换过模型（新模型可能从头再来）；这是**根因信号**，不依赖任何文本格式；\n *   - write_tool_calls：写盘类工具调用数；artifacts：本次委托产生的文件变更数；\n *   - no_work_evidence：命中上述任一\"停住\"信号 **且** 无写盘调用 **且** 无产物。\n *\n * ⚠ 消息窗口必须只含**本轮**：判定入参应是以 baselineMessageID 切片后的消息\n * （见 sliceRoundMessages）——否则 resume 时上一轮的写盘调用会掩盖本轮零交付。\n *\n * 知识 session（kind=knowledge）不适用：它的产物本就是\"回答\"，通常零工具调用。\n */\nexport function summarizeDelivery(messages: any, changedFiles: string[]): {\n  tool_calls: number\n  write_tool_calls: number\n  artifacts: number\n  model_switched: number\n  final_is_role_opening: boolean\n  no_work_evidence: boolean\n} {\n  const arr = Array.isArray(messages) ? messages : []\n  let toolCalls = 0\n  let writeCalls = 0\n  let modelSwitched = 0\n  for (const message of arr) {\n    if (message?.type === \"model-switched\") modelSwitched++\n    if (message?.type !== \"assistant\") continue\n    const content = message?.content\n    if (!Array.isArray(content)) continue\n    for (const part of content) {\n      if (part?.type !== \"tool\") continue\n      toolCalls++\n      const name = String(part?.name ?? \"\").toLowerCase()\n      if (WRITE_TOOLS.has(name)) writeCalls++\n    }\n  }\n  const finalText = lastAssistantText(arr).trimStart()\n  const finalIsRoleOpening = /^【角色\\s*[:：]/.test(finalText)\n  const artifacts = Array.isArray(changedFiles) ? changedFiles.length : 0\n  // 析取 → 合取：写盘调用与产物**都**没有，才算\"没有交付证据\"。\n  // （早先用析取会把\"用 shell 写文件\"（write_tool_calls=0 但 artifacts≥1）误判成无产出。）\n  const stoppedEarly = finalIsRoleOpening || modelSwitched > 0\n  const noWorkEvidence = stoppedEarly && writeCalls === 0 && artifacts === 0\n  return {\n    tool_calls: toolCalls,\n    write_tool_calls: writeCalls,\n    artifacts,\n    model_switched: modelSwitched,\n    final_is_role_opening: finalIsRoleOpening,\n    no_work_evidence: noWorkEvidence,\n  }\n}\n",
+      "replace": ""
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "          // 宿主原值（契约：`unverified` 时它恒为 \"succeeded\"，排障/审计用）。\n          const hostOutcome: string | null = ((after as any)?.outcome ?? null) as string | null\n          let outcome = hostOutcome\n",
+      "replace": "          let outcome: string | null = ((after as any)?.outcome ?? null) as string | null\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "          // 交付面证据：宿主说 succeeded ≠ 工程 session 真的交付了东西。\n          // 判定只看向**本轮**的消息（resume 时历史轮次不得掩盖本轮零交付）。\n          // 只对工程 session 判定（知识 session 的产物本就是\"回答\"，通常零工具调用）。\n          // ⚠ 仍在跑（wait 超时 / 宿主未给 outcome）时**不判定**：此时读到的 outcome\n          //   可能是上一轮的陈旧值（resume 场景），据此判\"没有产出\"会误报。\n          const roundMessages = sliceRoundMessages(messages, baselineMessageID)\n          const delivery = summarizeDelivery(roundMessages, changed)\n          // ⚠️ 局部变量名不得与模块级谓词 `stillRunning` 相同（会遮蔽它）\n          const runStillRunning = waitTimedOut || outcome == null\n          const noWorkEvidence =\n            kind === \"engineering\" && outcome === \"succeeded\" && !runStillRunning && delivery.no_work_evidence\n          // 机读化：宿主报成功但无交付证据 → `unverified`（宿主原值保留在 host_outcome）。\n          if (noWorkEvidence) outcome = \"unverified\"\n\n          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, kind, {\n            ...ledgerBase,\n            outcome,\n            host_outcome: hostOutcome,\n            blocked_reason,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            last_assistant_text: redactAndTruncate(assistantText),\n            no_work_evidence: noWorkEvidence,\n            tool_calls: delivery.tool_calls,\n            write_tool_calls: delivery.write_tool_calls,\n            final_is_role_opening: delivery.final_is_role_opening,\n            model_switched: delivery.model_switched,\n          }, {",
+      "replace": "          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, {\n            ...ledgerBase,\n            outcome,\n            blocked_reason,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            last_assistant_text: redactAndTruncate(assistantText),\n          }, {"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "            effectiveAgent = existingAgent\n            kind = kindOfAgent(effectiveAgent)\n",
+      "replace": "            effectiveAgent = existingAgent\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "            scope: brief.scope,\n            kind,\n            grants: brief.grants,",
+      "replace": "            scope: brief.scope,\n            grants: brief.grants,"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "            agent: { type: \"string\", description: `会话的 agent，默认 build。白名单：${[...ALLOWED_AGENTS].join(\" / \")}` },",
+      "replace": "            agent: { type: \"string\", description: \"会话的 agent，默认 build（白名单：build）\" },"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "              description: \"允许变更的路径前缀（相对工程根或绝对路径）；知识 session 可传空数组\",",
+      "replace": "              description: \"允许变更的路径前缀（相对工程根或绝对路径）\","
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "  READONLY_AGENTS,\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "  kindOfAgent,\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "describe(\"agent 白名单与 kind 推导\", () => {\n  test(\"白名单 = build + 五个只读 agent\", () => {\n    expect([...ALLOWED_AGENTS].sort()).toEqual(\n      [\"build\", \"critic\", \"explore\", \"librarian\", \"metis\", \"oracle\"].sort(),\n    )\n    expect([...READONLY_AGENTS].sort()).toEqual([\"critic\", \"explore\", \"librarian\", \"metis\", \"oracle\"].sort())\n  })\n\n  test(\"build → engineering；只读 agent → knowledge\", () => {\n    expect(kindOfAgent(\"build\")).toBe(\"engineering\")\n    for (const a of READONLY_AGENTS) expect(kindOfAgent(a)).toBe(\"knowledge\")\n  })\n\n  test(\"不在白名单的 agent → 在建 session 前拒绝\", () => {\n    for (const a of [\"general\", \"plan\", \"title\", \"compaction\", \"context-builder\"]) {\n      expect(() => validateBrief({ ...VALID_INPUT, agent: a })).toThrow(/白名单/)\n    }\n  })\n\n  test(\"知识 session 的 scope 可省略/为空；工程 session 仍必填\", () => {\n    const k = validateBrief({ ...VALID_INPUT, agent: \"explore\", scope: undefined })\n    expect(k.scope).toEqual([])\n    expect(k.kind).toBe(\"knowledge\")\n    expect(() => validateBrief({ ...VALID_INPUT, scope: [] })).toThrow(/scope/)\n  })\n\n  test(\"知识 session 不接受 grants\", () => {\n    expect(() =>\n      validateBrief({\n        ...VALID_INPUT,\n        agent: \"librarian\",\n        scope: [],\n        grants: [{ action: \"shell\", resource: \"git push *\" }],\n      }),\n    ).toThrow(/不接受 grants/)\n  })\n\n  test(\"简报：知识 session 无 scope 行、要求只读\", () => {\n    const text = buildBrief(validateBrief({ ...VALID_INPUT, agent: \"oracle\", scope: [] }), TMP)\n    expect(text).toContain(\"kind）: knowledge\")\n    expect(text).toContain(\"不要修改任何文件\")\n    expect(text).not.toContain(\"只在 scope 内改动\")\n  })\n})",
+      "replace": "describe(\"agent 白名单（退役后只剩工程 session）\", () => {\n  test(\"白名单 = build\", () => {\n    expect([...ALLOWED_AGENTS].sort()).toEqual([\"build\"])\n  })\n\n  test(\"不在白名单的 agent → 在建 session 前拒绝\", () => {\n    for (const a of [\"general\", \"plan\", \"title\", \"compaction\", \"context-builder\", \"explore\", \"librarian\", \"oracle\", \"metis\", \"critic\"]) {\n      expect(() => validateBrief({ ...VALID_INPUT, agent: a })).toThrow(/白名单/)\n    }\n  })\n})"
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "describe(\"知识 session 登记（不污染 role.json）\", () => {\n  test(\"registerSession(kind=knowledge) 只写 pair，不写 role.json\", () => {\n    const repo = gitRepo(\"repo-knowledge\")\n    registerSession(repo, \"ses_k\", \"ses_front\", \"explore\", \"knowledge\")\n    const pair = readJson(path.join(repo, \".rddf/state/pair.json\"))\n    expect(pair.pairs[\"ses_k\"].kind).toBe(\"knowledge\")\n    expect(pair.pairs[\"ses_k\"].agent).toBe(\"explore\")\n    expect(existsSync(path.join(repo, \".rddf/state/role.json\"))).toBe(false)\n  })\n\n  test(\"engineering 登记的 pair 条目同样带 kind\", () => {\n    const repo = gitRepo(\"repo-eng-kind\")\n    registerSession(repo, \"ses_e\", null, \"build\")\n    expect(readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_e\"].kind).toBe(\"engineering\")\n  })\n\n  test(\"重复登记保留 registered_at，只更新 last_used_at / front_session_id\", () => {\n    const repo = gitRepo(\"repo-reattach\")\n    registerSession(repo, \"ses_r\", null, \"build\")\n    const first = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    registerSession(repo, \"ses_r\", \"ses_other\", \"build\")\n    const second = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    expect(second.registered_at).toBe(first.registered_at)\n    expect(second.front_session_id).toBe(\"ses_other\")\n  })\n})\n",
+      "replace": "describe(\"登记：重复登记保留 registered_at\", () => {\n  test(\"重复登记保留 registered_at，只更新 last_used_at / front_session_id\", () => {\n    const repo = gitRepo(\"repo-reattach\")\n    registerSession(repo, \"ses_r\", null, \"build\")\n    const first = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    registerSession(repo, \"ses_r\", \"ses_other\", \"build\")\n    const second = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    expect(second.registered_at).toBe(first.registered_at)\n    expect(second.front_session_id).toBe(\"ses_other\")\n  })\n})"
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "describe(\"summarizeDelivery：交付面证据（静默失败检测）\", () => {\n  const ROLE_OPENING = \"【角色: builder | source: state-file】我可实施代码修改。\"\n\n  function assistant(parts: any[]) {\n    return [{ id: \"m1\", type: \"assistant\", time: { created: 1 }, content: parts }]\n  }\n\n  test(\"停在角色开场白 + 无产物 → no_work_evidence=true\", () => {\n    const d = summarizeDelivery(assistant([{ type: \"text\", text: ROLE_OPENING }]), [])\n    expect(d.final_is_role_opening).toBe(true)\n    expect(d.no_work_evidence).toBe(true)\n    expect(d.tool_calls).toBe(0)\n    expect(d.artifacts).toBe(0)\n  })\n\n  test(\"正常结论文本 → no_work_evidence=false\", () => {\n    const d = summarizeDelivery(assistant([{ type: \"text\", text: \"## 执行结果\\n已创建 a.txt\" }]), [\"a.txt\"])\n    expect(d.final_is_role_opening).toBe(false)\n    expect(d.no_work_evidence).toBe(false)\n    expect(d.artifacts).toBe(1)\n  })\n\n  test(\"有写盘工具调用且有产物 → 即使结尾是开场白也不判 no_work_evidence\", () => {\n    const d = summarizeDelivery(\n      assistant([\n        { type: \"tool\", name: \"edit\", state: { status: \"completed\" } },\n        { type: \"text\", text: ROLE_OPENING },\n      ]),\n      [\"a.txt\"],\n    )\n    expect(d.tool_calls).toBe(1)\n    expect(d.write_tool_calls).toBe(1)\n    expect(d.no_work_evidence).toBe(false)\n  })\n\n  test(\"shell 不算写盘工具（只有 edit/write/patch 系列算）\", () => {\n    const d = summarizeDelivery(\n      assistant([\n        { type: \"tool\", name: \"shell\", state: { status: \"completed\" } },\n        { type: \"text\", text: ROLE_OPENING },\n      ]),\n      [],\n    )\n    expect(d.tool_calls).toBe(1)\n    expect(d.write_tool_calls).toBe(0)\n    expect(d.no_work_evidence).toBe(true)\n  })\n\n  test(\"非 assistant 消息不计入工具调用\", () => {\n    const d = summarizeDelivery(\n      [{ id: \"u1\", type: \"user\", time: { created: 1 }, content: [{ type: \"tool\", name: \"edit\" }] }],\n      [],\n    )\n    expect(d.tool_calls).toBe(0)\n  })\n\n  test(\"回归夹具：真实失败会话（只读 role.json → 角色开场白 → idle）必须被判为 no_work_evidence\", () => {\n    const fixture = JSON.parse(\n      readFileSync(path.join(__dirname, \"fixtures/real-no-work-session.json\"), \"utf8\"),\n    )\n    const d = summarizeDelivery(fixture.messages, [])\n    expect(d.tool_calls).toBeGreaterThan(0) // 确实调过工具（读 role.json）\n    expect(d.write_tool_calls).toBe(0) // 但没有写盘调用\n    expect(d.artifacts).toBe(0) // 也没有产物\n    expect(d.final_is_role_opening).toBe(true)\n    expect(d.model_switched).toBe(1) // 根因信号：run 中途换过模型\n    expect(d.no_work_evidence).toBe(true)\n  })\n\n  test(\"model-switched 是根因信号：最终文本不是开场白也能判出来\", () => {\n    const d = summarizeDelivery(\n      [\n        { id: \"m1\", type: \"assistant\", time: { created: 1 }, content: [{ type: \"text\", text: \"好的，我继续处理。\" }] },\n        { id: \"m2\", type: \"model-switched\", time: { created: 2 } },\n      ],\n      [],\n    )\n    expect(d.final_is_role_opening).toBe(false)\n    expect(d.model_switched).toBe(1)\n    expect(d.no_work_evidence).toBe(true)\n  })\n\n  test(\"全角冒号变体也算角色开场白\", () => {\n    const d = summarizeDelivery(\n      [{ id: \"m1\", type: \"assistant\", time: { created: 1 }, content: [{ type: \"text\", text: \"【角色：builder】…\" }] }],\n      [],\n    )\n    expect(d.final_is_role_opening).toBe(true)\n    expect(d.no_work_evidence).toBe(true)\n  })\n\n  test(\"有产物（有变更文件）时，即使文本是开场白也不判 no_work_evidence\", () => {\n    const d = summarizeDelivery(\n      [{ id: \"m1\", type: \"assistant\", time: { created: 1 }, content: [{ type: \"text\", text: \"【角色: builder】…\" }] }],\n      [\"a.txt\"],\n    )\n    expect(d.artifacts).toBe(1)\n    expect(d.no_work_evidence).toBe(false)\n  })\n})\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "    // 「未验证」这一族必须在关键字段里 —— 缺它 ⇒ 派发方会把 unverified 当完成\n    for (const f of [\n      \"outcome\",\n      \"host_outcome\",\n      \"blocked_reason\",\n      \"no_work_evidence\",\n      \"artifacts\",\n      \"last_assistant_text\",\n    ]) {\n      expect(critical!, `关键字段缺「${f}」`).toContain(f)\n    }\n",
+      "replace": "    for (const f of [\"outcome\", \"blocked_reason\", \"out_of_scope_files\", \"last_assistant_text\"]) {\n      expect(critical!, `关键字段缺「${f}」`).toContain(f)\n    }\n"
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "  test(\"知识 session 与 role_class 互斥\", () => {\n    expect(() =>\n      validateBrief({ ...VALID_INPUT, agent: \"explore\", scope: [], role_class: \"verifier\" }),\n    ).toThrow(/不接受 role_class/)\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "  test(\"知识 session 不获得 subagent 白名单（只读语义不被顺带放开）\", () => {\n    const repo = archRepo(\"perm-knowledge\", { archPaths: [\"docs/adr\"] })\n    const perms = classPermissions({\n      roleClass: \"builder\",\n      workRoot: repo,\n      scope: [],\n      kind: \"knowledge\",\n      grants: [],\n    })\n    expect(perms.some((r) => r.action === \"subagent\" && r.effect === \"allow\")).toBe(false)\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "  test(\"知识 session：不含运行身份段\", () => {\n    const text = buildBrief(validateBrief({ ...VALID_INPUT, agent: \"explore\", scope: [] }), TMP)\n    expect(text).not.toContain(\"## 运行身份\")\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "  test(\"知识 session 不追加 arch deny（只读语义无 class）\", () => {\n    const repo = archRepo(\"b-knowledge\", { archPaths: [\"docs/adr\"] })\n    const rules = classPermissions({ roleClass: \"builder\", workRoot: repo, scope: [], kind: \"knowledge\", grants: [] })\n    expect(rules.some((r) => r.resource === \"docs/adr\")).toBe(false)\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "  test(\"AC9：knowledge 类 + base ⇒ 硬拒（与 role_class / grants 的 knowledge 互斥策略对齐）\", () => {\n    const kn = { project_dir: EXISTING_DIR, task: \"t\", goal: \"g\", scope: [\"src\"], acceptance: \"a\", agent: \"explore\", base: \"HEAD~1\" }\n    expect(() => validateBrief(kn as any), \"knowledge + base 应被拒（不再静默忽略）\").toThrow()\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "  test(\"缺失 + 非 required（知识后端）⇒ 放行\", () => {",
+      "replace": "  test(\"缺失 + 非 required ⇒ 放行\", () => {"
+    },
+    {
+      "path": "tests/delegate-tool.test.ts",
+      "find": "describe(\"agent 白名单（H1）与知识 session 语义\", () => {\n  test(\"非白名单 agent 在建 session 之前被拒\", async () => {\n    const project = fixtureProject()\n    const { ctx, calls } = createFakeCtx()\n    for (const agent of [\"general\", \"plan\"]) {\n      await expect(runDelegate(ctx, { ...BASE, project_dir: project, agent })).rejects.toThrow(/白名单/)\n    }\n    expect(calls.create).toBe(0)\n  })\n\n",
+      "replace": "describe(\"agent 白名单（H1，退役后只剩工程 session）\", () => {\n  test(\"非白名单 agent 在建 session 之前被拒\", async () => {\n    const project = fixtureProject()\n    const { ctx, calls } = createFakeCtx()\n    for (const agent of [\"general\", \"plan\", \"explore\", \"librarian\", \"oracle\", \"metis\", \"critic\"]) {\n      await expect(runDelegate(ctx, { ...BASE, project_dir: project, agent })).rejects.toThrow(/白名单/)\n    }\n    expect(calls.create).toBe(0)\n  })\n\n"
+    },
+    {
+      "path": "tests/delegate-tool.test.ts",
+      "find": "  test(\"知识 session：edit 恒为单条 deny，不注入 scope allow\", async () => {\n    const project = fixtureProject()\n    const { ctx, sessions } = createFakeCtx()\n    const summary = await runDelegate(ctx, { ...BASE, project_dir: project, agent: \"explore\", scope: [] })\n    expect(summary.kind).toBe(\"knowledge\")\n    expect(summary.agent).toBe(\"explore\")\n    const session = [...sessions.values()][0]\n    expect(session.agent).toBe(\"explore\")\n    const editRules = session.permissions.filter((p: any) => p.action === \"edit\")\n    expect(editRules).toEqual([{ action: \"edit\", resource: \"*\", effect: \"deny\" }])\n    expect(session.permissions.every((p: any) => p.action !== \"edit\" || p.effect === \"deny\")).toBe(true)\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-tool.test.ts",
+      "find": "  test(\"知识 session 即使传了非空 scope，也不获得 edit allow（ADR Verification #5）\", async () => {\n    const project = fixtureProject()\n    const { ctx, sessions } = createFakeCtx()\n    await runDelegate(ctx, { ...BASE, project_dir: project, agent: \"explore\", scope: [\"tests/\"] })\n    const session = [...sessions.values()][0]\n    const editRules = session.permissions.filter((p: any) => p.action === \"edit\")\n    expect(editRules).toEqual([{ action: \"edit\", resource: \"*\", effect: \"deny\" }])\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-tool.test.ts",
+      "find": "  test(\"知识 session 不写 role.json 的 sessions 分区，只登记 pair（kind=knowledge）\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx()\n    const summary = await runDelegate(ctx, { ...BASE, project_dir: project, agent: \"oracle\", scope: [] })\n    const pair = JSON.parse(readFileSync(path.join(project, \".rddf/state/pair.json\"), \"utf8\"))\n    expect(pair.pairs[summary.session_id].kind).toBe(\"knowledge\")\n    const roleFile = path.join(project, \".rddf/state/role.json\")\n    const role = existsSync(roleFile) ? JSON.parse(readFileSync(roleFile, \"utf8\")) : {}\n    expect(role.sessions?.[summary.session_id]).toBeUndefined()\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-tool.test.ts",
+      "find": "  test(\"知识 session 的 grants 被拒（不产生副作用）\", async () => {\n    const project = fixtureProject()\n    const { ctx, calls } = createFakeCtx()\n    await expect(\n      runDelegate(ctx, {\n        ...BASE,\n        project_dir: project,\n        agent: \"librarian\",\n        scope: [],\n        grants: [{ action: \"shell\", resource: \"curl *\" }],\n      }),\n    ).rejects.toThrow(/不接受 grants/)\n    expect(calls.create).toBe(0)\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-tool.test.ts",
+      "find": "describe(\"交付面证据：静默失败检测（P0）\", () => {\n  const ROLE_OPENING = \"【角色: builder | source: state-file】我可实施代码修改。\\n\\n目标明确、scope 单文件，直接实施。\"\n\n  test(\"工程 session 只输出角色开场白就结束 → outcome=unverified（host_outcome 保留宿主的 succeeded）\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx({ assistantText: ROLE_OPENING })\n    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })\n    expect(summary.outcome).toBe(\"unverified\")\n    expect(summary.host_outcome).toBe(\"succeeded\")\n    expect(summary.final_is_role_opening).toBe(true)\n    expect(summary.no_work_evidence).toBe(true)\n    expect(summary.tool_calls).toBe(0)\n    expect(summary.write_tool_calls).toBe(0)\n    expect(summary.artifacts).toBe(0)\n  })\n\n  test(\"正常交付（正常结论文本）→ no_work_evidence=false\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx({\n      onPrompt: (session) => {\n        writeFileSync(path.join(project, \"tests/ok.txt\"), \"# ok\\n\")\n      },\n    })\n    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })\n    expect(summary.outcome).toBe(\"succeeded\")\n    expect(summary.host_outcome).toBe(\"succeeded\")\n    expect(summary.no_work_evidence).toBe(false)\n    expect(summary.final_is_role_opening).toBe(false)\n    expect(summary.artifacts).toBeGreaterThan(0)\n  })\n\n  test(\"知识 session（零工具调用、产物就是回答）→ 不得被判成 no_work_evidence\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx({ assistantText: \"【角色: explore | source: state-file】只读结论……\" })\n    const summary = await runDelegate(ctx, { ...BASE, project_dir: project, agent: \"explore\", scope: [] })\n    expect(summary.kind).toBe(\"knowledge\")\n    expect(summary.tool_calls).toBe(0)\n    expect(summary.no_work_evidence).toBe(false)\n    expect(summary.outcome).toBe(\"succeeded\") // 知识 session 不得被判 unverified\n  })\n\n  test(\"工程 session 用 edit 工具写盘 → 有写盘调用与产物，即使结尾是开场白也不判 no_work_evidence\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx({\n      onPrompt: (session) => {\n        writeFileSync(path.join(project, \"tests/edited.txt\"), \"# edited\\n\")\n        session.messages.push({\n          id: \"msg_tool_edit\",\n          type: \"assistant\",\n          time: { created: Date.now() },\n          content: [{ type: \"tool\", name: \"edit\", state: { status: \"completed\" } }],\n        })\n      },\n      assistantText: ROLE_OPENING,\n    })\n    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })\n    expect(summary.write_tool_calls).toBe(1)\n    expect(summary.artifacts).toBeGreaterThan(0)\n    expect(summary.no_work_evidence).toBe(false)\n  })\n\n  test(\"ledger 记录 no_work_evidence（审计可追溯）\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx({ assistantText: ROLE_OPENING })\n    await runDelegate(ctx, { ...BASE, project_dir: project })\n    const rows = readFileSync(path.join(project, \".rddf/state/ledger.jsonl\"), \"utf8\")\n      .trim()\n      .split(\"\\n\")\n      .map((l) => JSON.parse(l))\n    expect(rows.length).toBe(1)\n    expect(rows[0].no_work_evidence).toBe(true)\n    expect(rows[0].outcome).toBe(\"unverified\")\n    expect(rows[0].host_outcome).toBe(\"succeeded\")\n  })\n\n  test(\"resume：历史轮次的写盘调用不得掩盖本轮零交付（只看本轮窗口）\", async () => {\n    const project = fixtureProject()\n    let round = 0\n    const { ctx } = createFakeCtx({\n      assistantText: (n) =>\n        n === 1 ? \"## 执行结果\\n已创建 first.txt\" : \"【角色: builder | source: state-file】我可实施代码修改。\",\n      onPrompt: (session) => {\n        round++\n        if (round !== 1) return\n        writeFileSync(path.join(project, \"tests/first.txt\"), \"# first\\n\")\n        session.messages.push({\n          id: \"msg_tool_edit\",\n          type: \"assistant\",\n          time: { created: Date.now() },\n          content: [{ type: \"tool\", name: \"edit\", state: { status: \"completed\" } }],\n        })\n      },\n    })\n    const first = await runDelegate(ctx, { ...BASE, project_dir: project })\n    expect(first.write_tool_calls).toBe(1)\n    expect(first.no_work_evidence).toBe(false)\n\n    // 第二轮 resume 同一 session：本轮只输出角色开场白，什么都没做\n    const second = await runDelegate(ctx, { ...BASE, project_dir: project, resume_session: first.session_id })\n    expect(second.write_tool_calls).toBe(0) // 本轮没有写盘调用（上一轮的不算）\n    expect(second.artifacts).toBe(0) // 本轮没有新产物\n    expect(second.no_work_evidence).toBe(true) // 本轮零交付必须报出来\n    expect(second.outcome).toBe(\"unverified\")\n    expect(second.host_outcome).toBe(\"succeeded\")\n  })\n\n  test(\"run 中途换过模型（model-switched）+ 本轮零交付 → 报出来（不依赖文本格式）\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx({\n      // 最终文本**不是**角色开场白（换模型后的新模型可能说别的）\n      assistantText: \"好的，我继续处理。\",\n      onPrompt: (session) => {\n        session.messages.push({ id: \"msg_switch\", type: \"model-switched\", time: { created: Date.now() } })\n      },\n    })\n    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })\n    expect(summary.model_switched).toBe(1)\n    expect(summary.final_is_role_opening).toBe(false)\n    expect(summary.no_work_evidence).toBe(true)\n    expect(summary.outcome).toBe(\"unverified\")\n  })\n\n  test(\"用 shell 写盘（有产物）+ 最终文本是开场白 → 不得误报成没有产出\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx({\n      assistantText: ROLE_OPENING,\n      onPrompt: (session) => {\n        writeFileSync(path.join(project, \"tests/shell_wrote.txt\"), \"# via shell\\n\")\n      },\n    })\n    const summary = await runDelegate(ctx, { ...BASE, project_dir: project })\n    expect(summary.write_tool_calls).toBe(0) // shell 不算写盘工具\n    expect(summary.artifacts).toBeGreaterThan(0) // 但产物在\n    expect(summary.no_work_evidence).toBe(false) // 有产物 → 不是\"没有产出\"\n    expect(summary.outcome).toBe(\"succeeded\") // 不得降级\n  })\n\n  test(\"仍在跑（wait 超时）时不得判 no_work_evidence（resume 的陈旧 outcome 会误报）\", async () => {\n    const project = fixtureProject()\n    const prev = process.env.DELEGATE_WAIT_TIMEOUT_MS\n    process.env.DELEGATE_WAIT_TIMEOUT_MS = \"30\"\n    try {\n      const { ctx } = createFakeCtx({ waitNeverResolves: true, assistantText: ROLE_OPENING })\n      const summary = await runDelegate(ctx, { ...BASE, project_dir: project })\n      expect(summary.wait_timed_out).toBe(true)\n      expect(summary.still_running).toBe(true)\n      expect(summary.no_work_evidence).toBe(false) // 仍在跑 → 不判定\"没有产出\"\n      expect(summary.outcome).not.toBe(\"unverified\") // 陈旧 outcome 不得触发降级\n    } finally {\n      if (prev === undefined) delete process.env.DELEGATE_WAIT_TIMEOUT_MS\n      else process.env.DELEGATE_WAIT_TIMEOUT_MS = prev\n    }\n  })\n})\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC3b：「始终生效」与 `kind=knowledge` 互斥被钉住（文档口径；字段值语义由 lib 侧负责）\", () => {\n    expect(PLAN_MD).toContain(\"始终生效\")\n    expect(FRONT_MD).toContain(\"始终生效\")\n    expect(PLAN_MD).toContain(\"kind=knowledge\")\n    expect(PLAN_MD).toContain(\"互斥\")\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "  test(\"AC21b：派发方必须写明「unverified / no_work_evidence ⇒ 不得转述为已完成」的纪律\", () => {\n    // AC21 只保证「提到字段」；这一条保证「提到的是**纪律**」——\n    // 否则派发方知道字段名却仍会把它当成功转述。\n    for (const [rel, text] of [\n      [\"prompts/plan.md\", PLAN_MD],\n      [\"prompts/front.md\", FRONT_MD],\n    ] as const) {\n      expect(text, `${rel} 缺「不得转述为已完成」的纪律句`).toMatch(\n        /不得[^。\\n]{0,12}转述[^。\\n]{0,12}(已完成|完成)/,\n      )\n      expect(text, `${rel} 缺 unverified / no_work_evidence 的处置说明`).toMatch(\n        /unverified|no_work_evidence/,\n      )\n    }\n  })\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/front.md",
+      "find": "- `outcome`：`succeeded` 成功；**`unverified` 宿主报成功但本轮没有可验证的交付证据**（**不得当完成**，见下条）；`failed` 任务失败；`unknown` **没有新活动**（拿不到可信结论，别当成成功）；`busy` 目标 session 上一次运行仍在进行（等一会再试，别排队）；`interrupted` 被中断。\n- `host_outcome`：宿主原始结果（`unverified` 时恒为 `succeeded`）。排障与如实转述时用它说明「宿主说成功，但没有交付证据」。\n",
+      "replace": "- `outcome`：`succeeded` 成功；`failed` 任务失败；`unknown` **没有新活动**（拿不到可信结论，别当成成功）；`busy` 目标 session 上一次运行仍在进行（等一会再试，别排队）；`interrupted` 被中断。\n"
+    },
+    {
+      "path": "prompts/front.md",
+      "find": "- `no_work_evidence`：**交付证据缺失**。`true` 时 `outcome` 已被降级为 **`unverified`**（`host_outcome` 保留宿主的 `succeeded`）。\n  → **不得转述为\"已完成\"**；必须转述为「**没有可验证的交付证据**」（不要说成\"没有产出\"——产物可能落在 git 视野外），并给出证据（`tool_calls` / `write_tool_calls` / `artifacts` / `model_switched`），问用户是重试还是换做法。\n  配套证据字段：`tool_calls`（工具调用总数）、`write_tool_calls`（写盘类调用数）、`artifacts`（本次产生的文件变更数）、`final_is_role_opening`（最后一条文本是不是角色开场白）、`model_switched`（本轮是否中途换过模型）。\n  ⚠ `artifacts` 的口径是\"**git 可见**的本轮变更数\"：被 `.gitignore` 忽略的产物、工程根之外的改动（治理面文件等）、worktree 子工作区的改动**都数不到**——`artifacts=0` 不等于\"什么都没改\"，别拿它当确证。\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/front.md",
+      "find": "6. **不把没有交付的委托说成完成了**——`outcome=unverified`（`no_work_evidence=true`）时不得说\"已完成\"，必须说「没有可验证的交付证据」并给出证据字段。\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/front.md",
+      "find": "| `outcome: unverified` | 宿主报成功，但本轮没有可验证的交付证据 | 转述证据（`write_tool_calls` / `artifacts` / `model_switched`）→ 问用户重试还是换做法；**不得**说完成 |\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/front.md",
+      "find": "（每行一次委托，含 `recorded_at` / `outcome` / `host_outcome` / 证据字段）",
+      "replace": "（每行一次委托，含 `recorded_at` / `outcome`）"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "| `outcome` | 总体结论 —— 但 **`succeeded` 不等于「交付了东西」**（见下） |\n| `host_outcome` | 宿主原值（`outcome=unverified` 时它仍是 `succeeded`）—— 排障 / 审计用 |\n| `no_work_evidence` | 宿主报成功、但本轮**无写盘调用且无产物** ⇒ `outcome` 被降级为 `unverified` |\n| `artifacts` | 本轮产出的文件变更数（**只是 git 可见的部分**） |\n",
+      "replace": "| `outcome` | 总体结论 —— 但 **`succeeded` 不等于「交付了东西」**（见下） |\n"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "- **`outcome=unverified`（或 `no_work_evidence=true`）⇒ 不得转述为「已完成」** —— 必须转述为\n  「**没有可验证的交付证据**」（**不是**「没有产出」：产物可能落在 git 视野外），\n  并给出证据字段（`artifacts` / `write_tool_calls` / `tool_calls` / `model_switched`），\n  问用户是**重试**还是**换做法**。\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "- **`artifacts=0` 不等于「什么都没改」** —— 被 gitignore 忽略的产物、工程根之外的改动、\n  worktree 子工作区的改动都数不到；别拿它当确证。\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/build.md",
+      "find": "⚠ **首行优先级**：HANDOFF 回合**省略角色开场报告**（`【角色: …】`），首行只能是 `HANDOFF: <kind>`。开场报告在前会让交付面判定误判「停在自我介绍」⇒ `no_work_evidence` ⇒ `outcome` 被降级为 `unverified` ⇒ **交接被系统判成失败**。\n",
+      "replace": "⚠ **首行优先级**：HANDOFF 回合**省略角色开场报告**（`【角色: …】`），首行只能是 `HANDOFF: <kind>`。开场报告在前会让接收方误判「停在自我介绍」⇒ **交接被系统判成失败**。\n"
+    },
+    {
+      "path": "docs/front-delegate-usage.md",
+      "find": "> **已实测**（有验收证据）：委托链路、权限边界、结果字段与 6 种 `outcome`（`succeeded` / `unverified` / `failed` / `interrupted` / `unknown` / `busy`）、scope 强制、\n> grants 白名单拒绝、续接、busy、越界可见（见 `.rddf/reviews/front-agent-redesign-acceptance.md`）。\n",
+      "replace": "> **已实测**（有验收证据）：委托链路、权限边界、结果字段与 5 种 `outcome`（`succeeded` / `failed` / `interrupted` / `unknown` / `busy`）、scope 强制、\n"
+    },
+    {
+      "path": "docs/front-delegate-usage.md",
+      "find": "| `no_work_evidence` | **没有交付证据**（`true`）——工程 session 可能只输出了角色开场白就结束，而宿主仍记为 succeeded。此时 front **不会**说\"已完成\" |\n| `tool_calls` / `write_tool_calls` / `artifacts` | 交付证据的三个数：工具调用总数 / 写盘类调用数 / 本次产生的文件变更数（**git 可见口径**：被忽略、工程根外、worktree 内的改动数不到） |\n| `final_is_role_opening` / `model_switched` | 最后一条文本是不是角色开场白 / 本轮是否中途换过模型（\"停住\"的两个信号） |\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/front-delegate-usage.md",
+      "find": "| **`unverified`** | **宿主报成功，但本轮没有可验证的交付证据** | **不能当成完成**——看 `host_outcome`（恒为 `succeeded`）与证据字段，问用户重试还是换做法 |\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/front-delegate-usage.md",
+      "find": "| `succeeded` | 跑完了，且有交付证据 | 仍要看 `out_of_scope_files`、`blocked_reason` 是否为空 |",
+      "replace": "| `succeeded` | 跑完了 | 仍要看 `out_of_scope_files`、`blocked_reason` 是否为空 |"
+    },
+    {
+      "path": "docs/front-delegate-architecture.md",
+      "find": "- **多 agent**：brief 的 `agent` 字段已**白名单化**（v2.5，ADR-front-knowledge-capability D4）：`build` + `explore` / `librarian` / `oracle` / `metis` / `critic`。\n  - `build` → `kind=engineering`：`scope` 必填，注入 scope 派生 `edit` 规则，可带 grants。\n  - 只读 agent → `kind=knowledge`：`scope` 可省略/为空，**恒注入单条 `edit:* deny`**（绝不注入 scope allow），**grants 必须为空**，只登记 `pair.json`（`kind: \"knowledge\"`）、不写 `role.json` 的 `sessions` 分区。\n  - 白名单对 `resume_session` 同样生效：resume 时校验 pair 条目的 `agent`，不在白名单则拒。\n  - 换 agent 时仍要注意：**不同 agent 的 ask 清单不同**，`CONSTANT_DENY` 需要按目标 agent 调整。\n",
+      "replace": "- **多 agent**：brief 的 `agent` 字段已**白名单化**（ADR-front-knowledge-capability D4 —— **退役后只剩 `build`**）：`scope` 必填，注入 scope 派生 `edit` 规则，可带 grants。\n  - 白名单对 `resume_session` 同样生效：resume 时校验 pair 条目的 `agent`，不在白名单则拒。\n"
+    },
+    {
+      "path": "docs/front-delegate-architecture.md",
+      "find": "- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`kind` / `front_session_id` / `backend_session_id` / `outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / `final_is_role_opening` / `model_switched` / 截断脱敏后的 `last_assistant_text`）。",
+      "replace": "- **审计账本**：每次 `delegate` 追加一行 `.rddf/state/ledger.jsonl`（`front_session_id` / `backend_session_id` / `outcome` / `blocked_reason` / `out_of_scope_files` / `changed_files` / 截断脱敏后的 `last_assistant_text`）。"
+    },
+    {
+      "path": "docs/front-delegate-architecture.md",
+      "find": "- **交付面证据（静默失败检测）**：宿主把 run 记为 `succeeded` ≠ 工程 session 真的交付了东西——实测遇到过\"模型在 run 中途被切换后重来，工程 session 只输出角色开场白就 idle\"的形态，此时 `outcome=succeeded` 但 `changed_files=[]`。\n  - delegate 因此回传一组**结构化证据**：`tool_calls` / `write_tool_calls` / `artifacts` / `final_is_role_opening` / `model_switched`，以及判定结果 `no_work_evidence`。\n  - 判定规则（`lib/delegate-core.ts::summarizeDelivery`，纯函数可单测）：\n    `no_work_evidence = (final_is_role_opening || model_switched > 0) && write_tool_calls === 0 && artifacts === 0`。\n    判定为真时 **`outcome` 降级为 `unverified`**，宿主原值保留在 `host_outcome`（契约见 `ADR-delegate-delivery-evidence`）。\n    - `model-switched` 是**根因信号**（宿主消息 `type == \"model-switched\"`，run 中途换过模型），不依赖任何文本格式；开场白匹配是辅助信号。\n    - 写盘类工具口径：`edit` / `write` / `patch` / `apply_patch` / `multiedit`；**shell 不算**（无法从命令文本判定是否落盘），shell 写出的产物由 `artifacts` 兜底。\n    - ⚠ **判定只看本轮消息**（`sliceRoundMessages(messages, baselineMessageID)`）：resume 时历史轮次的写盘调用会掩盖本轮零交付。找不到 baseline 时退回全量（宁可漏报不误报）。\n    - ⚠ `artifacts` 是 **git 可见口径**：`.gitignore` 内、工程根外、worktree 内的改动都数不到 → `artifacts=0` 不是\"什么都没改\"的证明。\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/dual-session-delegation.md",
+      "find": "| `outcome` | `succeeded` / **`unverified`（宿主报成功但无交付证据，不得当完成）** / `failed` / `interrupted` / `unknown`（没有新活动，结论不可信）/ `busy`（上次运行仍在进行，别排队）/ **`vanished`（后端被外部删除；与「从未派发」的区分点是该后端曾有 `event:\"dispatched\"` 行）** |",
+      "replace": "| `outcome` | `succeeded` / `failed` / `interrupted` / `unknown`（没有新活动，结论不可信）/ `busy`（上次运行仍在进行，别排队）/ **`vanished`（后端被外部删除；与「从未派发」的区分点是该后端曾有 `event:\"dispatched\"` 行）** |"
+    },
+    {
+      "path": "docs/dual-session-delegation.md",
+      "find": "| `outcome: unverified` | 宿主报成功但没有可验证的交付证据 | 转述证据字段，问用户重试还是换做法；不得说完成 |\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "4. 读返回值（`outcome` / `host_outcome` / `blocked_reason` / `out_of_scope_files` / `no_work_evidence`）→ 转述给用户；**`outcome=unverified`（宿主成功但无交付证据）不得说成完成**。",
+      "replace": "4. 读返回值（`outcome` / `blocked_reason` / `out_of_scope_files`）→ 转述给用户。"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "| `delegate` 单元测试：`bun test tests/delegate-core.test.ts tests/delegate-tool.test.ts`（brief 契约 / grants 白名单 / scope→edit 规则 / 规则顺序即策略 / 阻断提取 / 越界判定 / pair+role 登记 / 目录锁并发 / 假 ctx 端到端 / 交付面证据与 `unverified`）| ✅ 全绿 |",
+      "replace": "| `delegate` 单元测试：`bun test tests/delegate-core.test.ts tests/delegate-tool.test.ts`（brief 契约 / grants 白名单 / scope→edit 规则 / 规则顺序即策略 / 阻断提取 / 越界判定 / pair+role 登记 / 目录锁并发 / 假 ctx 端到端）| ✅ 全绿 |"
+    },
+    {
+      "path": "docs/test-authoring.md",
+      "find": "**真实判例（为什么必须有行为层）**：`v2.28` 建的静态守卫能证明「派发方 prompt 覆盖了关键字段 + 写了纪律句」，\n但证明不了「agent 拿到 `unverified` 之后真的不把它当完成」。⇒ 另建 `CS-7`（真派一个只读回答的后端，\n断言 `outcome=unverified` / `host_outcome=succeeded` / `no_work_evidence=true`，且派发方文本含规定短语、\n不含「已完成」）。**两层不能互替，缺哪层就缺哪层的证明力**。\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/test-authoring.md",
+      "find": "assert d[\"kind\"] == \"engineering\"\nassert d[\"outcome\"] == \"unverified\"\nassert d[\"write_tool_calls\"] == 0\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/README.md",
+      "find": "**agent 白名单与 kind 推导**",
+      "replace": "**agent 白名单**"
+    },
+    {
+      "path": "tests/README.md",
+      "find": "**知识 session 的 scope/grants 约束**、",
+      "replace": ""
+    },
+    {
+      "path": "tests/README.md",
+      "find": "**交付面证据 summarizeDelivery（含真实失败会话回归夹具）**、",
+      "replace": ""
+    },
+    {
+      "path": "tests/README.md",
+      "find": "**agent 白名单（含 resume 绕过）**、**知识 session 只读语义**、",
+      "replace": "**agent 白名单（含 resume 绕过）**、"
+    },
+    {
+      "path": "tests/README.md",
+      "find": "**静默失败检测（outcome=unverified / host_outcome / 时间窗 / 仍在跑不判定 / 知识 session 与 shell 写盘不误报）**、",
+      "replace": ""
+    }
+  ],
+  "drill_env": {
+    "seed_files": [
+      {
+        "path": ".rddf/state/role.json",
+        "content": "{\n  \"current_role\": \"general\",\n  \"updated_at\": \"2026-11-21T00:00:00Z\"\n}\n"
+      }
+    ]
+  },
+  "verify": {
+    "commands": [
+      [
+        "bun",
+        "test",
+        "tests/"
+      ]
+    ]
+  }
+}

@@ -10,9 +10,7 @@
     ".rddf/rollback/registry.json",
     ".rddf/rollback/rollback-manifest-enforcement.json",
     ".rddf/rollback/pending/backend-handoff-role-class.md",
-    ".rddf/rollback/pending/class-write-scope-alignment.md",
-    ".rddf/rollback/pending/delegate-delivery-evidence.md",
-    ".rddf/rollback/pending/front-knowledge-capability.md"
+    ".rddf/rollback/pending/class-write-scope-alignment.md"
   ],
   "edits": [
     {
@@ -47,11 +45,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "aeeda9aad7565b838a99d8ee3989989c7bb038f3",
-    "at": "2026-11-21",
-    "result": "pass",
-    "content_hash": "302d18dc2edf685035de84de9f85c3d51977ca49bdfec51fc81cb0155590b486"
   }
 }
