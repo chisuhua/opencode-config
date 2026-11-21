@@ -143,6 +143,17 @@
 **实施期的完整证据链**（均可复验）：
 ① `6c79142` 实施（registry 16 条 + 守卫 17 例 + 10 份债指针 + 自清单）；② 5 份清单隔离副本演练**全部 PASS**；③ `8edb45a` 证据回填（自机制转 `active`）；④ 退役副本 `bun test tests/` = **1032 pass / 1 skip / 0 fail**（1033 用例 / 29 文件）⇒ **退役本机制后仓库仍自洽**；⑤ `8b44b0a` 落地「递归排序 key」+ M7 全状态卫生 + 两条新判别力用例（19 例）；⑥ `613401c` 按新口径**重跑** 5 份演练并回填证据（基线 `8b44b0a`）。
 
+## 6e. 增量审查 5（第 6 轮，**用户批准**：2026-11-21）—— 清存量债：**组清单**能力 + baseline 按组
+
+**动因**：清 10 条存量债的实测给出**组**这个粒度 —— 机制之间存在**不可拆的内核耦合**（`cancel` 调用 `waitStopped` 与 `releaseSlotAuthorized`；`markCancelPending` 是 MB 的 reconcile 排除条件）⇒ 「一机制一清单」的 1:1 模型**表达不了**。
+
+| 轮次 | 结论 | 处置 |
+|---|---|---|
+| oracle（增量 5） | **REJECT**（1 阻断 + 3 建议） | **阻断项**：M2 / V15 的相等子句只 scope 到 `active` ⇒ 与 M9（`proving` 的 `adr_primary` ∈ 声明集）在「还没转 `active`」的中间态**互斥** ⇒ 按 ADR 自己规定的两提交路径（`proving → active`）**债永远还不清** ⇒ 两处 scope 改为 **{active ∪ proving}** + M9 的谓词措辞与 M2 分开；建议 1：写死组清单的 `adr`（单值）= 组内核引入 ADR、其余进 `adr_related[]`（机器只判并集 ⇒ 单值归属是**约定**不是判据）；建议 2：U11 rubric 写实（调用点行号级证据 + 反向代价确认；**不设** watch 交集机判 —— 耦合走**调用链**不走 watch 锚点）；建议 3：把「是否该报 `no-single-baseline`」固化为 **T1/T2/T3 三测**（教学原生 / 删后可达性 / 依赖归属）⇒ U12。**已排除**（不必再提）：watch 交集机判（不 sound）、成员落点计数（无阈值原理）、`members[]`（第二真源）、两条豁免改回写清单（删后状态**从未存在过** ⇒ 目标态是新设计而非历史态）、Status 订正走完整审稿（纯事实订正三门槛已满足） |
+| critic（增量 5，第 6 轮） | `APPROVE_WITH_CONDITIONS`（无 BLOCKER，1 SHOULD_FIX + 2 NIT） | **SHOULD_FIX**：D4 的豁免论证链缺两环 —— 「连带回退」**推不出**「清单做不到」（清单本就能多文件删除）⇒ 真正的决定性理由是 ① **教学面原生 ⇒ 没有 `find/replace` 形态**（实测 39 处红 + 引用悬空）② **连带面落在 `active` 机制上 ⇒「回退到先前状态」的前提不成立** ⇒ 补进 D4；NIT ×2：计数口径矛盾（ADR 写「7 个」vs 证据文件与 grep 实测「8 个」⇒ 统一为 8 并写明含机制自身 2 个 ⇒ 外部依赖方 6 个）、选项表补被否的「人读组声明」（F 行） |
+
+**本轮的净结论**：registry 支持 **1:N 的组清单**（条目加 `manifest_ref`；M1 按**去重引用集**比；M2/M9/V15 的 scope 一律 **{active ∪ proving}**）；baseline = **8 条债合 3 组**（G1 delegate 槽位/停机/归属/取消释放内核链 4 条、G2 knowledge+delivery 2 条、G3 role_class+写集 2 条）+ **2 条判为「退役 = 重写」⇒ `exempt` / `no-single-baseline`**（证据 `.rddf/reviews/rollback-exempt-role-identity-canonical.md`，含 **T1/T2/T3** 评审 rubric）；另订正 `ADR-canonical-root-normalization` 的 Status（自述「未实施」与事实矛盾）。
+
 ## 6. 本报告的边界
 
 - 本报告是**誊写**：审查者（metis / oracle / critic）的原文不在本文件内，只保留**结论与逐条处置**；过程细节以各轮 subagent 输出为准（不进决策文档，符合「正文三层分离」）。

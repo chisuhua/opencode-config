@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | **Accepted**（2026-11-09，architect 起草；oracle 已评审 + critic arch 档审稿完成，**0 BLOCKER**，1 SHOULD_FIX 全部闭合）。**未实施**——关联 change 尚未立项 |
+| Status | **Accepted**（2026-11-09，architect 起草；oracle 已评审 + critic arch 档审稿完成，**0 BLOCKER**，1 SHOULD_FIX 全部闭合）。**已实施**（2026-11-10 关联 change 归档；`lib/delegate-core.ts::canonicalRoot` 返回 `{stateRoot, workRoot, vcs}` + `tests/canonical-root.test.ts` 291 行 / 10 组用例落地） |
 | Date | 2026-11-09 |
 | Author | architect |
 | Parent | 部分取代 `docs/adr/ADR-front-agent-redesign.md` 的 D6（登记与并发协议）中的 `canonical_root` 口径：原裁定未定义 worktree 场景的归一规则，与 `prompts/build.md:195,199` 已写明的「worktree → canonical 归一（`git rev-parse --git-common-dir`）」**口径不一致**；本篇把它写成**可执行的判别式**。该篇 D6 的 pair-v2 schema、锁协议、single-writer 规则**继续有效**。与 `ADR-front-multi-backend` **决策面正交**（后者只在 goal_key 里引用归一后的 `canonical_root`），但**实施顺序有依赖**：本篇应先于后者落地 |
@@ -12,6 +12,7 @@
 | AC 映射 | 本文件 Verification 1–12 → proposal 的 **AC1–AC18**（逐条映射见 proposal 的「AC ↔ ADR Verification 映射」表） |
 | 审稿报告 | `.rddf/reviews/adr-front-multi-backend-review.md`（两篇同批评审报告，见该报告 §4） |
 | 前置事实 | 3 种 git 场景的实测（主仓 / linked worktree / submodule），原始输出见 `.rddf/reviews/front-multi-backend-probes.md` 的 P4 节 |
+| 修订 | **2026-11-21**：原 Status 行自述「**未实施**——关联 change 尚未立项」，与事实矛盾（change 已于 2026-11-10 归档、实现已落地）⇒ **据实订正**（纯事实纠正，不改决策）。⚠ 该 change 目录**仅含 `proposal.md`**（无 `tasks.md` / `design.md`）⇒ 归档形态异常，如实登记。**退役口径**：本机制的退役 = **重写**（教学面落在 `prompts/build.md` 的**原生**角色矩阵段内 + 实现面被 5 个生产文件依赖 ⇒ 连带回退 delegate 的两根基模型与两个门禁插件）⇒ **清单做不到** ⇒ `ADR-rollback-manifest-enforcement` 的 registry 归 `exempt` / `no-single-baseline`，证据见 `.rddf/reviews/rollback-exempt-role-identity-canonical.md` |
 
 ## 背景与问题
 
