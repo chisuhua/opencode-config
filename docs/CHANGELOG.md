@@ -10,6 +10,19 @@
 
 ---
 
+> **v2.58 回滚可达性：组清单模型 + 存量债第一轮清偿（2026-11-21）**：
+> 清 10 条存量债的实测给出**组**这个粒度 ⇒ registry 从「一机制一清单」的 1:1 模型扩到 **1:N 的组清单**。
+> **动因（实测内核耦合）**：`cancel`（CR）直接调用 `waitStopped`（SC，`lib/delegate-async.ts:2369`）与 `releaseSlotAuthorized`（SO，`:2451`）；`markCancelPending`（CR，`:2575`）是 MB 的 reconcile 排除条件 ⇒ delegate 的槽位 / 停机 / 归属 / 取消释放是一条**不可拆**的内核链 ⇒ 拆开退役 ⇒ 另三者**编译或判据破裂** ⇒ 1:1 模型表达不了。
+> **模型**（`ADR-rollback-manifest-enforcement` 第 6 轮增量，`3da29f3`）：registry 条目加 **`manifest_ref`**（`active`/`proving` 必填；**多机制可指向同一份清单**）；M1 第二子句改「清单文件集合 == {`manifest_ref`} **去重**引用集」；M2 改**集合相等（双向）**：清单**声明**的决策记录集合（`adr` ∪ `adr_related[]`）== 指向它的 `active`∪`proving` 条目的 `adr_primary` 集；清单 schema 加 `adr_related[]`；新增 **V15**（组清单归属判定 + 五条变红演练）与 **U11**（组边界归评审，rubric = 调用点行号级证据 + 反向代价确认；**不设** watch 交集机判 —— 耦合走调用链不走 watch 锚点）。
+> ⚠ **M2/V15 的 scope 必须含 `proving`** —— 否则与 M9 在「还没转 `active`」的中间态互斥 ⇒ 按 ADR 自己规定的两提交路径**债永远还不清**（oracle 第 5 轮的阻断项，已闭合）。
+> **清偿 2 条（10 → 8）**：`role-session-identity` / `canonical-root-normalization` 经依赖图核实为**退役 = 重写** ⇒ 归 `exempt` / `no-single-baseline`（证据 `.rddf/reviews/rollback-exempt-role-identity-canonical.md`）：① **教学面原生** —— 落在 `prompts/build.md` 的原生角色矩阵段内（`git log --diff-filter=A -- prompts/build.md` ⇒ `132f389` 初始提交）⇒ 回退教学面 = 删原生段 ⇒ 实测 **39 处红** + 引用悬空 ⇒ **没有 `find/replace` 形态**；② **连带面落在已登记为 `active` 的机制上**（身份/租约被 8 个生产文件 import、`canonicalRoot` 被 5 个 ⇒ 连带回退 delegate 的两根基模型与两个门禁插件）⇒ **「回退到先前状态」的前提不成立** ⇒ 目标态是**新设计**而非历史态 ⇒ `delete + edits` 表达不了。
+> **其余 8 条按组标注**（债未清，只升可见性）：**G1 `delegate-slot-kernel`**（4 条：MB/SC/SO/CR）、**G2 `delegate-knowledge-delivery`**（2 条：KC/DE）、**G3 `role-class-write-set`**（2 条：`role_class` + 写集）⇒ 债指针文件补组名，registry 的 notes 写明「组清单覆盖全组」。
+> **顺带订正**：`ADR-canonical-root-normalization` 的 Status 行原写「**未实施**——关联 change 尚未立项」，与事实矛盾（change 已于 2026-11-10 归档、`canonicalRoot` 三值返回已落地、291 行 / 10 组用例的验收测试在仓）⇒ 据实订正 + 登记该 change 目录**仅含 `proposal.md`** 的形态异常。
+> **审查**：oracle 增量 5 **REJECT**（1 阻断：M2/V15 scope 漏 `proving` + 3 建议：`adr` 单值归属写死 / U11 rubric / U12 的 T1·T2·T3 三测）→ critic 第 6 轮 **APPROVE_WITH_CONDITIONS**（无 BLOCKER；1 SHOULD_FIX：豁免论证缺两环 ⇒ 补进 D4 + 2 NIT：计数口径统一为「8 个（含自身 2 个 ⇒ 6 个外部依赖方）」、选项表补 F 行「人读组声明」被否）。
+> **实测**：5 份清单在隔离副本里**重跑**演练（基线 `6bf4d85`）⇒ 全部 PASS；census = `declared=0 unmanifested=8 proving=0 active=5 retired=0 exempt=3`。
+>
+> ---
+>
 > **v2.57 回滚可达性 L2：机制登记表 + 守卫 + 存量债登记（2026-11-21）**：
 > 把「**该有的清单在不在**」从**约定**变成**机制**（`ADR-rollback-manifest-enforcement` 的 M1–M8 / V1–V13；ADR 仍 `Proposed` ⇒ 实施已落地，ADR 文本待第 5 轮 critic 同步后转 `Accepted`）。
 > **新增**：`lib/rollback-registry.ts`（判据本体，纯逻辑：零 spawn / 零 git / 零 clone）+ `scripts/rollback-registry.ts`（CLI，退出码 `0/1/2`；`2` = registry 缺失或 schema 非法 ⇒ **不可判定，不当通过**）+ `tests/rollback-registry.test.ts`（17 例：真源在位 + **每条判据的判别力反例**，fixture 仓，不触真实仓历史）+ `.rddf/rollback/registry.json`（**机制登记表**：16 条 baseline）+ `.rddf/rollback/pending/*.md`（10 份**逐机制**债指针）+ `.rddf/rollback/rollback-manifest-enforcement.json`（L2 机制自身的退役清单：delete 15 + edits 3，含**删本清单自身** ⇒ 否则漂移守卫对其恒红）。
