@@ -384,6 +384,61 @@
       "path": "tests/README.md",
       "find": "**静默失败检测（outcome=unverified / host_outcome / 时间窗 / 仍在跑不判定 / 知识 session 与 shell 写盘不误报）**、",
       "replace": ""
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "  lines.push(\"\")\n  if (brief.kind === \"engineering\") {\n    // 运行身份（role_class）—— 简报是**唯一**按 session 注入的身份通道",
+      "replace": "  lines.push(\"\")\n  {\n    // 运行身份（role_class）—— 简报是**唯一**按 session 注入的身份通道"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "            agent: effectiveAgent,\n            kind,\n            resumed: Boolean(brief.resume_session),\n            resumed_by_other_front: resumedByOtherFront,\n            outcome,\n            new_activity: newActivity,\n            host_outcome: hostOutcome,\n            blocked_reason,\n            blocked_action,\n            blocked_all,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            scope_check: vcs ? \"ok\" : \"unavailable\",\n            last_assistant_text: assistantText,\n            // 交付面证据（静默失败）：no_work_evidence=true 时 outcome 仍可能是 succeeded，\n            // 调用方**不得**把它转述成\"已完成\"。\n            tool_calls: delivery.tool_calls,\n            write_tool_calls: delivery.write_tool_calls,\n            artifacts: delivery.artifacts,\n            final_is_role_opening: delivery.final_is_role_opening,\n            model_switched: delivery.model_switched,\n            no_work_evidence: noWorkEvidence,\n            still_running: runStillRunning,\n",
+      "replace": "            agent: effectiveAgent,\n            resumed: Boolean(brief.resume_session),\n            resumed_by_other_front: resumedByOtherFront,\n            outcome,\n            new_activity: newActivity,\n            blocked_reason,\n            blocked_action,\n            blocked_all,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            scope_check: vcs ? \"ok\" : \"unavailable\",\n            last_assistant_text: assistantText,\n            still_running: waitTimedOut || outcome == null,\n"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "          const ledgerBase = {\n            recorded_at: new Date().toISOString(),\n            kind,\n            front_session_id: frontSessionID ?? null,",
+      "replace": "          const ledgerBase = {\n            recorded_at: new Date().toISOString(),\n            front_session_id: frontSessionID ?? null,"
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "    registerSession(\n      repo,\n      \"ses_a\",\n      \"ses_front\",\n      \"build\",\n      \"engineering\",\n      undefined,\n      { role_class: \"architect\" },\n      undefined,\n      { work_root: repo, state: \"active\" },\n    )",
+      "replace": "    registerSession(\n      repo,\n      \"ses_a\",\n      \"ses_front\",\n      \"build\",\n      undefined,\n      { role_class: \"architect\" },\n      undefined,\n      { work_root: repo, state: \"active\" },\n    )"
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "    registerSession(repo, \"ses_b\", \"ses_front\", \"build\", \"engineering\")",
+      "replace": "    registerSession(repo, \"ses_b\", \"ses_front\", \"build\")"
+    },
+    {
+      "path": "tests/delegate-core.test.ts",
+      "find": "    const missing = \"no_work_evidence\"",
+      "replace": "    const missing = \"blocked_reason\""
+    },
+    {
+      "path": "tests/delegate-tool.test.ts",
+      "find": "    expect(rows[0].kind).toBe(\"engineering\")\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-async.test.ts",
+      "find": "  test(\"plan 派发知识后端（只读）不带 plan_ref ⇒ 成功（D2 只约束可写实施）\", async () => {\n    const dir = repo(\"plan-knowledge\")\n    const { ctx, sessions } = createFakeCtx()\n    registerCaller(sessions, \"ses_plan_test\", \"plan\", dir)\n    const r = await run(\n      dispatchToolDefinition(ctx),\n      { ...baseInput(dir), agent: \"oracle\", scope: [] },\n      \"ses_plan_test\",\n    )\n    expect(r.session_id).toBeTruthy()\n  })\n\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/delegate-async.test.ts",
+      "find": "    // 写者纪律：`registerSession` 的整条重建**不得**丢掉它\n    registerSession(dir, a.session_id, \"ses_front_test\", \"build\", \"engineering\", undefined, {",
+      "replace": "    // 写者纪律：`registerSession` 的整条重建**不得**丢掉它\n    registerSession(dir, a.session_id, \"ses_front_test\", \"build\", undefined, {"
+    },
+    {
+      "path": "tests/delegate-async.test.ts",
+      "find": "    // 模拟同步 delegate 的登记写（整条重建字段集，但保留 claim_gen）\n    registerSession(dir, a.session_id, \"ses_front_test\", \"build\", \"engineering\", undefined, {",
+      "replace": "    // 模拟同步 delegate 的登记写（整条重建字段集，但保留 claim_gen）\n    registerSession(dir, a.session_id, \"ses_front_test\", \"build\", undefined, {"
+    },
+    {
+      "path": "lib/delegate-core.ts",
+      "find": "          registerSession(\n            stateRoot,\n            sessionID,\n            frontSessionID,\n            effectiveAgent,\n            kind,\n            undefined,\n            {",
+      "replace": "          registerSession(\n            stateRoot,\n            sessionID,\n            frontSessionID,\n            effectiveAgent,\n            undefined,\n            {"
     }
   ],
   "drill_env": {
