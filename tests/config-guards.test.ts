@@ -1494,6 +1494,8 @@ describe("subagent 输入契约：规则真源 ↔ prompt / description 一致",
         "plan-topics.ts",
         // v2.54（回滚可达性原型）：清单 schema / plan / apply / 演练环境准备
         "rollback-drill.ts",
+        // L2 强制化（ADR-rollback-manifest-enforcement）：机制登记表的一致性判据（纯逻辑）
+        "rollback-registry.ts",
       ],
     }
     for (const [dir, expected] of Object.entries(EXPECTED)) {

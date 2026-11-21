@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "mechanism": "rollback-manifest-enforcement",
+  "adr": "docs/adr/ADR-rollback-manifest-enforcement.md",
+  "notes": "退役 **L2 强制化机制**（ADR-rollback-manifest-enforcement）：删守卫（`lib/rollback-registry.ts` / `scripts/rollback-registry.ts` / `tests/rollback-registry.test.ts`）+ 删 `registry.json` + 删 10 份债指针 + **删本清单自身**（清单描述的是「如何撤掉 L2」⇒ L2 撤掉后它再无用途，且它的 `delete` 目标已不存在 ⇒ 漂移守卫会恒红 ⇒ 必须同批删），并撤回随之失效的三处登记（config-guards 的 EXPECTED.lib / tests/README 覆盖表行 / `.rddf/rollback/README` 的自清单行与 registry 指针）。⚠ 退役后**四份既有清单仍在**（commit-gate / plan-topics / plan-delegate / model-fallback）⇒ **回滚可达性能力本身不受影响**（L1 的 drill 与漂移守卫独立于 registry）。⚠ 退役后**新增机制不再被强制表态**（「沉默 = 违规」的承诺随之消失）—— 这是退役本机制的**语义后果**，如实登记。⚠ **退役记录落在 `.rddf/rollback/README.md`**（registry 随机制被删 ⇒ 无法在其中记 `retired` 态）；**刻意不编辑 ADR 的 Status 行** —— ADR 是**决策记录**（保留），且 Status 行的文本会随 ADR 自身状态流转而变 ⇒ 作 `find` 锚点会**自指破裂**（退役时 find 匹配不上 ⇒ 清单恒红）。",
+  "delete": [
+    "lib/rollback-registry.ts",
+    "scripts/rollback-registry.ts",
+    "tests/rollback-registry.test.ts",
+    ".rddf/rollback/registry.json",
+    ".rddf/rollback/rollback-manifest-enforcement.json",
+    ".rddf/rollback/pending/backend-handoff-role-class.md",
+    ".rddf/rollback/pending/canonical-root-normalization.md",
+    ".rddf/rollback/pending/class-write-scope-alignment.md",
+    ".rddf/rollback/pending/delegate-delivery-evidence.md",
+    ".rddf/rollback/pending/front-cancel-release.md",
+    ".rddf/rollback/pending/front-knowledge-capability.md",
+    ".rddf/rollback/pending/front-multi-backend.md",
+    ".rddf/rollback/pending/front-stop-confirmation.md",
+    ".rddf/rollback/pending/front-stop-ownership.md",
+    ".rddf/rollback/pending/role-session-identity.md"
+  ],
+  "edits": [
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "        // v2.54（回滚可达性原型）：清单 schema / plan / apply / 演练环境准备\n        \"rollback-drill.ts\",\n        // L2 强制化（ADR-rollback-manifest-enforcement）：机制登记表的一致性判据（纯逻辑）\n        \"rollback-registry.ts\",\n",
+      "replace": "        // v2.54（回滚可达性原型）：清单 schema / plan / apply / 演练环境准备\n        \"rollback-drill.ts\",\n"
+    },
+    {
+      "path": "tests/README.md",
+      "find": "| `rollback-drill.test.ts` | **回滚清单**的纯逻辑层 + CLI 退出码 + 判别力负向（少删一件 / `find` 漂移 / 路径写法差异 / 顺序语义） |\n| `rollback-manifests.test.ts` | **清单漂移守卫**（零成本）：每份清单的 schema / `mechanism`↔文件名 / `adr` 存在 / `verify` 非空 / `planDrill` 可执行 |\n| `rollback-registry.test.ts` | **机制登记表**一致性守卫（M1–M8 / V1–V13）：ADR 全集双向相等、指针闭集、豁免闭集、债指针逐机制、清单形态防空壳、`last_drill` 时效 |\n| `record-discipline.test.ts`（+ `verify_record_discipline.sh`） |",
+      "replace": "| `record-discipline.test.ts`（+ `verify_record_discipline.sh`） |"
+    },
+    {
+      "path": ".rddf/rollback/README.md",
+      "find": "| `rollback-manifest-enforcement.json` | **L2 强制化机制自身**（退役 = 撤守卫 + 删 registry + 删本清单） | delete 15 + edits 3 | 见清单的 `last_drill` |\n\n> **清单清单以 `registry.json` 为准**（L2 强制化）：本表只是**人读摘要**，改清单/改机制都先改 registry。\n",
+      "replace": "> **L2 强制化机制已退役**（守卫、`registry.json` 与本机制自己的清单均已撤）⇒ 四份既有清单仍在 ⇒ **回滚可达性能力本身不受影响**（L1 的 drill 与漂移守卫独立于 registry）；⚠ 「新增机制必须表态」的承诺随之消失 —— 这是退役本机制的**语义后果**，如实登记。\n"
+    }
+  ],
+  "drill_env": {
+    "seed_files": [
+      {
+        "path": ".rddf/state/role.json",
+        "content": "{\n  \"current_role\": \"general\",\n  \"updated_at\": \"2026-11-21T00:00:00Z\"\n}\n"
+      }
+    ]
+  },
+  "verify": {
+    "commands": [
+      [
+        "bun",
+        "test",
+        "tests/"
+      ]
+    ]
+  }
+}

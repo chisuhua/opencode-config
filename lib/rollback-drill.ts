@@ -64,6 +64,16 @@ export interface Manifest {
   drill_env?: { seed_files?: Array<{ path: string; content: string }> }
   /** 验证命令（argv 数组）；缺省 = `[[bun","test","tests/"]]` */
   verify?: { commands?: string[][] }
+  /**
+   * **演练证据**（`ADR-rollback-manifest-enforcement` V8）：最近一次隔离副本演练的结果。
+   * - `sha`：被演练的那个 commit（**溯源**用）；
+   * - `at`：演练日期（YYYY-MM-DD）；
+   * - `result`：`pass` / `fail`；
+   * - `content_hash`：**去掉本字段后**清单内容的 sha256 —— 清单在演练之后被**实质改动**
+   *   ⇒ 哈希不再匹配 ⇒ 红（V8 的判据形态：**按内容比对**，不依赖 git 历史 ⇒ 零成本、零 git）。
+   * ⚠ drill 基于 HEAD ⇒ 只对那一个 commit 的**内容**成立 ⇒ 清单实质改动后必须同批重跑并回填。
+   */
+  last_drill?: { sha: string; at: string; result: string; content_hash?: string }
 }
 
 export const DEFAULT_VERIFY: string[][] = [["bun", "test", "tests/"]]
@@ -130,6 +140,20 @@ export function parseManifest(raw: string): Manifest {
     }
   }
 
+  const lastDrill = m.last_drill
+  if (lastDrill !== undefined) {
+    if (!lastDrill || typeof lastDrill !== "object" || Array.isArray(lastDrill)) {
+      throw new DrillError("schema_invalid", "last_drill 必须是对象")
+    }
+    const ld = lastDrill as Record<string, unknown>
+    if (typeof ld.sha !== "string" || typeof ld.at !== "string" || typeof ld.result !== "string") {
+      throw new DrillError("schema_invalid", "last_drill 必须是 {sha, at, result} 三个字符串")
+    }
+    if (ld.content_hash !== undefined && typeof ld.content_hash !== "string") {
+      throw new DrillError("schema_invalid", "last_drill.content_hash 必须是字符串")
+    }
+  }
+
   const drillEnv = m.drill_env
   if (drillEnv !== undefined) {
     if (!drillEnv || typeof drillEnv !== "object" || Array.isArray(drillEnv)) {
@@ -155,6 +179,7 @@ export function parseManifest(raw: string): Manifest {
     delete: del as string[],
     edits: edits as ManifestEdit[],
     ...(verify !== undefined ? { verify: verify as { commands?: string[][] } } : {}),
+    ...(lastDrill !== undefined ? { last_drill: lastDrill as { sha: string; at: string; result: string; content_hash?: string } } : {}),
     ...(drillEnv !== undefined ? { drill_env: drillEnv as { seed_files?: Array<{ path: string; content: string }> } } : {}),
   }
 }

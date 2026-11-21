@@ -55,6 +55,39 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 
 ⚠ 它在 drill 的副本里**跳过**（`ROLLBACK_DRILL_CHILD=1`）：副本正是「清单已执行完」的状态，`find` 必然不再匹配 ⇒ 在那里跑会恒红。**真演练**（clone + 跑验证命令，≈30s/清单）仍按需手动执行 —— 本守卫证明「清单**现在**可执行」，drill 证明「执行后**仓库仍自洽**」，两者不能互替。
 
+## 机制登记表（`registry.json`）—— L2 强制化
+
+**它回答什么**：不是「已有的清单能不能跑」（那是上面的漂移守卫），而是「**该有的清单在不在**」：
+
+```bash
+bun scripts/rollback-registry.ts            # 人读：五态 census + 逐条报错（带判据编号）
+bun scripts/rollback-registry.ts --json     # 机读
+```
+
+退出码：`0` 全绿 / `1` 有判据不通过 / `2` registry 缺失或 schema 非法（**不可判定**，不当通过）。
+
+**六态**（判据编号见 `docs/adr/ADR-rollback-manifest-enforcement.md` 的 M1–M8）：
+
+| 状态 | 含义 | 清单 | 证据 | 债指针 |
+|---|---|---|---|---|
+| `declared` | 已签、**未落地** | 无 | — | — |
+| `unmanifested` | **机制在跑、清单待写**（存量债） | **不得有** | — | **必填**（`pending/<mechanism>.md`，逐机制命名） |
+| `proving` | **过渡态**：已落地、清单已写、**演练证据待回填** | 必填 | 可缺失（存在即须新鲜） | — |
+| `active` | 已落地 + 清单齐 + **演练证据齐且新鲜** | 必填 | 必填 | — |
+| `retired` | 已退役 | **不得有** | `retired_at` + `retired_evidence` | — |
+| `exempt` | **该机制不该有清单**（闭集 5 类） | **不得有** | `exempt_class` + `exempt_evidence` | — |
+
+⚠ **`proving` 为什么存在（自举死锁）**：机制落地的那个 commit 里，条目无法同时满足
+「`declared` 的 watch 路径尚不存在」与「`active` 的演练证据已回填」——
+**证据只能由已提交的清单跑出来 ⇒ 必然晚一个 commit** ⇒ 没有过渡态就永远转不了 `active`。
+⇒ `proving` = 清单已写、机制已落地、**演练待跑**；回填证据后转 `active`。
+
+**债指针**（`pending/<mechanism>.md`）：`unmanifested` 机制的**逐机制**欠账说明（为什么还没写 / 清单要覆盖哪些落点 / 锚点在哪）⇒ 债**可见、可清账**（写完清单 ⇒ 删债文件 + 条目转 `active`）。
+⚠ 债**不是豁免**：`exempt` = 「不该有清单」，`unmanifested` = 「该有但还没写」⇒ 两者表态成本相同，但机器前提不同（`exempt` 要**闭集理由 + 证据**，`unmanifested` 要**逐机制债指针 + 在跑锚点**）。
+
+**守卫**：`tests/rollback-registry.test.ts`（零成本：只读文件 + 内存比较，不 spawn / 不跑 drill / 不 clone）；
+判据本体在 `lib/rollback-registry.ts`（纯逻辑层，**ADR 是决策真源**，两处口径冲突回 ADR）。
+
 ## 现有清单
 
 | 清单 | 机制 | 规模 | 实测 |
@@ -63,6 +96,9 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 | `plan-topics.json` | plan 侧多会话协作：`plan-worker` + topic checker（`ADR-plan-multi-session-collaboration`） | delete 4 + edits 14 | `983 pass / 0 fail`（隔离副本） |
 | `plan-delegate.json` | plan 侧工程派发（`ADR-plan-delegate-engineering-session`）—— **能力面**退役 | delete 0 + edits 48 | `1024 pass / 0 fail`（隔离副本） |
 | `model-fallback.json` | 模型降级链插件（**无 ADR** ⇒ 决策真源 = 验收报告） | delete 5 + edits 14 | `998 pass / 0 fail`（隔离副本，零悬空引用） |
+| `rollback-manifest-enforcement.json` | **L2 强制化机制自身**（退役 = 撤守卫 + 删 registry + 删本清单） | delete 15 + edits 3 | 见清单的 `last_drill` |
+
+> **清单清单以 `registry.json` 为准**（L2 强制化）：本表只是**人读摘要**，改清单/改机制都先改 registry。
 
 ## 「骨架机制」怎么退役（plan-delegate 的实测结论）
 
@@ -85,7 +121,7 @@ bun scripts/rollback-drill.ts .rddf/rollback/<mechanism>.json --keep
 
 `model-fallback` **没有 ADR**（它的验收报告自述「本仓库无 ADR（§arch-docs 判定态 3）」，决策记录 = 该报告）。
 ⇒ 本仓存在**无 ADR 的机制** ⇒ 清单的 `adr` 字段允许指向**验收报告 / 其他决策记录**（`model-fallback.json` 即指向 `.rddf/reviews/model-fallback-verify.md`）。
-⚠ 这同时暴露 `ADR-rollback-manifest-enforcement` 的 **M2 口径缺口**：`adr_primary`「必须落在 `docs/adr/`」对这类机制**不成立** ⇒ 该机制无法合法登记 ⇒ 待补口径（已登记为实施期发现）。
+⇒ 这同时暴露了 `ADR-rollback-manifest-enforcement` 的 **M2 口径缺口**：`adr_primary`「必须落在 `docs/adr/`」对这类机制**不成立** ⇒ 该机制无法合法登记 ⇒ **已补口径**（2026-11-21 第 3 轮增量）：M2 的指针闭集改为「**决策记录闭集**」= `docs/adr/` ∪ `.rddf/reviews/*-verify.md`（指针**语义**是否对应本机制归评审，见 U8）。
 
 ## 哪些机制适合做清单（边界）
 

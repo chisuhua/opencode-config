@@ -40,7 +40,9 @@ const IN_DRILL = process.env.ROLLBACK_DRILL_CHILD === "1"
 
 function manifests(): Array<{ name: string; raw: string }> {
   return readdirSync(ROLLBACK_DIR)
-    .filter((f) => f.endsWith(".json"))
+    // ⚠ `registry.json` 是**机制登记表**（ADR-rollback-manifest-enforcement），不是回滚清单
+    //   ⇒ 它的 schema 完全不同（无 mechanism / delete / edits）⇒ 必须排除，否则本守卫恒红。
+    .filter((f) => f.endsWith(".json") && f !== "registry.json")
     .sort()
     .map((f) => ({ name: f, raw: readFileSync(path.join(ROLLBACK_DIR, f), "utf8") }))
 }

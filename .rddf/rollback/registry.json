@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "mechanism": "commit-gate",
+      "adr_primary": "docs/adr/ADR-commit-verification-gate.md",
+      "state": "active",
+      "notes": "commit 工具层验证门；三步回滚（撤放行 / 撤 sessions 过滤 / 兼容读）已清单化并实测。"
+    },
+    {
+      "mechanism": "plan-topics",
+      "adr_primary": "docs/adr/ADR-plan-multi-session-collaboration.md",
+      "state": "active",
+      "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。"
+    },
+    {
+      "mechanism": "plan-delegate",
+      "adr_primary": "docs/adr/ADR-plan-delegate-engineering-session.md",
+      "state": "active",
+      "notes": "plan 侧工程派发的**能力面**退役（内核保留、惰性）。"
+    },
+    {
+      "mechanism": "rollback-manifest-enforcement",
+      "adr_primary": "docs/adr/ADR-rollback-manifest-enforcement.md",
+      "state": "proving",
+      "notes": "本机制自身：退役 = 撤守卫 + 删 registry（自清单见 `.rddf/rollback/rollback-manifest-enforcement.json`）。⚠ `proving` = **过渡态**（已落地、清单已写、**演练证据待回填**）—— 自举死锁的解法：证据只能由**已提交**的清单跑出来 ⇒ 必然晚一个 commit ⇒ 没有过渡态就永远转不了 `active`。",
+      "watch": [
+        "lib/rollback-registry.ts",
+        "scripts/rollback-registry.ts",
+        "tests/rollback-registry.test.ts"
+      ]
+    },
+    {
+      "mechanism": "model-fallback",
+      "adr_primary": ".rddf/reviews/model-fallback-verify.md",
+      "state": "active",
+      "notes": "⚠ **本机制无 ADR** ⇒ 决策记录 = 验收报告（不参与 M1 的 docs/adr 集合比对）。"
+    },
+    {
+      "mechanism": "front-multi-backend",
+      "adr_primary": "docs/adr/ADR-front-multi-backend.md",
+      "state": "unmanifested",
+      "watch": [
+        "plugins/delegate.ts",
+        "lib/delegate-core.ts"
+      ],
+      "notes": "delegate 核心族：退役面横跨 role_class / base-channel / resume-precheck 三个增量。",
+      "pending_backlog": ".rddf/rollback/pending/front-multi-backend.md"
+    },
+    {
+      "mechanism": "front-stop-confirmation",
+      "adr_primary": "docs/adr/ADR-front-stop-confirmation.md",
+      "state": "unmanifested",
+      "watch": [
+        "lib/delegate-async.ts"
+      ],
+      "notes": "停机证据判据与 front-multi-backend 同族（共享同一份停机/归属判据）。",
+      "pending_backlog": ".rddf/rollback/pending/front-stop-confirmation.md"
+    },
+    {
+      "mechanism": "front-stop-ownership",
+      "adr_primary": "docs/adr/ADR-front-stop-ownership.md",
+      "state": "unmanifested",
+      "watch": [
+        "lib/role-lease.ts"
+      ],
+      "notes": "归属与槽位释放：与 front-cancel-release 部分取代关系 ⇒ 退役面需一并定。",
+      "pending_backlog": ".rddf/rollback/pending/front-stop-ownership.md"
+    },
+    {
+      "mechanism": "front-cancel-release",
+      "adr_primary": "docs/adr/ADR-front-cancel-release.md",
+      "state": "unmanifested",
+      "watch": [
+        "lib/delegate-async.ts"
+      ],
+      "notes": "cancel 放行：部分取代 front-multi-backend / front-stop-* 三篇 ⇒ 拆不开。",
+      "pending_backlog": ".rddf/rollback/pending/front-cancel-release.md"
+    },
+    {
+      "mechanism": "front-knowledge-capability",
+      "adr_primary": "docs/adr/ADR-front-knowledge-capability.md",
+      "state": "unmanifested",
+      "watch": [
+        "lib/delegate-core.ts"
+      ],
+      "notes": "只读后端门控：与 role_class 共用同一 brief 字段（kind=engineering/knowledge）。",
+      "pending_backlog": ".rddf/rollback/pending/front-knowledge-capability.md"
+    },
+    {
+      "mechanism": "delegate-delivery-evidence",
+      "adr_primary": "docs/adr/ADR-delegate-delivery-evidence.md",
+      "state": "unmanifested",
+      "watch": [
+        "lib/delegate-core.ts"
+      ],
+      "notes": "交付证据枚举（outcome）：与 base-channel 的 `unverified` 联动 ⇒ 退役面需一并定。",
+      "pending_backlog": ".rddf/rollback/pending/delegate-delivery-evidence.md"
+    },
+    {
+      "mechanism": "role-session-identity",
+      "adr_primary": "docs/adr/ADR-role-session-identity.md",
+      "state": "unmanifested",
+      "watch": [
+        "lib/role-identity.ts"
+      ],
+      "notes": "会话身份归一：与 role-aware-permissions 同族（教学面原生 ⇒ 见 no-single-baseline）。",
+      "pending_backlog": ".rddf/rollback/pending/role-session-identity.md"
+    },
+    {
+      "mechanism": "backend-handoff-role-class",
+      "adr_primary": "docs/adr/ADR-backend-handoff-role-class.md",
+      "state": "unmanifested",
+      "watch": [
+        "lib/role-policy.ts"
+      ],
+      "notes": "role_class 交接：跨 19 个文件（lib/delegate-core.ts 64 处）⇒ 退役面未定。",
+      "pending_backlog": ".rddf/rollback/pending/backend-handoff-role-class.md"
+    },
+    {
+      "mechanism": "class-write-scope-alignment",
+      "adr_primary": "docs/adr/ADR-class-write-scope-alignment.md",
+      "state": "unmanifested",
+      "watch": [
+        "lib/role-policy.ts"
+      ],
+      "notes": "写集口径：散在 3 份 prompt 的选类表 + lib/role-policy.ts 的 classAllowRoots。",
+      "pending_backlog": ".rddf/rollback/pending/class-write-scope-alignment.md"
+    },
+    {
+      "mechanism": "canonical-root-normalization",
+      "adr_primary": "docs/adr/ADR-canonical-root-normalization.md",
+      "state": "unmanifested",
+      "watch": [
+        "tests/canonical-root.test.ts",
+        "lib/delegate-core.ts"
+      ],
+      "notes": "canonical_root 归一：决定 pair/ledger/role.json 的落盘基准 ⇒ 与 role-session-identity 耦合。",
+      "pending_backlog": ".rddf/rollback/pending/canonical-root-normalization.md"
+    },
+    {
+      "mechanism": "role-aware-permissions",
+      "adr_primary": "docs/adr/ADR-role-aware-permissions.md",
+      "state": "exempt",
+      "exempt_class": "no-single-baseline",
+      "exempt_evidence": ".rddf/rollback/README.md",
+      "notes": "教学面自初始提交 132f389 即存在（无回退基线）⇒ 退役 = 重写（需 ADR + change）。实测见证据文件。"
+    }
+  ]
+}
