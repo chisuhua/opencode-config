@@ -10,6 +10,17 @@
 
 ---
 
+> **v2.57 回滚可达性 L2：机制登记表 + 守卫 + 存量债登记（2026-11-21）**：
+> 把「**该有的清单在不在**」从**约定**变成**机制**（`ADR-rollback-manifest-enforcement` 的 M1–M8 / V1–V13；ADR 仍 `Proposed` ⇒ 实施已落地，ADR 文本待第 5 轮 critic 同步后转 `Accepted`）。
+> **新增**：`lib/rollback-registry.ts`（判据本体，纯逻辑：零 spawn / 零 git / 零 clone）+ `scripts/rollback-registry.ts`（CLI，退出码 `0/1/2`；`2` = registry 缺失或 schema 非法 ⇒ **不可判定，不当通过**）+ `tests/rollback-registry.test.ts`（17 例：真源在位 + **每条判据的判别力反例**，fixture 仓，不触真实仓历史）+ `.rddf/rollback/registry.json`（**机制登记表**：16 条 baseline）+ `.rddf/rollback/pending/*.md`（10 份**逐机制**债指针）+ `.rddf/rollback/rollback-manifest-enforcement.json`（L2 机制自身的退役清单：delete 15 + edits 3，含**删本清单自身** ⇒ 否则漂移守卫对其恒红）。
+> **判据**：M1 集合相等（ADR 全集双向 + 清单集合与 `active`∪`proving` 双向）；M2 `active` 的清单 `adr` == registry 的 `adr_primary`；M3 豁免闭集（5 类）+ 证据存在 + 证据不自证；M4 `declared` 的落地 tripwire（watch 路径已存在 ⇒ 必须离态）；M5 清单防空壳（`find == replace` ⇒ 红；验证命令不得是 `true` 之类）；M6 退役证据；M7 债指针**逐机制**（`pending/<mechanism>.md`，与 `unmanifested` 集合**双向相等**）+ 在跑锚点（`watch[]` 每条**当前存在**）；M8 指针闭集（**全部状态**的 `adr_primary` 必须在「决策记录闭集」内）；V8 证据时效（**按内容比对** = 去掉 `last_drill` 后算内容哈希 ⇒ 零 git、零成本、不占真实仓预算、**无自指回归** —— 按提交号比对会永远「晚于」）；V10 登记面（覆盖表 / README 指针）。
+> **实测**：5 份清单在**隔离副本**里全部 **PASS**（`commit-gate` / `plan-topics` / `plan-delegate` / `model-fallback` / `rollback-manifest-enforcement`）；**退役 L2 后的副本** ⇒ `bun test tests/` **1032 pass / 1 skip / 0 fail**（1033 用例 / 29 文件；比真仓少 19 条 = 登记表的 17 条 + 清单漂移守卫少 2 条（自清单已删））⇒ **退役本机制后仓库仍自洽**（L1 的 drill 与漂移守卫独立于 registry ⇒ 回滚可达性能力本身不受影响）。
+> **三条实施期发现**（ADR 待同步）：① **机制 ⇒ ADR 并不成立** —— `model-fallback` **无 ADR**（其验收报告自述「本仓库无 ADR」）⇒ 决策记录可能在 `.rddf/reviews/` ⇒ M2 的指针闭集放宽为「**决策记录闭集**」（`docs/adr/` ∪ `.rddf/reviews/*-verify.md`）；② **豁免闭集装不下 9 篇「机制在跑、清单待写」的 ADR** —— 现有 5 类豁免全是「该机制**不该**有清单」的判断，硬塞即谎 ⇒ 新增 `unmanifested`（**债**不是豁免：逐机制债指针 + 在跑锚点 + 集合双向相等）；③ **自举死锁**（本轮新增）—— 机制落地的那个 commit 里，条目无法同时满足「`declared` 的 watch 尚不存在」与「`active` 的演练证据已回填」（**证据只能由已提交的清单跑出来** ⇒ 必然晚一个 commit）⇒ 新增过渡态 `proving`（已落地 + 清单已写 + **演练待回填**；证据可缺失，但一旦存在就必须新鲜）。
+> **顺带**：`tests/rollback-manifests.test.ts` 排除 `registry.json`（它是**登记表**不是清单 ⇒ schema 完全不同，否则恒红）；`lib/rollback-drill.ts` 的清单 schema 加 `last_drill{ sha, at, result, content_hash? }`。
+> ⚠ **待办（需用户批准第 5 轮 critic）**：ADR 的 V8 判据形态（实现用**内容哈希**，ADR 正文写的是 `git show` + 深比较）、D4 的归类数字（实测 **4 active / 10 unmanifested / 1 exempt**，ADR 写的是 9 + 2）、以及新增的 `proving` 状态 ⇒ 三处须同步进 ADR 后转 `Accepted`。
+>
+> ---
+>
 > **v2.56 回滚清单第三个机制：plan 侧工程派发（能力面退役）（2026-11-20）**：
 > `.rddf/rollback/plan-delegate.json`（delete 0 + edits 48）—— 退役「plan 是派发主体」这一**能力面**：`ADR-plan-delegate-engineering-session` 的回滚三步（撤 plan 的五项 delegate 放行 / `sessions` 撤回 owner 过滤 / `owner_agent` 兼容读）+ 让仓库自洽所必需的同步面（`prompts/plan.md` 的委派**发起侧**教学退役、`prompts/build.md` 的 planner 行、`prompts/front.md` 的「看不到它的后端」句、`MAD` 的 plan 卡片、`SUBAGENT-ORCHESTRATION` §2.2 与 §8.1，**以及 20 余处守卫从「两个派发方」收窄为「front」**）。
 > **实测**：`bun scripts/rollback-drill.ts .rddf/rollback/plan-delegate.json` ⇒ **PASS**（隔离副本：`bun test tests/` **1024 pass / 0 fail** = 真仓 1031 − **5** 条被撤回的守卫用例 − **2** 条清单漂移守卫用例（在 drill 副本里整组 skip，因副本正是「清单已执行完」的状态））。
