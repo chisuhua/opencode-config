@@ -5,7 +5,7 @@
   "adr_related": [
     "docs/adr/ADR-delegate-delivery-evidence.md"
   ],
-  "notes": "退役 **G2 `delegate-knowledge-delivery`**（2 个机制一份清单 —— 内核耦合）：`front-knowledge-capability` /\n`delegate-delivery-evidence`。\n**退役面**：① 撤掉**只读后端（`kind=knowledge`）**这一路 —— `delegate` 的 `agent` 白名单收窄为 `build`；\n`kind` 字段（pair / ledger / 简报 / 返回值）整体退役；`validateBrief` 的 knowledge×role_class / ×grants /\n×base 互斥、scope 可省略、grants 必须为空等分支、简报的只读执行要求、登记的「只写 pair 不写 role.json」\n分支、`classPermissions` 的只读分支全部撤销；② 撤掉**交付证据（DE）** —— `outcome` 不再降级为 `unverified`，\n`host_outcome` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / `artifacts` /\n`final_is_role_opening` / `model_switched` 与 `summarizeDelivery` 整体退役。\n**为什么两件事一份清单**：DE 的判定式里含 `kind == \"engineering\"`（知识 session 的产物本就是「回答」，\n不做交付证据判定）⇒ 两者共用同一处分支 ⇒ 拆开退役 ⇒ 另一方的 find 锚点失效。\n**保留**：front **直调**五个只读 subagent 的能力（D2/D3 的白名单与 shell 加固）—— 它**不是** `kind=knowledge`\n后端派发，本组退役不动它；同步 `delegate` 的主链（建 / 复用 / 投递 / 等 / 返回）保留。\n**退役的机械通道**：`retire[]`（ADR 第 7 轮 / V16）把这 2 条 registry 条目转 `retired`，清单**同批自删**。\n⚠ **退役后**：派发方**拿不到**「宿主报成功但无交付证据」的机读信号 ⇒ 「静默失败」只能靠人读\n`last_assistant_text` 与 `changed_files` 判断。这是**语义后果**，如实登记（不是遗漏）。",
+  "notes": "退役 **G2 `delegate-knowledge-delivery`**（2 个机制一份清单 —— 内核耦合）：`front-knowledge-capability` /\n`delegate-delivery-evidence`。\n**退役面**：① 撤掉**只读后端（`kind=knowledge`）**这一路 —— `delegate` 的 `agent` 白名单收窄为 `build`；\n`kind` 字段（pair / ledger / 简报 / 返回值）整体退役；`validateBrief` 的 knowledge×role_class / ×grants /\n×base 互斥、scope 可省略、grants 必须为空等分支、简报的只读执行要求、登记的「只写 pair 不写 role.json」\n分支、`classPermissions` 的只读分支全部撤销；② 撤掉**交付证据（DE）** —— `outcome` 不再降级为 `unverified`，\n`host_outcome` / `no_work_evidence` / `tool_calls` / `write_tool_calls` / `artifacts` /\n`final_is_role_opening` / `model_switched` 与 `summarizeDelivery` 整体退役。\n**为什么两件事一份清单**：DE 的判定式里含 `kind == \"engineering\"`（知识 session 的产物本就是「回答」，\n不做交付证据判定）⇒ 两者共用同一处分支 ⇒ 拆开退役 ⇒ 另一方的 find 锚点失效。\n**保留**：front **直调**五个只读 subagent 的能力（D2/D3 的白名单与 shell 加固）—— 它**不是** `kind=knowledge`\n后端派发，本组退役不动它；同步 `delegate` 的主链（建 / 复用 / 投递 / 等 / 返回）保留。\n**退役的机械通道**：`retire[]`（ADR 第 7 轮 / V16）把这 2 条 registry 条目转 `retired`，清单**同批自删**。\n⚠ **退役后**：派发方**拿不到**「宿主报成功但无交付证据」的机读信号 ⇒ 「静默失败」只能靠人读\n`last_assistant_text` 与 `changed_files` 判断。这是**语义后果**，如实登记（不是遗漏）。\n⚠ **刻意保留的残留**：`kind` 字段（brief / pair / ledger / summary）**保留**且恒为 `engineering` ——\n退役的是**能力**（白名单只留 `build` + 只读分支全撤），不是字段本身；保留它是为了让**同步与异步两条派发面\n共用同一份数据 schema**（否则 `lib/delegate-async.ts` 也要改 ⇒ G2 与 G1 两份清单会互相耦合）。\n⚠ **G1 / G2 的耦合**：G1 的清单会**整份删除** `lib/delegate-async.ts`；本清单**不碰**该文件 ⇒ 两份清单\n互不依赖（可任意顺序执行）。\n⚠ **与 `plan-delegate` / G3 的**措辞**耦合**（不是文件耦合）：本清单改了 `prompts/plan.md` 等**共享文件** ⇒\n若先执行本清单，别家清单的 `find` 锚点会失效（漂移守卫红）⇒ **执行顺序敏感**（先执行面更窄的那份，\n或执行后同步别家清单）。⚠ 这是**回滚单向性**的既有性质（README「清单之间会耦合」），不是本清单的缺陷。",
   "retire": [
     "front-knowledge-capability",
     "delegate-delivery-evidence"
@@ -18,7 +18,7 @@
     {
       "path": "lib/delegate-core.ts",
       "find": "/**\n * front 可委托的 agent 白名单（ADR-front-knowledge-capability D2/D4）。\n * `build` = 工程 session（写）；其余 = 知识 session（只读）。\n */\nexport const READONLY_AGENTS = [\"explore\", \"librarian\", \"oracle\", \"metis\", \"critic\"] as const\n\nexport const ALLOWED_AGENTS = new Set<string>([\"build\", ...READONLY_AGENTS])\n\nexport type DelegateKind = \"engineering\" | \"knowledge\"\n",
-      "replace": "/**\n * front 可委托的 agent 白名单（ADR-front-knowledge-capability D2/D4 —— **退役后只剩工程 session**）。\n */\nexport const ALLOWED_AGENTS = new Set<string>([\"build\"])\n"
+      "replace": "/**\n * front 可委托的 agent 白名单（ADR-front-knowledge-capability D2/D4 —— **退役后只剩工程 session**）。\n */\nexport const ALLOWED_AGENTS = new Set<string>([\"build\"])\n\n/**\n * 派发类型（只读后端退役后恒为 `engineering`）—— **字段保留为数据 schema 的一部分**\n * （brief / pair / ledger / summary 都带它）；退役的是**能力**（白名单 + 只读分支），不是字段本身。\n */\nexport const DELEGATE_KIND = \"engineering\" as const\n\nexport type DelegateKind = typeof DELEGATE_KIND\n"
     },
     {
       "path": "lib/delegate-core.ts",
@@ -28,17 +28,12 @@
     {
       "path": "lib/delegate-core.ts",
       "find": "export function classPermissions(input: {\n  roleClass: RoleClass\n  workRoot: string\n  scope: string[]\n  kind: DelegateKind\n  grants: Array<{ action: string; resource: string; effect: string }>\n}): Array<{ action: string; resource: string; effect: string }> {\n  const editRules =\n    input.kind === \"engineering\"\n      ? scopeEditRules(input.workRoot, input.scope)\n      : [{ action: \"edit\", resource: \"*\", effect: \"deny\" }]\n  return [\n    ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: \"deny\" as const })),\n    ...editRules,\n    ...input.grants,\n    // subagent 白名单**只对可写工程 session**（D4）：知识 session 原本就没有 subagent 能力\n    // （只读 agent 的 `subagent: deny`），不得在这里顺带放开。\n    ...(input.kind === \"engineering\" ? classSubagentRules() : []),\n    // D3 修订：`builder` 的 arch 路径 deny —— **恒在数组末尾**（`evaluate` 取 findLast ⇒\n    // 任何在其后追加的 allow 都会翻盘；本数组的末尾位置是不变量，见 ADR D8）。\n    ...(input.kind === \"engineering\" && input.roleClass === \"builder\" ? archDenyRules(input.workRoot) : []),\n  ]\n}",
-      "replace": "export function classPermissions(input: {\n  roleClass: RoleClass\n  workRoot: string\n  scope: string[]\n  grants: Array<{ action: string; resource: string; effect: string }>\n}): Array<{ action: string; resource: string; effect: string }> {\n  return [\n    ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: \"deny\" as const })),\n    ...scopeEditRules(input.workRoot, input.scope),\n    ...input.grants,\n    ...classSubagentRules(),\n    // D3 修订：`builder` 的 arch 路径 deny —— **恒在数组末尾**（`evaluate` 取 findLast ⇒\n    // 任何在其后追加的 allow 都会翻盘；本数组的末尾位置是不变量，见 ADR D8）。\n    ...(input.roleClass === \"builder\" ? archDenyRules(input.workRoot) : []),\n  ]\n}"
-    },
-    {
-      "path": "lib/delegate-core.ts",
-      "find": "  agent: string\n  agentProvided: boolean\n  kind: DelegateKind\n  task: string",
-      "replace": "  agent: string\n  agentProvided: boolean\n  task: string"
+      "replace": "export function classPermissions(input: {\n  roleClass: RoleClass\n  workRoot: string\n  scope: string[]\n  kind: DelegateKind\n  grants: Array<{ action: string; resource: string; effect: string }>\n}): Array<{ action: string; resource: string; effect: string }> {\n  return [\n    ...CONSTANT_DENY.map((rule) => ({ ...rule, effect: \"deny\" as const })),\n    ...scopeEditRules(input.workRoot, input.scope),\n    ...input.grants,\n    ...classSubagentRules(),\n    // D3 修订：`builder` 的 arch 路径 deny —— **恒在数组末尾**（`evaluate` 取 findLast ⇒\n    // 任何在其后追加的 allow 都会翻盘；本数组的末尾位置是不变量，见 ADR D8）。\n    ...(input.roleClass === \"builder\" ? archDenyRules(input.workRoot) : []),\n  ]\n}"
     },
     {
       "path": "lib/delegate-core.ts",
       "find": "  const kind = kindOfAgent(agent)\n\n  // role_class（ADR D1）：**缺省只认 `undefined`**（`null` / `\"\"` 是非法值）。\n  // 知识 session 与之互斥：它不写 role.json，class 无处落（D1）。\n  const roleClass = parseRoleClass(input.role_class)\n  const roleClassProvided = input.role_class !== undefined\n  if (kind === \"knowledge\" && roleClassProvided) {\n    throw fail(\"知识 session 不接受 role_class（只读语义无能力类；见 ADR-backend-handoff-role-class D1）\")\n  }\n",
-      "replace": "  // role_class（ADR D1）：**缺省只认 `undefined`**（`null` / `\"\"` 是非法值）。\n  const roleClass = parseRoleClass(input.role_class)\n  const roleClassProvided = input.role_class !== undefined\n"
+      "replace": "  const kind = DELEGATE_KIND\n\n  // role_class（ADR D1）：**缺省只认 `undefined`**（`null` / `\"\"` 是非法值）。\n  const roleClass = parseRoleClass(input.role_class)\n  const roleClassProvided = input.role_class !== undefined\n"
     },
     {
       "path": "lib/delegate-core.ts",
@@ -67,11 +62,6 @@
     },
     {
       "path": "lib/delegate-core.ts",
-      "find": "    agent,\n    agentProvided,\n    kind,\n    task,",
-      "replace": "    agent,\n    agentProvided,\n    task,"
-    },
-    {
-      "path": "lib/delegate-core.ts",
       "find": "  if (brief.kind === \"engineering\") {\n    if (opts?.vcs === false) {\n      lines.push(\"- 基线（base）: 本工程无 VCS，基线不可用\")\n    } else if (opts?.base) {\n      lines.push(`- 基线（base）: ${opts.base.raw} → ${opts.base.sha}`)\n    }\n  }\n  lines.push(`- 类型（kind）: ${brief.kind}`)\n  if (brief.kind === \"engineering\") {\n    lines.push(`- 允许变更范围（scope）: ${brief.scope.join(\", \")}`)\n  } else {\n    lines.push(`- 允许变更范围（scope）: 无（知识 session 只读，不产生文件变更）`)\n  }\n",
       "replace": "  if (opts?.vcs === false) {\n    lines.push(\"- 基线（base）: 本工程无 VCS，基线不可用\")\n  } else if (opts?.base) {\n    lines.push(`- 基线（base）: ${opts.base.raw} → ${opts.base.sha}`)\n  }\n  lines.push(`- 允许变更范围（scope）: ${brief.scope.join(\", \")}`)\n"
     },
@@ -88,12 +78,7 @@
     {
       "path": "lib/delegate-core.ts",
       "find": "  agent: string,\n  kind: DelegateKind = kindOfAgent(agent),\n  ledgerRow?: any,",
-      "replace": "  agent: string,\n  ledgerRow?: any,"
-    },
-    {
-      "path": "lib/delegate-core.ts",
-      "find": "      canonical_root: root,\n      agent,\n      kind,\n      registered_at: existing?.registered_at ?? new Date().toISOString(),",
-      "replace": "      canonical_root: root,\n      agent,\n      registered_at: existing?.registered_at ?? new Date().toISOString(),"
+      "replace": "  agent: string,\n  kind: DelegateKind = DELEGATE_KIND,\n  ledgerRow?: any,"
     },
     {
       "path": "lib/delegate-core.ts",
@@ -103,7 +88,7 @@
     {
       "path": "lib/delegate-core.ts",
       "find": "  \"agent\",\n  \"kind\",\n  \"resumed\",\n  \"resumed_by_other_front\",\n  \"outcome\",\n  \"new_activity\",\n  \"host_outcome\",\n  \"blocked_reason\",\n  \"blocked_action\",\n  \"blocked_all\",\n  \"out_of_scope_files\",\n  \"changed_files\",\n  \"scope_check\",\n  \"last_assistant_text\",\n  \"tool_calls\",\n  \"write_tool_calls\",\n  \"artifacts\",\n  \"final_is_role_opening\",\n  \"model_switched\",\n  \"no_work_evidence\",\n  \"still_running\",",
-      "replace": "  \"agent\",\n  \"resumed\",\n  \"resumed_by_other_front\",\n  \"outcome\",\n  \"new_activity\",\n  \"blocked_reason\",\n  \"blocked_action\",\n  \"blocked_all\",\n  \"out_of_scope_files\",\n  \"changed_files\",\n  \"scope_check\",\n  \"last_assistant_text\",\n  \"still_running\","
+      "replace": "  \"agent\",\n  \"kind\",\n  \"resumed\",\n  \"resumed_by_other_front\",\n  \"outcome\",\n  \"new_activity\",\n  \"blocked_reason\",\n  \"blocked_action\",\n  \"blocked_all\",\n  \"out_of_scope_files\",\n  \"changed_files\",\n  \"scope_check\",\n  \"last_assistant_text\",\n  \"still_running\","
     },
     {
       "path": "lib/delegate-core.ts",
@@ -128,12 +113,12 @@
     {
       "path": "lib/delegate-core.ts",
       "find": "          // 交付面证据：宿主说 succeeded ≠ 工程 session 真的交付了东西。\n          // 判定只看向**本轮**的消息（resume 时历史轮次不得掩盖本轮零交付）。\n          // 只对工程 session 判定（知识 session 的产物本就是\"回答\"，通常零工具调用）。\n          // ⚠ 仍在跑（wait 超时 / 宿主未给 outcome）时**不判定**：此时读到的 outcome\n          //   可能是上一轮的陈旧值（resume 场景），据此判\"没有产出\"会误报。\n          const roundMessages = sliceRoundMessages(messages, baselineMessageID)\n          const delivery = summarizeDelivery(roundMessages, changed)\n          // ⚠️ 局部变量名不得与模块级谓词 `stillRunning` 相同（会遮蔽它）\n          const runStillRunning = waitTimedOut || outcome == null\n          const noWorkEvidence =\n            kind === \"engineering\" && outcome === \"succeeded\" && !runStillRunning && delivery.no_work_evidence\n          // 机读化：宿主报成功但无交付证据 → `unverified`（宿主原值保留在 host_outcome）。\n          if (noWorkEvidence) outcome = \"unverified\"\n\n          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, kind, {\n            ...ledgerBase,\n            outcome,\n            host_outcome: hostOutcome,\n            blocked_reason,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            last_assistant_text: redactAndTruncate(assistantText),\n            no_work_evidence: noWorkEvidence,\n            tool_calls: delivery.tool_calls,\n            write_tool_calls: delivery.write_tool_calls,\n            final_is_role_opening: delivery.final_is_role_opening,\n            model_switched: delivery.model_switched,\n          }, {",
-      "replace": "          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, {\n            ...ledgerBase,\n            outcome,\n            blocked_reason,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            last_assistant_text: redactAndTruncate(assistantText),\n          }, {"
+      "replace": "          registerSession(stateRoot, sessionID, frontSessionID, effectiveAgent, kind, {\n            ...ledgerBase,\n            outcome,\n            blocked_reason,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            last_assistant_text: redactAndTruncate(assistantText),\n          }, {"
     },
     {
       "path": "lib/delegate-core.ts",
       "find": "            effectiveAgent = existingAgent\n            kind = kindOfAgent(effectiveAgent)\n",
-      "replace": "            effectiveAgent = existingAgent\n"
+      "replace": "            effectiveAgent = existingAgent\n            kind = DELEGATE_KIND\n"
     },
     {
       "path": "lib/delegate-core.ts",
@@ -168,7 +153,7 @@
     {
       "path": "tests/delegate-core.test.ts",
       "find": "describe(\"知识 session 登记（不污染 role.json）\", () => {\n  test(\"registerSession(kind=knowledge) 只写 pair，不写 role.json\", () => {\n    const repo = gitRepo(\"repo-knowledge\")\n    registerSession(repo, \"ses_k\", \"ses_front\", \"explore\", \"knowledge\")\n    const pair = readJson(path.join(repo, \".rddf/state/pair.json\"))\n    expect(pair.pairs[\"ses_k\"].kind).toBe(\"knowledge\")\n    expect(pair.pairs[\"ses_k\"].agent).toBe(\"explore\")\n    expect(existsSync(path.join(repo, \".rddf/state/role.json\"))).toBe(false)\n  })\n\n  test(\"engineering 登记的 pair 条目同样带 kind\", () => {\n    const repo = gitRepo(\"repo-eng-kind\")\n    registerSession(repo, \"ses_e\", null, \"build\")\n    expect(readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_e\"].kind).toBe(\"engineering\")\n  })\n\n  test(\"重复登记保留 registered_at，只更新 last_used_at / front_session_id\", () => {\n    const repo = gitRepo(\"repo-reattach\")\n    registerSession(repo, \"ses_r\", null, \"build\")\n    const first = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    registerSession(repo, \"ses_r\", \"ses_other\", \"build\")\n    const second = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    expect(second.registered_at).toBe(first.registered_at)\n    expect(second.front_session_id).toBe(\"ses_other\")\n  })\n})\n",
-      "replace": "describe(\"登记：重复登记保留 registered_at\", () => {\n  test(\"重复登记保留 registered_at，只更新 last_used_at / front_session_id\", () => {\n    const repo = gitRepo(\"repo-reattach\")\n    registerSession(repo, \"ses_r\", null, \"build\")\n    const first = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    registerSession(repo, \"ses_r\", \"ses_other\", \"build\")\n    const second = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    expect(second.registered_at).toBe(first.registered_at)\n    expect(second.front_session_id).toBe(\"ses_other\")\n  })\n})"
+      "replace": "describe(\"登记：pair 持久化 + 重复登记保留 registered_at\", () => {\n  test(\"engineering 登记的 pair 条目带 kind\", () => {\n    const repo = gitRepo(\"repo-eng-kind\")\n    registerSession(repo, \"ses_e\", null, \"build\")\n    expect(readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_e\"].kind).toBe(\"engineering\")\n  })\n\n  test(\"重复登记保留 registered_at，只更新 last_used_at / front_session_id\", () => {\n    const repo = gitRepo(\"repo-reattach\")\n    registerSession(repo, \"ses_r\", null, \"build\")\n    const first = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    registerSession(repo, \"ses_r\", \"ses_other\", \"build\")\n    const second = readJson(path.join(repo, \".rddf/state/pair.json\")).pairs[\"ses_r\"]\n    expect(second.registered_at).toBe(first.registered_at)\n    expect(second.front_session_id).toBe(\"ses_other\")\n  })\n})"
     },
     {
       "path": "tests/delegate-core.test.ts",
@@ -393,22 +378,7 @@
     {
       "path": "lib/delegate-core.ts",
       "find": "            agent: effectiveAgent,\n            kind,\n            resumed: Boolean(brief.resume_session),\n            resumed_by_other_front: resumedByOtherFront,\n            outcome,\n            new_activity: newActivity,\n            host_outcome: hostOutcome,\n            blocked_reason,\n            blocked_action,\n            blocked_all,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            scope_check: vcs ? \"ok\" : \"unavailable\",\n            last_assistant_text: assistantText,\n            // 交付面证据（静默失败）：no_work_evidence=true 时 outcome 仍可能是 succeeded，\n            // 调用方**不得**把它转述成\"已完成\"。\n            tool_calls: delivery.tool_calls,\n            write_tool_calls: delivery.write_tool_calls,\n            artifacts: delivery.artifacts,\n            final_is_role_opening: delivery.final_is_role_opening,\n            model_switched: delivery.model_switched,\n            no_work_evidence: noWorkEvidence,\n            still_running: runStillRunning,\n",
-      "replace": "            agent: effectiveAgent,\n            resumed: Boolean(brief.resume_session),\n            resumed_by_other_front: resumedByOtherFront,\n            outcome,\n            new_activity: newActivity,\n            blocked_reason,\n            blocked_action,\n            blocked_all,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            scope_check: vcs ? \"ok\" : \"unavailable\",\n            last_assistant_text: assistantText,\n            still_running: waitTimedOut || outcome == null,\n"
-    },
-    {
-      "path": "lib/delegate-core.ts",
-      "find": "          const ledgerBase = {\n            recorded_at: new Date().toISOString(),\n            kind,\n            front_session_id: frontSessionID ?? null,",
-      "replace": "          const ledgerBase = {\n            recorded_at: new Date().toISOString(),\n            front_session_id: frontSessionID ?? null,"
-    },
-    {
-      "path": "tests/delegate-core.test.ts",
-      "find": "    registerSession(\n      repo,\n      \"ses_a\",\n      \"ses_front\",\n      \"build\",\n      \"engineering\",\n      undefined,\n      { role_class: \"architect\" },\n      undefined,\n      { work_root: repo, state: \"active\" },\n    )",
-      "replace": "    registerSession(\n      repo,\n      \"ses_a\",\n      \"ses_front\",\n      \"build\",\n      undefined,\n      { role_class: \"architect\" },\n      undefined,\n      { work_root: repo, state: \"active\" },\n    )"
-    },
-    {
-      "path": "tests/delegate-core.test.ts",
-      "find": "    registerSession(repo, \"ses_b\", \"ses_front\", \"build\", \"engineering\")",
-      "replace": "    registerSession(repo, \"ses_b\", \"ses_front\", \"build\")"
+      "replace": "            agent: effectiveAgent,\n            kind,\n            resumed: Boolean(brief.resume_session),\n            resumed_by_other_front: resumedByOtherFront,\n            outcome,\n            new_activity: newActivity,\n            blocked_reason,\n            blocked_action,\n            blocked_all,\n            out_of_scope_files: outOfScope,\n            changed_files: changed,\n            scope_check: vcs ? \"ok\" : \"unavailable\",\n            last_assistant_text: assistantText,\n            still_running: waitTimedOut || outcome == null,\n"
     },
     {
       "path": "tests/delegate-core.test.ts",
@@ -416,29 +386,14 @@
       "replace": "    const missing = \"blocked_reason\""
     },
     {
-      "path": "tests/delegate-tool.test.ts",
-      "find": "    expect(rows[0].kind).toBe(\"engineering\")\n",
-      "replace": ""
-    },
-    {
       "path": "tests/delegate-async.test.ts",
       "find": "  test(\"plan 派发知识后端（只读）不带 plan_ref ⇒ 成功（D2 只约束可写实施）\", async () => {\n    const dir = repo(\"plan-knowledge\")\n    const { ctx, sessions } = createFakeCtx()\n    registerCaller(sessions, \"ses_plan_test\", \"plan\", dir)\n    const r = await run(\n      dispatchToolDefinition(ctx),\n      { ...baseInput(dir), agent: \"oracle\", scope: [] },\n      \"ses_plan_test\",\n    )\n    expect(r.session_id).toBeTruthy()\n  })\n\n",
       "replace": ""
     },
     {
-      "path": "tests/delegate-async.test.ts",
-      "find": "    // 写者纪律：`registerSession` 的整条重建**不得**丢掉它\n    registerSession(dir, a.session_id, \"ses_front_test\", \"build\", \"engineering\", undefined, {",
-      "replace": "    // 写者纪律：`registerSession` 的整条重建**不得**丢掉它\n    registerSession(dir, a.session_id, \"ses_front_test\", \"build\", undefined, {"
-    },
-    {
-      "path": "tests/delegate-async.test.ts",
-      "find": "    // 模拟同步 delegate 的登记写（整条重建字段集，但保留 claim_gen）\n    registerSession(dir, a.session_id, \"ses_front_test\", \"build\", \"engineering\", undefined, {",
-      "replace": "    // 模拟同步 delegate 的登记写（整条重建字段集，但保留 claim_gen）\n    registerSession(dir, a.session_id, \"ses_front_test\", \"build\", undefined, {"
-    },
-    {
-      "path": "lib/delegate-core.ts",
-      "find": "          registerSession(\n            stateRoot,\n            sessionID,\n            frontSessionID,\n            effectiveAgent,\n            kind,\n            undefined,\n            {",
-      "replace": "          registerSession(\n            stateRoot,\n            sessionID,\n            frontSessionID,\n            effectiveAgent,\n            undefined,\n            {"
+      "path": "tests/delegate-tool.test.ts",
+      "find": "  test(\"resume 时显式 agent 与登记 agent 不一致 → 拒\", async () => {\n    const project = fixtureProject()\n    const { ctx } = createFakeCtx()\n    const first = await runDelegate(ctx, { ...BASE, project_dir: project, agent: \"build\" })\n    await expect(\n      runDelegate(ctx, {\n        ...BASE,\n        project_dir: project,\n        agent: \"explore\",\n        scope: [],\n        resume_session: first.session_id,\n      }),\n    ).rejects.toThrow(/不匹配/)\n  })\n",
+      "replace": ""
     }
   ],
   "drill_env": {
