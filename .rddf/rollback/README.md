@@ -116,6 +116,8 @@ bun scripts/rollback-registry.ts --json     # 机读
 | `plan-delegate.json` | plan 侧工程派发（`ADR-plan-delegate-engineering-session`）—— **能力面**退役 | delete 0 + edits 48 | `1024 pass / 0 fail`（隔离副本） |
 | `model-fallback.json` | 模型降级链插件（**无 ADR** ⇒ 决策真源 = 验收报告） | delete 5 + edits 14 | `998 pass / 0 fail`（隔离副本，零悬空引用） |
 | `delegate-slot-kernel.json` | **G1 组清单**（delegate 槽位 / 停机 / 归属 / 取消释放内核链 ⇒ 4 机制同批退役） | delete 5 + edits 35 + retire 4 | 见清单的 `last_drill` |
+| `delegate-knowledge-delivery.json` | **G2 组清单**（知识后端 `kind` + 交付证据 ⇒ 2 机制同批退役） | delete 2 + edits 75 + retire 2 | 见清单的 `last_drill` |
+| `role-class-write-set.json` | **G3 组清单**（`role_class` 选类能力 + verifier 写集 ⇒ 2 机制同批退役；**退役能力、保留字段**） | delete 2 + edits 104 + retire 2 | 见清单的 `last_drill` |
 | `rollback-manifest-enforcement.json` | **L2 强制化机制自身**（退役 = 撤守卫 + 删 registry + 删本清单） | delete 9 + edits 3 | 见清单的 `last_drill` |
 
 > **清单清单以 `registry.json` 为准**（L2 强制化）：本表只是**人读摘要**，改清单/改机制都先改 registry。
