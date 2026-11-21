@@ -664,8 +664,8 @@
     ]
   },
   "last_drill": {
-    "sha": "8d7916f00af547c000318577092d4a23f51da927",
-    "at": "2026-11-21",
+    "sha": "8447cdacd946cad9b5206d80cf1272ebdd2db08e",
+    "at": "2026-11-22",
     "result": "pass",
     "content_hash": "bbad63116bf532c9e2720dde5ed8b5ee3b56a8c677f75312e26e8d1bde75eb0f"
   }
