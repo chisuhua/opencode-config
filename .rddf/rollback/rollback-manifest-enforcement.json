@@ -23,7 +23,7 @@
     },
     {
       "path": ".rddf/rollback/README.md",
-      "find": "| `rollback-manifest-enforcement.json` | **L2 强制化机制自身**（退役 = 撤守卫 + 删 registry + 删本清单） | delete 9 + edits 3 | 见清单的 `last_drill` |\n\n> **清单清单以 `registry.json` 为准**（L2 强制化）：本表只是**人读摘要**，改清单/改机制都先改 registry。\n",
+      "find": "| `rollback-manifest-enforcement.json` | **L2 强制化机制自身**（退役 = 撤守卫 + 删 registry + 删本清单） | delete 5 + edits 3 | 见清单的 `last_drill` |\n\n> **清单清单以 `registry.json` 为准**（L2 强制化）：本表只是**人读摘要**，改清单/改机制都先改 registry。\n",
       "replace": "> **L2 强制化机制已退役**（守卫、`registry.json` 与本机制自己的清单均已撤）⇒ 既有清单仍在 ⇒ **回滚可达性能力本身不受影响**（L1 的 drill 与漂移守卫独立于 registry）；⚠ 「新增机制必须表态」的承诺随之消失 —— 这是退役本机制的**语义后果**，如实登记。\n"
     }
   ],
@@ -43,11 +43,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "cd828bc2d4b0c341d17e14fe8bc3ea633355a857",
-    "at": "2026-11-21",
-    "result": "pass",
-    "content_hash": "9e8f68f164e0ffd8c073f8727db3cf78330d216f1b2f4eecfe98035dda637f00"
   }
 }
