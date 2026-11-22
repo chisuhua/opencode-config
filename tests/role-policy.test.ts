@@ -339,6 +339,54 @@ describe("路径归一：相对 / ../ / symlink ⇒ 同一结论", () => {
   })
 })
 
+describe("治理面判定：符号链接 + 配置变体（architect 必须能改自己的配置）", () => {
+  test("配置链接 → 变体文件：architect 放行，且 absPath 归一为真实目标", () => {
+    const fx = makeFixture()
+    const variant = path.join(fx.gov, "opencode.jsonc.opencode-go")
+    writeFileSync(variant, "{}\n")
+    const link = path.join(fx.gov, "opencode.jsonc")
+    symlinkSync(variant, link)
+    try {
+      const r = check(fx, "architect", link)
+      expect(r.allowed).toBe(true)
+      // 写盘目标是链接的真实目标（链接本身不会被写坏）
+      expect(r.absPath).toBe(variant)
+    } finally {
+      rmSync(link, { force: true })
+    }
+  })
+
+  test("直接编辑配置变体文件 ⇒ 同样按治理面判定（architect 放行 / planner 被拒）", () => {
+    const fx = makeFixture()
+    const variant = path.join(fx.gov, "opencode.jsonc.minimax")
+    writeFileSync(variant, "{}\n")
+    expect(check(fx, "architect", variant).allowed).toBe(true)
+    const denied = check(fx, "planner", variant)
+    expect(denied.allowed).toBe(false)
+    expect(denied.message).toContain("治理面")
+    expect(denied.message).toContain("architect")
+  })
+
+  test("治理名链接 → **仓库外**目标：invoked 支不可省（只留 glob ⇒ 会落「仓库外不限制」而 fail-open）", () => {
+    const fx = makeFixture()
+    // 目标既不在仓库内、也不在治理根内 ⇒ 只有「调用路径」这一支能判出它是治理面
+    const outside = path.join(fx.root, "effective-config.jsonc")
+    writeFileSync(outside, "{}\n")
+    const link = path.join(fx.gov, "opencode.jsonc")
+    symlinkSync(outside, link)
+    try {
+      const r = check(fx, "planner", link)
+      expect(r.allowed).toBe(false)
+      expect(r.message).toContain("治理面")
+      expect(r.message).toContain("opencode.jsonc") // 报**调用者写下的名字**
+      // 成对：architect（governance=true）经同一链接放行（写盘落到真实目标）
+      expect(check(fx, "architect", link).allowed).toBe(true)
+    } finally {
+      rmSync(link, { force: true })
+    }
+  })
+})
+
 describe("arch_paths 三态（§架构文档范围）", () => {
   test("① 配置存在且命中 ⇒ 用配置（docs/adr）", () => {
     const fx = makeFixture()

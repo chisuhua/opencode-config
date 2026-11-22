@@ -31,6 +31,11 @@ export const GOVERNANCE_PATHS = [
   "AGENTS.md",
   "opencode.json",
   "opencode.jsonc",
+  // 配置**变体**文件同样是治理面：本仓用 `opencode.jsonc -> opencode.jsonc.<变体>` 的链接切换配置，
+  // 而 `normalizeTarget()` 会把目标 realpath 归一 ⇒ 变体名若不入表，链接路径就会落出治理面
+  // （实测：architect 改不了自己的配置，builder 的 `**` 反而能改 ⇒ 归属反转）。
+  "opencode.json.*",
+  "opencode.jsonc.*",
   "docs/MULTI-AGENT-DESIGN.md",
   "docs/CHANGELOG.md",
   "docs/SUBAGENT-ORCHESTRATION.md",
@@ -236,6 +241,14 @@ export function decideWrite(input: WriteCheckInput): WriteCheckResult {
   const inRepo = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel)
   const govRel = path.relative(govRoot, abs)
   const inGov = govRel !== "" && !govRel.startsWith("..") && !path.isAbsolute(govRel)
+  // ⚠ 治理面判定还要看**未解析符号链接**的调用路径：本仓配置用链接切变体
+  //   （`opencode.jsonc -> opencode.jsonc.<变体>`），realpath 归一后不再命中表里的字面名
+  //   ⇒ 治理面归属 architect 被静默反转（实测：architect 改不了自己的配置）。
+  //   双命中（调用路径 ∪ realpath 任一命中即算治理面）同时挡住反向绕过：
+  //   非治理面的链接指向治理文件时，realpath 这一支仍然命中 ⇒ 仍需 governance 权利。
+  const invokedAbs = path.resolve(input.cwd, input.filePath)
+  const govRelInvoked = path.relative(govRoot, invokedAbs)
+  const inGovInvoked = govRelInvoked !== "" && !govRelInvoked.startsWith("..") && !path.isAbsolute(govRelInvoked)
   const archPaths = input.archPaths ?? resolveArchPaths(input.repoRoot)
 
   const display = inRepo ? rel : abs
@@ -250,8 +263,12 @@ export function decideWrite(input: WriteCheckInput): WriteCheckResult {
   if (policy.denyAll) return deny(policy.why)
 
   // ② 治理面（表内路径）：产出归属 architect
-  if (inGov && matchesAny(govRel, GOVERNANCE_PATHS)) {
-    return policy.governance ? ok() : deny(`治理面（${govRel}）的产出归属 architect`)
+  const govHitInvoked = inGovInvoked && matchesAny(govRelInvoked, GOVERNANCE_PATHS)
+  const govHitReal = inGov && matchesAny(govRel, GOVERNANCE_PATHS)
+  if (govHitInvoked || govHitReal) {
+    // 拒绝时报告**调用者写下的名字**（他实际想改的那个），链接场景下更有诊断价值
+    const hitRel = govHitInvoked ? govRelInvoked : govRel
+    return policy.governance ? ok() : deny(`治理面（${hitRel}）的产出归属 architect`)
   }
 
   // ③ 仓库内
