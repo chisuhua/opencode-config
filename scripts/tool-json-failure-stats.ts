@@ -14,6 +14,13 @@
  *   bun scripts/tool-json-failure-stats.ts --since 2026-11-19
  *   bun scripts/tool-json-failure-stats.ts --json
  *   bun scripts/tool-json-failure-stats.ts --db /path/to/opencode.db
+ *   bun scripts/tool-json-failure-stats.ts --model minimax-cn-openai/MiniMax-M3.1-Flash
+ *   bun scripts/tool-json-failure-stats.ts --agent build
+ *   bun scripts/tool-json-failure-stats.ts --judge --model <providerID/modelID> [--agent build] --days 5
+ *
+ * `--judge`：按 A/B 判据（`docs/CHANGELOG.md` v2.60 / `.rddf/reviews/build-model-route-switch-ab.md` §2）
+ * 逐项 PASS/FAIL，**exit 0 = 通过**、**exit 1 = 未达判据**（参数/环境错误仍为 2）。判据只对该
+ * `--model` 桶（可再按 `--agent` 收窄）计算 —— 别的 provider 的失败不得计入 A/B。
  *
  * 指标：
  *   calls       工具调用总数（assistant 消息里的 tool part）
@@ -77,6 +84,14 @@ const byModel = new Map<string, Bucket>()
 const byAgent = new Map<string, Bucket>()
 const failures: Array<{ at: string; model: string; tool: string; error: string; len: number }> = []
 
+// 范围收窄（`--judge` 必须给 `--model`：判据只对单一路径的桶成立）
+const modelFilter = flag("model")
+const agentFilter = flag("agent")
+if (has("judge") && !modelFilter) {
+  console.error("tool-json-failure-stats: --judge 需要 --model <providerID/modelID>（按单一路径的桶判定）")
+  process.exit(2)
+}
+
 const db = new Database(dbPath, { readonly: true })
 let rows: Array<{ time_created: number; data: string }>
 try {
@@ -97,6 +112,8 @@ for (const row of rows) {
   }
   const model = msg?.model ? `${msg.model.providerID}/${msg.model.id}` : "(unknown)"
   const agent = String(msg?.agent ?? "(unknown)")
+  if (modelFilter !== undefined && model !== modelFilter) continue
+  if (agentFilter !== undefined && agent !== agentFilter) continue
   for (const part of msg?.content ?? []) {
     if (part?.type !== "tool") continue
     const day = localDay(row.time_created)
@@ -140,7 +157,90 @@ for (const b of byDay.values()) {
 }
 const rate = (b: Bucket): string => (b.calls === 0 ? "-" : `${((b.json / b.calls) * 100).toFixed(2)}%`)
 
-if (has("json")) {
+/**
+ * `--judge` 的判据（`.rddf/reviews/build-model-route-switch-ab.md` §2）：
+ *   C1 活跃日（calls ≥ 500）≥ 3 天    —— 防「单日凑量」；
+ *   C2 单日熔断：任一日（calls ≥ 500）失败率 > 0.5% ⇒ FAIL；
+ *   C3 窗口总量 ≥ 5,000 calls 且总率 < 0.2%（基线 1.07% 的 1/5）；
+ *   C4 0 失败且 n ≥ 5,000 ⇒ **提前通过**（rule-of-three 95% 上界 3/n ≈ 0.06%）。
+ * 结论 = C4 ∨ (C1 ∧ C2 ∧ C3)。C4 的 n 门槛取 5,000：判据原文把「0 失败」与
+ * 「n≈5,000 时上界 0.06%」绑在一起，低样本的 0 失败不构成通过证据。
+ */
+const judged = has("judge")
+let verdictPass = false
+if (judged) {
+  const minActiveDays = 3
+  const dailyCallFloor = 500
+  const dailyRateCeil = 0.005
+  const totalCallFloor = 5_000
+  const totalRateCeil = 0.002
+
+  const dayRows = [...byDay].sort(([a], [b]) => a.localeCompare(b))
+  const activeDays = dayRows.filter(([, b]) => b.calls >= dailyCallFloor)
+  const breaches = dayRows.filter(([, b]) => b.calls >= dailyCallFloor && b.json / b.calls > dailyRateCeil)
+  const totalRate = total.calls === 0 ? 0 : total.json / total.calls
+  const early = total.json === 0 && total.calls >= totalCallFloor
+
+  const criteria = [
+    {
+      id: "C1",
+      ok: activeDays.length >= minActiveDays,
+      detail: `活跃日（calls ≥ ${dailyCallFloor}）${activeDays.length} 天，需 ≥ ${minActiveDays}（${activeDays.map(([d, b]) => `${d}=${b.calls}`).join(" ") || "无"}）`,
+    },
+    {
+      id: "C2",
+      ok: breaches.length === 0,
+      detail:
+        breaches.length === 0
+          ? `无单日 > ${(dailyRateCeil * 100).toFixed(1)}%（检查了 ${activeDays.length} 个活跃日）`
+          : `单日熔断：${breaches.map(([d, b]) => `${d}=${rate(b)}(${b.json}/${b.calls})`).join(" ")}`,
+    },
+    {
+      id: "C3",
+      ok: total.calls >= totalCallFloor && totalRate < totalRateCeil,
+      detail: `总量 ${total.calls} calls（需 ≥ ${totalCallFloor}）/ 总率 ${total.calls === 0 ? "-" : (totalRate * 100).toFixed(2) + "%"}（需 < ${(totalRateCeil * 100).toFixed(1)}%）`,
+    },
+    {
+      id: "C4",
+      ok: early,
+      detail: early
+        ? `0 失败且 n=${total.calls}（rule-of-three 95% 上界 ${((300 / total.calls) || 0).toFixed(2)}%）`
+        : `0 失败提前通过需 n ≥ ${totalCallFloor}（当前 n=${total.calls}，input-json=${total.json}）`,
+    },
+  ]
+  const c = (id: string) => criteria.find((x) => x.id === id)!
+  verdictPass = c("C4").ok || (c("C1").ok && c("C2").ok && c("C3").ok)
+
+  if (has("json")) {
+    console.log(
+      JSON.stringify(
+        {
+          db: dbPath,
+          window: windowLabel,
+          model: modelFilter,
+          agent: agentFilter ?? null,
+          total,
+          rate: total.calls === 0 ? null : totalRate,
+          byDay: Object.fromEntries(dayRows),
+          criteria,
+          verdict: verdictPass ? "pass" : "fail",
+          early: early,
+        },
+        null,
+        2,
+      ),
+    )
+  } else {
+    console.log(`判定范围: ${modelFilter}${agentFilter ? ` / agent=${agentFilter}` : ""}`)
+    console.log(`窗口: ${windowLabel}`)
+    console.log(`样本: ${total.calls} calls / input-json ${total.json} / incomplete ${total.incomplete}\n`)
+    for (const x of criteria) console.log(`[${x.ok ? "PASS" : "FAIL"}] ${x.id} ${x.detail}`)
+    console.log(`\n结论: ${verdictPass ? "PASS" : "FAIL"}${c("C4").ok ? "（C4 提前通过）" : ""}`)
+  }
+  process.exitCode = verdictPass ? 0 : 1
+}
+
+if (!judged && has("json")) {
   console.log(
     JSON.stringify(
       {
@@ -157,7 +257,7 @@ if (has("json")) {
       2,
     ),
   )
-} else {
+} else if (!judged) {
   console.log(`库: ${dbPath}`)
   console.log(`窗口: ${windowLabel}\n`)
   const head = ["日期", "calls", "input-json", "rate", "incomplete"]

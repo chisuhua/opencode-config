@@ -50,6 +50,8 @@
 4. **0 失败即提前通过**（n≈5,000 时 rule-of-three 95% 上界 ≈0.06%）。
 窗口建议 5 天（build 约 6,400 calls/日）。
 
+**判定实现口径**（`--judge`，见 §7）：判据只对 `--model` 指定的桶（可再 `--agent` 收窄）计算 —— 同一模型下别的 agent、别的 provider 的失败不计入 A/B。C4 的「0 失败提前通过」要求 **n ≥ 5,000**（判据把「0 失败」与「n≈5,000 时上界 0.06%」绑在一起）；低样本的 0 失败不判通过。
+
 ## 3. 历史阻塞：provider 额度耗尽（2026-11-22 撤回的直接原因，11-23 已解除）
 
 | 证据 | 内容 |
@@ -88,7 +90,7 @@
 1. `prompts/build.md` 治理面表的 `opencode.json(c)` 行扩写为变体 glob —— **gate ⊃ 文档表**（实现认 `opencode.json.*`/`opencode.jsonc.*`，表只写字面名）。
 2. `docs/adr/ADR-role-aware-permissions.md:46` + `lib/role-policy.ts` docstring：把「写集判定以**归一绝对路径**为根」口径同步为「治理面检测 = 调用路径 ∪ realpath；写集判定仍按 realpath」。
 3. **`lib/**` 归属裁定**：architect 维护不了自己的治理面表（表在 `lib/role-policy.ts`，`lib/**` 不在 architect 写集）——本次反转的次生根因。
-4. （可选）`scripts/tool-json-failure-stats.ts` 加 `--judge`（子判据逐项 PASS/FAIL + exit 1），**需 builder 写（含测试）**。
+4. ✅（已完成，builder 2026-11-23）`scripts/tool-json-failure-stats.ts` 加 `--judge`（子判据逐项 PASS/FAIL + exit 1）—— 见 §7 与 `docs/CHANGELOG.md` v2.61。
 5. （可选）写门治理面留痕（role-gate 目前只有 throw，无 ledger 行）。
 6. （独立）给 MiniMax 报 `tool.input-json` 截断 issue（265 条失败样本 + 时间分布 11-19 起突增 + 两条原始事件 2026-11-20 16:13 / 2026-11-21 09:59）。
 7. **「热加载 vs 必须重启」口径统一**：`docs/MULTI-AGENT-DESIGN.md:1009`（§5.4 生效时机）与 `docs/model-fallback-usage.md`（「改完必须重启」）写的是「插件在 server 启动时加载」的旧事实；2026-11-22 实测：改 `lib/role-lease.ts` 后下一次工具调用即生效、服务进程已运行 2.2 天未重启（`heartbeat_at` 两次写之间前移 16.8s），配置由 `ConfigWatch` 热加载。根因待查（插件加载时机变了，还是从未需要重启）⇒ 统一后再回改两处；本次只在两处加「与实测不符」的 ⚠ 注记（改 §5.4 正文会连带再断一次回滚清单 edit #5 的锚点与 drill 证据链）。
@@ -113,3 +115,18 @@
 | NIT2 | 我给出的 intent 里「`config-guards.test.ts` 守卫要求文档模型表与配置一致」归因不实（真实闸门是 `tests/rollback-manifests.test.ts:65` 的 find 唯一性） | 记录更正：锚点同步确实有闸门兜着 ✓；MAD / SUBAGENT-ORCHESTRATION 的模型表同步**无**守卫，靠 MAD 的同步义务 —— 写入本记录，避免后人信任不存在的闸门 |
 
 **未采纳的验证建议**：critic 建议「若动 §5.4 正文须同批再同步 edit #5 锚点」—— 本次未动正文（见 SF1 取舍），故不适用。
+
+### 7.1 判据机械化（`--judge`，登记项 §6.4 已完成）
+
+`scripts/tool-json-failure-stats.ts` 新增 `--judge`：把 §2 的四条判据做成逐项 PASS/FAIL，窗口结束时一条命令判决，避免手工比对在「活跃日怎么算 / 熔断与总量谁优先」上出错。
+
+| 项 | 内容 |
+|---|---|
+| 用法 | `bun scripts/tool-json-failure-stats.ts --judge --model minimax-cn-openai/MiniMax-M3.1-Flash --agent build --days 5` |
+| 退出码 | `0` 通过 / `1` 未达判据 / `2` 参数或环境错误（缺 `--model` 即 2） |
+| 判据 | C1 活跃日（calls ≥500）≥3；C2 单日熔断 >0.5%（只查 calls ≥500 的日子）；C3 总量 ≥5,000 且总率 <0.2%；C4 0 失败且 n ≥5,000 ⇒ 提前通过（上界 3/n） |
+| 结论 | `C4 ∨ (C1 ∧ C2 ∧ C3)` |
+| 收窄 | `--model` **必填**、`--agent` 可选 —— 别的 provider / 同模型别的 agent 的失败不计入 |
+| 证据 | 真实库试跑（今天 4 calls）：C1/C3/C4 FAIL、C2 空洞 PASS ⇒ exit 1；缺 `--model` ⇒ exit 2 |
+| 测试 | `tests/tool-json-failure-stats.test.ts` +7 例（PASS / C4 早通过 / C2 压过总率 / 只判 model 桶 / agent 收窄 / 低样本 0 失败 / 缺 model） |
+| 口径解释 | C4 要求 n ≥5,000：判据原文把「0 失败」与「n≈5,000 时上界 0.06%」绑定；低样本 0 失败不构成通过证据 |
