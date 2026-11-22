@@ -12,7 +12,7 @@
 | 关联 change | **已实施 + 已验收 + 已归档**（2026-11-19）：`openspec/changes/archive/2026-11-19-role-aware-permissions/`（**已立项 2026-11-17**；与身份 ADR 同一 change 同批落地；验收 = `.rddf/reviews/role-aware-permissions-verify.md` 第 2 轮终 **24/24 PASS**） |
 | AC 映射 | 本文 **V1–V14 ↔ AC11–AC24**（change 的验收标准表） |
 | 审稿报告 | `.rddf/reviews/role-aware-permissions-consultation.md`（oracle **2 轮** + critic **1 轮**；逐条闭合见 §8.3/§8.4） |
-| 修订 | **2026-11-17（签批后）**：D6 陈旧根口径 → 两文件均恒 `stateRoot`；D5「五项」→**六项**（含顺序修正）与 V13 同步；风险表「五项」→六项；D5⑥ 改为「租约仍剩 `role-switch.sh` + 派发临界区」。**事实性修正，不改决策** |；**2026-11-18**：`:43` 的执行点由「权限层 ask」改为「工具层验证门」（`docs/adr/ADR-commit-verification-gate.md`）
+| 修订 | **2026-11-17（签批后）**：D6 陈旧根口径 → 两文件均恒 `stateRoot`；D5「五项」→**六项**（含顺序修正）与 V13 同步；风险表「五项」→六项；D5⑥ 改为「租约仍剩 `role-switch.sh` + 派发临界区」。**事实性修正，不改决策** |；**2026-11-18**：`:43` 的执行点由「权限层 ask」改为「工具层验证门」（`docs/adr/ADR-commit-verification-gate.md`）；**2026-11-22**：D6「判活与接管」补三条事实性说明（全部执行点无宿主探针 ⇒ 以 TTL 为唯一判据；探针不可用时「探活失败」= TTL 判死；被接管旧持有者的恢复路径）+ `RDDF_ROLE_LEASE_TTL` 单位（毫秒）。**事实性补充，不改决策**（触发：写路径判活缺陷修复的审稿 finding；详见 `.rddf/reviews/role-aware-permissions-lease-liveness-revision.md`） |
 
 ## 背景与问题
 
@@ -105,11 +105,14 @@
 
 **判活与接管**
 
-- **判活优先用宿主 session 活性**（与后端同源：`slotOccupants` / 会话上下文探针）；`heartbeat_at` TTL（默认 30 min，`RDDF_ROLE_LEASE_TTL` 可覆盖）**只作兜底**。
+- **判活优先用宿主 session 活性**（与后端同源：`slotOccupants` / 会话上下文探针）；`heartbeat_at` TTL（默认 30 min，`RDDF_ROLE_LEASE_TTL` 可覆盖；**单位 = 毫秒**）**只作兜底**。
+  ⚠ **2026-11-22 事实性补充**：**所有执行点**（①派发临界区 / ②`role-switch.sh` / ③每次写类工具调用）当前**都没有可用的宿主探针** —— 生产侧无任何调用点传 `hostProbe`（`ctx.session.get` 对已死会话仍返回记录 ⇒ 探针恒真 ⇒ 接回去等于恢复「死会话的租约永久挡住写类工具」这一故障）⇒ **全部以 TTL 为唯一判据**；探针可用性验证通过后再恢复「探活优先」。
 - **接管前必须先做一次宿主探活**；探活失败才允许接管。
+  ⚠ **2026-11-22 事实性补充**：探针不可用时，「探活失败」= **TTL 兜底判死**（`heartbeat_at` 超期）⇒ 允许接管（实现：`lib/role-lease.ts::checkLeaseForWrite`）。
 - 接管 = **直接接管 + 显式告警 + `ledger.jsonl` 留痕**（用户裁决）；⚠ **必须有围栏**：`claim_gen` 单调递增，
 **旧 `claim_gen` 的持有者此后任何租约相关写一律拒绝**，且**写类工具调用也校验 `claim_gen`**（见 D2）——
 两者合起来才使「接管不制造双写」成立；**只有租约层围栏是不够的**（旧持有者仍能写工作树）。
+  ⚠ **2026-11-22 事实性补充**：被接管的旧持有者**在写路径上失写**（围栏先于判活）⇒ 恢复路径 = 现持有者释放或其 TTL 到期后经 `scripts/role-switch.sh` 重占，或由用户执行 `scripts/role-switch.sh --reset-claims`；该路径已写进拒绝消息。
 
 **执行点（三处，缺一就有漏；租约检查与既有槽位检查**同一临界区**）**
 
