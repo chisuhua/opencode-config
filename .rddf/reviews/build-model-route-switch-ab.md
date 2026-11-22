@@ -3,14 +3,14 @@
 > **范围**：① 修治理面门控缺口（`opencode.jsonc` 是符号链接 ⇒ architect 改不了自己的配置）；② 设计并尝试落地 MiniMax **anthropic 兼容路由 → OpenAI 兼容路由** 的 A/B（用于降 `tool.input-json` 失败率）。
 > **角色**：builder（① 实现，`d70a811`）｜architect（② 治理面变更 + 本记录）｜**审稿**：oracle ×2（均声明 `审查域: 治理面`）+ critic ×1（build+arch）
 > **日期**：2026-11-22
-> **结论**：① **已合入**；② **已撤回**（触发条件不满足：provider 额度耗尽，pre-flight 无法执行）⇒ 恢复额度后按 §5 的清单重跑。
+> **结论**：① **已合入**；② **已落地**（2026-11-23 额度恢复 → pre-flight 200 → 配置生效），进入 5 天观测窗口（判据见 §2、见 §7）。
 
 ## 0. 结论
 
 | 项 | 结果 |
 |---|---|
 | ① 治理面门控缺口 | ✅ 修复并合入（`d70a811`）；oracle **PASS-WITH-NOTES**（要求补钉桩用例，已补）→ critic **APPROVE**（无 BLOCKER，1 SHOULD_FIX=文档口径滞后 → 登记 §6） |
-| ② build 路由 A/B | ⛔ **撤回**：MiniMax 额度于 2026-11-22 13:08:59Z 耗尽（两路由 402/429），pre-flight 与观测都无法执行；工作区改动已 `git checkout` 还原（`plan`/`front`/`minimax-cn` 配置未动过） |
+| ② build 路由 A/B | ✅ **已落地**（2026-11-23）：额度恢复后 pre-flight **200**（`prompt_cache_key` 未致 400、tool 参数完整、`reasoning_content` 436 字符）⇒ 3 处配置生效；5 天观测窗口**进行中**，判据见 §2 |
 | 回滚风险 | 无（未提交任何配置改动；`model-fallback` 已把 build 切到 `commandcode/deepseek/deepseek-v4.1-flash`） |
 
 ## 1. 缺陷①：治理面判定被符号链接绕过（归属反转）
@@ -50,7 +50,7 @@
 4. **0 失败即提前通过**（n≈5,000 时 rule-of-three 95% 上界 ≈0.06%）。
 窗口建议 5 天（build 约 6,400 calls/日）。
 
-## 3. 阻塞：provider 额度耗尽（撤回的直接原因）
+## 3. 历史阻塞：provider 额度耗尽（2026-11-22 撤回的直接原因，11-23 已解除）
 
 | 证据 | 内容 |
 |---|---|
@@ -76,12 +76,12 @@
 | oracle② | 窗口期**不要**加 `tool.input-json` 自动重试（会遮断 DB 指标，污染 A/B） | ✅ 遵守 |
 | oracle② | 确认 dual-hit 对本变更无副作用且是前置依赖 | ✅ |
 
-## 5. 额度恢复后的执行清单（未执行）
+## 5. 执行清单（2026-11-23 已执行前 2 步）
 
-1. **pre-flight**（opencode 形态，必含 `prompt_cache_key`、`stream_options.include_usage`、`tools`、`temperature:0.1`）⇒ 期望 200 + `delta.reasoning_content` 非空 + tool 参数完整 + `usage.prompt_tokens_details.cached_tokens` 存在；若 400/2013 ⇒ 给新 provider 加 `"compatibility": {"supportsPromptCacheKey": false}` 后重测。
-2. 应用配置（3 处）→ 跑 0.5–1h 真实 build 会话 → `bun scripts/tool-json-failure-stats.ts --days 1` 应出现 `minimax-cn-openai/...` 分桶且 `input-json`=0、无新错误类型。
-3. 抽查一条 assistant 消息确认 reasoning part 入库。
-4. 按 §2 判据观测 5 天（或 0 失败提前通过）→ 保留或还原 3 处（配置 `ConfigWatch` 热加载，无需重启）。
+1. ✅ **pre-flight**（opencode 形态，含 `prompt_cache_key`、`stream_options.include_usage`、`tools`、`temperature:0.1`）：HTTP **200**、tool 参数完整、`delta.reasoning_content` 正常返回（436 字符）、`prompt_cache_key` 未触发 400 ⇒ **不需要** `compatibility.supportsPromptCacheKey:false`。
+2. ✅ 应用配置（3 处：`agent.build.model` / 顶层 `model` / 新增 provider `minimax-cn-openai`）—— 随后按第 3、4 步观测。
+3. ⏳ 抽查 assistant 消息确认 reasoning part 入库（随观测窗口一起做）。
+4. ⏳ 按 §2 判据观测 5 天（或 0 失败提前通过）→ 保留或还原 3 处（`ConfigWatch` 热加载，无需重启；口径差异见 §6.7）。
 
 ## 6. 登记给 architect 批处理（本次不做）
 
@@ -91,3 +91,20 @@
 4. （可选）`scripts/tool-json-failure-stats.ts` 加 `--judge`（子判据逐项 PASS/FAIL + exit 1），**需 builder 写（含测试）**。
 5. （可选）写门治理面留痕（role-gate 目前只有 throw，无 ledger 行）。
 6. （独立）给 MiniMax 报 `tool.input-json` 截断 issue（265 条失败样本 + 时间分布 11-19 起突增 + 两条原始事件 2026-11-20 16:13 / 2026-11-21 09:59）。
+7. **「热加载 vs 必须重启」口径统一**：`docs/MULTI-AGENT-DESIGN.md:1009`（§5.4 生效时机）与 `docs/model-fallback-usage.md`（「改完必须重启」）写的是「插件在 server 启动时加载」的旧事实；2026-11-22 实测：改 `lib/role-lease.ts` 后下一次工具调用即生效、服务进程已运行 2.2 天未重启（`heartbeat_at` 两次写之间前移 16.8s），配置由 `ConfigWatch` 热加载。根因待查（插件加载时机变了，还是从未需要重启）⇒ 统一后再回改两处；本次只在两处加「与实测不符」的 ⚠ 注记（改 §5.4 正文会连带再断一次回滚清单 edit #5 的锚点与 drill 证据链）。
+
+## 7. 落地与第二轮审稿（2026-11-23）
+
+**落地证据**：两路由最小请求 200；opencode 形态 pre-flight 200（tool 参数完整 / `reasoning_content` 436 字符 / `prompt_cache_key` 未致 400）；配置 3 处生效（`agent.build.model` 与顶层 `model` = `minimax-cn-openai/MiniMax-M3.1-Flash`，`plan`/`front` 仍 anthropic 线路）。门禁：`bun test tests/` 全绿 + `bash scripts/check-upstream-anchors.sh` 29/29。
+
+**critic②（本轮 patch，`review_profile: arch, build`）**：**APPROVE_WITH_CONDITIONS** / `mergeable: yes` / `scope_exceeded: false`，**无 BLOCKER**。finding 逐条处置：
+
+| # | finding | 处置 |
+|---|---|---|
+| SF1 | §5.4「生效时机」不修的取舍成立，但「登记为后续 finding」在所有落点都不存在（不落账 = 没有） | ✅ 登记 §6.7（本文件）+ CHANGELOG 登记项 ⑦ |
+| SF2 | CHANGELOG v2.60「ConfigWatch 热加载，无需重启」与 §5.4 / usage 手册正面矛盾 —— 本次**新造**了一个矛盾 | ✅ 该子句加限定（「本环境实测」+ 指向登记项 ⑦）；改 §5.4 正文会再断清单锚点，按 SF1 的取舍登记 |
+| SF3 | `docs/model-fallback-usage.md` 当前态示例已变假（链头仍写 `minimax-cn`） | ✅ 已更新示例与链图（含候选 `minimax-cn` 现在会真的出现一次）；该文件在清单里是 `delete`（非 edit）⇒ 不影响锚点 |
+| NIT1 | `MULTI-AGENT-DESIGN.md:948` 历史订正块内「（build 主模型，收益最大）」归因漂移 | 记录不改：历史 blockquote，非当前态；随 §6.7 统一口径时顺手 |
+| NIT2 | 我给出的 intent 里「`config-guards.test.ts` 守卫要求文档模型表与配置一致」归因不实（真实闸门是 `tests/rollback-manifests.test.ts:65` 的 find 唯一性） | 记录更正：锚点同步确实有闸门兜着 ✓；MAD / SUBAGENT-ORCHESTRATION 的模型表同步**无**守卫，靠 MAD 的同步义务 —— 写入本记录，避免后人信任不存在的闸门 |
+
+**未采纳的验证建议**：critic 建议「若动 §5.4 正文须同批再同步 edit #5 锚点」—— 本次未动正文（见 SF1 取舍），故不适用。

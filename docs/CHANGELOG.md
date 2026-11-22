@@ -10,6 +10,17 @@
 
 ---
 
+> **v2.60 build 默认模型切到 MiniMax 的 OpenAI 兼容路由（A/B，2026-11-23 落地）**：
+> **动机**：MiniMax anthropic 兼容路由的流式 tool-call 参数偶发被截断（opencode 报 `tool.input-json`，工具**未执行**、fail-closed 自愈）。实测基线（`scripts/tool-json-failure-stats.ts`，7 天）：`minimax-cn/MiniMax-M3.1-Flash` 24,734 calls / **265** 失败 = **1.07%**；其余三个 provider 共 32,000+ calls / **0**；按 agent 只有 `build` 有量（44,669 calls，`plan` 22 / `front` 10）⇒ **灰度只能切 build**。
+> **改动**：新增 provider `minimax-cn-openai`（`@opencode/ai/providers/openai-compatible` + `https://api.minimaxi.com/v1`），`agent.build.model` 与顶层 `model` 指向它；`plan` / `front` 保持 anthropic 路由；`model-fallback.json` 不动（只在 provider 失败时用到，不污染 A/B）。
+> **延迟一天的原因（如实登记）**：2026-11-22 原计划落地时 pre-flight 撞上 **402/429 额度耗尽**（两路由同错，`model-fallback` 已把 build 切到 `commandcode/deepseek`），按「先验再提交」撤回；2026-11-23 额度恢复后重跑 pre-flight：HTTP **200**（`prompt_cache_key` 未致 400 ⇒ 不需要 `compatibility.supportsPromptCacheKey:false`）、tool 参数完整、`delta.reasoning_content` 正常返回（436 字符）⇒ 才落地。
+> **判据**（5 天窗口、同一脚本；加强自 oracle 建议）：**≥3 个不同自然日**每日 ≥500 calls；**单日熔断**：任一日 >0.5% ⇒ FAIL/延长；总量 ≥5,000 calls 且总率 **<0.2%**（基线 1/5）；**0 失败即提前通过**。保留即归档，否则还原 3 处（**本环境**实测 `ConfigWatch` 热加载即生效、无需重启；这与 §5.4 与 `docs/model-fallback-usage.md` 的「改完必须重启」口径**不一致**，统一见登记项 ⑦）。
+> **同批修复（builder `d70a811`）**：治理面判定改「**调用路径 ∪ realpath**」双命中 —— `opencode.jsonc` 是符号链接（→ `opencode.jsonc.opencode-go`），realpath 归一使目标名不命中表里的字面名 ⇒ **architect 改不了自己的配置、builder 的 `**` 反而能改**（归属反转）。`GOVERNANCE_PATHS` 补 `opencode.json.*` / `opencode.jsonc.*`，并闭合「治理名软链 → 仓库外目标」的既有 fail-open（钉桩用例 + 判别力演练）。
+> **审查**：oracle ×2（均 `审查域: 治理面`，PASS-WITH-NOTES）→ critic（build+arch）**APPROVE_WITH_CONDITIONS**（无 BLOCKER；3 条 SHOULD_FIX 已处置：登记项 ⑦ + `model-fallback-usage.md` 当前态修正 + 本条目加限定）。决策与证据：`.rddf/reviews/build-model-route-switch-ab.md`（§7）。
+> **登记给 architect 批处理（本次不做）**：① `prompts/build.md` 治理面表行扩写变体 glob（gate ⊃ 文档表）；② `ADR-role-aware-permissions:46` 与 `lib/role-policy.ts` docstring 的口径同步为双命中；③ `lib/**` 归属裁定（architect 维护不了自己的表）；④ 统计脚本 `--judge`（需 builder）；⑤（可选）写门治理面留痕；⑥ 给 MiniMax 报 issue；⑦ **「热加载 vs 必须重启」口径统一**：`MULTI-AGENT-DESIGN.md` §5.4「生效时机」与 `docs/model-fallback-usage.md`「改完必须重启」写的是**旧事实**（2026-11-22 实测：改 `lib/` 后下一次工具调用即生效、服务进程未重启；配置由 `ConfigWatch` 热加载）——根因待查（插件加载时机变了，还是从未需要重启），统一后再回改这两处。
+>
+> ---
+>
 > **v2.59 存量债清零（10 → 0）+ `applyDrill` 替换模式修复（2026-11-22）**：
 > **G3 `role-class-write-set` 清账**（`cd828bc` → `345a60c`）：一份组清单覆盖 2 个机制（`backend-handoff-role-class` / `class-write-scope-alignment`）⇒ `delete 2 + edits 126 + retire 2`。退役面走**路径 A「退役能力、保留字段」**：两个工具的 schema 去掉 `role_class` 参数、`RoleClass` 收窄为单成员 `"builder"`、`ROLE_CLASSES` / `isRoleClass` / `parseRoleClass` / `classAllowRoots` / `verifierAllowRootLabels` / `verifierWriteSetBlock` / `VERIFIER_*` / `assertResumeRoleClass` 删除、`assertVerifierBaseline` → `assertBaseline`；**字段保留**（`role.json` 分区 / `pair.json` / lease / `role-gate` / `commit-gate` 恒 `builder`）⇒ `role-aware-permissions` 与 `role-session-identity` 两条豁免机制行为不变。
 > **语义后果（如实登记，不是遗漏）**：① 派发方失去「让后端写架构文档」的能力（ADR 落盘改由主会话切 `architect` 治理身份）；② 后端不再有「只出证据与判决」的专属简报分支；③ `delegate-base-channel` 的「verifier 类必填 base」强制退役（base 通道保留，填了就必须可解析；副作用：builder 类填了 base 现在**真做**基线对照，此前被静默忽略）。

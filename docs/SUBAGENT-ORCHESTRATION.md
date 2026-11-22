@@ -14,7 +14,7 @@
 
 | agent | 类型 | 模型 | 定位 | prompt |
 |---|---|---|---|---|
-| `build` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 实施者（写代码） | `prompts/build.md` |
+| `build` | primary | `minimax-cn-openai/MiniMax-M3.1-Flash` | 实施者（写代码） | `prompts/build.md` |
 | `plan` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 设计者 / 规划者（**只读**，可**委托**工程 session 实施） | `prompts/plan.md` |
 | `front` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 用户交互内核（只读，工程行动经 delegate） | `prompts/front.md` |
 | `explore` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 代码库定位 | `prompts/explore.md` |

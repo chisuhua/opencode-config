@@ -34,7 +34,7 @@ build agent ──请求模型 X──▶ X 挂了（401 / 403 / 5xx / 429 …�
 ```jsonc
 {
   "agent": {
-    "build": { "model": "minimax-cn/MiniMax-M3.1-Flash" }   // ← build 的默认模型 = 降级链的链头
+    "build": { "model": "minimax-cn-openai/MiniMax-M3.1-Flash" }   // ← build 的默认模型 = 降级链的链头（v2.60 起走 OpenAI 兼容线路）
   }
 }
 ```
@@ -60,8 +60,9 @@ build agent ──请求模型 X──▶ X 挂了（401 / 403 / 5xx / 429 …�
 顺序即优先级，**从链首往后**逐个试。上例里 build 实际生效的链是：
 
 ```
-minimax-cn/MiniMax-M3.1-Flash（链头 = build 的默认模型）
+minimax-cn-openai/MiniMax-M3.1-Flash（链头 = build 的默认模型；v2.60 起走 OpenAI 兼容线路）
   → commandcode/deepseek/deepseek-v4.1-flash
+  → minimax-cn/MiniMax-M3.1-Flash
   → opencode-go/deepseek-v4.1-flash
 ```
 
@@ -76,6 +77,8 @@ opencode service restart
 ```
 
 没重启就改配置 = 没改。
+
+> ⚠ **2026-11-22 实测与本段不符**：本环境的插件 / `lib/` 改动在下一次工具调用即生效、配置由 `ConfigWatch` 热加载（服务进程未重启）。本段写的是「插件在 server 启动时加载」的旧事实；口径统一前，改完**重启一次**仍是最稳的兜底（重复重启无副作用）。见 `docs/MULTI-AGENT-DESIGN.md` §5.4 与 `docs/CHANGELOG.md` v2.60 登记项 ⑦。
 
 ## 3. 降级行为
 

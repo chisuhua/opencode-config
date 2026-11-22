@@ -2,13 +2,14 @@
   "version": 1,
   "mechanism": "model-fallback",
   "adr": ".rddf/reviews/model-fallback-verify.md",
-  "notes": "覆盖面 = 模型降级链（`model-fallback`）的退役：机制文件 5 件（`lib/model-fallback-core.ts` / `plugins/model-fallback.ts` / `tests/model-fallback-core.test.ts` / `docs/model-fallback-usage.md` / `model-fallback.json` 配置）+ 14 条 edits（新增文件闸门 EXPECTED 两项 / MAD 的 provider 表与选型表三处 §5.4 引用 / §5.4 整节 / 文件树三行（末位子项的 `└──` 标记同步改）/ 验证表三行 / 已知限制第 6 条 / tests/README 覆盖表行 / front-delegate-testing 两处清单 / subagent-contract 头注释的交叉引用）。⚠ **本机制无 ADR**（其验收报告自述「本仓库无 ADR」）⇒ 清单的 `adr` 字段指向**验收报告**（`.rddf/reviews/model-fallback-verify.md`，含 2026-11-06 architect 设计 + 用户选定的 D 方案 + 11 条判据），它**保留**（决策记录不是机制）。⚠ **实测发现（对 L2 ADR 的口径缺口）**：`ADR-rollback-manifest-enforcement` 的 M2 要求 `adr_primary` **必须落在 `docs/adr/`** ⇒ 本机制（无 ADR）**无法合法登记** ⇒ 待补口径（「机制 ⇒ ADR」并不成立）。⚠ `model-fallback.json`（仓库根的降级链配置）**一并删除** —— 它是本机制的配置面（插件退役后无读者）；预置链恢复为 `lib/model-fallback-core.ts` 的内置默认链。⚠ 插件由宿主**自动发现**（`plugins/` 目录）⇒ `opencode.jsonc` 无登记项 ⇒ 删文件即注销。",
+  "notes": "覆盖面 = 模型降级链（`model-fallback`）的退役：机制文件 5 件（`lib/model-fallback-core.ts` / `plugins/model-fallback.ts` / `tests/model-fallback-core.test.ts` / `docs/model-fallback-usage.md` / `model-fallback.json` 配置）+ 14 条 edits（新增文件闸门 EXPECTED 两项 / MAD 的 provider 表与选型表三处 §5.4 引用 / §5.4 整节 / 文件树三行（末位子项的 `└──` 标记同步改）/ 验证表三行 / 已知限制第 6 条 / tests/README 覆盖表行 / front-delegate-testing 两处清单 / subagent-contract 头注释的交叉引用）。⚠ **本机制无 ADR**（其验收报告自述「本仓库无 ADR」）⇒ 清单的 `adr` 字段指向**验收报告**（`.rddf/reviews/model-fallback-verify.md`，含 2026-11-06 architect 设计 + 用户选定的 D 方案 + 11 条判据），它**保留**（决策记录不是机制）。⚠ **实测发现（对 L2 ADR 的口径缺口）**：`ADR-rollback-manifest-enforcement` 的 M2 要求 `adr_primary` **必须落在 `docs/adr/`** ⇒ 本机制（无 ADR）**无法合法登记** ⇒ 待补口径（「机制 ⇒ ADR」并不成立）。⚠ `model-fallback.json`（仓库根的降级链配置）**一并删除** —— 它是本机制的配置面（插件退役后无读者）；预置链恢复为 `lib/model-fallback-core.ts` 的内置默认链。⚠ 插件由宿主**自动发现**（`plugins/` 目录）⇒ `opencode.jsonc` 无登记项 ⇒ 删文件即注销。 ⚠ 2026-11-23 补 `retire: [\"model-fallback\"]`：原清单只删机制文件、不动 registry ⇒ 回滚后条目悬空（`proving` + `watch` 路径已不存在 ⇒ M7 红，隔离副本实测 1 fail）。经结构化退役通道把条目转 `retired`（`retired_at`=执行日 / `retired_evidence`=本清单的 `adr`）。 ⚠ 同批还须**删本清单自身**：`retire[]` 把条目转 `retired` 后，若不删清单文件则是「孤儿清单」（M1 红，隔离副本实测 1 fail）——与其余组清单同形态。",
   "delete": [
     "lib/model-fallback-core.ts",
     "plugins/model-fallback.ts",
     "tests/model-fallback-core.test.ts",
     "docs/model-fallback-usage.md",
-    "model-fallback.json"
+    "model-fallback.json",
+    ".rddf/rollback/model-fallback.json"
   ],
   "edits": [
     {
@@ -33,12 +34,12 @@
     },
     {
       "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "| build | `minimax-cn/MiniMax-M3.1-Flash` | 主对话模型；1M 上下文吃得下长会话；也是降级链的链头（§5.4）|",
-      "replace": "| build | `minimax-cn/MiniMax-M3.1-Flash` | 主对话模型；1M 上下文吃得下长会话 |"
+      "find": "| build | `minimax-cn-openai/MiniMax-M3.1-Flash` | 主对话模型；1M 上下文吃得下长会话；也是降级链的链头（§5.4）。v2.60 起走 **OpenAI 兼容线路**（同模型）：anthropic 线路实测 `tool.input-json` 截断 1.07%（7 天），A/B 判据见 CHANGELOG v2.60 |",
+      "replace": "| build | `minimax-cn-openai/MiniMax-M3.1-Flash` | 主对话模型；1M 上下文吃得下长会话。v2.60 起走 **OpenAI 兼容线路**（同模型）：anthropic 线路实测 `tool.input-json` 截断 1.07%（7 天），A/B 判据见 CHANGELOG v2.60 |"
     },
     {
       "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "### 5.4 模型降级链（`model-fallback` 插件）\n\nOpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，schema 无 `fallback` 字段。降级由本地插件实现：\n\n| 项 | 内容 |\n|---|---|\n| 入口 | `plugins/model-fallback.ts`（接线）+ `lib/model-fallback-core.ts`（纯逻辑）+ `tests/model-fallback-core.test.ts` |\n| 接线点 | `ctx.session.hook(\"retry\", …)`：拿到 `{ agent, model, error, attempt, decision }`，必要时 `ctx.session.switchModel(...)` 后置 `decision = { retry: true }` |\n| 内置默认链 | `commandcode/deepseek/deepseek-v4.1-flash` → `minimax-cn/MiniMax-M3.1-Flash` → `openstarry/deepseek-v4.1-flash` → `opencode-go/deepseek-v4.1-flash`（**仅在没有配置文件时生效**；内置默认只覆盖 build 一个 agent）|\n| 当前生效链 | **链头 = agent 自己的默认模型**，其后接 `model-fallback.json` 的候选（去重）。当前 build 的链是 `minimax-cn/MiniMax-M3.1-Flash`（链头）→ `commandcode/deepseek/deepseek-v4.1-flash` → `opencode-go/deepseek-v4.1-flash`；explore / librarian / oracle / metis / critic 各 3 个模型（**explore / librarian 的链头随 v2.12 改为 `commandcode/deepseek/deepseek-v4.1-flash`**，候选表里的同名项被去重）。**`openstarry` 被有意剔除** —— 实测该 provider 返回 403「订阅额度不足」，放进链里只是白等一次降级 |\n| 链推进 | 链尾失败且链首已恢复（冷却到期）时可**绕回链首**；换链预算 `chain.length * 2`，超限即放弃 |\n| 降级条件 | 401/403/404（模型级）立刻换；订阅额度不足（硬失败）立刻换；5xx / 网络类先原地退避 2 次再换；429 优先按 `retryAfterMs` 原地等待；**内容策略 / 上下文超限（`context length` / `token limit`）/ 400 / 413 / 422 一律不降级**（应走 compaction 或直接报错）——判定顺序上「内容策略 / 上下文超限」**先于**状态码短路，避免 400 + `forbidden` 被误判成模型不可用而拿弱模型去重试被拒的内容 |\n| 冷却 | 失败模型进入冷却（默认 5 分钟），链推进时跳过。**进程级**：provider 挂了就是挂了，冷却表跨 session 共享（内核保持纯函数，冷却条目由 plan 带出、宿主落盘） |\n| 可见性 | 切换会触发 `session.model.selected`，TUI 模型指示器立即变化；同时写 `~/.local/share/opencode/model-fallback.log`。默认**不**发 synthetic 消息（实测会被当作新输入，额外触发一轮模型调用并重置降级状态）；需要会话内通知时把配置文件里的 `notify` 设为 `\"synthetic\"` |\n| 链耗尽 | `decision = { retry: false }`，原始错误交回用户；不循环重试 |\n| 配置链 | 独立配置文件 `~/.config/opencode/model-fallback.json`（`chains` / `policy` / `notify`）；环境变量 `MODEL_FALLBACK_CONFIG` 可指向别的文件；都没有则用内置默认链 |\n| 链头 | **不单独配**：失败时正在用的那个模型就是链首（即 agent 的默认模型，或用户临时 `/model` 切过去的模型）；文件里的 `chains` 是它后面的后备候选 |\n| 生效时机 | 插件在 **server 启动时**加载。改配置或插件代码后需 `opencode service restart` 才生效（常驻 server 不会热加载插件） |\n| 生命周期 | 插件按 location 重复 setup，故会话状态、链、冷却表都放**模块级**共享，并对同一 retry 事件做**事件级去重**（避免多份 hook 各切一次模型）；session 状态 30 分钟不活跃即淘汰，避免长驻 server 下 Map 单调增长 |\n\n> **为什么配置走独立文件而不是 `opencode.jsonc`**：实测本地插件**拿不到**配置里的 options —— `plugins: [[\"model-fallback\", {...}]]`、`plugins: [{\"package\": ..., \"options\": {...}}]`、以及已废弃的 `plugin: [[name, {...}]]` 三种写法下 `ctx.options` 恒为 `{}`。因此改用插件自己读的 JSON 文件。\n>\n> **中途换模型会重新构链**：用户在会话中 `/model` 切到链外模型后再次失败，会以新模型为链首重新组链（旧的推进下标一并重置，冷却表保留），而不是按旧链继续往后跳。\n>\n> **端到端记录的时间口径**：`minimax-cn 401 → openstarry 403 → opencode-go` 跑在**配置文件覆盖之前**（用的内置默认链）；当前生效链不含 openstarry，失败路径是 `openstarry（起点）403 → commandcode`。\n>\n> **面向使用者的操作与排障**见 [model-fallback-usage.md](./model-fallback-usage.md)（默认模型 / 后备链分别改哪、什么错误会换模型、日志怎么读、怎么停用降级）。本节是设计口径，用手册是操作口径。\n\n",
+      "find": "### 5.4 模型降级链（`model-fallback` 插件）\n\nOpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，schema 无 `fallback` 字段。降级由本地插件实现：\n\n| 项 | 内容 |\n|---|---|\n| 入口 | `plugins/model-fallback.ts`（接线）+ `lib/model-fallback-core.ts`（纯逻辑）+ `tests/model-fallback-core.test.ts` |\n| 接线点 | `ctx.session.hook(\"retry\", …)`：拿到 `{ agent, model, error, attempt, decision }`，必要时 `ctx.session.switchModel(...)` 后置 `decision = { retry: true }` |\n| 内置默认链 | `commandcode/deepseek/deepseek-v4.1-flash` → `minimax-cn/MiniMax-M3.1-Flash` → `openstarry/deepseek-v4.1-flash` → `opencode-go/deepseek-v4.1-flash`（**仅在没有配置文件时生效**；内置默认只覆盖 build 一个 agent）|\n| 当前生效链 | **链头 = agent 自己的默认模型**，其后接 `model-fallback.json` 的候选（去重）。当前 build 的链是 `minimax-cn-openai/MiniMax-M3.1-Flash`（链头，v2.60 起换线路）→ `commandcode/deepseek/deepseek-v4.1-flash` → `minimax-cn/MiniMax-M3.1-Flash` → `opencode-go/deepseek-v4.1-flash`（候选表未改，故 anthropic 线路仍作为一条候选）；explore / librarian / oracle / metis / critic 各 3 个模型（**explore / librarian 的链头随 v2.12 改为 `commandcode/deepseek/deepseek-v4.1-flash`**，候选表里的同名项被去重）。**`openstarry` 被有意剔除** —— 实测该 provider 返回 403「订阅额度不足」，放进链里只是白等一次降级 |\n| 链推进 | 链尾失败且链首已恢复（冷却到期）时可**绕回链首**；换链预算 `chain.length * 2`，超限即放弃 |\n| 降级条件 | 401/403/404（模型级）立刻换；订阅额度不足（硬失败）立刻换；5xx / 网络类先原地退避 2 次再换；429 优先按 `retryAfterMs` 原地等待；**内容策略 / 上下文超限（`context length` / `token limit`）/ 400 / 413 / 422 一律不降级**（应走 compaction 或直接报错）——判定顺序上「内容策略 / 上下文超限」**先于**状态码短路，避免 400 + `forbidden` 被误判成模型不可用而拿弱模型去重试被拒的内容 |\n| 冷却 | 失败模型进入冷却（默认 5 分钟），链推进时跳过。**进程级**：provider 挂了就是挂了，冷却表跨 session 共享（内核保持纯函数，冷却条目由 plan 带出、宿主落盘） |\n| 可见性 | 切换会触发 `session.model.selected`，TUI 模型指示器立即变化；同时写 `~/.local/share/opencode/model-fallback.log`。默认**不**发 synthetic 消息（实测会被当作新输入，额外触发一轮模型调用并重置降级状态）；需要会话内通知时把配置文件里的 `notify` 设为 `\"synthetic\"` |\n| 链耗尽 | `decision = { retry: false }`，原始错误交回用户；不循环重试 |\n| 配置链 | 独立配置文件 `~/.config/opencode/model-fallback.json`（`chains` / `policy` / `notify`）；环境变量 `MODEL_FALLBACK_CONFIG` 可指向别的文件；都没有则用内置默认链 |\n| 链头 | **不单独配**：失败时正在用的那个模型就是链首（即 agent 的默认模型，或用户临时 `/model` 切过去的模型）；文件里的 `chains` 是它后面的后备候选 |\n| 生效时机 | 插件在 **server 启动时**加载。改配置或插件代码后需 `opencode service restart` 才生效（常驻 server 不会热加载插件） |\n| 生命周期 | 插件按 location 重复 setup，故会话状态、链、冷却表都放**模块级**共享，并对同一 retry 事件做**事件级去重**（避免多份 hook 各切一次模型）；session 状态 30 分钟不活跃即淘汰，避免长驻 server 下 Map 单调增长 |\n\n> **为什么配置走独立文件而不是 `opencode.jsonc`**：实测本地插件**拿不到**配置里的 options —— `plugins: [[\"model-fallback\", {...}]]`、`plugins: [{\"package\": ..., \"options\": {...}}]`、以及已废弃的 `plugin: [[name, {...}]]` 三种写法下 `ctx.options` 恒为 `{}`。因此改用插件自己读的 JSON 文件。\n>\n> **中途换模型会重新构链**：用户在会话中 `/model` 切到链外模型后再次失败，会以新模型为链首重新组链（旧的推进下标一并重置，冷却表保留），而不是按旧链继续往后跳。\n>\n> **端到端记录的时间口径**：`minimax-cn 401 → openstarry 403 → opencode-go` 跑在**配置文件覆盖之前**（用的内置默认链）；当前生效链不含 openstarry，失败路径是 `openstarry（起点）403 → commandcode`。\n>\n> **面向使用者的操作与排障**见 [model-fallback-usage.md](./model-fallback-usage.md)（默认模型 / 后备链分别改哪、什么错误会换模型、日志怎么读、怎么停用降级）。本节是设计口径，用手册是操作口径。\n\n",
       "replace": ""
     },
     {
@@ -82,6 +83,9 @@
       "replace": " * 沙箱约束（宿主只提供两个外部包；node 内置模块与相对路径 import 可用）：\n"
     }
   ],
+  "retire": [
+    "model-fallback"
+  ],
   "drill_env": {
     "seed_files": [
       {
@@ -98,11 +102,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "6bf4d85c0bc12753c3b877e562617c771d3c34d5",
-    "at": "2026-11-21",
-    "result": "pass",
-    "content_hash": "210dcee4ea886803631125875dc583dde63d9b8fbdaa3afb33d7bdf928c671d3"
   }
 }
