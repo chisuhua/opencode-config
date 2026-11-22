@@ -268,6 +268,18 @@ function mutatePartition(
 
 
 export const LEASE_TTL_MS = 30 * 60 * 1000
+/**
+ * TTL 兜底时长（ADR D6：「`heartbeat_at` TTL（默认 30 min，`RDDF_ROLE_LEASE_TTL` 可覆盖）」）。
+ *
+ * 单位：**毫秒**（与 `LEASE_TTL_MS` / `ttlMs` 入参同单位）；非法值（空 / 非数字 / ≤0）⇒ 回落默认。
+ * ⚠ 入参 `ttlMs`（测试注入 / 调用方显式指定）**优先于**本函数。
+ */
+export function leaseTtlMs(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.RDDF_ROLE_LEASE_TTL
+  if (raw === undefined || raw === "") return LEASE_TTL_MS
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : LEASE_TTL_MS
+}
 /** 独占集（同角色至多一个代表） */
 export const EXCLUSIVE_ROLES = ["architect", "planner", "builder", "verifier", "general"] as const
 /** 豁免集（只读，不冲突） */
@@ -424,7 +436,7 @@ export function isHolderAlive(
 export function acquireLeaseLocked(input: LeaseInput): LeaseResult {
   const now = input.now?.() ?? new Date()
   const iso = now.toISOString()
-  const ttlMs = input.ttlMs ?? LEASE_TTL_MS
+  const ttlMs = input.ttlMs ?? leaseTtlMs()
 
   if (isExemptRole(input.role)) {
     // 豁免：不占租约（两个 no-role 可并存）
@@ -646,17 +658,27 @@ export function renewLease(input: {
 /**
  * 写类工具调用的**围栏校验**（ADR D6 执行点③）：
  *   ① 无租约 ⇒ **尝试占租约**（开局；冲突则拒）—— 无租约且占不到 ⇒ 拒绝写类工具；
- *   ② 持有者不是我 ⇒ 拒绝（指名持有者）；
- *   ③ `claim_gen` **!= 即拒**（已被接管）⇒ 拒绝。
+ *   ② `claim_gen` **!= 即拒**（我的租约已被接管）⇒ 拒绝；
+ *   ③ 我是持有者 ⇒ **续心跳**后放行；
+ *   ④ 持有者不是我 ⇒ **先判活**（宿主探活优先 ⇒ TTL 兜底）：持有者**已死 ⇒ 允许接管**
+ *      （死会话的租约不得永久挡住写类工具 —— ADR D6「判活与接管」）；仍存活 ⇒ 拒绝（指名持有者）。
+ *
+ * ⚠ **顺序不可颠倒**：② 的围栏先判（我的 gen 已被接管 ⇒ 一律拒绝，ADR D6
+ *   「旧 `claim_gen` 的持有者此后任何租约相关写一律拒绝」），再对**别人**的租约判活。
+ * ⚠ ③ 的续心跳与 ④ 的接管**必须成对**：不续心跳 ⇒ 活跃会话也会因 TTL 到期被判成「死」
+ *   而被接管 ⇒ 自己反而被围栏；不接管 ⇒ 死会话的租约永久挡住写类工具。
  */
 export function checkLeaseForWrite(input: {
   stateRoot: string
   workRoot: string
   role: Role
   sessionID: string
+  /** 占用形态（写类门控只对主会话生效 ⇒ 默认 main） */
+  kind?: "main" | "backend"
   now?: () => Date
   ttlMs?: number
   hostProbe?: (sessionID: string) => boolean
+  warnSink?: (message: string) => void
   lock?: { staleMs?: number; deadlineMs?: number }
 }): { ok: boolean; message?: string; holder?: LeaseClaim } {
   if (isExemptRole(input.role)) return { ok: true }
@@ -670,9 +692,13 @@ export function checkLeaseForWrite(input: {
   }
   const key = leaseKey(input.workRoot, input.role)
   const claim = read.file.claims[key]
+  const now = input.now?.() ?? new Date()
+  const ttlMs = input.ttlMs ?? leaseTtlMs()
+  const leaseInput: LeaseInput = { ...input, kind: input.kind ?? "main", now: () => now, ttlMs }
+
   if (!claim || claim.state !== "active") {
     // 开局：无租约 ⇒ 尝试占（冲突 ⇒ 拒）
-    const res = acquireLease(input)
+    const res = acquireLease(leaseInput)
     if (res.ok) return { ok: true }
     return {
       ok: false,
@@ -682,22 +708,43 @@ export function checkLeaseForWrite(input: {
   }
   // ⚠ **围栏优先于持有者比对**：`claim_gen` 不匹配 = 「我这条租约已被接管」
   //   （更强的信号）⇒ 先报它，避免把「已被接管」误报成「别人持有」。
+  //   ⚠ 被接管方**在写路径上失写** ⇒ 错误消息必须带**恢复路径**（critic SHOULD_FIX：
+  //   「显式告警」只发到接管方，被拒方收不到上下文 ⇒ 模型无从得知出路）。
   const mine = read.file.holders[input.sessionID]
   if (mine && mine.claim_gen !== claim.claim_gen) {
     return {
       ok: false,
-      message: `role-lease: claim_gen 不匹配（我持有 ${mine.claim_gen} ≠ 当前 ${claim.claim_gen}）⇒ 租约已被接管（现持有者 ${claim.session_id}），拒绝写类工具`,
+      message: `role-lease: claim_gen 不匹配（我持有 ${mine.claim_gen} ≠ 当前 ${claim.claim_gen}）⇒ 租约已被接管（现持有者 ${claim.session_id}），拒绝写类工具；恢复路径：由用户经 scripts/role-switch.sh 重占租约（等现持有者退出或其租约 TTL 到期后），或由用户执行 scripts/role-switch.sh --reset-claims`,
       holder: claim,
     }
   }
-  if (claim.session_id !== input.sessionID) {
+  // 我是持有者 ⇒ **续心跳**（同一持有者 ⇒ `acquireLease` 走续租分支）后放行
+  if (claim.session_id === input.sessionID) {
+    const res = acquireLease(leaseInput)
+    if (res.ok) return { ok: true }
+    return {
+      ok: false,
+      message: `${res.reason} ⇒ 续租失败，拒绝写类工具`,
+      holder: res.holder ?? claim,
+    }
+  }
+  // 持有者不是我 ⇒ **判活**（ADR D6「判活与接管」）：持有者已不存活 ⇒ 允许接管；
+  //   仍存活 ⇒ 拒绝（指名持有者）。
+  if (isHolderAlive(claim, { now, ttlMs, hostProbe: input.hostProbe })) {
     return {
       ok: false,
       message: `role-lease: 角色「${input.role}」的租约由 ${claim.session_id} 持有（workRoot=${claim.work_root}）⇒ 拒绝写类工具`,
       holder: claim,
     }
   }
-  return { ok: true }
+  // 持有者已死 ⇒ 接管（gen 单调 +1 ⇒ 旧持有者被围栏；ledger 留痕）
+  const res = acquireLease(leaseInput)
+  if (res.ok) return { ok: true }
+  return {
+    ok: false,
+    message: `${res.reason} ⇒ 拒绝写类工具`,
+    holder: res.holder ?? claim,
+  }
 }
 
 /** `--reset-claims`：损坏恢复入口（**显式用户动作** ⇒ gen 重置；留 ledger 痕迹）。 */

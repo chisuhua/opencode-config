@@ -108,11 +108,15 @@ export default Plugin.define({
 
       // ② 角色租约围栏（**每次**写类工具调用都校验 —— ADR D6 执行点③）：
       //    持有者 + `claim_gen` 都要对得上；被接管 ⇒ 拒绝（模型只能读 + 报告）。
+      //    ⚠ **不传 hostProbe**：当前**全仓**没有任何生产调用点传它（`ctx.session.get`
+      //    对已死会话仍返回记录 ⇒ 探针恒真 ⇒ 死会话永远挡不住写类工具）；
+      //    ⇒ 判活落 `heartbeat_at` TTL 兜底（由租约侧在每次写调用时续心跳维持有效）。
       const lease = checkLeaseForWrite({
         stateRoot,
         workRoot,
         role: resolved.role,
         sessionID,
+        warnSink: (m: string) => console.error(m),
       })
       if (!lease.ok) throw new Error(lease.message ?? "role-gate: 租约校验失败")
     })

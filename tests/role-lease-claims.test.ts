@@ -17,6 +17,8 @@ import {
   acquireLease,
   checkLeaseForWrite,
   claimsPath,
+  LEASE_TTL_MS,
+  leaseTtlMs,
   readClaims,
   releaseLease,
   renewLease,
@@ -409,5 +411,196 @@ describe("B2 闭合（复审 finding）：切角色/退出后**旧角色 claim �
     switchRole({ stateRoot: root, workRoot, sessionID: MAIN, role: "builder", by: "user" })
     clearWindow({ stateRoot: root, workRoot, sessionID: MAIN, toNoRole: true })
     expect(readClaims(root).file.claims[leaseKey(workRoot, "builder")]!.state).toBe("released")
+  })
+})
+
+describe("TTL 覆盖（ADR D6：「`heartbeat_at` TTL（默认 30 min，`RDDF_ROLE_LEASE_TTL` 可覆盖）」）", () => {
+  test("未设置 ⇒ 默认 30 min；合法值 ⇒ 生效；非法值 ⇒ 回落默认", () => {
+    expect(leaseTtlMs({})).toBe(LEASE_TTL_MS)
+    expect(leaseTtlMs({ RDDF_ROLE_LEASE_TTL: "60000" })).toBe(60000)
+    expect(leaseTtlMs({ RDDF_ROLE_LEASE_TTL: "" })).toBe(LEASE_TTL_MS)
+    expect(leaseTtlMs({ RDDF_ROLE_LEASE_TTL: "abc" })).toBe(LEASE_TTL_MS)
+    expect(leaseTtlMs({ RDDF_ROLE_LEASE_TTL: "0" })).toBe(LEASE_TTL_MS)
+    expect(leaseTtlMs({ RDDF_ROLE_LEASE_TTL: "-5" })).toBe(LEASE_TTL_MS)
+  })
+
+  test("端到端：env 覆盖 ⇒ 写类工具调用按覆盖值判活（窗口内判活 / 超窗判死可接管）", () => {
+    const { root, workRoot } = makeState()
+    const prev = process.env.RDDF_ROLE_LEASE_TTL
+    try {
+      process.env.RDDF_ROLE_LEASE_TTL = "600000" // 10 min（默认 30 min）
+      const t0 = new Date("2026-11-17T00:00:00.000Z")
+      acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main", now: () => t0 })
+      // +5min：落在覆盖窗口(10min)内 ⇒ 判活 ⇒ 拒绝
+      const alive = checkLeaseForWrite({
+        stateRoot: root,
+        workRoot,
+        role: "builder",
+        sessionID: BACK,
+        now: () => new Date("2026-11-17T00:05:00.000Z"),
+      })
+      expect(alive.ok).toBe(false)
+      // +20min：超出覆盖窗口 ⇒ 判死 ⇒ 可接管（默认 30min 下这里仍会判活 ⇒ 证明 env 生效）
+      const dead = checkLeaseForWrite({
+        stateRoot: root,
+        workRoot,
+        role: "builder",
+        sessionID: BACK,
+        now: () => new Date("2026-11-17T00:20:00.000Z"),
+      })
+      expect(dead.ok).toBe(true)
+    } finally {
+      if (prev === undefined) delete process.env.RDDF_ROLE_LEASE_TTL
+      else process.env.RDDF_ROLE_LEASE_TTL = prev
+    }
+  })
+})
+
+describe("写类工具围栏：死持有者不得**永久**挡住写类工具（ADR D6「判活与接管」）", () => {
+  const T0 = new Date("2026-11-17T00:00:00.000Z")
+  const T1 = new Date("2026-11-17T01:00:00.000Z")
+
+  test("持有者心跳过期（TTL 到期）⇒ 接管成功 ⇒ 写类工具放行 + claim 归我 + gen+1", () => {
+    const { root, workRoot } = makeState()
+    acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main", now: () => T0, ttlMs: 1000 })
+    const chk = checkLeaseForWrite({
+      stateRoot: root,
+      workRoot,
+      role: "builder",
+      sessionID: BACK,
+      now: () => T1,
+      ttlMs: 1000,
+    })
+    expect(chk.ok).toBe(true)
+    const claim = readClaims(root).file.claims[leaseKey(workRoot, "builder")]!
+    expect(claim.session_id).toBe(BACK)
+    expect(claim.claim_gen).toBe(2)
+    expect(claim.state).toBe("active")
+  })
+
+  test("持有者仍活（探活说活）⇒ 拒绝 + 指名持有者（**不**接管）", () => {
+    const { root, workRoot } = makeState()
+    acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main", now: () => T0, ttlMs: 1000 })
+    const chk = checkLeaseForWrite({
+      stateRoot: root,
+      workRoot,
+      role: "builder",
+      sessionID: BACK,
+      now: () => T1,
+      ttlMs: 1000,
+      hostProbe: () => true,
+    })
+    expect(chk.ok).toBe(false)
+    expect(chk.message).toContain(MAIN)
+    expect(readClaims(root).file.claims[leaseKey(workRoot, "builder")]!.session_id).toBe(MAIN)
+  })
+
+  test("双证死（探活说死 **且** 心跳过期）⇒ 允许接管", () => {
+    const { root, workRoot } = makeState()
+    acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main", now: () => T0, ttlMs: 1000 })
+    const chk = checkLeaseForWrite({
+      stateRoot: root,
+      workRoot,
+      role: "builder",
+      sessionID: BACK,
+      now: () => T1,
+      ttlMs: 1000,
+      hostProbe: () => false,
+    })
+    expect(chk.ok).toBe(true)
+    expect(readClaims(root).file.claims[leaseKey(workRoot, "builder")]!.session_id).toBe(BACK)
+  })
+
+  test("心跳仍在 TTL 内 ⇒ **仍判活** ⇒ 拒绝（TTL 兜底不变量，AC22 已固化）", () => {
+    const { root, workRoot } = makeState()
+    acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main", now: () => T0, ttlMs: 3_600_000 })
+    const chk = checkLeaseForWrite({
+      stateRoot: root,
+      workRoot,
+      role: "builder",
+      sessionID: BACK,
+      now: () => new Date("2026-11-17T00:10:00.000Z"),
+      ttlMs: 3_600_000,
+      hostProbe: () => false,
+    })
+    expect(chk.ok).toBe(false)
+    expect(chk.message).toContain(MAIN)
+  })
+
+  test("我是持有者 ⇒ 写类工具调用**续心跳**（TTL 判活对活跃会话保持有效）", () => {
+    const { root, workRoot } = makeState()
+    acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main", now: () => T0, ttlMs: 1000 })
+    const t = new Date("2026-11-17T00:00:30.000Z")
+    const chk = checkLeaseForWrite({
+      stateRoot: root,
+      workRoot,
+      role: "builder",
+      sessionID: MAIN,
+      now: () => t,
+      ttlMs: 1000,
+    })
+    expect(chk.ok).toBe(true)
+    expect(readClaims(root).file.claims[leaseKey(workRoot, "builder")]!.heartbeat_at).toBe(t.toISOString())
+  })
+
+  test("接管后新持有者的后续写类工具调用正常放行（心跳继续前移）", () => {
+    const { root, workRoot } = makeState()
+    acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main", now: () => T0, ttlMs: 1000 })
+    const taken = checkLeaseForWrite({ stateRoot: root, workRoot, role: "builder", sessionID: BACK, now: () => T1, ttlMs: 1000 })
+    expect(taken.ok).toBe(true)
+    const t2 = new Date("2026-11-17T01:00:10.000Z")
+    const chk = checkLeaseForWrite({ stateRoot: root, workRoot, role: "builder", sessionID: BACK, now: () => t2, ttlMs: 1000 })
+    expect(chk.ok).toBe(true)
+    expect(readClaims(root).file.claims[leaseKey(workRoot, "builder")]!.heartbeat_at).toBe(t2.toISOString())
+  })
+
+  test("围栏优先：接管后**旧持有者**的写类工具调用仍被拒（claim_gen != 即拒），即便它被判活为「死」", () => {
+    const { root, workRoot } = makeState()
+    acquireLease({ stateRoot: root, workRoot, role: "builder", sessionID: MAIN, kind: "main", now: () => T0, ttlMs: 1000 })
+    checkLeaseForWrite({ stateRoot: root, workRoot, role: "builder", sessionID: BACK, now: () => T1, ttlMs: 1000 })
+    const chk = checkLeaseForWrite({
+      stateRoot: root,
+      workRoot,
+      role: "builder",
+      sessionID: MAIN,
+      now: () => T1,
+      ttlMs: 1000,
+      hostProbe: () => false,
+    })
+    expect(chk.ok).toBe(false)
+    expect(chk.message).toContain("claim_gen")
+  })
+
+  test("现场形态：claims 里躺着**已死会话**的过期 active claim ⇒ 新会话的写类工具调用放行（gen+1）", () => {
+    const { root, workRoot } = makeState()
+    const dead = "ses_dead_ddddddddddddddd"
+    writeFileSync(
+      claimsPath(root),
+      JSON.stringify(
+        {
+          schema_version: "role-claims-v1",
+          claims: {
+            [leaseKey(workRoot, "builder")]: {
+              work_root: workRoot,
+              role: "builder",
+              session_id: dead,
+              kind: "main",
+              claim_gen: 7,
+              state: "active",
+              acquired_at: "2026-11-18T06:39:45.894Z",
+              heartbeat_at: "2026-11-18T06:39:45.894Z",
+            },
+          },
+          holders: { [dead]: { work_root: workRoot, role: "builder", claim_gen: 7 } },
+        },
+        null,
+        2,
+      ) + "\n",
+    )
+    const chk = checkLeaseForWrite({ stateRoot: root, workRoot, role: "builder", sessionID: BACK })
+    expect(chk.ok).toBe(true)
+    const claim = readClaims(root).file.claims[leaseKey(workRoot, "builder")]!
+    expect(claim.session_id).toBe(BACK)
+    expect(claim.claim_gen).toBe(8)
   })
 })
