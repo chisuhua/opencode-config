@@ -446,4 +446,19 @@ describe("治理面命中信息：decideWrite 把「是否治理面」暴露给�
     expect(r.allowed).toBe(false)
     expect(r.governance).toEqual({ hit: true, relPath: "prompts/build.md" })
   })
+
+  test("链接形态：relPath 取「调用者写下的名字」（双命中口径要能从结果里看出来）", () => {
+    const fx = makeFixture()
+    const variant = path.join(fx.gov, "opencode.jsonc.opencode-go")
+    writeFileSync(variant, "{}\n")
+    const link = path.join(fx.gov, "opencode.jsonc")
+    symlinkSync(variant, link)
+    try {
+      const r = check(fx, "planner", link)
+      expect(r.allowed).toBe(false)
+      expect(r.governance).toEqual({ hit: true, relPath: "opencode.jsonc" })
+    } finally {
+      rmSync(link, { force: true })
+    }
+  })
 })

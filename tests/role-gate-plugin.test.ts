@@ -24,6 +24,8 @@ import path from "node:path"
 // 宿主的 `@opencode/plugin` 是内建模块（本地装不上）⇒ 恒等替身；被测文件一字未改。
 mock.module("@opencode/plugin", () => ({ Plugin: { define: (x: any) => x } }))
 
+import { leaseKey } from "../lib/role-lease.ts"
+
 const PLUGIN_PATH = path.resolve(import.meta.dir, "..", "plugins", "role-gate.ts")
 const DIRS: string[] = []
 const SID = "ses_rogate0000000000000000"
@@ -65,7 +67,7 @@ interface HookEnv {
 }
 
 /** 加载插件、跑 setup、取出注册的 hook（会话目录 = fixture 仓）。 */
-async function loadHook(fx: Fx, agent = "build"): Promise<HookEnv> {
+async function loadHook(fx: Fx, agent = "build", extra: Record<string, unknown> = {}): Promise<HookEnv> {
   const mod = await import(PLUGIN_PATH)
   const plugin = mod.default as any
   let hook: ((e: any) => Promise<void>) | undefined
@@ -75,7 +77,7 @@ async function loadHook(fx: Fx, agent = "build"): Promise<HookEnv> {
         hook = fn
       },
     },
-    session: { get: async () => ({ agent, location: { directory: fx.repo } }) },
+    session: { get: async () => ({ agent, location: { directory: fx.repo }, ...extra }) },
   })
   if (!hook) throw new Error("插件没有注册 hook")
   return { hook }
@@ -178,5 +180,45 @@ describe("治理面写门留痕：拒绝与放行都落一行 ledger", () => {
     } finally {
       chmodSync(fx.state, 0o700)
     }
+  })
+
+  test("门控跳过的会话（被派发后端）不留痕：gate 不生效 ⇒ 放行且**没有** ledger 行", async () => {
+    const fx = makeFixture({ role: "planner" })
+    // parentID 非空 ⇒ 被派发后端 ⇒ 门控不生效（ADR D3；后端另走 scope 规则）
+    const { hook } = await loadHook(fx, "build", { parentID: "ses_parent" })
+    await expect(hook(writeEvent(GOV_FILE))).resolves.toBeUndefined()
+    expect(existsSync(fx.ledger)).toBe(false)
+  })
+
+  test("租约拒绝分支也留痕：角色判定放行、但租约被他人持有 ⇒ ledger 记 deny（reason 含租约）", async () => {
+    const fx = makeFixture({ role: "architect" })
+    const now = new Date().toISOString()
+    writeFileSync(
+      path.join(fx.state, "role-claims.json"),
+      JSON.stringify({
+        schema_version: "role-claims-v1",
+        claims: {
+          [leaseKey(fx.repo, "architect")]: {
+            work_root: fx.repo,
+            role: "architect",
+            session_id: "ses_other",
+            kind: "main",
+            claim_gen: 7,
+            state: "active",
+            acquired_at: now,
+            heartbeat_at: now, // 新鲜心跳 ⇒ 持有者存活 ⇒ 不接管（ADR D6 判活）
+          },
+        },
+        holders: { ses_other: { work_root: fx.repo, role: "architect", claim_gen: 7 } },
+      }),
+    )
+    const { hook } = await loadHook(fx)
+    await expect(hook(writeEvent(GOV_FILE))).rejects.toThrow(/租约/)
+
+    const rows = ledgerRows(fx)
+    expect(rows.length).toBe(1)
+    expect(rows[0].decision).toBe("deny")
+    expect(rows[0].role).toBe("architect")
+    expect(rows[0].reason).toContain("租约")
   })
 })

@@ -15,7 +15,7 @@
 > **只记治理面**（非治理面写入零新增 IO），且只记**门控生效**的会话（后端 / 非 build 主会话不归本门控判，ADR D3）。
 > **留痕失败不影响判定**：写不进只 `console.error` 告警 —— 审计面不得成为新的失败点（用例：状态目录只读 ⇒ 仍按治理面规则抛错）。
 > **实现**：`lib/role-policy.ts` 的 `WriteCheckResult` 新增 `governance: { hit, relPath }`（`denyAll` 分支也带得上；双命中口径不变）；复用既有 `appendLedger`（带 `.role.lock`）⇒ **不新增文件类型**，`新建文件闸门` 清单不变。
-> **测试**：`tests/role-gate-plugin.test.ts`（新，6 例：deny / architect allow / builder allow / 非治理面不留痕 / append 两行 / 留痕失败不崩）+ `tests/role-policy.test.ts` +3 例（命中 / 未命中 / denyAll 分支）。
+> **测试**：`tests/role-gate-plugin.test.ts`（新，8 例：deny / architect allow / builder allow / 非治理面不留痕 / append 两行 / 留痕失败不崩 / **租约拒绝分支也留痕** / **门控跳过的后端会话不留痕**）+ `tests/role-policy.test.ts` +4 例（命中 / 未命中 / denyAll 分支 / 链接形态 relPath 取调用者写下的名字）。
 > **未做**：`ADR-role-aware-permissions` 未改（builder 不改决策内容）—— 是否把「留痕」写进 D5 由 architect 定（review §6.8）。
 
 ---
@@ -24,7 +24,7 @@
 > `scripts/tool-json-failure-stats.ts` 新增 `--judge`：按 v2.60 的 A/B 判据逐项 PASS/FAIL，**`exit 0` = 通过**、`exit 1` = 未达判据、`2` = 参数/环境错误。C1 活跃日（calls ≥500）≥3；C2 单日熔断 >0.5%（只对 calls ≥500 的日子）；C3 总量 ≥5,000 且总率 <0.2%；C4 0 失败且 n ≥5,000 ⇒ 提前通过（rule-of-three 95% 上界 3/n）。结论 = C4 ∨ (C1∧C2∧C3)。
 > **`--model` 必填**（判据只对单一路径的桶成立），`--agent` 可选收窄 —— 同一模型下别的 agent、或别的 provider 的失败**不得**计入 A/B。
 > **一条判据口径的实现解释**：C4「0 失败即提前通过」要求 **n ≥ 5,000**（判据原文把「0 失败」与「n≈5,000 时上界 0.06%」绑定）⇒ 低样本的 0 失败**不**判通过（否则 4 个 calls 也能「通过」）。
-> **测试**：`tests/tool-json-failure-stats.test.ts` +7 例（PASS / C4 早通过 / C2 熔断压过总率 / 只判 `--model` 桶 / `--agent` 收窄 / 低样本 0 失败 / 缺 `--model` ⇒ exit 2）。
+> **测试**：`tests/tool-json-failure-stats.test.ts` +9 例（PASS / C4 早通过 / C2 熔断压过总率 / 只判 `--model` 桶 / `--agent` 收窄 / 低样本 0 失败 / 缺 `--model` ⇒ exit 2 / **零样本 ⇒ exit 1** / **非 judge 模式 `--model` 也收窄**）。
 > **用法**：`bun scripts/tool-json-failure-stats.ts --judge --model minimax-cn-openai/MiniMax-M3.1-Flash --agent build --days 5`。
 
 ---

@@ -243,5 +243,37 @@ describe("tool-json-failure-stats：--judge 判据", () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  test("零样本：该 model 在窗口内没有任何调用 ⇒ exit 1（不静默判过）", () => {
+    const { dir, file } = makeDb([day(0, "build", 100)])
+    try {
+      const r = run(["--db", file, "--judge", "--model", "no-such-provider/no-such-model", "--days", "5", "--json"])
+      expect(r.code).toBe(1)
+      const out = JSON.parse(r.stdout)
+      expect(out.total.calls).toBe(0)
+      expect(out.verdict).toBe("fail")
+      const c3 = out.criteria.find((x: { id: string }) => x.id === "C3")
+      expect(c3.ok).toBe(false)
+      expect(c3.detail).toContain("0 calls")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("非 judge 模式下 --model 也收窄（byModel 只剩被选中的模型）", () => {
+    const { dir, file } = makeDb([
+      { at: atNoon(0), agent: "build", provider: "minimax-cn-openai", model: "MiniMax-M3.1-Flash", parts: [okTool("shell")] },
+      { at: atNoon(0), agent: "build", provider: "minimax-cn", model: "MiniMax-M3.1-Flash", parts: [okTool("shell"), okTool("read")] },
+    ])
+    try {
+      const r = run(["--db", file, "--json", "--model", OK_MODEL])
+      expect(r.code).toBe(0)
+      const out = JSON.parse(r.stdout)
+      expect(Object.keys(out.byModel)).toEqual([OK_MODEL])
+      expect(out.total.calls).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
