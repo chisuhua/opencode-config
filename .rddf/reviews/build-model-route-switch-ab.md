@@ -97,6 +97,11 @@
 
 **落地证据**：两路由最小请求 200；opencode 形态 pre-flight 200（tool 参数完整 / `reasoning_content` 436 字符 / `prompt_cache_key` 未致 400）；配置 3 处生效（`agent.build.model` 与顶层 `model` = `minimax-cn-openai/MiniMax-M3.1-Flash`，`plan`/`front` 仍 anthropic 线路）。门禁：`bun test tests/` 全绿 + `bash scripts/check-upstream-anchors.sh` 29/29。
 
+**回滚演练（隔离副本，基线 `a2dc627`）**：首轮 **FAIL**，两只既有缺口被这次锚点变更暴露：
+1. 清单只删机制文件、不动 `registry.json` ⇒ 回滚后 `model-fallback` 条目悬空（`proving` + `watch` 路径已删）⇒ `M7` 红；
+2. 只 retire 条目不删清单文件 ⇒ `M1` 孤儿清单红。
+修法按仓库既有形态（与三份组清单一致）：补 `retire: ["model-fallback"]` + 把**本清单自身**加入 `delete`（delete 5 → 6）。修后演练 **PASS**（`bun test tests/` 全绿），`last_drill` 已回填（sha `a2dc627` / 2026-11-23 / pass / content_hash），registry 条目转回 `active`。
+
 **critic②（本轮 patch，`review_profile: arch, build`）**：**APPROVE_WITH_CONDITIONS** / `mergeable: yes` / `scope_exceeded: false`，**无 BLOCKER**。finding 逐条处置：
 
 | # | finding | 处置 |
