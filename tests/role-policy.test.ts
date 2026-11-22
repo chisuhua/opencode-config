@@ -421,3 +421,29 @@ describe("策略表结构自检（防止有人把 allow 写成空数组而恒拒
     expect(denyAll).toEqual(["no-role"])
   })
 })
+
+describe("治理面命中信息：decideWrite 把「是否治理面」暴露给接线层（写门留痕用）", () => {
+  test("治理面命中 ⇒ hit=true + relPath（相对治理根）；拒绝时也带得上", () => {
+    const fx = makeFixture()
+    const denied = check(fx, "planner", path.join(fx.gov, "prompts", "build.md"))
+    expect(denied.allowed).toBe(false)
+    expect(denied.governance).toEqual({ hit: true, relPath: "prompts/build.md" })
+
+    const allowed = check(fx, "architect", path.join(fx.gov, "prompts", "build.md"))
+    expect(allowed.allowed).toBe(true)
+    expect(allowed.governance).toEqual({ hit: true, relPath: "prompts/build.md" })
+  })
+
+  test("非治理面 ⇒ hit=false + 空 relPath（仓库内与仓库外一致）", () => {
+    const fx = makeFixture()
+    expect(check(fx, "builder", "src/foo.ts").governance).toEqual({ hit: false, relPath: "" })
+    expect(check(fx, "builder", path.join(fx.root, "outside.txt")).governance).toEqual({ hit: false, relPath: "" })
+  })
+
+  test("denyAll 分支（no-role）也带治理面命中 ⇒ 留痕不会漏掉最早 return 的分支", () => {
+    const fx = makeFixture()
+    const r = check(fx, "no-role", path.join(fx.gov, "prompts", "build.md"))
+    expect(r.allowed).toBe(false)
+    expect(r.governance).toEqual({ hit: true, relPath: "prompts/build.md" })
+  })
+})

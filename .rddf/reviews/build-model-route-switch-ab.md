@@ -91,9 +91,10 @@
 2. `docs/adr/ADR-role-aware-permissions.md:46` + `lib/role-policy.ts` docstring：把「写集判定以**归一绝对路径**为根」口径同步为「治理面检测 = 调用路径 ∪ realpath；写集判定仍按 realpath」。
 3. **`lib/**` 归属裁定**：architect 维护不了自己的治理面表（表在 `lib/role-policy.ts`，`lib/**` 不在 architect 写集）——本次反转的次生根因。
 4. ✅（已完成，builder 2026-11-23）`scripts/tool-json-failure-stats.ts` 加 `--judge`（子判据逐项 PASS/FAIL + exit 1）—— 见 §7 与 `docs/CHANGELOG.md` v2.61。
-5. （可选）写门治理面留痕（role-gate 目前只有 throw，无 ledger 行）。
+5. ✅（已完成，builder 2026-11-23）写门治理面留痕 —— `role-gate` 现在对治理面写入（放行/拒绝）都追加 `role_gate_write` ledger 行，留痕失败不影响判定（见 `docs/CHANGELOG.md` v2.62）。
 6. （独立）给 MiniMax 报 `tool.input-json` 截断 issue（265 条失败样本 + 时间分布 11-19 起突增 + 两条原始事件 2026-11-20 16:13 / 2026-11-21 09:59）。
 7. **「热加载 vs 必须重启」口径统一**：`docs/MULTI-AGENT-DESIGN.md:1009`（§5.4 生效时机）与 `docs/model-fallback-usage.md`（「改完必须重启」）写的是「插件在 server 启动时加载」的旧事实；2026-11-22 实测：改 `lib/role-lease.ts` 后下一次工具调用即生效、服务进程已运行 2.2 天未重启（`heartbeat_at` 两次写之间前移 16.8s），配置由 `ConfigWatch` 热加载。根因待查（插件加载时机变了，还是从未需要重启）⇒ 统一后再回改两处；本次只在两处加「与实测不符」的 ⚠ 注记（改 §5.4 正文会连带再断一次回滚清单 edit #5 的锚点与 drill 证据链）。
+8. （architect，可选）`ADR-role-aware-permissions` D5 是否补一句「治理面写门留痕」—— 本次实现（v2.62）只加审计行、不改判定口径；ADR 属决策面，builder 不动。若不补，记录只活在 CHANGELOG v2.62。
 
 ## 7. 落地与第二轮审稿（2026-11-23）
 

@@ -222,6 +222,8 @@ export interface WriteCheckResult {
   absPath: string
   /** 相对 repoRoot 的路径（不在仓库内则为空串） */
   relPath: string
+  /** 治理面命中信息（写门留痕 / 诊断用）；`relPath` 相对治理根，未命中为空串 */
+  governance: { hit: boolean; relPath: string }
 }
 
 /**
@@ -252,23 +254,26 @@ export function decideWrite(input: WriteCheckInput): WriteCheckResult {
   const archPaths = input.archPaths ?? resolveArchPaths(input.repoRoot)
 
   const display = inRepo ? rel : abs
-  const ok = (): WriteCheckResult => ({ allowed: true, absPath: abs, relPath: inRepo ? rel : "" })
+  // 治理面命中（双命中：调用路径 ∪ realpath）。提到 `ok`/`deny` 之前算 ⇒ `denyAll` 分支也带得上
+  // （写门留痕按「是否治理面」过滤，no-role 的治理面拒绝同样要留痕）。
+  const govHitInvoked = inGovInvoked && matchesAny(govRelInvoked, GOVERNANCE_PATHS)
+  const govHitReal = inGov && matchesAny(govRel, GOVERNANCE_PATHS)
+  const gov = { hit: govHitInvoked || govHitReal, relPath: govHitInvoked ? govRelInvoked : govHitReal ? govRel : "" }
+  const ok = (): WriteCheckResult => ({ allowed: true, absPath: abs, relPath: inRepo ? rel : "", governance: gov })
   const deny = (why: string): WriteCheckResult => ({
     allowed: false,
     absPath: abs,
     relPath: inRepo ? rel : "",
     message: `role-gate: 角色「${input.role}」禁止对「${display}」执行 ${input.action} —— ${why}`,
+    governance: gov,
   })
 
   if (policy.denyAll) return deny(policy.why)
 
   // ② 治理面（表内路径）：产出归属 architect
-  const govHitInvoked = inGovInvoked && matchesAny(govRelInvoked, GOVERNANCE_PATHS)
-  const govHitReal = inGov && matchesAny(govRel, GOVERNANCE_PATHS)
-  if (govHitInvoked || govHitReal) {
+  if (gov.hit) {
     // 拒绝时报告**调用者写下的名字**（他实际想改的那个），链接场景下更有诊断价值
-    const hitRel = govHitInvoked ? govRelInvoked : govRel
-    return policy.governance ? ok() : deny(`治理面（${hitRel}）的产出归属 architect`)
+    return policy.governance ? ok() : deny(`治理面（${gov.relPath}）的产出归属 architect`)
   }
 
   // ③ 仓库内

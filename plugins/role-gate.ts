@@ -15,10 +15,10 @@ import path from "node:path"
 
 import { Plugin } from "@opencode/plugin"
 
-import { canonicalRoot } from "../lib/delegate-core.ts"
+import { appendLedger, canonicalRoot, redactAndTruncate } from "../lib/delegate-core.ts"
 import { readSessionPartition, resolveRole } from "../lib/role-identity.ts"
 import { checkLeaseForWrite } from "../lib/role-lease.ts"
-import { evaluateWrite, extractWriteTarget } from "../lib/role-policy.ts"
+import { defaultGovernanceRoot, evaluateWrite, extractWriteTarget } from "../lib/role-policy.ts"
 
 const WRITE_TOOLS = new Set(["edit", "write"])
 
@@ -97,7 +97,33 @@ export default Plugin.define({
         repoRoot: workRoot,
       })
 
-      if (!result.allowed) throw new Error(result.message ?? "role-gate: 拒绝")
+      // 治理面留痕（review §6.5）：治理面写入的**放行与拒绝都记一行**（审计 / 事后取证 ——
+      // 此前门控只有 throw，谁在什么角色下改过治理面没有落盘痕迹）。
+      // ⚠ 留痕失败**只告警、不影响判定**：审计面不得成为新的失败点。
+      // ⚠ 只记**门控生效**的会话（`gated`）：后端 / 非 build 主会话不归本门控判（D3）。
+      const logGate = (decision: "allow" | "deny", reason?: string): void => {
+        if (!result.gated || !result.governance.hit) return
+        try {
+          appendLedger(stateRoot, {
+            event: "role_gate_write",
+            decision,
+            role: resolved.role,
+            agent,
+            action: tool,
+            session_id: sessionID,
+            path: result.governance.relPath,
+            ...(reason ? { reason: redactAndTruncate(reason, 400) } : {}),
+            at: new Date().toISOString(),
+          })
+        } catch (e: any) {
+          console.error(`role-gate: 留痕写入失败（不影响判定）: ${e?.message ?? e}`)
+        }
+      }
+
+      if (!result.allowed) {
+        logGate("deny", result.message)
+        throw new Error(result.message ?? "role-gate: 拒绝")
+      }
 
       // ⚠ **门控跳过的会话**（被派发后端 / 非 build 主会话）**不参与租约校验**：
       //   D6 规定「后端的工作角色 = 它的 `role_class`」，而后端租约由**派发临界区**
@@ -118,7 +144,11 @@ export default Plugin.define({
         sessionID,
         warnSink: (m: string) => console.error(m),
       })
-      if (!lease.ok) throw new Error(lease.message ?? "role-gate: 租约校验失败")
+      if (!lease.ok) {
+        logGate("deny", lease.message)
+        throw new Error(lease.message ?? "role-gate: 租约校验失败")
+      }
+      logGate("allow")
     })
   },
 })

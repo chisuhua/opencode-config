@@ -10,6 +10,16 @@
 
 ---
 
+> **v2.62 写门治理面留痕（role-gate → ledger，2026-11-23）**：
+> 此前 role-gate 对治理面写入**只有 throw** —— 谁在什么角色下改过治理面（放行或拒绝）没有落盘痕迹，事后无法取证。现在 `plugins/role-gate.ts` 在门控判定后往 `.rddf/state/ledger.jsonl` 追加一行 `role_gate_write`：`decision`（allow/deny）/ `role` / `agent` / `action` / `session_id` / `path`（相对治理根）/ 拒绝时 `reason`（经 `redactAndTruncate` 脱敏截断）/ `at`。
+> **只记治理面**（非治理面写入零新增 IO），且只记**门控生效**的会话（后端 / 非 build 主会话不归本门控判，ADR D3）。
+> **留痕失败不影响判定**：写不进只 `console.error` 告警 —— 审计面不得成为新的失败点（用例：状态目录只读 ⇒ 仍按治理面规则抛错）。
+> **实现**：`lib/role-policy.ts` 的 `WriteCheckResult` 新增 `governance: { hit, relPath }`（`denyAll` 分支也带得上；双命中口径不变）；复用既有 `appendLedger`（带 `.role.lock`）⇒ **不新增文件类型**，`新建文件闸门` 清单不变。
+> **测试**：`tests/role-gate-plugin.test.ts`（新，6 例：deny / architect allow / builder allow / 非治理面不留痕 / append 两行 / 留痕失败不崩）+ `tests/role-policy.test.ts` +3 例（命中 / 未命中 / denyAll 分支）。
+> **未做**：`ADR-role-aware-permissions` 未改（builder 不改决策内容）—— 是否把「留痕」写进 D5 由 architect 定（review §6.8）。
+
+---
+
 > **v2.61 统计脚本加 `--judge`（A/B 判据机械化，2026-11-23）**：
 > `scripts/tool-json-failure-stats.ts` 新增 `--judge`：按 v2.60 的 A/B 判据逐项 PASS/FAIL，**`exit 0` = 通过**、`exit 1` = 未达判据、`2` = 参数/环境错误。C1 活跃日（calls ≥500）≥3；C2 单日熔断 >0.5%（只对 calls ≥500 的日子）；C3 总量 ≥5,000 且总率 <0.2%；C4 0 失败且 n ≥5,000 ⇒ 提前通过（rule-of-three 95% 上界 3/n）。结论 = C4 ∨ (C1∧C2∧C3)。
 > **`--model` 必填**（判据只对单一路径的桶成立），`--agent` 可选收窄 —— 同一模型下别的 agent、或别的 provider 的失败**不得**计入 A/B。
