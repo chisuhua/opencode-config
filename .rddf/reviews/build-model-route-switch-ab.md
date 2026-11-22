@@ -93,7 +93,7 @@
 4. ✅（已完成，builder 2026-11-23）`scripts/tool-json-failure-stats.ts` 加 `--judge`（子判据逐项 PASS/FAIL + exit 1）—— 见 §7 与 `docs/CHANGELOG.md` v2.61。
 5. ✅（已完成，builder 2026-11-23）写门治理面留痕 —— `role-gate` 现在对治理面写入（放行/拒绝）都追加 `role_gate_write` ledger 行，留痕失败不影响判定（见 `docs/CHANGELOG.md` v2.62）。
 6. （独立）给 MiniMax 报 `tool.input-json` 截断 issue（265 条失败样本 + 时间分布 11-19 起突增 + 两条原始事件 2026-11-20 16:13 / 2026-11-21 09:59）。
-7. **「热加载 vs 必须重启」口径统一**：`docs/MULTI-AGENT-DESIGN.md:1009`（§5.4 生效时机）与 `docs/model-fallback-usage.md`（「改完必须重启」）写的是「插件在 server 启动时加载」的旧事实；2026-11-22 实测：改 `lib/role-lease.ts` 后下一次工具调用即生效、服务进程已运行 2.2 天未重启（`heartbeat_at` 两次写之间前移 16.8s），配置由 `ConfigWatch` 热加载。根因待查（插件加载时机变了，还是从未需要重启）⇒ 统一后再回改两处；本次只在两处加「与实测不符」的 ⚠ 注记（改 §5.4 正文会连带再断一次回滚清单 edit #5 的锚点与 drill 证据链）。
+7. **「热加载 vs 必须重启」口径统一**：`docs/MULTI-AGENT-DESIGN.md:1009`（§5.4 生效时机）与 `docs/model-fallback-usage.md`（「改完必须重启」）写的是「插件在 server 启动时加载」的旧事实；2026-11-22 实测：改 `lib/role-lease.ts` 后下一次工具调用即生效、服务进程已运行 2.2 天未重启（`heartbeat_at` 两次写之间前移 16.8s），配置由 `ConfigWatch` 热加载。根因待查（插件加载时机变了，还是从未需要重启）⇒ 统一后再回改两处；本次只在两处加「与实测不符」的 ⚠ 注记（改 §5.4 正文会连带再断一次回滚清单 edit #5 的锚点与 drill 证据链）。**→ 根因已查清（§7.2）：是「本机上游版本从 v2.2.5 发布版切成源码构建」，不是加载时机变了。**
 8. （architect，可选）`ADR-role-aware-permissions` D5 是否补一句「治理面写门留痕」—— 本次实现（v2.62）只加审计行、不改判定口径；ADR 属决策面，builder 不动。若不补，记录只活在 CHANGELOG v2.62。
 
 ## 7. 落地与第二轮审稿（2026-11-23）
@@ -131,3 +131,21 @@
 | 证据 | 真实库试跑（今天 4 calls）：C1/C3/C4 FAIL、C2 空洞 PASS ⇒ exit 1；缺 `--model` ⇒ exit 2 |
 | 测试 | `tests/tool-json-failure-stats.test.ts` +7 例（PASS / C4 早通过 / C2 压过总率 / 只判 model 桶 / agent 收窄 / 低样本 0 失败 / 缺 model） |
 | 口径解释 | C4 要求 n ≥5,000：判据原文把「0 失败」与「n≈5,000 时上界 0.06%」绑定；低样本 0 失败不构成通过证据 |
+
+### 7.2 §6.7 的只读调查结论（2026-11-23，builder；未改任何文档）
+
+**结论**：那句「插件在 server 启动时加载，改配置或插件代码后需 `opencode service restart` 才生效（常驻 server 不会热加载插件）」写的是 **v2.2.5 发布版的事实**；2026-11-11 本机切到「从源码构建」之后**已失真** ⇒ **不是「插件加载时机变了」，而是「本机运行的上游版本变了」**。
+
+| 证据 | 内容 |
+|---|---|
+| 文档来历 | MAD「生效时机」行由 `69b31cb`（2026-11-08）写入；`model-fallback-usage.md`「改完必须重启」由 `10eb1a0`（同日）写入 —— 当时本机跑的是**发布版 v2.2.5** |
+| 版本切换 | `7f913e1`（2026-11-11）把本机 opencode 改为从 `/workspace/main/opencode`（dev 分支）本地构建，旧二进制备份为 `opencode.release-v2.2.5.bak`；现运行版本 `v0.0.0-local-202611110721` |
+| 上游能力（插件） | `packages/core/src/plugin/supervisor.ts:205-206` 订阅 `sources.changes()` / `modules.changes()` ⇒ 插件源变更触发**重新激活**（100ms 防抖）；该机制上游 2026-07-05 引入（`a9b7bd9e2f`） |
+| 上游能力（配置） | `packages/core/src/config.ts` 用 `Watcher` 服务 + `packages/core/src/config/watch.ts` ⇒ 配置文件被监视并发变更事件（上游 2026-09-03，`24f6cb51c8`） |
+| 现场实证（插件） | 2026-11-23 本次会话：改 `plugins/role-gate.ts` 后**下一次工具调用**即报 `logGate is not defined` ⇒ 插件文件被重新导入，**未重启** |
+| 现场实证（lib） | 2026-11-22：改 `lib/role-lease.ts` 后两次写之间 `heartbeat_at` 前移 16.8s，服务进程已运行 2.2 天未重启 |
+| ⚠ 未实证的部分 | 「**运行中**的会话立即换用新配置」未实证 —— 只观察到**新会话**读到新配置（可能是每次会话重读，也可能是 watcher 触发）⇒ 统一口径时**别把这句写成绝对** |
+
+**给 architect 的改法建议**（决策面归 architect，本条不改文档）：
+- §5.4「生效时机」行与 usage 手册「改完必须重启」段 ⇒ 改为「本机现为源码构建版：插件与 `lib/` 改动在下一次工具调用即生效；配置改动由配置监视热加载（**新会话即刻可见**）。发布版 v2.2.5 才需要 `opencode service restart`（历史事实，留在版本说明里）」。
+- 两处**同时**改 ⇒ 回滚清单 `model-fallback.json` 的 edit #5 锚点需**同批**同步（连带面已在本文件 §7 记过一次）。
