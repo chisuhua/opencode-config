@@ -14,27 +14,34 @@
 > 阶段 5  D1（两段式演练 + 回填）→ 提交
 > ```
 > ⚠ **阶段 2 必须先于阶段 3**：`edits[13]`（角色表）与 `edits[45]/[46]`（verifier 行散文）的 `find` 必须匹配**阶段 2 之后**的 `prompts/build.md` ⇒ 若阶段 3 先跑，阶段 2 的改写会立即打断它（fail-closed 能发现，但虚耗一轮）。
-> ⚠ **阶段 1 的守卫先写**：A1 的断言在阶段 1 落盘（此时基线值取现状 ⇒ 绿），A2 的变异在阶段 4 做（避免与阶段 2/3 的内容改动互相干扰）。
+> ⚠ **阶段 1 的守卫先写**：A1 的断言在阶段 1 落盘（此时基线值取现状 ⇒ 绿），A2 的判别力用例**用纯 fixture 实现**（`findShapeViolations` 不读真仓）⇒ **可与阶段 1 一起完成**，与阶段 2/3 的内容改动零干扰。
 
 ## 0. 前置核对
 
-- [ ] **T0** 记录基线：`bun test tests/` 全绿数；`bun scripts/rollback-registry.ts` PASS（9 清单 / 0 proving）；`git rev-parse HEAD`。
+- [x] **T0** 记录基线：`bun test tests/` 全绿数；`bun scripts/rollback-registry.ts` PASS（9 清单 / 0 proving）；`git rev-parse HEAD`。
+  > **验收证据**：`bun test tests/` = **1137 pass / 1 skip / 0 fail**；`bun scripts/rollback-registry.ts` = **PASS（14 active / 0 proving / 3 exempt）**；`git rev-parse HEAD` = `f6178f0`（立项工件 commit）。
 - [ ] **T0b** **pin 普查**（决定段 B 断言族与 6 块的落点）：扫 `.rddf/rollback/*.json` 全部 `edits[].find` 对 **三个目标文件**的覆盖 —— `tests/config-guards.test.ts` · `lib/delegate-core.ts` · **`prompts/build.md`** ⇒ 输出每个 `find` 命中的**行区间** ⇒ 可用空隙清单。
-  > **验收证据**：普查脚本逐条定位 `find` 在目标文件中的行区间；被 pin 的 describe 名单与可用空隙清单落盘到本 change 的 tasks 记录。
+  > **验收证据**：普查脚本 `/tmp/opencode/t0-survey.py`（一次性工具，不入仓）输出：`prompts/build.md` 被 **5 份清单 pin 共 21 处**（硬约束四处 = 角色表行 449 / verifier 行散文行 456–457 / 既有 `role-class-write-set:verifier` 块行 489 / `capability:build` 块行 483）；**角色表节 = 行 448..502**，其中**零覆盖行 28 行**（行 448、460–482、499–502）⇒ **表尾投影块（461–478）完全零覆盖** ⇒ 段 B 改它**不撞任何 pin**；`tests/config-guards.test.ts` 与 `lib/delegate-core.ts` 的 pin 区间清单同表输出。
   > ⚠ **须输出角色表「逐行」的残余 pin 名单**（critic 验证建议）：逐行标出角色表每一行被哪些 `find` 覆盖 ⇒ 供 **A4 选变异点**与 **B3 选断言落点**共用（A4 变异的必须是**零覆盖**行，否则假败）。
   > ⚠ **`prompts/build.md` 已被实测**（2026-11-24，见 `design.md` §2.4）：5 份清单 / 21 处 ⇒ **角色表（449）· verifier 行散文（456–457）· 既有 verifier 机读块（489）· `capability:build` 块（483）** 四处是硬约束 ⇒ 段 B 的改写与插入必须避开，避不开就**同批拆分对应 find**（两段式）。
-- [ ] **T0c** 确认 `lib/rollback-drill.ts:450` 已是函数式 replacement（段 C 的安全前提）且 `tests/rollback-drill.test.ts` 共 39 条、其中 4 条为「按字面」用例。
-- [ ] **T0d** **重测基线表**：用脚本重算 9 个清单的 `{sep, pipe, maxLen}` 实测值 ⇒ 与 `proposal.md` 的基线表逐格核对（oracle 未能独立复核这五项数值 —— 其 shell 统计被权限拒绝 ⇒ 以 builder 本次重测为准）⇒ **A1 落地当天再测一次**（基线值将固化成测试常量，任何一格误差 ⇒ 当天即红 ⇒ fail-closed 方向正确但会虚耗一轮排查）。**核对以 A1 修正后的 7 项为准**（critic 验证建议）。
-  > **验收证据**：重测脚本输出与 `proposal.md` 基线表的逐格 diff（应为空）；顺带统计全仓 361 条 `find` 中**缩进表格行**（`  | …`）的条数 ⇒ 若为 0 ⇒ 登记为「已知盲区 · 本仓不适用」（design §1.1）；若非 0 ⇒ 停下报告（判据有盲区）。
+- [x] **T0c** 确认 `lib/rollback-drill.ts:450` 已是函数式 replacement（段 C 的安全前提）且 `tests/rollback-drill.test.ts` 共 39 条、其中 4 条为「按字面」用例。
+  > **验收证据**：`lib/rollback-drill.ts:450` = `buf = buf.replace(e.find, () => e.replace)`；`ManifestEdit` JSDoc（`:48-51`）含「按字面写入」；`.rddf/rollback/README.md:47` 含同义 bullet；`tests/rollback-drill.test.ts:220` 起 4 条「按字面」用例、共 39 条 ⇒ **段 C 的 6 条 AC 实测全部落地**。
+- [x] **T0d** **重测基线表**：用脚本重算 9 个清单的 `{sep, pipe, maxLen}` 实测值 ⇒ 与 `proposal.md` 的基线表逐格核对（oracle 未能独立复核这五项数值 —— 其 shell 统计被权限拒绝 ⇒ 以 builder 本次重测为准）⇒ **A1 落地当天再测一次**（基线值将固化成测试常量，任何一格误差 ⇒ 当天即红 ⇒ fail-closed 方向正确但会虚耗一轮排查）。**核对以 A1 修正后的 7 项为准**（critic 验证建议）。
+  > **验收证据**：重测脚本输出与 `proposal.md` 基线表的逐格 diff = **空**（9 清单的 sep / pipe / maxLen 全部吻合：commit-gate 0/0/2067 · delegate-knowledge-delivery 0/2/6524 · delegate-slot-kernel 5/6/2894 · governance-paths-config 2/2/12768 · model-fallback 1/2/3003 · plan-delegate 1/1/4849 · plan-topics 1/1/5229 · role-class-write-set 3/3/8844 · rollback-manifest-enforcement 0/1/500）；find 总数 **361**；分位 p50=209 / p75=580 / p90=1587 / **p95=2894** / p99=6349 / p100=12768 ⇒ `MAX_FIND_LEN = 2894` 取值成立。
+  > ⚠ **缩进表格行盲区**：全量 361 条 find 中**缩进 markdown 表格行**（去缩进后以 `|` 开头且含 ≥2 个 `|`）**0 条** ⇒ 盲区在本仓**不适用**（登记在 design §1.1 与 §4）；⚠ 注：宽松正则 `^\s+\|` 会命中 13 条**缩进的 shell 管道**（`  | grep '^owns:' …`）⇒ 那**不是**表格行 ⇒ 不构成盲区实例。
 
 ## A. 段 A —— 守卫先行（红）
 
-- [ ] **A1（AC1/AC6）** `tests/rollback-manifests.test.ts` 新增形态断言族：`MAX_FIND_LEN = 2894`（测试常量，逐字写死）；`FIND_SHAPE_BASELINE` 登记 **7 个**未收敛清单的 `{sep, pipe, maxLen}`（取值 = proposal 基线表逐格）；断言 `actual ≤ baseline`（逐项）；未登记清单须满足 `{sep: 0, pipe: 1, maxLen ≤ 2894}`。
-  > **验收证据**：先跑 `bun test tests/rollback-manifests.test.ts` ⇒ 新断言**绿**（基线值取自当前实测 ⇒ 零假红）；记录绿态用例数。
+- [x] **A1（AC1/AC6）** `tests/rollback-manifests.test.ts` 新增形态断言族：`MAX_FIND_LEN = 2894`（测试常量，逐字写死）；`FIND_SHAPE_BASELINE` 登记 **7 个**未收敛清单的 `{sep, pipe, maxLen}`（取值 = proposal 基线表逐格）；断言 `actual ≤ baseline`（逐项）；未登记清单须满足 `{sep: 0, pipe: 1, maxLen ≤ 2894}`。
+  > **验收证据**：`bun test tests/rollback-manifests.test.ts` ⇒ **36 pass / 0 fail**（原有 4 + 新增 32）；新断言**绿**（基线值取自当前实测 ⇒ 零假红）。判据实现为**纯函数** `findShapeViolations(name, finds, baseline)` ⇒ 判别力可用 fixture 自证而不触真仓。
+  > ⚠ **阶段 1 登记 8 项**（`governance-paths-config.json` 过渡态登记 sep=2 / pipe=2 / maxLen=12768）⇒ **阶段 3（A3）完成后移除该项** ⇒ 终态 **7 项**（= AC1）。两次改动都在同一张表里 ⇒ 收敛进度可读（design §1.2 过渡态注记）。
   > ⚠ **只登记 7 个**（critic SHOULD_FIX-1）：`commit-gate.json` 已达标 ⇒ **刻意不登记**（登记它反而允许其退化）；`governance-paths-config.json` 亦不登记（段 A3 后必须已达标）。
+  > ⚠ **阶段 1 先登记 8 项**：A1 落盘时 `governance-paths-config.json` 尚未拆分（sep=2 / pipe=2 / maxLen=12768）⇒ 此时不登记则守卫**立即红** ⇒ **阶段 1 登记 8 项**（含它的当前值）；**阶段 3（A3）完成后移除该项** ⇒ 终态 **7 项**（= AC1）。两次改动都在同一张表里 ⇒ 收敛进度可读（design §1.2 过渡态注记）。
   > ⚠ **判据形态**：`sep` = 含 `/^\|[\s:|-]+\|$/m` 的 `find` 条数；`pipe` = `|` 起始的**连续**行数 > 1 的 `find` 条数；`maxLen` = 最长 `find` 字符数。**已知盲区**：缩进表格行（`  | …`）两道闸都不计 ⇒ T0d 统计其数量并登记（见 design §1.1）。
-- [ ] **A2（AC2）** **判别力自证**：① 在某个**未登记**清单里构造一条含表格分隔行的 `find` ⇒ 断言**红**（撤除后恢复绿）；② 把 `FIND_SHAPE_BASELINE` 中任一清单的 `pipe` 下调到实际值以下 ⇒ 断言**红**（恢复后绿）。
-  > **验收证据**：两条变异各留一次红态输出（`bun test tests/rollback-manifests.test.ts` 的失败用例名 + 差异摘要）。
+- [x] **A2（AC2）** **判别力自证**：① 构造一条超基线的 `find`（未登记清单里加一条含表格分隔行的 find）⇒ 断言**红**；② 把 `FIND_SHAPE_BASELINE` 里任一清单的 `pipe` 下调到实际值以下 ⇒ 断言**红**。
+  > **验收证据**：5 条判别力用例全部**红**（`bun test tests/rollback-manifests.test.ts` = 36 pass / 0 fail，其中 5 条是变异用例）：① 含表格分隔行 ⇒ 命中「分隔行」；② 避开分隔行、只覆盖数据行 ⇒ 命中「整张表」（`pipe` 闸）；③ pipe 上限为 0 时单条即红；④ 基线下调到实测值以下 ⇒ 红；⑤ 超长 find ⇒ 命中「字符」。
+  > ⚠ **全部用 fixture 实现**（`findShapeViolations` 是纯函数）⇒ **不触真仓** ⇒ 与阶段 2/3 的内容改动零干扰（故实际执行时间早于原计划的阶段 4；执行顺序段已同步）。
+  > ⚠ **`pipe` 计的是条数**（不是「单条覆盖了几行」）⇒ 超过默认上限 1 需 **2 条** find ⇒ 判别力用例按此构造；「单条覆盖多行」的严重程度判据**刻意不加**（design §4 已登记为已知局限）。
 - [ ] **A3（AC3）** 拆分 `governance-paths-config.json` 的三条大 `find`：`edits[11]`（12768，`tests/config-guards.test.ts`）· `edits[13]`（2914，`prompts/build.md` 角色表）· `edits[14]`（2657，治理面作用域表）—— 按**机制特有的语义边界**拆成多条小 `find`/`replace` 对；每条满足 `{sep: 0, pipe ≤ 1, maxLen ≤ 2894}`；拆分后该清单所有 `find` 在演化缓冲里仍各自恰好 1 次。
   > **验收证据**：`bun test tests/rollback-manifests.test.ts` 绿（`find_count` 不漂）；`bun scripts/rollback-registry.ts` 对该清单 PASS；拆分前后 `edits` 条数与各条长度表落盘。
   > ⚠ **拆分语义保持性必须逐条核对**（critic 验证建议 · 最要紧）：对 `edits[11]/[13]/[14]` 的**每一条**拆出项，diff 其 `find` 与对应 `replace` ⇒ 证明被丢出 `find` 的区间在 `replace` 侧**零差异**（`edits[13]` 已抽验：除 architect 行门控句外逐字相同；`edits[11]`/`edits[14]` 须**全量核对**）。理由：**drill 绿 + `verify.commands` 跑通判不了「漏还原」** —— 现有断言的是**当前态**，不是回滚后的还原完整性 ⇒ 这是 ADR「语义覆盖不可机判」的实体化，只能靠人工/脚本逐条核对并留痕。

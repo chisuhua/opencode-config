@@ -42,6 +42,11 @@ const FIND_SHAPE_BASELINE: Record<string, { sep: number; pipe: number; maxLen: n
   "rollback-manifest-enforcement.json":{ sep: 0, pipe: 1, maxLen: 500 },
   // ⚠ **只 7 项**：`commit-gate.json` 已达标（sep=0 / pipe=0 / maxLen=2067）⇒ **刻意不登记**
   //   （登记它反而允许它退化）；`governance-paths-config.json` 亦不登记（段 A3 后必须已达标）
+  //
+  // ⚠ **实施顺序的过渡态**：A1 落盘时（阶段 1）`governance-paths-config.json` 尚未拆分
+  //   （sep=2 / pipe=2 / maxLen=12768）⇒ 若此时就不登记 ⇒ 守卫**立即红** ⇒
+  //   **阶段 1 先登记 8 项**（含它的当前值）⇒ 绿；**阶段 3（A3）拆分完成后移除该项** ⇒
+  //   终态 **7 项**（= AC1 要求）。两次改动都在同一文件的同一张表里 ⇒ 收敛进度可读。
 }
 ```
 
@@ -157,6 +162,7 @@ export function renderWriteSetBlock(role: Role): string {
 
 | 残留 | 处置 |
 |---|---|
+| `pipe` 指标只数「find **条数**」，不反映「单条覆盖了几行表格」 | 形态指标是**必要形态**的保守近似（不是语义判定）⇒ 一条覆盖 2 行表格与一条覆盖 50 行表格判别力相同。⚠ 严重程度判据**刻意不加**（会引入「行数占比」这类需要语义判断的量 ⇒ 假信心）。已在 `tests/rollback-manifests.test.ts` 的判别力用例里注明 |
 | G3 被切碎的 edit（`role-class-write-set.json` 里因 `$&` 转义而被切碎的粒度） | 段 C 落地后 `replace` 侧已安全 ⇒ 可恢复自然粒度；核对方式 = `git show <引入 commit>:<path>` 对比原文。本 change 不动，登记为已知残留 |
 | 其余 8 个清单的 `find` 形态违规 | AC7 的 check list（逐项登记）⇒ 后续单独立项收敛 |
 | `prompts/plan.md` / `prompts/front.md` 是否也要嵌写集块 | 另立项决定（写进 AC 会变成开放判据） |
