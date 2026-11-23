@@ -1,6 +1,6 @@
 # 验收报告 — governance-paths-config-migration（B1 治理面清单配置化）
 
-> **判据来源**（按优先级）：`openspec/changes/governance-paths-config-migration/proposal.md` 的「验收标准」表（AC1–AC8）⇒ 其判据正文以 `docs/adr/ADR-governance-paths-ownership.md`（Status = **Accepted**）的 Verification 章 **V1–V8** 为单一真源（ADR ↔ AC 编号映射见 ADR 元数据「AC 映射」行）。
+> **判据来源**（按优先级）：`openspec/changes/archive/2026-11-23-governance-paths-config-migration/proposal.md` 的「验收标准」表（AC1–AC8）⇒ 其判据正文以 `docs/adr/ADR-governance-paths-ownership.md`（Status = **Accepted**）的 Verification 章 **V1–V8** 为单一真源（ADR ↔ AC 编号映射见 ADR 元数据「AC 映射」行）。
 > **实现基线**：`e547f47`（机制落地提交）→ `last_drill` 的演练基线同此。
 > **审查记录**（治理面）：`.rddf/reviews/governance-paths-config-migration-review.md`（oracle `治理面判定: PASS-WITH-NOTES` → critic 第 1 轮 `REJECT`（1 BLOCKER）→ 修复 → critic 复审 `APPROVE` / `mergeable: yes`）。
 
@@ -10,7 +10,7 @@
 
 | 条件 | 检测 | 结论 |
 |---|---|---|
-| ① change 存在且 `proposal.md` 含 `## 验收标准` / `## Acceptance Criteria` 段 | `openspec/changes/governance-paths-config-migration/proposal.md` 含 `## 验收标准`（第 47 行） | ✅ 满足 |
+| ① change 存在且 `proposal.md` 含 `## 验收标准` / `## Acceptance Criteria` 段 | `openspec/changes/archive/2026-11-23-governance-paths-config-migration/proposal.md` 含 `## 验收标准`（第 47 行） | ✅ 满足 |
 | ② rdd-builder 的 P3 archive gate 已触发（`iteration.json` 的 `status ∈ {in_worktree, completed}`、`tasks_done == tasks_total > 0`、未归档） | `.rddf/state/iteration.json` **不存在**（本仓未装 rdd-workflow 流水线 ⇒ 本 change 走**内置流程**） | ❌ **不满足** |
 | ③ `skill` 工具能加载 `rdd-verifier` | `~/.config/opencode/scripts/rdd-skills.sh --json` ⇒ `installed: true`（能力在），但 ② 不满足 ⇒ 前置条件不成立 | — |
 
@@ -110,3 +110,10 @@
 | R1–R3 完成（registry `active` + drill PASS + `last_drill` 回填） | ✅（drill 基线 `e547f47` PASS；`last_drill.content_hash = f6540cf6…`；registry census `active=14`） |
 | V1–V3 全绿，AC1–AC8 逐条有证据 | ✅（本报告 §2） |
 | 过渡期（ADR D4）结束声明写入 CHANGELOG | ✅（v2.67「⚠ 过渡期结束」段：清单增删此后由 architect 自主维护，不再需要 builder 代改） |
+
+## 6. 归档批注（2026-11-23）
+
+- **已归档**：`openspec/changes/governance-paths-config-migration/` → `openspec/changes/archive/2026-11-23-governance-paths-config-migration/`（`openspec archive --skip-specs`；`openspec validate` 事前 = valid；归档后 `openspec list` 中已无该 change）。
+- **指针回填**：ADR 元数据表 5 行（治理面 ⇒ oracle → critic 全口径：oracle `治理面判定: PASS-WITH-NOTES` → critic `APPROVE` / `mergeable: yes`）+ 本报告与审稿记录、registry notes 的路径同步。
+- **归档后复跑**：`bun test tests/` ⇒ **1133 pass / 1 skip / 0 fail**；anchors 29/29；registry PASS；record discipline OK；`openspec list` ⇒ 该 change 已不在活跃队列。
+- **⚠ 判别力自证的证据基线不变**：8/8 变异体自证跑在机制批次（`e547f47`）上；归档只移动目录 + 同步路径字符串，**不改任何机制代码** ⇒ 判别力结论仍然成立。

@@ -4,14 +4,14 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | **Accepted**（2026-11-23 用户签批） |
+| Status | **Accepted**（2026-11-23 用户签批）。**已实施 + 已验收 + 已归档**（2026-11-23；关联 change 归档 ⇒ 路径见下）。实现载体 = `lib/role-policy.ts`（兜底默认 + 核心集 + `resolveGovernancePaths()` 三态解析 + **机制面禁区**的判定侧排除）+ 配置面 `.rddf/config/governance-paths.json`（清单真源，归 architect）+ 守卫族 `tests/config-guards.test.ts`（15 例，V1–V7）。实施审稿与验收报告见「审稿报告」行 |
 | Date | 2026-11-23 |
 | Author | architect（主会话；用户口令「切 architect：§6.1 / §6.2 / §6.3 / §6.8 + §6.7 的两处正文改写」授权做本裁定） |
 | Parent | `ADR-role-aware-permissions`（D2 门控面 / D3 会话类型不相交 / D5 宣称边界 —— 本 ADR 只裁定**治理面清单这个数据**归谁维护，不改其判定语义） |
-| 关联 change | `openspec/changes/governance-paths-config-migration/`（2026-11-23 立项；来源 = `backlog: governance-paths-config-migration`） |
-| AC 映射 | 本 ADR **V1–V8 ↔ AC1–AC8**（`openspec/changes/governance-paths-config-migration/proposal.md` 的验收标准表） |
-| 审稿报告 | `.rddf/reviews/governance-paths-ownership-review.md`（oracle 2 轮：1 轮方案咨询 + 1 轮治理面审查；critic 1 轮 —— 逐条处置见该文件） |
-| 修订 | —（本文为首版） |
+| 关联 change | `openspec/changes/archive/2026-11-23-governance-paths-config-migration/`（2026-11-23 立项；**已实施 + 已验收 + 已归档** 2026-11-23 ⇒ 路径随归档同步；来源 = `backlog: governance-paths-config-migration`） |
+| AC 映射 | 本 ADR **V1–V8 ↔ AC1–AC8**（`openspec/changes/archive/2026-11-23-governance-paths-config-migration/proposal.md` 的验收标准表） |
+| 审稿报告 | `.rddf/reviews/governance-paths-ownership-review.md`（oracle 2 轮：1 轮方案咨询 + 1 轮治理面审查；critic 1 轮 —— 逐条处置见该文件）；**实施侧** = `.rddf/reviews/governance-paths-config-migration-review.md`（治理面审查）+ `.rddf/reviews/governance-paths-config-migration-verify.md`（AC1–AC8 验收） |
+| 修订 | **2026-11-23**：关联 change 归档 ⇒ 元数据表 **5 行**同步（Status 行补「已实施 + 已验收 + 已归档」与实现载体；「关联 change」行 + 「AC 映射」行路径改为归档路径；「审稿报告」行追加**实施侧**审稿与验收指针）。**据实订正**（纯事实同步，**不改决策**）：**除本元数据表外**，四要素（选项对比表 / 后果章 / Verification 章）与决策正文均未动。 |
 
 ## 背景与问题
 

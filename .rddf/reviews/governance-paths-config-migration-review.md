@@ -1,9 +1,9 @@
 # 治理面审查记录 — governance-paths-config-migration（B1 机制落地）
 
 > **判据真源**：`docs/adr/ADR-governance-paths-ownership.md`（Status = **Accepted**，2026-11-23 用户签批）的 D1–D5 + Verification V1–V8。
-> **实施契约**：`openspec/changes/governance-paths-config-migration/{proposal.md,tasks.md}`。
+> **实施契约**：`openspec/changes/archive/2026-11-23-governance-paths-config-migration/{proposal.md,tasks.md}`。
 > **本记录的角色**：builder 对**治理面**改动集的审查收口（`prompts/build.md` §审查配对 的「architect（治理面）」行：oracle → critic，顺序不可颠倒；一次改动 = 一个 patch series 内触及治理面文件的**集合**）。
-> **改动集**（`git diff ba02361 --stat` + `git ls-files --others --exclude-standard`）：`lib/role-policy.ts`、`plugins/role-gate.ts`、`tests/config-guards.test.ts`、`tests/role-gate-plugin.test.ts`、`prompts/build.md`、`docs/MULTI-AGENT-DESIGN.md`、`.rddf/rollback/registry.json`、`.rddf/config/governance-paths.json`（新增）、`.rddf/rollback/governance-paths-config.json`（新增）、`openspec/changes/governance-paths-config-migration/tasks.md`。
+> **改动集**（`git diff ba02361 --stat` + `git ls-files --others --exclude-standard`）：`lib/role-policy.ts`、`plugins/role-gate.ts`、`tests/config-guards.test.ts`、`tests/role-gate-plugin.test.ts`、`prompts/build.md`、`docs/MULTI-AGENT-DESIGN.md`、`.rddf/rollback/registry.json`、`.rddf/config/governance-paths.json`（新增）、`.rddf/rollback/governance-paths-config.json`（新增）、`openspec/changes/archive/2026-11-23-governance-paths-config-migration/tasks.md`。
 
 ## 0. 意图检查点（oracle 调用前）
 
@@ -80,3 +80,14 @@
 - **backlog（本 change 不做，明确登记）**：
   1. 宿主 edit/write 工具对 symlink 文件是否**跟随写入真实目标**（决定 critic 第 2 轮 NIT② 的观察是否实际可达）—— 需调研宿主行为后再定。
   2. `proposal.md` 的「影响面」清单未列 `docs/MULTI-AGENT-DESIGN.md`（critic 判为 NITS：下次同步投影时补登，防后续 change 漏判投影义务）。
+  3. `docs/CHANGELOG.md` v2.67 的回滚行仍写「清单已写 ⇒ **演练待跑** ⇒ drill PASS 后回填 `last_drill`」—— drill 已 PASS 且 `last_drill` 已回填（registry 现为 `active`）⇒ 字面读有滞后感。critic 判为 **NITS + `scope_exceeded: true`（仅记录，不返工）**：CHANGELOG 是**发布时点**记录，且仓内先例 `ADR-canonical-root-normalization` / model-fallback v2.65 同款措辞在 drill 通过后同样滞后 ⇒ 保持一致，不在本批改。
+
+## 7. 归档批次的治理面审查（**第二个 patch series**）
+
+**对象**：`docs/adr/ADR-governance-paths-ownership.md` 的**元数据表 5 行**（Status / 关联 change / AC 映射 / 审稿报告 / 修订）—— 归档后的事实同步（change 已移入 `openspec/changes/archive/2026-11-23-governance-paths-config-migration/` ⇒ 「关联 change」指针须跟随，否则 ADR 完成标志第 4 条不再成立）。
+
+**通道判定**：`prompts/build.md` 的「判例（Accepted ADR 的描述性措辞修订）」豁免条件为「只改同一条 bullet 的表述、**不改表格行**、**不动 Status 行**」⇒ 本次改 **5 个表格行且含 Status 行** ⇒ **明确超出豁免** ⇒ 走 **oracle → critic 全口径**（oracle 已独立确认此判定）。**预算**：治理面行的预算是「**一次改动** = 一个 patch series ⇒ oracle 1 + critic 1」⇒ 本批是新 patch series，与实现批次的 2 轮 critic（第 1 轮 + BLOCKER 闭合复审）**分开计**。
+
+- **oracle 判定行原文**：`治理面判定: PASS-WITH-NOTES` —— 先例一致性 ✅（与 `ADR-front-cancel-release.md:9` 逐字同形；与 `ADR-canonical-root-normalization.md:7,11,15` 同形三件套）、决策正文零改动 ✅、完成标志 5 条全成立 ✅、无悬空指针 ✅；3 条 finding（N1 修订行自相矛盾 / N2 范围声明漏 1 行 / N3 Status 行承载过程日志）**全部已处置**。
+- **critic 判定**：`APPROVE` / `mergeable: yes` / 0 BLOCKER / 0 SHOULD_FIX / 1 NIT（= §6 第 3 条，CHANGELOG 滞后措辞，`scope_exceeded: true` 仅记录）。复核结论：正文零改动 ✅、修订行自洽 ✅、范围声明与 diff 一致（5 行）✅、Status 行无过程日志 ✅、无悬空指针 ✅、归档目录完整 ✅、「已实施 + 已验收 + 已归档」的陈述**证据充分、无夸大** ✅。
+- **处置**：N1 → 修订行改为「**除本元数据表外**，四要素（选项对比表 / 后果章 / Verification 章）与决策正文均未动」；N2 → 修订行改为「元数据表 **5 行**同步」并逐条列出；N3 → Status 行删去 critic BLOCKER 因果叙述（过程日志归 `.rddf/reviews/`），只留结论 + 指针。

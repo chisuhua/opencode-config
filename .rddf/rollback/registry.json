@@ -160,7 +160,7 @@
         ".rddf/config/governance-paths.json",
         "lib/role-policy.ts"
       ],
-      "notes": "治理面清单**配置化**（B1）已落地（2026-11-23；change = `openspec/changes/governance-paths-config-migration/`）：清单真源 = `.rddf/config/governance-paths.json`（**政策数据**，归 architect），`lib/role-policy.ts` 只留**兜底默认**（`DEFAULT_GOVERNANCE_PATHS`）+ `resolveGovernancePaths()` 三态解析（读根 = 治理根）+ **机制面禁区**（`lib/` / `plugins/` 永不治理 ⇒ 判定侧结构性排除）。回滚清单 `.rddf/rollback/governance-paths-config.json`（删新配置 + 还原机制/守卫/散文 + 结构化退役本条目）。2026-11-23：drill（隔离副本，基线 `e547f47`）**PASS** ⇒ `last_drill` 已回填 ⇒ 由 `proving` 转 `active`。"
+      "notes": "治理面清单**配置化**（B1）已落地（2026-11-23；change = `openspec/changes/archive/2026-11-23-governance-paths-config-migration/`）：清单真源 = `.rddf/config/governance-paths.json`（**政策数据**，归 architect），`lib/role-policy.ts` 只留**兜底默认**（`DEFAULT_GOVERNANCE_PATHS`）+ `resolveGovernancePaths()` 三态解析（读根 = 治理根）+ **机制面禁区**（`lib/` / `plugins/` 永不治理 ⇒ 判定侧结构性排除）。回滚清单 `.rddf/rollback/governance-paths-config.json`（删新配置 + 还原机制/守卫/散文 + 结构化退役本条目）。2026-11-23：drill（隔离副本，基线 `e547f47`）**PASS** ⇒ `last_drill` 已回填 ⇒ 由 `proving` 转 `active`。"
     }
   ]
 }
