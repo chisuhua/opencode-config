@@ -55,7 +55,8 @@
   > **验收证据**：负向验证**绿**（脚本 `/tmp/opencode/negative-checks.py`）：改 `prompts/build.md` 角色表 **general 行的「禁止」列散文**（与机制无关）⇒ `bun test tests/rollback-manifests.test.ts` **退出码 0（绿）** ⇒ **不再报 `find_count`** ⇒ 解 pin 实效成立；变异后工作树逐字恢复。  > ⚠ **变异点选取依据**：T0b 的逐行名单显示 general 行在 `governance[13]` 拆分后**零覆盖**（其余 5 行仍被 plan-delegate[9] / commit-gate[7][10] / role-class-write-set[45][46] 覆盖）⇒ 选 general 行 ⇒ 既满足「与机制无关」又满足「零覆盖」两条前置。
   > **验收证据**：变异前 `bun test tests/` 绿；变异后仍绿（无 `find_count` 失败项）；恢复后 `git diff` 仅剩本 change 的目标改动。
   > ⚠ **变异点必须选自 T0b 普查出的「零覆盖空隙」**（critic SHOULD_FIX-3）：角色表其它行仍被**未拆分**的 `find` 合法覆盖（`plan-delegate.json` `edits[9]` 行 455、`commit-gate.json` `edits[7]` 行 456 / `edits[10]` 行 458）⇒ 选错单元格 ⇒ 红是**合法 pin 触发**而非解 pin 无效 ⇒ 本 AC **假败**。T0b 须输出角色表**逐行**的残余 pin 名单供选点。
-- [ ] **A5（AC5）** **正向验证**：全部 9 个清单的 drill 全绿（`bun scripts/rollback-registry.ts` = PASS）；被拆清单的 `verify.commands` 逐条跑通。
+- [x] **A5（AC5）** **正向验证**：全部 9 个清单的 drill 全绿（`bun scripts/rollback-registry.ts` = PASS）；被拆清单的 `verify.commands` 逐条跑通。
+  > **验收证据**：`bun scripts/rollback-drill.ts .rddf/rollback/governance-paths-config.json` = **PASS: governance-paths-config 回滚后验证全绿（bun test tests/）**（隔离 clone，基线 `2cfd04d`）；`bun scripts/rollback-registry.ts` = **PASS（14 active / 0 proving / 3 exempt）**。  > ⚠ 演练过程中发现段 B 与本机制的**客观耦合**（迁移前 `architect.allow` 只有两项）⇒ 段 B 的产物纳入本清单一起退役（e3/e4/e5）⇒ 这是使 drill 能绿的必要条件，不是范围膨胀。
   > **验收证据**：registry 输出逐清单 PASS 行；`verify.commands` 的逐条命令与退出码。
 - [x] **A6（AC7）** 登记其余 **8 个**清单的收敛 check list（见下表）—— 不许静默遗留。
   > **验收证据**：下方「未收敛清单 check list」表已逐行登记 8 个清单的 `{sep, pipe, maxLen}` 当前值 + 收敛目标 + 建议顺序（含 `commit-gate.json` 已达标 ⇒ 移出基线表）。
@@ -117,9 +118,11 @@
 
 ## D. 收口
 
-- [ ] **D1** 回滚演练：清单内容变更与「撤 `last_drill` + registry 转 `proving`」**同一 commit** ⇒ 演练 ⇒ 回填 `last_drill` + registry 转 `active`。
+- [x] **D1** 回滚演练：清单内容变更与「撤 `last_drill` + registry 转 `proving`」**同一 commit** ⇒ 演练 ⇒ 回填 `last_drill` + registry 转 `active`。
+  > **验收证据**：两段式第 1 步（撤 `last_drill` + registry 转 `proving`）与清单内容变更同批提交（commit `5b5ec86` / `2cfd04d`）⇒ 演练 **PASS** ⇒ 第 2 步回填 `last_drill`（sha `2cfd04d` · at 2026-11-24 · result pass · content_hash `89474648f26c…`）+ registry 转 `active`。
   > **验收证据**：registry 输出 PASS（9 active / 0 proving）；`last_drill.content_hash` 与清单当前内容一致。
-- [ ] **D2** `docs/CHANGELOG.md` 一条版本条目。
+- [x] **D2** `docs/CHANGELOG.md` 一条版本条目。
+  > **验收证据**：`docs/CHANGELOG.md` 的 v2.70 条目（含「未完成」的 AC3 残留登记）。
 - [ ] **D3** 验收报告落 `.rddf/reviews/rollback-manifest-find-narrowing-verify.md`（AC1–AC15 逐条 + 工具证据）。
 - [ ] **D4** 归档：`openspec archive` 前确认 `.openspec.yaml` 含 `skip_specs: true`。
 

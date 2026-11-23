@@ -10,6 +10,17 @@
 
 ---
 
+> **v2.70 回滚清单的形态守卫 + 角色写集机读投影（2026-11-24）**：
+> 回滚清单的 `edits[].find` 是「回滚时要被替换掉的原文片段」⇒ 越窄越准。当一个 `find` 覆盖了与机制无关的散文或整张表格时，治理面文档的**正常编辑**会被一个**回滚用**的机制产物挡住，且这个绑定**不可见**（改之前不知道会红），只能靠跑 `bun test` 撞出来。2026-11-23 已发生真实绕路（`prompts/build.md` 角色列表被 2914 字符的整表 `find` 挡住 ⇒ 放弃表内修正改用「表尾投影」，后者又制造了第二份无守卫副本）。
+> **形态守卫**（`tests/rollback-manifests.test.ts`）：三道闸逐清单算形态指标 —— `sep`（含 markdown 表格分隔行的 find 条数）/ `pipe`（`|` 起始的连续行数 > 1 的 find 条数）/ `maxLen`（最长 find 字符数）；与**零增长基线** `FIND_SHAPE_BASELINE` 比对（实际值 ≤ 基线值 ⇒ 存量违规不许增加、收敛一项移除一项）⇒ **不是豁免白名单**（豁免 = 允许继续退化）。`MAX_FIND_LEN = 2894` 取 361 条 find 的 **p95** ⇒ 零假红，同时是新 find 的硬约束。
+> **写集机读投影**：`lib/delegate-core.ts` 新增 `renderWriteSetBlock(role)`（从 `ROLE_WRITE_POLICY` 渲染，不手抄字面量）⇒ `prompts/build.md` 角色列表新增 6 块 `role-write-set:<role>`；「允许」列不再复述写集路径；`tests/config-guards.test.ts` 加 6 角色断言族（逐字比对 + 恰好 1 处 + 起止标记独占一行）。⚠ 与既有的 `role-class-write-set:verifier` 块是**两个维度**（主会话角色 vs 被派发后端，后者含 `owns:` 文件名模式）。
+> **解 pin**：`governance-paths-config.json` 的 `edits[13]`（原 2914 字符、整张角色表）拆成 2 条**链式** edit（段 B 的差异用整行替换；迁移的差异用门控句 43 字符）⇒ 两条的 find/replace 均**从原文提取**（零手抄）⇒ 回滚语义零损失。**解 pin 实效**：改角色表 general 行的散文**不再报 `find_count`**（实测绿）。
+> **耦合发现**：迁移前 `ROLE_WRITE_POLICY.architect.allow` 只有两项、迁移后多一项 ⇒ 回滚本机制会改真源 ⇒ 段 B 的 architect 块必然失配 ⇒ 段 B 的产物（architect 块 / 6 角色断言族 / 渲染器单测）**纳入本清单一起退役**（edits e3/e4/e5）。这是客观耦合，不是设计失误。
+> **两段式**（ADR D5 / V8）：清单内容变更 ⇒ 撤 `last_drill` + registry 转 `proving`（同 commit）⇒ 演练 **PASS**（基线 `2cfd04d`）⇒ 回填 `last_drill` + 转 `active`。
+> ⚠ **未完成**：`AC3` 只拆了 `edits[13]`；`edits[11]`（12768 字符，config-guards 的治理面守卫 describe）与 `edits[14]`（2657 字符，治理面作用域表）**未拆** ⇒ 该清单仍需留在基线表内（8 项过渡态）⇒ 待后续 check list 收敛。
+
+---
+
 > **v2.69 AC10④ 判据对象收窄到「父篇的决策锚点」（2026-11-23）**：
 > 守卫 `tests/config-guards.test.ts` 的 **AC10④**（父篇 ADR 的 commit 必须是代码 commit 的祖先或同一 commit）此前按**文件级**定位父篇侧 ⇒ **只要有人后来碰过父篇 ADR 这个文件**（哪怕只改「关联 change」指针），父篇的「最后提交」就比代码新 ⇒ 判红 ⇒ `.rddf/commit-gate.json` 声明的 `bun test tests/` 退出非 0 ⇒ 工具层验证门（fail-closed）拒绝对**本仓此后任何提交**。
 > **已发生**：提交 `0f09b9c`（**纯文档**：改父篇 ADR 的「关联 change」元数据行 + D7 归档指针；文件集见 `git show --stat 0f09b9c`，其中不含 `lib/delegate-core.ts`）提交**前**套件绿、提交**后** AC10④ 转红 ⇒ 仓库进入「不可提交」状态 ⇒ `librarian-delegate-contradiction` 的提交被门禁实测拒绝。
