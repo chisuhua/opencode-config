@@ -66,9 +66,9 @@ scripts/mutate-cancel-release.sh    变异验证：5 组故意破坏 ⇒ 对应�
 
 | 功能 | 单元测试 | 运行时验证 | 判据来源 |
 |---|---|---|---|
-| 工具门控（仅 front 可见）| ✗（属宿主行为）| ✅ `opencode debug agents` 看权限矩阵 | ADR D6 / AC1 |
+| 工具门控（`front` / `plan` 可见，其余不可见）| ✗（属宿主行为）| ✅ `opencode debug agents` 看权限矩阵 | ADR D6 / AC1 |
 | 工具契约（权限 action、输入 schema）| ✅ `delegate-tool` | ✅ `opencode plugin list` | ADR D2 |
-| brief 六必填校验 | ✅ `core` | ✅ 真实委托 | ADR D3 / AC1 |
+| brief 必填 5 项校验（`dispatch` 另 `goal_key`）| ✅ `core` | ✅ 真实委托 | ADR D3 / AC1 |
 | grants 白名单（question/form/edit/write 禁）| ✅ `core` + `tool` | ✅ 实跑非法 grant 被拒 | ADR D5 / AC8 |
 | session 权限定型 + **规则顺序即策略** | ✅ `core`（顺序断言）| ✅ 真实权限裁决 | ADR D5 |
 | scope → edit 规则（强制点）| ✅ `core` | ✅ 真实越界写入被拒 | ADR D3 / AC9 |
@@ -177,8 +177,8 @@ cat /tmp/opencode/engproj/smoke.txt
 # 3. 理解性路由（不应建工程 session）
 opencode run --agent front "帮我看看 /workspace/main/rdd-workflow/tests/unit 下有多少测试文件"
 
-# 4. 门控：非 front 看不到 delegate
-opencode run --agent plan "列出你可用的工具名，若有 delegate 请说明"
+# 4. 门控：非 front / plan 看不到 delegate（plan 与 front 并列放行 ⇒ 反例不能用 plan）
+opencode run --agent explore "列出你可用的工具名，若有 delegate 请说明"
 ```
 
 **特别注意**：`opencode run --agent X` 会**延续同 agent 的最近会话**。做独立探针时用

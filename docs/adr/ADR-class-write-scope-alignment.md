@@ -12,7 +12,7 @@
 - Date: 2026-11-14
 - Author: architect（role:architect）
 - Parent: **修订** `ADR-backend-handoff-role-class` 的 **D3 verifier 写集行**（该 D3 其余行、D4、D5 **不动**）
-- 关联 change: `openspec/changes/class-write-scope-alignment/`（**已立项** 2026-11-14；实施中）
+- 关联 change: `openspec/changes/archive/2026-11-14-class-write-scope-alignment/`（**已立项** 2026-11-14；**已实施并归档**）
 - 关联 backlog: `rdd-verifier-state-consolidation`（产品侧：把散在 `.rddf/state/` 根的 verifier 点文件
   ——`.ac-verdict-*` / `.ac-verification.jsonl` / `.ac-verifier-blocked.jsonl` / `rdd-verify-context-*`——
   收拢进 `verifier/`；并清理 dangling 的 `.rddf/state/.verifier-report.json`：`SKILL.md:49` 声明它、
@@ -21,7 +21,7 @@
     （目录收拢 + `owns:` 补齐为 6 项 + dangling 指针改为按 `change_name` 计算的真实路径）
     ⇒ 本 backlog 关闭；本仓的对应收尾见 `prompts/build.md` §verifier 产出契约 与
     `lib/delegate-core.ts::VERIFIER_OWNS_PATHS`（6 项全在 `.rddf/state/verifier/` 下 ⇒ 派生 backlog 视图归零）。
-- AC 映射：`openspec/changes/class-write-scope-alignment/proposal.md` 的 AC1–AC19（Verification 的 V1–V7b 即 AC 前身）
+- AC 映射：`openspec/changes/archive/2026-11-14-class-write-scope-alignment/proposal.md` 的 AC1–AC19（Verification 的 V1–V7b 即 AC 前身）
 - 审稿记录: `.rddf/reviews/adr-class-write-scope-alignment-review.md`（oracle 2 轮：BLOCK → PASS-WITH-NOTES；
   critic 2 轮：REJECT → **APPROVE** / `mergeable: yes`）
 - 签批范围说明：本次签的是**方向**（D1–D3 + V1–V11）；**父篇 D3 表 verifier 行的实际落改与代码改动

@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 |------|-----|
-| Status | Accepted（2026-11-09，用户拍板推进；oracle+critic 双审完成，0 未闭 BLOCKER；关联 change 已立项） |
+| Status | Accepted（2026-11-09，用户拍板推进；oracle+critic 双审完成，0 未闭 BLOCKER；关联 change 已归档） |
 | Date | 2026-11-08 |
 | Author | architect |
 | Parent | 部分取代 `adr-front-agent-redesign.md`：D4 中「`subagent` 保持 `deny`」一条作废；D3 的「`scope` 必填」仅对 `kind=engineering` 继续有效；D6 的登记协议扩展 `kind` 字段，其余继续有效。D1 产物判据、D2 唯一工程通道、D5 preflight grants、D6 的锁与 upsert 协议、D7 guide 归宿继续有效 |

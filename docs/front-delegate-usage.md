@@ -21,9 +21,9 @@
 
 | 性质 | 含义 |
 |---|---|
-| **唯一门控出口** | front 的一切**工程行动**（文件变更）都经 `delegate` 插件；没有第二条写通道。注意「唯一」指**门控边界**（同一插件 + 每工具独立权限 action + 全局 deny + 仅 front allow），**不是工具名**——五个工具共用一套门控。理解性的只读调研可另召五个只读 subagent |
+| **唯一门控出口** | front 的一切**工程行动**（文件变更）都经 `delegate` 插件；没有第二条写通道。注意「唯一」指**门控边界**（同一插件 + 每工具独立权限 action + 全局 deny + **`front` / `plan` 各 allow 五项**），**不是工具名**——五个工具共用一套门控。理解性的只读调研可另召五个只读 subagent |
 | **权限层强制** | front 的能力边界由 `opencode.jsonc` 的权限块决定，不是 prompt 里的承诺 |
-| **front 专属** | 五个工具都只对 front 可见；其他 agent（含 build）调用时工具根本不存在 |
+| **`front` / `plan` 并列放行** | 五个工具对 `front` 与 `plan` **并列放行**（各工具一个独立权限 action；顶层五项全 `deny`）；其余 agent（含 build 与各 subagent）调用时工具根本不存在。⚠ 「唯一」指**门控边界唯一**，**不是**「只有 front 能用」——`plan` 派**可写实施**时另须带 `plan_ref` |
 | **同一工作树单槽** | 同一个 git 工作树里，**同一时刻只允许一个后端在跑**（避免两个后端并发写同一批文件）。要并行 ⇒ 用不同的仓或不同的 git worktree |
 | **知识 session** | `delegate` 也可用只读 agent（`explore`/`librarian`/`oracle`/`metis`/`critic`）建"知识 session"：无写权限、不登记角色、产物是回答 |
 
@@ -71,18 +71,28 @@ opencode run --agent front "把 tests/ 下缺的那几个用例补上"
 
 ## 4. 委托 brief：你不用写，但要知道它长什么样
 
-front 组 brief 时用下面这张表（**你只提供素材，front 负责填**）：
+front 组 brief 时用下面这张表（**你只提供素材，front 负责填**）。
 
-| 字段 | 含义 | 缺了会怎样 |
-|---|---|---|
-| `project_dir` | 工程根绝对路径 | front 问你 |
-| `agent` | 会话类型：`build`（默认，工程）或只读 agent（知识） | 默认 `build`；知识类任务 front 会显式指定 |
-| `task` | 你的原话 | — |
-| `goal` | 一句话目标（产物是什么） | front 问你 |
-| `scope` | **允许改动的路径**（相对工程根或绝对） | 工程 session 必填（宁可窄不可宽）；知识 session 可为空 |
-| `acceptance` | **怎么算完成**（能跑的命令 / 能勾的条目） | front 问你 |
-| `constraints` | 额外禁止（"不要 commit""别动 X"） | 可选 |
-| `grants` | 你已批准的特殊操作 | 可选（见 §5）；知识 session 一律不接受 |
+**必填恰 5 个**（`lib/delegate-core.ts` 的 `required`）：`project_dir` / `task` / `goal` / `scope` / `acceptance`；
+`dispatch` 另多一个 `goal_key`（也是必填）。其余为选填 —— 但 `role_class` 是 **front 派发前必读**（决定后端能写什么），
+`base` / `plan_ref` 在特定 `role_class` / 派发方下**转为必填**。
+
+| 字段 | 必填 | 含义 | 缺了会怎样 |
+|---|---|---|---|
+| `project_dir` | ✅ | 工程根绝对路径 | front 问你 |
+| `task` | ✅ | 你的原话 | 校验拒绝 |
+| `goal` | ✅ | 一句话目标（产物是什么） | front 问你 |
+| `scope` | ✅ | **允许改动的路径**（相对工程根或绝对） | 校验拒绝（知识 session 可传空数组；宁可窄不可宽） |
+| `acceptance` | ✅ | **怎么算完成**（能跑的命令 / 能勾的条目） | front 问你 |
+| `goal_key` | **仅 `dispatch`** | 幂等键（同 key 复用同一后端） | `dispatch` 校验拒绝 |
+| `agent` | 选填 | 会话类型：`build`（默认，工程）或只读 agent（知识） | 默认 `build`；知识类任务 front 会显式指定 |
+| `role_class` | 选填（**front 必读**） | 本次派发的**能力类**：`builder`（缺省）/ `architect` / `verifier`——决定后端能写什么，`scope` 越出该类上限即被拒 | 缺省 `builder` |
+| `base` | 选填（**`role_class=verifier` 必填**） | 取证基线（git ref）；相对 ref 会随 HEAD 漂移 ⇒ 填解析后的 sha | verifier 类校验拒绝 |
+| `plan_ref` | 选填（**plan 派可写实施时必填**） | 计划文件引用（accepted roots 是闭集，见 §6） | 校验拒绝 |
+| `resume_session` | 选填 | 续接既有后端 session（**同 session 内不能换 `role_class`**；新增 `grants` 不生效，见 §7 救援） | 新建 session |
+| `remove` | 选填 | 完成后删除工程 session（默认 `false`，否则与 pair 一起累积） | 保留 session |
+| `constraints` | 选填 | 额外禁止（"不要 commit""别动 X"） | — |
+| `grants` | 选填 | 你已批准的特殊操作（见 §5）；知识 session 一律不接受 | — |
 
 ### `scope` 是硬边界（会被权限层强制）
 
@@ -226,7 +236,8 @@ grant `edit` 会让 `scope` 的强制点失效）。
 | `question` 问你 | ✅ | |
 | `delegate` 委托 | ✅ | 唯一工程通道 |
 | 改工程文件 | ❌ | `edit`/`write` deny |
-| 调 subagent / skill | ❌ | deny |
+| 调只读 subagent | ✅（5 个） | `explore` / `librarian` / `oracle` / `metis` / `critic`——只读、产物是回答；需要改动时仍须走 `delegate` |
+| 调 `skill` | ❌ | deny |
 | 跑 shell 脚本绕过 delegate | ❌ | `bash -c`/`python3 -c`/`curl` 等都不在白名单 |
 
 > 你会注意到 front 有时"读不到"某个目录——那是 `external_directory` 的路径白名单在起作用，

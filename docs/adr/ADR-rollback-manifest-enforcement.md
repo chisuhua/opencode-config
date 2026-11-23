@@ -89,7 +89,7 @@
   - `declared` = 已签未落地（本文落地前；落地后转 `active` ⇒ 实测 **0** 条）。
   - ⚠ **实施期订正（第一批 · 数字）**：本文初稿把 `canonical-root-normalization` 归为 `not-implemented` 豁免（其 ADR 的 Status 行写「未实施」）⇒ **实施期核实：其 change 已于 2026-11-10 归档** ⇒ 实现**已落地** ⇒ 不是 `not-implemented`。
   - ⚠ **实施期订正（第二批 · 粒度）**：清这 10 条债的实测给出**组**这个粒度 —— **8 条**按内核耦合合成 3 组（各组一份清单），另 **2 条**（`role-session-identity` / `canonical-root-normalization`）经依赖图核实为**退役 = 重写**（身份/租约被 7 个生产文件依赖、根归一被 5 个依赖 ⇒ 退役要连带回退 delegate 的两根基模型与两个门禁插件）⇒ 归 `no-single-baseline` 豁免。⇒ 豁免从 1 条增至 **3** 条，但**每条都带可查证的证据文件**（M3 的表态成本 > 0）。
-  - ⚠ **实施期订正（第三批 · G1 落地，第 7 轮）**：G1 的组清单已写（`delegate-slot-kernel`）⇒ registry 中该组转 `proving`（演练回填后 `active`）⇒ 上文「`unmanifested` 8 条」是**签批时的快照**；当前数字以 registry / census 为准（G2/G3 仍为 `unmanifested`）。
+  - ⚠ **实施期订正（第三批 · G1 落地，第 7 轮）**：G1 的组清单已写（`delegate-slot-kernel`）⇒ registry 中该组转 `proving`（演练回填后 `active`）⇒ 上文「`unmanifested` 8 条」是**签批时的快照**；当前数字以 registry / census 为准（G2/G3 亦已写清单并转 `active` ⇒ 当前 census = **14 `active` + 3 `exempt` + 0 `unmanifested`**）。
 - 新增/修订 ADR：只允许 `active` / `proving`（**带清单 + `manifest_ref`**）或闭集 `exempt_class`（**新登记的机制先落 `proving`**，演练回填后转 `active` —— 见 D5 的自举死锁段）。
 - ⚠ **`unmanifested` 仅限 baseline 存量**（本次实施期一次性登记）—— 它**不是**新增 ADR 的出口。⚠ **本句是评审面约束**（机器判不了「这条是不是 baseline 存量」；新增 ADR 冒充存量只能靠评审拦）⇒ 与 U6 同类，如实登记见 U9。
 - **不得**逐篇补清单：`role-aware-permissions` 的「回滚」是**切换失败的回退语义**、`front-multi-backend` 的「不可回滚」是**单向门表述** ⇒ 关键词口径会把它们判成假阳性（实测 7 篇命中里 2 篇是假的）。

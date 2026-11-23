@@ -16,8 +16,10 @@
 ```
 
 - **唯一工程通道**：`delegate` 工具（`~/.config/opencode/plugins/delegate.ts`）。
-- **门控**：工具声明 `options.permission = "delegate"` → 全局 `permission.delegate = "deny"` +
-  `agent.front.permission.delegate = "allow"` ⇒ **只有 front 能拿到这个工具**，其余 agent（build / plan / 各 subagent）调用时答 `NO_TOOL`。
+- **门控**：每个工具各声明独立 `options.permission`（`delegate` / `delegate_dispatch` / `delegate_sessions` /
+  `delegate_suspend` / `delegate_cancel`）→ 顶层五项全 `permission.* = "deny"` +
+  `agent.front` / `agent.plan` 各 `"allow"` 五项 ⇒ **只有 `front` 与 `plan` 能拿到这些工具**，
+  其余 agent（build / 各 subagent）调用时答 `NO_TOOL`。
 - **front 不持任何凭证、不发任何 HTTP**：委托在插件进程内完成（`ctx.session.create/prompt/wait/get/context`）。
 
 ## 2. 角色边界速查
@@ -66,22 +68,28 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 | 流程性 | 状态摘要 | front 读 `.rddf/state/` 等出摘要（带新鲜度标注） |
 | 需裁决 | 决策输入 | `question` 问用户 |
 
-### 步骤 2：front 组 brief（六个必填）
+### 步骤 2：front 组 brief（必填 5 个 + 选填）
 
 ```jsonc
 {
-  "project_dir": "/abs/path/to/project",   // 工程根绝对路径
-  "task":      "用户原话或等价转述",
-  "goal":      "一句话目标（产物是什么）",
-  "scope":     ["src/", "tests/"],          // 允许变更的路径前缀
-  "acceptance":"pytest tests/unit -q 通过", // 可判定的完成判据
-  "constraints": "不要 commit",             // 可选
-  "grants": [                               // 可选：用户预批的操作
+  "project_dir": "/abs/path/to/project",   // ✅ 必填：工程根绝对路径
+  "task":      "用户原话或等价转述",        // ✅ 必填
+  "goal":      "一句话目标（产物是什么）",   // ✅ 必填
+  "scope":     ["src/", "tests/"],          // ✅ 必填：允许变更的路径前缀
+  "acceptance":"pytest tests/unit -q 通过", // ✅ 必填：可判定的完成判据
+
+  "role_class": "builder",                  // 选填（缺省 builder）：builder / architect / verifier
+  "agent":      "build",                    // 选填：build（工程）或只读 agent（知识）
+  "base":       "<sha>",                    // role_class=verifier 时必填（取证基线）
+  "plan_ref":   ".rddf/plans/x.md",         // plan 派可写实施时必填
+  "constraints": "不要 commit",             // 选填
+  "grants": [                               // 选填：用户预批的操作
     { "action": "shell", "resource": "git push *" }
   ]
 }
 ```
 
+- **`dispatch` 另多一个必填 `goal_key`**（幂等键：同 key 复用同一后端）。
 - 插件只校验**存在性/类型/结构**；语义质量是 front 的责任。
 - `grants` 只能给 `shell`（具体单条）/`read`（不含 `.env`）/`grep`/`glob`/`list`/`external_directory`（具体路径）/`webfetch`/`websearch`/`lsp`；
   **`question`/`form`/`edit`/`write` 永不可 grant**（会破坏工程 session 的安全边界）。
@@ -120,8 +128,11 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 
 ### 步骤 5：被拒后的救援
 
-`blocked_reason` 非空 → 用户同意追加权限 → **原地补 grant**（`session.update` 改该 session 的 permissions）→ 继续同一 session。
-**不新建 session、不全量重跑。**
+`blocked_reason` 非空 → 用户同意追加权限 → **新建 session 重派**（brief 带新 `grants`、**不带** `resume_session`）。
+
+⚠ **不能原地补 grant 续接**：`ctx.session.update({permissions})` 在上游 API 层可用，但 `delegate` 插件没调用它
+（`permissions` 只在 `session.create` 提交；resume 分支重算了却不提交）⇒ 带 `resume_session` 重派**不会**让新 `grants` 生效。
+代价：新建 session 丢掉旧会话上下文（`plan_ref` / `task` 需重述）。
 
 ## 5. front 的工具边界（权限层强制，非 prompt 承诺）
 
@@ -133,7 +144,8 @@ opencode run --agent front "帮我看看 X 模块是怎么设计的"
 | `question` | allow | 向用户提问 |
 | `delegate` | allow | 唯一工程通道 |
 | `edit` / `write` | deny | front 不能改工程文件 |
-| `skill` / `subagent` | deny | front 不能调子 agent / 技能 |
+| `skill` | deny | front 不能调技能 |
+| `subagent` | allow（5 个只读） | 仅 `explore` / `librarian` / `oracle` / `metis` / `critic`；`"*": deny` 必须是第一条（顺序错会把整个工具隐藏） |
 
 > **已知边界**：shell 权限是"命令节点文本做 glob 匹配"，上游存在绕过族（重定向、`--opt=value` 截断、零节点跳过）。
 > 守卫已覆盖当前版本实测的 5 个用例（拦截率 100%），但**不是完备边界**——详见 ADR D4。

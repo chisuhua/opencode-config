@@ -8,7 +8,7 @@
 | Date | 2026-11-13 |
 | Author | architect（主会话） |
 | Parent | `ADR-plan-delegate-engineering-session`（D1–D7）、`ADR-front-stop-ownership`（归属门控） |
-| 关联 change | `openspec/changes/backend-handoff-role-class/`（已立项，2026-11-13） |
+| 关联 change | `openspec/changes/archive/2026-11-13-backend-handoff-role-class/`（已立项 2026-11-13；已归档） |
 | 配套设计 | `docs/backend-handoff-role-class.md` |
 | AC 映射 | 本文 V1–V14 ↔ change 的 AC1–AC14；**D3 修订**的 V15–V21 ↔ change 的 AC24–AC31（V16 拆两条：AC25 / AC26）；change 追加 AC15–AC23 为实施级判据。**逐条口径以 change 的 proposal 为准** |
 | 工作规格 | `.rddf/reviews/backend-handoff-protocol-spec.md`（v3） |
@@ -92,7 +92,7 @@
 
 ### D7 architect 类可有条件转 ADR Status
 
-仅限它**本次产出**的 Draft ADR 向前转（→ Proposed / Accepted / Rejected），且须同时满足：oracle→critic 双审完成、BLOCKER 全闭并经 1 次复审验闭合、ADR 完成标志 5 条齐备（本 ADR 的关联 change 已立项 ⇒ 指向 `openspec/changes/backend-handoff-role-class/`；尚未立项的 ADR 用 `backlog:` 占位）。对**已签批 ADR** 的决策修改或取代必须 handoff。`subagent` 不可用 ⇒ `HANDOFF: blocked`，**禁止自审自批**。
+仅限它**本次产出**的 Draft ADR 向前转（→ Proposed / Accepted / Rejected），且须同时满足：oracle→critic 双审完成、BLOCKER 全闭并经 1 次复审验闭合、ADR 完成标志 5 条齐备（本 ADR 的关联 change 已归档 ⇒ 指向 `openspec/changes/archive/2026-11-13-backend-handoff-role-class/`；尚未立项的 ADR 用 `backlog:` 占位）。对**已签批 ADR** 的决策修改或取代必须 handoff。`subagent` 不可用 ⇒ `HANDOFF: blocked`，**禁止自审自批**。
 
 ### D8 校验分两层，硬拒早于建 session
 

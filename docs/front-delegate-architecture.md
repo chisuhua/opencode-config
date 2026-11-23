@@ -30,7 +30,8 @@
 │   ✅ question（问用户）                                                      │
 │   ✅ delegate 插件（唯一门控出口：delegate/dispatch/sessions/                │
 │      suspend/cancel —— 门控边界唯一，不是工具名唯一）                        │
-│   ❌ edit / write   ❌ skill   ❌ subagent   ❌ bash -c / curl / python -c   │
+│   ❌ edit / write   ❌ skill   ❌ bash -c / curl / python -c                 │
+│   ✅ subagent（仅 5 个只读：explore / librarian / oracle / metis / critic）  │
 │                                                                              │
 │  四分类路由（判据=产物形态）                                                 │
 │   理解性→自己答  实施性→delegate/dispatch  流程性→读状态  需裁决→question    │
@@ -161,17 +162,18 @@ session 级规则（建 session 时由插件给定）
 
 #### 门控为什么用独立 action 名
 
-工具的 `options.permission = "delegate"` 让该工具受一条名为 `delegate` 的**独立权限 action** 控制
-（而不是用工具名 `delegate` —— 恰好同名，但语义不同：action 名与工具名解耦后，一个 action 可以管多个工具）。
+五个工具**各自**声明一个独立的 `options.permission` action（`delegate` / `delegate_dispatch` / `delegate_sessions` /
+`delegate_suspend` / `delegate_cancel`）—— action 名与工具名**解耦**（`dispatch` 工具的 action 是 `delegate_dispatch`），
+拆开后可逐工具独立放行 / 收回。
 
 ```
-全局：   permission.delegate = "deny"     → 所有 agent 默认无此能力
-agent：  agent.front.permission.delegate = "allow" → 唯一例外
+顶层：   permission.delegate / delegate_dispatch / … = "deny"   → 所有 agent 默认无此能力（五项全 deny）
+agent：  agent.front / agent.plan 各五项 = "allow"              → 仅这两个主体放行
 判定：   whollyDisabled(tool.options.permission ?? name, rules)
 ```
 
-实测矩阵（`opencode debug agents`）：front = `[{*,deny},{*,allow}]`，其余 12 个 agent = `[{*,deny}]`，
-`--agent plan` 调用时模型答 `NO_TOOL`。
+实测矩阵（`opencode debug agents`）：`front` 与 `plan` 各五项 allow；
+其余 agent（build / 各 subagent）无此能力，`--agent explore` 调用时模型答 `NO_TOOL`。
 
 ### 4.3 session 模型
 
@@ -183,7 +185,7 @@ agent：  agent.front.permission.delegate = "allow" → 唯一例外
 | `ctx.session.get({sessionID})` | 读 `outcome` / `time.idle` / `time.updated` / `permissions` | **`outcome` 是"上一次已结束 run"的结果**，可能是陈旧值 |
 | `ctx.session.context({sessionID})` | 读消息数组（`content[]` 里含 tool part） | 跨 location 可读（与权限服务不同） |
 | `ctx.session.remove({sessionID})` | 删除 | 与 `resume_session` 互斥（删了就没法续接） |
-| `ctx.session.update({sessionID, permissions})` | **原地改权限** | 实测可用 → 救援不必新建 session（§4.4 第 11 步） |
+| `ctx.session.update({sessionID, permissions})` | **原地改权限** | 上游 API 可用，但 **`delegate` 插件当前未调用它**（`permissions` 只在 `ctx.session.create` 提交；resume 分支重算了却不提交）⇒ 救援走**新建 session**（§4.5「救援」段） |
 
 #### 两个时间线判据（最容易写错的地方）
 
@@ -249,16 +251,21 @@ agent：  agent.front.permission.delegate = "allow" → 唯一例外
 
 两者 `state.status` 都是 `error`；提取规则见 `extractBlocked`（core 内）。
 
-#### 救援：原地补 grant（不是全量重跑）
+#### 救援：补 grant 必须**新建 session**（不能原地续接）
 
-`session.update` 可原地改权限（实测：建时 `[{shell, git status *, allow}]` → update 后 `[{*, *, allow}]`）。
+`ctx.session.update({permissions})` 在**上游 API 层**可用（实测：建时 `[{shell, git status *, allow}]` → update 后 `[{*, *, allow}]`），
+但 **`delegate` 插件没有调用它**：`brief.grants` 只在 `ctx.session.create` 时进 `permissions`；带 `resume_session` 时
+虽然重算了 `classPermissions(...)`，结果**不提交**（`lib/delegate-core.ts` 里 `permissions` 仅用于 create 分支）。
+⇒ **带 `resume_session` 重派并追加 `grants` 不会让新 grants 生效**（旧 permissions 原样保留）。
+
 所以被拒后的救援是：
 
 ```
-blocked_reason → 问用户 → 用户同意 → session.update(补一条 grant) → 续接同一 session 继续
+blocked_reason → 问用户 → 用户同意 → 新建 session 重派（brief 带新 grants、不带 resume_session）
 ```
 
-**不**新建 session、**不**全量重跑（早期设计假设 permissions 只能建时写，实测被推翻 → ADR D5.1）。
+⚠ **不要**按「原地补 grant、续接同一 session」操作 —— 那是早期设计（ADR D5.1）的假设，与当前实现不符。
+⚠ 代价：新建 session ⇒ 丢掉旧 session 的对话上下文（`plan_ref` / `task` 需重述）。
 
 ### 4.6 `external_directory` 的边界（最容易误判的一条）
 
@@ -305,7 +312,7 @@ front 用 `cat /etc/passwd` **成功执行**（泄漏内容）。
 | 时刻 | 发生什么 | 可观测证据 |
 |---|---|---|
 | t0 | 用户说话 → front 判类为"实施性" | front 文本 |
-| t1 | front 组 brief（六必填） | front 文本里的字段 |
+| t1 | front 组 brief（必填 5 项；`dispatch` 另 `goal_key`） | front 文本里的字段 |
 | t2 | front 调 `delegate` 工具 | 工具调用记录（`delegate {...}`） |
 | t3 | 插件校验 brief + canonical_root + resume | 工具返回 / 抛错 |
 | t4 | 组 permissions、create 工程 session | 服务端 `session` 记录（agent=build、目录=工程根） |
@@ -332,12 +339,12 @@ front 用 `cat /etc/passwd` **成功执行**（泄漏内容）。
 
 1. **单一工程出口**：一切工程行动只能经 `delegate` 插件。不要给 front 加第二个出口。
 
-  > **口径（2026-11-09 明确，ADR-front-multi-backend D1）**：这条不变式的「出口」指**门控边界**——
-  > 「同一个插件 + 每个工具声明独立的 `options.permission` action + 全局 deny + 仅 front allow」这套形态——
+  > **口径（2026-11-09 明确，ADR-front-multi-backend D1；2026-11-23 补 `plan`）**：这条不变式的「出口」指**门控边界**——
+  > 「同一个插件 + 每个工具声明独立的 `options.permission` action + 顶层全 deny + `front` / `plan` 各 allow」这套形态——
   > **而不是工具名**。`dispatch`/`sessions`/`suspend`/`cancel` 全部落在同一个 `delegate` 插件内、
-  > 全部走同一套门控形态、全部只对 front 可见；没有任何一条工程行动路径**绕过**该门控。
+  > 全部走同一套门控形态、全部只对 `front` 与 `plan` 可见；没有任何一条工程行动路径**绕过**该门控。
   > ⇒ 新增工具不等于"加第二个出口"；**绕过插件的 shell 脚本/裸 API 调用**才是。。
-2. **门控在权限层**：新工具必须声明独立的 `options.permission` action，并全局 deny + 仅 front allow。
+2. **门控在权限层**：新工具必须声明独立的 `options.permission` action，并顶层 deny + `front` / `plan` 各 allow。
 3. **工程 session 的权限在建立时定型**：不依赖运行时代答（无 UI → ask 会永久挂死）。
 4. **规则顺序即策略**：`[常量deny, scope, grants]`；grants 有类目白名单，且白名单**先于** grants 生效。
 5. **状态文件 single-writer + 同一把锁**：任何新增写盘方都要走 `withLock`。
@@ -650,7 +657,7 @@ python3 -c "import json,re;json.loads(re.sub(r'^\s*//.*$','',open('opencode.json
 | 2 | **scope 不约束 shell 写操作** | 工程 session 可在工程外写文件（实测发生过），且检测不到 | 给 session 补 shell 路径约束（`../` 也要防），或接受并写进报告 |
 | 3 | **pair 过期清理策略未实现** | `remove` 默认 false → session 与 pair 无限累积 | 按 `last_used_at` + 条目上限淘汰（ADR D2 已把责任挂在这里） |
 | 4 | **并发写盘未实测** | 锁只有插件一侧用（工程 session 侧未改） | 改 `prompts/build.md` 的角色切换写盘契约取同一把锁；补并发测试 |
-| 5 | **跨会话代答仅同 location 可用** | 不能作为通用救援 | 已降级为"原地补 grant"；若要支持跨 location，需上游支持 |
+| 5 | **跨会话代答仅同 location 可用** | 不能作为通用救援 | 已降级为「新建 session 重派」；若要支持跨 location，需上游支持 |
 | 6 | **`failed`/`interrupted` 返回结构未实测** | 结果判据不全 | 补两个构造用例（跑失败任务 / 中断任务） |
 | 7 | **开场报状态、grants 预批未专项实测** | 属模型侧对话行为 | 补真实会话验证或接受现状（已在意向口径中标注） |
 | 8 | **`unknown`（无新活动）路径未实测** | 结果可信度判据 | 构造"prompt 入队失败"场景 |
@@ -667,12 +674,12 @@ python3 -c "import json,re;json.loads(re.sub(r'^\s*//.*$','',open('opencode.json
 | **front** | 用户交互内核 agent；只对话 + 委托 |
 | **工程 session** | agent=build 的工程 session，跨目录存在于目标工程 |
 | **delegate** | 唯一的委托插件工具 |
-| **brief** | front → 工程 session 的结构化交接单（九字段） |
+| **brief** | front → 工程 session 的结构化交接单（13 字段，其中必填 5；`dispatch` 另必填 `goal_key`） |
 | **grants** | 用户预批的特殊操作，随 session permissions 一次性定型 |
 | **pair** | front session ↔ 工程 session 的登记（pair.json） |
 | **scope 强制点** | scope → edit 规则，使 scope 外改不动（权限层） |
 | **scope 检测点** | 前后 `git status` 差集 + scope 过滤（事后可见） |
-| **门控** | `options.permission` 独立 action + 全局 deny + 仅 front allow |
+| **门控** | `options.permission` 独立 action + 顶层全 deny + `front` / `plan` 各 allow（各五项） |
 
 ### 10.2 上游源码索引（`/workspace/project/opencode`，只读参考）
 
