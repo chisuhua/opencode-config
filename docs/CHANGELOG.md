@@ -14,7 +14,7 @@
 > `docs/MULTI-AGENT-DESIGN.md` §5.4「生效时机」行与 `docs/model-fallback-usage.md`「改完必须重启」段此前写的都是**发布版 v2.2.5 的旧事实**（「插件在 server 启动时加载，改完必须 `opencode service restart`」）。根因已查清（`.rddf/reviews/build-model-route-switch-ab.md` §7.2）：**不是加载时机变了，而是本机 2026-11-11 起从发布版切成源码构建**（`7f913e1`），上游插件 supervisor 订阅源码变更并重新激活、配置由 `ConfigWatch` 热加载。
 > 两处改为：**源码构建版** ⇒ 插件 / `lib/` 改动下一次工具调用即生效、配置热加载（**新会话**可见）；发布版 v2.2.5 才需重启（历史事实）。⚠「**运行中会话**立即换用新配置」**未实证**（只观察到新会话读到新配置）——文中已显式标注，不写成绝对。
 > 连带面：`ADR-role-aware-permissions` D5⑥ 的「待同批订正」改为「已同批订正」；回滚清单 `model-fallback.json` 的 **edit #6**（§5.4 整节）锚点同批同步 ⇒ registry 条目按 `proving → active` 走（清单已改、演练待跑 ⇒ drill PASS 后回填 `last_drill`）。
-> **审查**：oracle（`审查域: 治理面`）+ critic（见本轮评审记录）。
+> **审查**：oracle（`审查域: 治理面`）**PASS-WITH-NOTES** → critic **APPROVE_WITH_CONDITIONS**（0 BLOCKER）；记录 `.rddf/reviews/model-fallback-hot-reload-revision.md`。
 
 ---
 
