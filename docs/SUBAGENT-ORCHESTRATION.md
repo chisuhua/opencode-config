@@ -1,4 +1,4 @@
-# 子代理编排与委托通道：当前态汇总（2026-11-13）
+# 子代理编排与委托通道：当前态汇总（最后更新：2026-11-23）
 
 > **两条复述口径（写给后续维护者）**：
 > 1. **人读语义**（判定词表这类「三档含义」）→ **只能指针**，不复述成员（复述即第二份定义；`tests/config-guards.test.ts` 已按此守卫）。
@@ -27,7 +27,7 @@
 | `critic` | subagent | `kimi-code/kimi-for-coding` | 第二审（与既有 ADR / 契约的冲突） | `prompts/critic.md` |
 | `title` | primary(hidden) | `commandcode/deepseek/deepseek-v4.1-flash` | 会话标题生成 | — |
 
-**模型选型原则**（`docs/MULTI-AGENT-DESIGN.md` 的「模型选择」「链路分档」两节 —— **按标题引用，不按编号**：编号会随文档演进而漂）：轻量链路（检索 / 机械搬运）用 `commandcode` 档；审查链路（oracle / critic）用推理档。`hidden` 只保留给 `title`（不出现在用户手选列表）；**`context-builder` 的 `hidden` 已移除** —— 隐藏会把它从父模型的「Available subagents」清单里过滤掉（`packages/core/src/tool/plugin/subagent.ts` 按 `!agent.hidden` 过滤），可见性直接决定采纳率。
+**模型选型原则**（`docs/MULTI-AGENT-DESIGN.md` 的「模型选择策略」一节 —— **按标题引用，不按编号**：编号会随文档演进而漂）：轻量链路（检索 / 机械搬运）用 `commandcode` 档；审查链路（oracle / critic）用推理档。`hidden` 只保留给 `title`（不出现在用户手选列表）；**`context-builder` 的 `hidden` 已移除** —— 隐藏会把它从父模型的「Available subagents」清单里过滤掉（`packages/core/src/tool/plugin/subagent.ts` 按 `!agent.hidden` 过滤），可见性直接决定采纳率。
 
 ## 2. 委派拓扑与门控
 
@@ -169,9 +169,9 @@ openspec/changes/*/proposal.md
 
 **ADR**（`docs/adr/`）：`ADR-front-multi-backend`（多后端编排）、`ADR-front-stop-ownership`（归属与槽位释放）、`ADR-front-stop-confirmation`（停机证据）、`ADR-front-cancel-release`（取消放行）、`ADR-front-knowledge-capability`（只读 subagent 门控）、`ADR-delegate-delivery-evidence`（交付证据枚举）、`ADR-canonical-root-normalization`（stateRoot/workRoot 归一）、`ADR-plan-delegate-engineering-session`（**派发主体扩展 + D7 优先级**）。
 
-**审稿 / 调研记录**（`.rddf/reviews/`）——**本轮相关子集**（该目录共 38 份，此处只列与本轮治理面改动直接相关者）：`adr-plan-delegate-engineering-session-review.md`（本篇 ADR 的 oracle/critic 审稿记录）、`subagent-oracle-intent-arch-review.md`、`subagent-oracle-intent-findings.md`、`metis-check-findings.md`、`review-profile-improvement-plan.md`、`context-builder-narrowing-spec.md`、`subagent-contract-e2e.md`、`subagent-contract-exemption-sampling.md`。
+**审稿 / 调研记录**（`.rddf/reviews/`）——**本轮相关子集**（该目录持续累积，此处只列与本轮治理面改动直接相关者）：`adr-plan-delegate-engineering-session-review.md`（本篇 ADR 的 oracle/critic 审稿记录）、`subagent-oracle-intent-arch-review.md`、`subagent-oracle-intent-findings.md`、`metis-check-findings.md`、`review-profile-improvement-plan.md`、`context-builder-narrowing-spec.md`、`subagent-contract-e2e.md`、`subagent-contract-exemption-sampling.md`。
 
-**变更史**：`docs/CHANGELOG.md`（v2.12–v2.19 覆盖本轮全部治理面改动）。
+**变更史**：`docs/CHANGELOG.md`（记录 `MULTI-AGENT-DESIGN.md` 的历史增量，起于 v1.1；**本文件首版沉淀于 v2.19**，2026-11-13；本行撰写时最新为 v2.67 —— 2026-11-23 快照，后续版本以该文件为准）。
 
 **守卫**：`tests/config-guards.test.ts`（权限矩阵 / 词表单源 / 六节三处一致 / 描述非 orphan / 本文档的**引用路径存在性**）、`tests/subagent-contract-core.test.ts`（契约纯逻辑）、`tests/delegate-async.test.ts`（派发主体 / 归属 / 优先级）。
 

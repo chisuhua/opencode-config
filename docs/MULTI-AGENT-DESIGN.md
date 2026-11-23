@@ -46,7 +46,8 @@
 
 - **上游 oh-my-openagent v5.0.0-beta** 的 11-agent 设计是参考蓝本
 - **OpenCode V2 schema**（https://opencode.ai/config.json）是字段约束
-- **本地 provider 池**（3 个 provider、12 个 model）是模型选择硬约束
+- **本地 provider 池**（**5 个 provider、13 个 model**）是模型选择硬约束
+  （口径 = `opencode.jsonc` **当前符号链接目标** `opencode.jsonc.opencode-go` 的 `providers` 段；换配置目标需同步本数）
 - **AGENTS.md 仍叠加**：所有 agent 的 system prompt = `[agent prompt] + [AGENTS.md] + [环境信息]`。因 AGENTS.md 会注入**所有** agent，**build 专属的角色矩阵放在 `prompts/build.md` 而非 AGENTS.md**（v1.4 迁移）——放 AGENTS.md 时其余 agent 也会读到「每回合输出开场报告」，与它们各自 prompt 的「只输出固定小节」直接冲突。
 
 ### 1.3 非目标
@@ -58,7 +59,11 @@
 
 ---
 
-## 2. Agent 体系（11 个）
+## 2. Agent 体系（12 个）
+
+> **计数口径**：12 = **4 primary**（build / front / plan / title[hidden]）+ **8 subagent**
+> （explore / librarian / oracle / metis / general / critic / context-builder / plan-worker）；
+> 拆分见 §1.1「少而精」。真源 = `opencode.jsonc`（当前符号链接目标 `opencode.jsonc.opencode-go`）的 `agent` 段。
 
 ### 2.1 总览
 
@@ -93,7 +98,10 @@
 >
 > **踩过的坑**：v2.4 初稿曾按配置文件的一次中间态抄读，把 build / explore / oracle 记成 `commandcode/deepseek/deepseek-v4.1-flash`，与运行时真值不符（实际分别是 `minimax-cn/MiniMax-M3.1-Flash` / `commandcode/deepseek/deepseek-v4.1-flash` / `kimi-code/kimi-for-coding`）。**选型表以 `opencode debug agents` 为准，不要以配置文件某一时点的内容为准。**
 
-### 2.2 Primary Agents（3 个，用户直接交互）
+### 2.2 Primary Agents（3 个直接交互 + `title`(hidden)，共 4 个 primary）
+
+> **与 §2 计数口径的关系**：primary 共 **4** 个（build / front / plan / `title`[hidden]）；
+> 本节只展开**用户直接交互的 3 个**，`title` 因 `hidden: true` 不出现在用户手选列表，故单列于此说明。
 
 #### `build` —— 主对话 agent
 - **职责**：代码编写、修改、调试、提交
@@ -150,7 +158,11 @@ openspec/changes/*/proposal.md
 
 > **汇总文档**：`docs/SUBAGENT-ORCHESTRATION.md` —— 把 agent 清单、委派拓扑与门控、审查链与档位、输入契约（L1–L5）、critic 的评审对象边界、oracle 双模式与判定行、metis / context-builder 定位、delegate 通道（派发主体 / 槽位 / 归属 / D7 优先级）、已知残留汇到一处。**它是索引与现状描述，不是规则真源**（真源 = `prompts/*.md` + `docs/adr/*.md` + `opencode.jsonc.opencode-go` + `lib/*.ts`）。
 
-### 2.3 Subagents（7 个，subagent 工具调用）
+### 2.3 Subagents（8 个，subagent 工具调用）
+
+> **计数口径**（与 §2 标题口径同源，**枚举只在 §1.1「少而精」列一处**）：
+> `mode: subagent` = **8 个**（含 plan-worker）；不含 4 个 `primary`
+> （`title` 是 `primary(hidden)`，运行时按 `mode !== "primary" && !hidden` 被排除在「Available subagents」清单外）。
 
 #### `explore` —— 本地代码 grep
 - **核心 prompt**：`prompts/explore.md`
@@ -379,7 +391,7 @@ critic **不会自动启动**——`subagent` 模式只在被 `subagent()` 显�
 
 | 轴 | 是什么 | 本文位置 |
 |---|---|---|
-| agent 轴 | 11 个独立 agent（build / plan / front / explore / librarian / oracle / metis / critic / context-builder / general / title） | §2.1–§2.3、§3 委派拓扑 |
+| agent 轴 | 12 个独立 agent（build / plan / front / explore / librarian / oracle / metis / critic / context-builder / general / **plan-worker** / title） | §2.1–§2.3、§3 委派拓扑 |
 | **角色轴（persona）** | build agent 内部的权限视角：`architect` / `planner` / `builder` / `verifier` / `no-role` / `general` | **本节** |
 | tool 权限轴 | OpenCode 三层 permission（read / edit / bash / MCP…） | §4 权限模型 |
 
@@ -627,23 +639,24 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 
 ### 3.1 委派矩阵
 
-| 调用方 ↓ \ 被调方 → | front | build | plan | explore | librarian | oracle | metis | general | critic | context-builder |
-|---|---|---|---|---|---|---|---|---|---|---|
-| **build** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（条件）| ✅ |
-| **plan** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅✅（优先）| ❌ | ❌ | ❌ |
-| **explore** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **librarian** | ❌ | ❌ | ❌ | ✅✅（本地搜索）| ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **oracle** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **metis** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **general** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **critic** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **context-builder** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **front** | ❌ | ❌（经 `delegate` 插件工具，非 agent 委派） | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| 调用方 ↓ \ 被调方 → | front | build | plan | explore | librarian | oracle | metis | general | critic | context-builder | plan-worker |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **build** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（条件）| ✅ | ✅ |
+| **plan** | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅✅（优先）| ❌ | ❌ | ✅ |
+| **explore** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **librarian** | ❌ | ❌ | ❌ | ✅✅（本地搜索）| ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **oracle** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **metis** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **general** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **critic** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **context-builder** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **front** | ❌ | ❌（经 `delegate` 插件工具，非 agent 委派） | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 
 > build → critic 是"条件 ✅"：仅在 §3.2 "何时调 critic" 5 个条件命中时调用；其它情况不调。critic 自己不调任何 agent（task deny）。
 > **context-builder** **流程上只由 build 调用**（大 diff 搬运），且不委派任何 agent——它只做上下文组装。**权限拓扑上 build/plan 均可调**（`ADR-front-knowledge-capability` D2/D4 备案）⇒ **可达 ≠ 有消费者**：plan 没有 critic 下游（`:551`「plan agent 不需要审稿」、矩阵 plan→critic = ❌），故 `prompts/plan.md` 不再列出该路径。
 > **front 的 "→ build" 不是 agent 委派**：front 不调 subagent 工具，而是调 `delegate` 插件工具，由插件在进程内建立并驱动一个 agent=build 的工程 session（跨目录）。详见 `docs/dual-session-delegation.md`。
 > **front → 五个只读 agent（v2.5）**：front 可直接调用 `explore` / `librarian` / `oracle` / `metis` / `critic`，产物仅"回答"，不产生文件变更；发现需要变更必须改判实施性走 `delegate`。依据：`docs/adr/ADR-front-knowledge-capability.md`（前置条件是这五个 agent 的 shell 已按三段式加固）。
+> **plan-worker**：**权限上** build / plan 均可调（两者 `permission.subagent = "allow"` 全量；守卫 `tests/config-guards.test.ts` 的 AC4 断言「显式 `subagent: allow` 的 agent 集合 == {build, plan}」，且 `front` 的 subagent 白名单**不得含** plan-worker）；**流程上只由 plan 派**（`prompts/plan.md` 离线协作节：父 plan 会话用 `subagent` 派并行 node；`prompts/plan-worker.md` 的输入契约是父 plan 写的 `nodes/<id>/BRIEF.md`；`prompts/build.md` 未列该路径）⇒ **权限可达 ≠ 流程有消费者**，与 context-builder 同型。
 > **本矩阵只回答「允许调谁」；「哪个角色产出必须过谁」见 §2.7 审查配对**（architect → oracle + critic / planner → metis / builder → verifier）。允许 ≠ 必须：矩阵是权限上限，配对是流程下限。 `prompts/build.md` 的**角色列表表**同理只列**自由裁量**可用的工具，**固定审查者是流程义务、不受该列限制**（`no-role` 除外）—— 角色表与配对表是流程下限的两个刻度，不是互相限制的两道闸。（此处指角色列表表；**本节 agent 矩阵的 ❌ 不在豁免范围**。）
 
 ### 3.2 委派触发规则

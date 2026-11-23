@@ -408,7 +408,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | 角色 | 内置流程（永远可用，不依赖 rdd-workflow） | 可选增强（装了 + 前置条件满足时） | 前置条件（skill frontmatter 原文） |
 |---|---|---|---|
 | `architect` | 调研（`explore`/`oracle`/`librarian`/`metis`）；写 `arch_paths` 命中的架构文档（见「architect 产出形态契约」）；用 critic `arch` 档审稿 | `rdd-arch` | 项目有 ADR 目录 + 需新建/复审 ADR 或同步主题文档 |
-| `planner` | 写 `.rddf/roadmap/**`、`.rddf/roadmap.md`、`.rddf/state/.planner-*`（内置流程交接面，见 §4.2 裁决）、`.rddf/improvements/<name>.md`（5 段草稿）；`metis` 做 gap 分析；起草 `openspec/changes/<name>/proposal.md` | `rdd-planner`；`add-improve`；`rdd-workflow-brainstorm` | `rdd-planner`：`.rddf/state/.arch-handoff.json` 存在 + 有新 improvement 或待审 improvement；`add-improve`：尚无 `.rddf/improvements/<name>.md`；`brainstorm`：草稿未定、需 5 段探索 |
+| `planner` | 写 `.rddf/roadmap/**`、`.rddf/roadmap.md`、`.rddf/state/.planner-*`（内置流程交接面，见上方「工件归属规则」的裁决）、`.rddf/improvements/<name>.md`（5 段草稿）；`metis` 做 gap 分析；起草 `openspec/changes/<name>/proposal.md` | `rdd-planner`；`add-improve`；`rdd-workflow-brainstorm` | `rdd-planner`：`.rddf/state/.arch-handoff.json` 存在 + 有新 improvement 或待审 improvement；`add-improve`：尚无 `.rddf/improvements/<name>.md`；`brainstorm`：草稿未定、需 5 段探索 |
 | `builder` | 创建 openspec change（`proposal.md`/`design.md`/`tasks.md`）；写 `.rddf/plans/<name>.md`（TDD 5 步）；worktree 或轻量执行；跑测试；commit（工具层验证门） | `rdd-builder`；`execute`；`rdd-quick`；`rdd-workflow-writing-plans`；`openspec-gate`；`deps` | `rdd-builder`：`.rddf/improvements/<change>.md` + `.rddf/state/.planner-handoff.json` **均存在**；`execute`：`.rddf/plans/<name>.md` 已存在 + worktree context 已设（或 lightweight 模式）；`writing-plans`：该 plan 尚不存在；`openspec-gate`：commit 时且有 staged 文件；`deps`：P1.5 已达（或用户要依赖可视化）+ `openspec/changes/` 下存在多个 change；`rdd-quick`：小改动，无需 openspec change / worktree |
 | `verifier` | 「verifier 产出契约」的 1–5 步本地验收；报告落 `.rddf/reviews/` | `rdd-verifier`；`contract-check` | `rdd-verifier`：change 有 `## 验收标准`/`## Acceptance` 段 + P3 archive gate 触发；`contract-check`：疑似契约漂移 + 已给出契约路径与实现路径 |
 | `general` | 通用读写；调 subagent；直接调 rdd-workflow skill（前置条件满足时） | — （无专属 skill；推荐下一 skill 用 `rddf guide` CLI —— `guide` skill 已归档，见 ADR-0063） | 用户问「下一步做什么」或新 session，且无进行中的 builder/verifier |
@@ -457,6 +457,25 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 | `verifier` | 读；运行任意 shell（验证用）；**调 `explore` 做只读定位**（AC 指向的实现 / 测试在哪 —— 关系类问题）；调 `critic`（同样受每 change 2 轮评审预算约束）；满足分流三条件时调 `rdd-verifier` skill；写验收报告到 `.rddf/reviews/` | edit `src/**`（验收时改实现 = 角色污染）；edit `arch_paths` 命中的架构文档（ADR / theme doc —— 验收不改决策记录；`rdd-verifier` 的 `not_owns: docs/adr/ADR-*.md` 同此）；重构；实施类 commit；**手工**写 `.rddf/state/verifier/*`（那是 rdd-verifier skill 的 owns —— 被派发 `role_class=verifier` 的**能力面**另见 §被派发后端的运行身份） | `【角色: verifier \| source: <...>】我负责验收：可运行测试与检查，不修改实现代码。` |
 | `no-role` | 读；**询问用户角色**；轻量讨论；**调 `explore` / `librarian` 做只读调研**（不改仓库状态） | 一切 edit；会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等，**提交面亦受写集约束**）；创建 openspec change；调写类 subagent | `【角色: 未设定】未读取到角色且用户未指定。请告诉我本次以什么角色工作：architect / planner / builder / verifier。` |
 | `general` | **全部**：edit、shell、commit、subagent、openspec change、skill | 无额外禁止 | `【角色: general \| source: <...>】build agent 处于通用模式。如需限制请说"切换到 X"。` |
+
+> ⚠ **本表「允许」列的散文是**人类语义**、不承担写集判据**。各角色的**机器层写集**
+> （逐字摘自 `lib/role-policy.ts::ROLE_WRITE_POLICY`，**真源以该文件为准**）：
+> - `architect` — `allow` = `.rddf/config/arch-docs.json` · `.rddf/config/governance-paths.json` · `.rddf/reviews`
+>   （另加 `arch_paths` 命中目录**动态并入**）；`governance: true`
+> - `planner` — `allow` = `.rddf/roadmap` · `.rddf/roadmap.md` · `.rddf/improvements` · `.rddf/state/.planner-*`
+>   · `openspec/changes/*/proposal.md`；`governance: false`
+> - `builder` — `allow` = `**`；`governance: true`
+> - `verifier` — `allow` = `.rddf/reviews` · `.rddf/state/verifier`；`governance: false`
+> - `no-role` — `allow` = 空数组；`denyAll: true`
+> - `general` — `allow` = `**`；`governance: true`
+>
+> ⚠ 上表**「禁止」列里的流程约束机器层不拦**（如 verifier 的「手工写 `.rddf/state/verifier/*`」）：
+> 机器层只按本投影的 `allow` 判，流程约束靠 skill 的 owns 与审查链兜底。
+> ⚠ 表中残留的 `§4.2` / `§4.4` 是 v3 编号（**本文件无编号节**）：`§4.2` = 上方「工件归属规则」；
+> `§4.4` = **本表**的 `builder` 行。
+> ⚠ **写集**机读块目前只有 `verifier` 有一块（见下；**能力面**机读块 `<!-- capability:build -->` 在本表上方，
+> 两者不是同一种块），其余五角色（`architect` / `planner` / `builder` / `general` / `no-role`）
+> 的**写集**机读块化属已知缺口（follow-up，非本轮）。
 
 <!-- 机读投影：下面这块是 `opencode.jsonc` 里本 agent 的**能力面**（edit / shell / delegate）——
      守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。
@@ -552,6 +571,8 @@ oracle 判的是「这个决策在**给定意图**下会怎么坏」，critic �
 **自指审查**：改 `prompts/oracle.md` / `prompts/critic.md` / 本节本身时，审查实例跑的是**旧版契约**，无法评估新版会让 agent 怎么错 → 只能记为「自指审查，不构成独立证据」，并在应答里声明。
 
 **builder 撞到治理面缺陷时（消除权限冲突，不许死等也不许静默越权）**：`~/.config/opencode/**` 不在 `builder` 的产出归属内，而 `builder` 的 `edit` 权限覆盖仓库内文件。所以 builder 发现治理面缺陷时**不直接编辑**，而是：产出 findings + `halted` 报告，交用户决定是否切 `architect`。**不得**静默编辑（越权），**不得**静默忽略（丢 finding），**不得**停在原地等口令（死等）。
+
+> ⚠ **机器层语义**：本节是**流程约束** —— `decideWrite` 对 `builder` 判定为 `allow: **` ∪ `governance: true` ⇒ 治理面路径**机器放行**（同「角色列表」builder 行先例）；本节的约束力来自**流程与审查链**，机器不拦。正确路径：发现缺陷 ⇒ 按本节产出 findings + `halted`；用户裁决改派后由 `architect` 写盘（`architect.allow` 含治理面 `governance: true`）。
 ⚠ **交付形态**：按 §需要用户裁决时 的形态（候选路径 + 停机标记 + 结束回合）—— 本条与它是**同一动作**，不是两套描述。
 
 **审查调用失败不重试**：一次失败即走降级，**不换模型重试**（额度类失败是持续态，重试只烧预算）。
