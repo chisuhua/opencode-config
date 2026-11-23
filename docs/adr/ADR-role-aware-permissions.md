@@ -12,7 +12,7 @@
 | 关联 change | **已实施 + 已验收 + 已归档**（2026-11-19）：`openspec/changes/archive/2026-11-19-role-aware-permissions/`（**已立项 2026-11-17**；与身份 ADR 同一 change 同批落地；验收 = `.rddf/reviews/role-aware-permissions-verify.md` 第 2 轮终 **24/24 PASS**） |
 | AC 映射 | 本文 **V1–V14 ↔ AC11–AC24**（change 的验收标准表） |
 | 审稿报告 | `.rddf/reviews/role-aware-permissions-consultation.md`（oracle **2 轮** + critic **1 轮**；逐条闭合见 §8.3/§8.4） |
-| 修订 | **2026-11-17（签批后）**：D6 陈旧根口径 → 两文件均恒 `stateRoot`；D5「五项」→**六项**（含顺序修正）与 V13 同步；风险表「五项」→六项；D5⑥ 改为「租约仍剩 `role-switch.sh` + 派发临界区」。**事实性修正，不改决策** |；**2026-11-18**：`:43` 的执行点由「权限层 ask」改为「工具层验证门」（`docs/adr/ADR-commit-verification-gate.md`）；**2026-11-22**：D6「判活与接管」补三条事实性说明（全部执行点无宿主探针 ⇒ 以 TTL 为唯一判据；探针不可用时「探活失败」= TTL 判死；被接管旧持有者的恢复路径）+ `RDDF_ROLE_LEASE_TTL` 单位（毫秒）。**事实性补充，不改决策**（触发：写路径判活缺陷修复的审稿 finding；详见 `.rddf/reviews/role-aware-permissions-lease-liveness-revision.md`） |
+| 修订 | **2026-11-17（签批后）**：D6 陈旧根口径 → 两文件均恒 `stateRoot`；D5「五项」→**六项**（含顺序修正）与 V13 同步；风险表「五项」→六项；D5⑥ 改为「租约仍剩 `role-switch.sh` + 派发临界区」。**事实性修正，不改决策** |；**2026-11-18**：`:43` 的执行点由「权限层 ask」改为「工具层验证门」（`docs/adr/ADR-commit-verification-gate.md`）；**2026-11-22**：D6「判活与接管」补三条事实性说明（全部执行点无宿主探针 ⇒ 以 TTL 为唯一判据；探针不可用时「探活失败」= TTL 判死；被接管旧持有者的恢复路径）+ `RDDF_ROLE_LEASE_TTL` 单位（毫秒）。**事实性补充，不改决策**（触发：写路径判活缺陷修复的审稿 finding；详见 `.rddf/reviews/role-aware-permissions-lease-liveness-revision.md`）；**2026-11-23**：D2 补「治理面检测 = 调用路径 ∪ realpath」双命中口径（与实现 `d70a811` 同步，并指向 `ADR-governance-paths-ownership`）；D5⑥ 订正「改插件后未 `service restart`」（热加载后不成立 ⇒ 改为「加载失败 ⇒ 旧版本继续在跑」）；D5 补「治理面写门留痕」补充段。**事实性补充 + 口径订正，不改决策**（触发：`.rddf/reviews/build-model-route-switch-ab.md` §7.2 的只读调查） |
 
 ## 背景与问题
 
@@ -43,7 +43,7 @@
 | 禁 `git commit`（实施类） | ✅ | 已由**工具层验证门**覆盖（`docs/adr/ADR-commit-verification-gate.md` D2③：暂存内容须落在角色写集内）；原「权限层 ask 覆盖」已于 2026-11-18 退役 |
 | 禁「会改仓库状态的 `shell`」 | ❌ **不在** | 已登记盲区（`sed -i` / `tee` / `>`） |
 
-写集判定以**归一绝对路径**为根（相对 cwd 先归一）。
+写集判定以**归一绝对路径**为根（相对 cwd 先归一；symlink 走 realpath）。**治理面检测另取「调用路径 ∪ realpath」双命中**（任一命中即算治理面）—— 2026-11-22（`d70a811`）起（`opencode.jsonc` 是符号链接 ⇒ 只按 realpath 会让 architect 改不了自己的配置 ⇒ 归属反转）；**清单归属见 `ADR-governance-paths-ownership`**。
 
 **⚠ 每次写类工具调用都校验租约**（持有者 == 本会话 且 `claim_gen` 匹配；见 D6）；不匹配 ⇒ 拒绝并提示「租约已被接管」。
 否则接管后旧持有者仍能继续写同一工作树 ⇒ 「同角色至多一个活跃 session」在接管路径上不成立。
@@ -75,9 +75,11 @@
 4. saved approval（宿主「Allow always」）会覆盖配置，层 1 看不见（`MULTI-AGENT-DESIGN.md` §3.4）；
 5. ⭐ **非 build agent 主会话不参与**：`plan` / `front` 等主会话不参与门控与租约（身份域见身份 ADR D3）⇒
    它们与 build 主会话在同一 worktree 并发时**不受本 ADR 保护**（worktree 互踩风险仍在）。
-6. ⭐ **执行点缺席**：插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/` ⇒ **D2 的门控不生效**；
+6. ⭐ **执行点缺席**：插件未激活 / `--standalone` / 插件文件不在 `plugins/` ⇒ **D2 的门控不生效**；⚠ **2026-11-23 订正**：原文此处写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ **改插件不再需要重启**；改坏了的后果变成「**上一次成功加载的版本继续在跑**」（上游保留最后一次成功的 generation）⇒ 门控**不缺席**，但跑的是**旧判定**。⚠ **同款旧说法待同批订正**：`docs/MULTI-AGENT-DESIGN.md` §5.4「生效时机」行与 `docs/model-fallback-usage.md`「改完必须重启」段仍写旧事实 ⇒ 二者与回滚清单 `.rddf/rollback/model-fallback.json` 的 **edit #5 锚点**耦合（改正文 ⇒ 锚点必须同批同步），须由 builder 侧同批完成（登记：`.rddf/reviews/build-model-route-switch-ab.md` §6.7）。
    D6 的租约**仍剩两个执行点**：`role-switch.sh` 与**派发临界区**（后者属 `delegate` 路径，
    **不随门控插件消失**）；**开局 / 每次写类调用的校验随插件消失** ⇒ 「至多一个活跃 session」在插件缺席时**部分**不可保证。
+
+**补充（2026-11-23）—— 治理面写门留痕**：治理面写入现在会落一行 `ledger.jsonl`（`role_gate_write`：allow/deny + 角色 + 路径）⇒ 门控的**放行与拒绝**都可事后取证。但留痕是**审计面**、不是**阻断面** —— 写不进时只告警、**不影响判定**（失败开放），且 `shell` 写盘**不留痕**（同第 1 项）。
 
 ### D6 角色租约：**build 域内**同一 worktree 同一角色至多一个活跃 session
 

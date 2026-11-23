@@ -150,6 +150,15 @@
       "exempt_class": "no-single-baseline",
       "exempt_evidence": ".rddf/rollback/README.md",
       "notes": "教学面自初始提交 132f389 即存在（无回退基线）⇒ 退役 = 重写（需 ADR + change）。实测见证据文件。"
+    },
+    {
+      "mechanism": "governance-paths-config",
+      "adr_primary": "docs/adr/ADR-governance-paths-ownership.md",
+      "state": "exempt",
+      "exempt_class": "not-implemented",
+      "exempt_evidence": ".rddf/reviews/governance-paths-ownership-review.md",
+      "watch": [".rddf/config/governance-paths.json"],
+      "notes": "机制（治理面清单配置化）尚未落地（ADR 2026-11-23 裁定，实现清单见该 ADR D5）⇒ 无可回滚面；B1 落地后须转 active + 配清单（M3 会在 watch 路径出现时强制）"
     }
   ]
 }

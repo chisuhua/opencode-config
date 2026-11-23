@@ -19,7 +19,7 @@
 | `front` | primary | `minimax-cn/MiniMax-M3.1-Flash` | 用户交互内核（只读，工程行动经 delegate） | `prompts/front.md` |
 | `explore` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 代码库定位 | `prompts/explore.md` |
 | `librarian` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 外部文档 / 上游源码 | `prompts/librarian.md` |
-| `metis` | subagent | `opencode-go/deepseek-v4.1-flash` | 计划前 gap 分析（六节） | `prompts/metis.md` |
+| `metis` | subagent | `kimi-code/kimi-for-coding` | 计划前 gap 分析（六节） | `prompts/metis.md` |
 | `general` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | 杂活兜底（不可再委派） | `prompts/general.md` |
 | `context-builder` | subagent | `commandcode/deepseek/deepseek-v4.1-flash` | **critic prompt 机械搬运工**（见「metis 与 context-builder」一节） | `prompts/context-builder.md` |
 | `plan-worker` | subagent | `opencode-go/deepseek-v4.1-flash` | plan 侧离线协作（只推进自己 node 的 TODO/RESULT，不派生） | `prompts/plan-worker.md` |

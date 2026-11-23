@@ -841,7 +841,7 @@
       "prompt": "{file:./prompts/oracle.md}"
     },
     "metis": {
-      "model": "opencode-go/deepseek-v4.1-flash",
+      "model": "kimi-code/kimi-for-coding",
       "temperature": 0.3,
       "mode": "subagent",
       "hidden": false,

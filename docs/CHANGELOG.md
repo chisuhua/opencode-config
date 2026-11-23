@@ -10,6 +10,15 @@
 
 ---
 
+> **v2.63 metis 模型切换 + 模型归属表同步（2026-11-23）**：
+> 配置真源变更（`opencode.jsonc.opencode-go` 的 `agent.metis.model`）：`opencode-go/deepseek-v4.1-flash` → **`kimi-code/kimi-for-coding`**（未声明 `variant`；该模型有 provider 级 `limit.context = 1,048,576` ⇒ §2.1 表内不再带 `†`）。
+> 同批同步：§2.1 模型表 metis 行 / §5.1 provider 池表（metis 从 `commandcode` 行移到 `kimi-code` 行）/ §5.2 模型选择表 metis 行 / §5.3 关键决策「杂活链路」句 / `docs/SUBAGENT-ORCHESTRATION.md` 的 metis 行。
+> **闭合历史递延**：本文件早前的「模型归属漂移（§2.1 / §5.1 / §5.2 / §5.3 与配置不符）」递延条目 —— 其闭合触发条件（工作区内模型相关未提交改动全部提交或明确放弃）由本批满足，漂移已清零。
+> **判据**：`tests/config-guards.test.ts` 的「agent 模型清单：配置（真源）与两份文档一致」用例（此前因该未提交改动而红，本批转绿）。
+> **审查判定**：模型 ID 的事实投影同步，按 `prompts/build.md` 治理面作用域表右列的同类排除（「模型 ID 换版本号」不触发 oracle→critic）；表格行内容由上述机器判据逐行校验。
+
+---
+
 > **v2.62 写门治理面留痕（role-gate → ledger，2026-11-23）**：
 > 此前 role-gate 对治理面写入**只有 throw** —— 谁在什么角色下改过治理面（放行或拒绝）没有落盘痕迹，事后无法取证。现在 `plugins/role-gate.ts` 在门控判定后往 `.rddf/state/ledger.jsonl` 追加一行 `role_gate_write`：`decision`（allow/deny）/ `role` / `agent` / `action` / `session_id` / `path`（相对治理根）/ 拒绝时 `reason`（经 `redactAndTruncate` 脱敏截断）/ `at`。
 > **只记治理面**（非治理面写入零新增 IO），且只记**门控生效**的会话（后端 / 非 build 主会话不归本门控判，ADR D3）。
@@ -1615,7 +1624,7 @@ OpenCode 升级到 **v2.1.2** 后做了 4 项修复。前两项是**迁移期静
 
 - `docs/MULTI-AGENT-DESIGN.md` §11「修改后必做」与 §6 文件树、§4.4 的真源指向此前仍写 `opencode.jsonc.openstarry`（该文件已不存在）—— **本批已一并改为 `opencode.jsonc.opencode-go`**（残留的历史 v1.8 注记保留原文，它们描述的是当时的事实）。
 - `opencode-go` / `openstarry` / `minimax-cn` 仍用 V1 包名（`@ai-sdk/*`）。旧名**实测仍可用**（`opencode-go/deepseek-v4.1-flash` 实跑通过），故未一并迁移：`minimax-cn` 是 build/plan/critic 的载体，改错会中断当前会话；`openstarry` 当前无 agent 使用。建议单独一批迁移 + 逐 provider 实跑。
-- `docs/MULTI-AGENT-DESIGN.md` §2.1 / §5.1 / §5.2 / §5.3 的**模型归属**已与当前配置不符（例：表中 explore / critic 仍写 `minimax-cn`，实际为 `opencode/deepseek-v4.1-flash-free` / `kimi-code/kimi-for-coding`；oracle / metis 表写 `k3-256k`，实际已切 `kimi-for-coding`）—— 漂移源自用户尚未提交的模型切换，非本批引入；待该改动定稿后一次性重算这几张表。**闭合触发（v2.2.4 补）**：工作区内模型相关未提交改动（`agents.*.model` / `providers.*.models` / `apiKey` 引用）全部提交或明确放弃后，整批重算；在此之前每批治理面改动可引用本条目递延，但递延不得超过一个批次，否则 §11 的 MUST 同步义务在事实上失效。
+- `docs/MULTI-AGENT-DESIGN.md` §2.1 / §5.1 / §5.2 / §5.3 的**模型归属**已与当前配置不符（例：表中 explore / critic 仍写 `minimax-cn`，实际为 `opencode/deepseek-v4.1-flash-free` / `kimi-code/kimi-for-coding`；oracle / metis 表写 `k3-256k`，实际已切 `kimi-for-coding`）—— 漂移源自用户尚未提交的模型切换，非本批引入；待该改动定稿后一次性重算这几张表。**闭合触发（v2.2.4 补）**：工作区内模型相关未提交改动（`agents.*.model` / `providers.*.models` / `apiKey` 引用）全部提交或明确放弃后，整批重算；在此之前每批治理面改动可引用本条目递延，但递延不得超过一个批次，否则 §11 的 MUST 同步义务在事实上失效。**✅ 已闭合（2026-11-23，v2.63）**：模型相关未提交改动随 v2.63 提交（metis → `kimi-code/kimi-for-coding`），§2.1 / §5.1 / §5.2 / §5.3 与 `docs/SUBAGENT-ORCHESTRATION.md` 同批重算，`tests/config-guards.test.ts` 模型清单用例全绿 ⇒ 本递延条目不再适用。
 
 ### 8.1.13 运行环境修复：oracle model 引用（2026-11-06，v2.2.4）
 

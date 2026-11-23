@@ -69,7 +69,7 @@
 | **explore** | subagent | 本地代码搜索 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.1 | 1,000,000† |
 | **librarian** | subagent | 外部文档/依赖调研 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.1 | 1,000,000† |
 | **oracle** | subagent | 架构咨询 | `kimi-code/kimi-for-coding`（`variant: max`） | —（未设） | 1,048,576 |
-| **metis** | subagent | 计划前差距分析 | `opencode-go/deepseek-v4.1-flash` | 0.3 | 1,000,000† |
+| **metis** | subagent | 计划前差距分析 | `kimi-code/kimi-for-coding` | 0.3 | 1,048,576 |
 | **general** | subagent | 多面手 fallback | `commandcode/deepseek/deepseek-v4.1-flash` | 0.2 | 1,000,000† |
 | **critic** | subagent | 对抗式审稿 | `kimi-code/kimi-for-coding` | 0.1 | 1,048,576 |
 | **context-builder** | subagent | critic prompt 组装器 | `commandcode/deepseek/deepseek-v4.1-flash` | 0.1 | 1,000,000† |
@@ -86,6 +86,8 @@
 > **v2.4 订正（2026-11-08）**：本表按**运行时真值**重算 —— 数据取自 `opencode debug agents`（生效配置解析结果），不是对配置文件的肉眼抄读；`Context` 带 `†` 的模型未在配置声明 `limit`，取 models.dev 值。
 >
 > **v2.12 订正（2026-11-12）**：轻量链路（explore / librarian / context-builder / title）的 model 连续两次调整 —— 先由 `opencode/deepseek-v4.1-flash-free` 切到 `opencode-go/deepseek-v4.1-flash`（`git show 2de2df8`），再切到当前的 **`commandcode/deepseek/deepseek-v4.1-flash`**（与 metis / general 同款，不再声明 `variant`）。Context 随之为 **1,000,000†**（models.dev 值，配置未声明 `limit`）。证据：`opencode debug agents` + 配置解析 + `opencode run --standalone --agent explore|librarian` 实跑三重核对。
+>
+> **v2.63 订正（2026-11-23）**：**metis** 由 `opencode-go/deepseek-v4.1-flash` 切到 **`kimi-code/kimi-for-coding`**（与 oracle / critic 同款，未声明 `variant`）⇒ Context 取配置的 provider 级 `limit.context = 1,048,576`（**不带 `†`**：该值已在配置声明）。同批同步 §5.1 provider 池表 / §5.2 模型选择表 / §5.3 关键决策句与 `docs/SUBAGENT-ORCHESTRATION.md`；判据 = `tests/config-guards.test.ts` 的「agent 模型清单」用例。
 >
 > ⚠️ **中间踩过的坑（已修，记录以免重蹈）**：`opencode-go` 上的那次切换让 explore / librarian / title **每次调用都报** `Variant unavailable for opencode-go/deepseek-v4.1-flash: low` —— 变体由 `Variant.resolve()`（`packages/core/src/variant.ts` 的 `PROTOCOLS`）按 **package** 查协议生成，models.dev 对该模型没有 variants ⇒ 变体表为空。修法见 §5.1 的 v2.12 变更条（显式声明 `variants`）；当前四个 agent 已回到 `commandcode`，该 provider 的 `variants` 声明保留作预防。
 >
@@ -502,7 +504,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 - **D5③** `role.json` / `role-claims.json` **可被改写**（`shell` 或 `edit`）⇒ 身份与租约都可被伪造（写盘已进 `ask` 档，但**仍可绕过**）。
 - **D5④** **saved approval**（宿主「Allow always」）会覆盖配置，层 1 看不见（`§3.4`）。
 - **D5⑤** **非 build agent 主会话**不参与（`plan` / `front` 等）⇒ 它们与 build 主会话并发时**不受**本 ADR 保护。
-- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 改插件后未 `service restart` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。
+- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。⚠ **2026-11-23 订正**：原文写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ 改插件**不再需要重启**；改坏的后果变成「**上一次成功加载的版本继续在跑**」⇒ 门控**不缺席**，但跑的是**旧判定**（依据：`docs/adr/ADR-role-aware-permissions.md` D5⑥）。
 
 > ⚠ **commit-gate 的十六项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。
 
@@ -920,12 +922,12 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 
 | Provider | Models 数 | 当前 agent 用途 |
 |---|---|---|
-| `commandcode`（models.dev 内建）| — | metis / general / explore / librarian / context-builder / title（`deepseek/deepseek-v4.1-flash`）|
+| `commandcode`（models.dev 内建）| — | general / explore / librarian / context-builder / title（`deepseek/deepseek-v4.1-flash`）|
 | `minimax-cn`（厂商直连，anthropic 协议）| 2 | plan / front（`MiniMax-M3.1-Flash`）；`MiniMax-M3` 在池内但无 agent 使用 |
 | `minimax-cn-openai`（厂商直连，OpenAI 兼容协议）| 1 | build（`MiniMax-M3.1-Flash`）—— 与 `minimax-cn` **同模型、不同线路**，v2.60 起用于 A/B（anthropic 线路的流式 tool-call 参数偶发截断）|
 | `opencode-go` | 1 | 当前无 agent 声明；是 `model-fallback.json` 降级链候选（§5.4）|
 | `opencode`（内建免费）| — | 当前无 agent 声明（v2.12 起 explore / librarian / context-builder / title 先后切走）|
-| `kimi-code`（厂商直连）| 2 | oracle / critic（`kimi-for-coding`）；`k3-256k` 在池内但无 agent 使用 |
+| `kimi-code`（厂商直连）| 2 | oracle / critic / metis（`kimi-for-coding`）；`k3-256k` 在池内但无 agent 使用 |
 | `openstarry`（中转网关）| 7 | 无 agent 声明；`deepseek-v4.1-flash` 是降级链候选（§5.4）。池内另有 `glm-5.3-flash` / `deepseek-v4.1-flash-1017` / `kimi-k2.7-code` / `kimi-k2.6` / `qwen3.7-plus` / `MiniMax-M2.7-highspeed` |
 
 > **v1.3 变更**：provider 段迁到 v2 的 `providers` 形态（`package` / `settings` / `models[].limit`）；模型 id 已用 `opencode models` 与上游核对一致。
@@ -967,7 +969,7 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 | explore | `commandcode/deepseek/deepseek-v4.1-flash` | 速度优先、本地搜索 token 少 |
 | librarian | `commandcode/deepseek/deepseek-v4.1-flash` | 纯外部检索，轻量档足够 |
 | oracle | `kimi-code/kimi-for-coding` | 架构分析要吃下大量文件，1M 上下文；`variant: max` |
-| metis | `commandcode/deepseek/deepseek-v4.1-flash` | 创造性发散任务，温度 0.3 配合 |
+| metis | `kimi-code/kimi-for-coding` | 2026-11-23 起与 oracle / critic 同款：gap 分析要吃下大量文件（1M 上下文）；温度 0.3 保留 |
 | general | `commandcode/deepseek/deepseek-v4.1-flash` | 多面手 fallback |
 | critic | `kimi-code/kimi-for-coding` | 长 PR diff + 文件全扫；1M 上下文吃得下全仓扫描 |
 | context-builder | `commandcode/deepseek/deepseek-v4.1-flash` | 纯机械的 prompt 组装，成本优先 |
@@ -984,7 +986,7 @@ shell 层另加 `cat/head/tail *.env` 拦截（只读 agent `deny`，build `ask`
 - **不引入 Anthropic / OpenAI provider**——本地网络限制 + 成本考虑
 - **主对话链路（build / plan / front）用 `minimax-cn/MiniMax-M3.1-Flash`**——1M 上下文；这些 agent 的共同特征是「要读很多」，上下文比单价更决定可用性。**build 自 v2.60 改走 `minimax-cn-openai`（OpenAI 兼容线路，模型不变）**：anthropic 兼容线路的流式 tool-call 参数偶发截断（`tool.input-json`，7 天基线 1.07%，其余 provider 0），A/B 判据见 CHANGELOG v2.60
 - **重活链路（oracle / critic）用 `kimi-code/kimi-for-coding`**——架构分析 / 全仓扫描要吃下大量文件，1M 上下文
-- **杂活链路（metis / general）用 `commandcode/deepseek/deepseek-v4.1-flash`**——发散与杂活，1M 上下文
+- **杂活链路（general）用 `commandcode/deepseek/deepseek-v4.1-flash`**——多面手 fallback，1M 上下文；**metis 自 2026-11-23 起迁入重活链路**（`kimi-code/kimi-for-coding`，见 §2.1 / §5.2）
 - **轻量链路（explore / librarian / context-builder / title）用 `commandcode/deepseek/deepseek-v4.1-flash`**——检索与机械组装不需要长上下文；v2.12 两次调整（内建免费档 → `opencode-go` → `commandcode`），内建免费档在 provider 侧报 HTTP 426 不可用
 - **套餐可用性先于型号新旧（v1.4 实测教训）**——`deepseek-v4-flash` 与 `glm-5.1` 虽在 models.dev 存在，但**不在本套餐**（`model_price_error`）。选型前必须先打 `/v1/models` + 实测一次调用
 - **模型上下文 limit 写在配置里**（`providers.<id>.models.<model>.limit.context`），需与上游实际值核对（§8.2）
@@ -1049,7 +1051,7 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 │   ├── role-show.md             # /role-show：查看当前角色
 │   ├── arch-docs-init.md        # /arch-docs-init：梳理架构文档结构 → .rddf/config/arch-docs.json
 │   └── critic-review.md         # /critic-review：7 字段上下文契约调 critic
-├── plugins/                     # 本地 opencode 插件（server 启动时加载；改代码需 restart）
+├── plugins/                     # 本地 opencode 插件（源码构建版**热加载**：改代码在下一次工具调用即生效；加载失败 ⇒ 上一次成功版本继续在跑）
 │   ├── delegate.ts              # front → 工程 session 的委托工具（五个：delegate/dispatch/sessions/suspend/cancel）
 │   └── model-fallback.ts        # 模型降级链接线（retry 钩子 + switchModel）
 ├── lib/                         # 插件的纯逻辑内核（无宿主依赖，可单测）
