@@ -10,6 +10,13 @@
 
 ---
 
+> **v2.66 小债清扫：architect 治理面括注收紧 + 三份排障文档的重启口径（2026-11-23）**：
+> ① `prompts/build.md` 角色列表 `architect` 行的「编辑治理面文件 `~/.config/opencode/**`」是**宽泛措辞** —— v2.64 把 `lib/**` / `plugins/**` 加进审查口径表后，理论上可被误读为「architect 可写机制面」。收紧为「范围 = §审查配对 治理面作用域表的『算治理面』列；**不含** `lib/**` / `plugins/**`（机制面归 builder）」。**写权限不变**（机器门仍是 `GOVERNANCE_PATHS`，不含机制面）。
+> ② 三份其它机制的排障文档（`docs/dual-session-delegation.md` §6、`docs/front-delegate-testing.md` §8、`docs/front-delegate-usage.md` §10）的「重启」建议与源码构建版热加载事实有张力（v2.65 已统一 MAD §5.4 口径）⇒ 各加一条「版本口径」注记（重启非必需、仍可兜底），**不改表格内容**。
+> 审查：oracle（`审查域: 治理面`）+ critic（记录见 `.rddf/reviews/build-md-architect-caveat-review.md`）。
+
+---
+
 > **v2.65 §6.7 口径收口：热加载 vs 重启（2026-11-23）**：
 > `docs/MULTI-AGENT-DESIGN.md` §5.4「生效时机」行与 `docs/model-fallback-usage.md`「改完必须重启」段此前写的都是**发布版 v2.2.5 的旧事实**（「插件在 server 启动时加载，改完必须 `opencode service restart`」）。根因已查清（`.rddf/reviews/build-model-route-switch-ab.md` §7.2）：**不是加载时机变了，而是本机 2026-11-11 起从发布版切成源码构建**（`7f913e1`），上游插件 supervisor 订阅源码变更并重新激活、配置由 `ConfigWatch` 热加载。
 > 两处改为：**源码构建版** ⇒ 插件 / `lib/` 改动下一次工具调用即生效、配置热加载（**新会话**可见）；发布版 v2.2.5 才需重启（历史事实）。⚠「**运行中会话**立即换用新配置」**未实证**（只观察到新会话读到新配置）——文中已显式标注，不写成绝对。

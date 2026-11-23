@@ -330,6 +330,8 @@ front 用 **`cancel`**。这是**终止**：后端被标为墓碑，**永久不�
 
 ## 10. 排障
 
+> ⚠ **重启建议的版本口径**：本机自 2026-11-11 起为**源码构建版** —— 插件 / `lib/` 改动在**下一次工具调用**即生效，配置由 `ConfigWatch` 热加载（新会话可见）⇒ 对这些改动，下表的「重启」不再是**必需**步骤（仍是最稳**兜底**，重复重启无副作用）。⚠ **prompt 文件的热加载未实证** —— 见下表「改了 prompt 文件内容但没变化」行，改 prompt 后仍按那里处置。发布版 v2.2.5 才必须重启。详见 `docs/MULTI-AGENT-DESIGN.md` §5.4。
+
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | front 工具列表里没有 `delegate` / `dispatch` / `sessions` / `suspend` / `cancel` | 插件没加载 / 服务没重启 | `opencode service restart`，再 `opencode plugin list` 看 `front-delegate` 在不在 |

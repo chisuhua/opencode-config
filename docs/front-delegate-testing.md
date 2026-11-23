@@ -158,6 +158,8 @@ expect(calls.create).toBe(1)
 
 ## 8. 运行时验证清单（单元测试覆盖不到的部分）
 
+> ⚠ **重启建议的版本口径**：本机自 2026-11-11 起为**源码构建版** —— 改插件 / `lib/` 后**下一次工具调用**即生效、配置由 `ConfigWatch` 热加载（新会话可见）⇒ 对**插件 / 配置**改动，第 0 步的 `opencode service restart` 不再是**必需**步骤（仍是最稳**兜底**）。⚠ 改 `prompts/front.md` 后**仍建议保留重启**（prompt 内容被服务缓存，见第 0 步原注）或换文件名。发布版 v2.2.5 才必须重启。详见 `docs/MULTI-AGENT-DESIGN.md` §5.4。
+
 改 `plugins/delegate.ts`、改 `opencode.jsonc` 的权限块、改 `prompts/front.md` 之后**必须**回归：
 
 ```bash
