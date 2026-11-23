@@ -38,13 +38,13 @@
 
 - [x] **R1** `.rddf/rollback/registry.json`：`governance-paths-config` 条目 `exempt/not-implemented` → **`proving`**（机制已落地、清单已写、**演练证据待回填** ⇒ `M3` 已因 watch 路径出现而强制重定性）→ drill PASS 后回填 `last_drill` ⇒ 转 **`active`**。⚠ **两段式**（与仓内 `model-fallback` 同款：证据只能由**已提交**的清单跑出来 ⇒ 必然晚一个提交）。
 - [x] **R2** 新建 `.rddf/rollback/governance-paths-config.json` 回滚清单（delete 新配置 + edits 还原 `lib/role-policy.ts` 与 `prompts/build.md` 作用域表行）。
-- [ ] **R3** 回滚演练：`bun scripts/rollback-drill.ts .rddf/rollback/governance-paths-config.json` ⇒ PASS 后回填 `last_drill`。
+- [x] **R3** 回滚演练：`bun scripts/rollback-drill.ts .rddf/rollback/governance-paths-config.json` ⇒ PASS 后回填 `last_drill`。
 
 ## V. 验证与审查
 
 - [x] **V1** `bun test tests/` 全绿；`bash scripts/check-upstream-anchors.sh` 无 `FAIL` 且无 `SKIP`；`bun scripts/rollback-registry.ts` = PASS；`bash tests/verify_record_discipline.sh` = OK。
 - [x] **V2** 治理面审查：oracle（`审查域: 治理面`）→ critic（`review_profile: build, arch`）；BLOCKER 全闭。
-- [ ] **V3** `rdd-verifier` 按 AC1–AC8 逐条验收（证据落 `.rddf/reviews/governance-paths-config-migration-verify.md`）。
+- [x] **V3** `rdd-verifier` 按 AC1–AC8 逐条验收（证据落 `.rddf/reviews/governance-paths-config-migration-verify.md`）。
 
 ## 归档条件
 

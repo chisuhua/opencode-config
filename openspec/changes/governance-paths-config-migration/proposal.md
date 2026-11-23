@@ -62,15 +62,17 @@ ADR `ADR-governance-paths-ownership` 采 B1：把清单迁到 `.rddf/config/gove
 ## Acceptance（勾选镜像）
 
 > 判据正文以 ADR Verification 章为准；本段供 `rdd-verifier` 读取。
+>
+> **验收证据**：`.rddf/reviews/governance-paths-config-migration-verify.md`（AC1–AC8 逐条判定 + 工具证据 + 判别力自证 8/8 变异体）；治理面审查记录 = `.rddf/reviews/governance-paths-config-migration-review.md`（oracle PASS-WITH-NOTES → critic REJECT(1 BLOCKER) → 修 → 复审 APPROVE）。
 
-- [ ] AC1 配置异常五态回退默认 + 告警 + 非全拒
-- [ ] AC2 收紧非核心条目放行随配置变（无需重启）
-- [ ] AC3 移除核心集 ⇒ 运行期回退 + 守卫变红
-- [ ] AC4 architect 可写 / planner·verifier 被拒 + ledger 留痕
-- [ ] AC5 项目仓同名 json 不影响判定
-- [ ] AC6 默认清单定义点恰好 1 处 + `decideWrite` 无字面清单
-- [ ] AC7 软链双命中毒桩在解析后清单上仍绿
-- [ ] AC8 `prompts/build.md` 作用域表含 `governance-paths.json` 行
+- [x] AC1 配置异常五态回退默认 + 告警 + 非全拒
+- [x] AC2 收紧非核心条目放行随配置变（无需重启）
+- [x] AC3 移除核心集 ⇒ 运行期回退 + 守卫变红
+- [x] AC4 architect 可写 / planner·verifier 被拒 + ledger 留痕
+- [x] AC5 项目仓同名 json 不影响判定
+- [x] AC6 默认清单定义点恰好 1 处 + `decideWrite` 无字面清单
+- [x] AC7 软链双命中毒桩在解析后清单上仍绿
+- [x] AC8 `prompts/build.md` 作用域表含 `governance-paths.json` 行
 
 ## 非目标
 
