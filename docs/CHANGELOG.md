@@ -10,6 +10,14 @@
 
 ---
 
+> **v2.65 §6.7 口径收口：热加载 vs 重启（2026-11-23）**：
+> `docs/MULTI-AGENT-DESIGN.md` §5.4「生效时机」行与 `docs/model-fallback-usage.md`「改完必须重启」段此前写的都是**发布版 v2.2.5 的旧事实**（「插件在 server 启动时加载，改完必须 `opencode service restart`」）。根因已查清（`.rddf/reviews/build-model-route-switch-ab.md` §7.2）：**不是加载时机变了，而是本机 2026-11-11 起从发布版切成源码构建**（`7f913e1`），上游插件 supervisor 订阅源码变更并重新激活、配置由 `ConfigWatch` 热加载。
+> 两处改为：**源码构建版** ⇒ 插件 / `lib/` 改动下一次工具调用即生效、配置热加载（**新会话**可见）；发布版 v2.2.5 才需重启（历史事实）。⚠「**运行中会话**立即换用新配置」**未实证**（只观察到新会话读到新配置）——文中已显式标注，不写成绝对。
+> 连带面：`ADR-role-aware-permissions` D5⑥ 的「待同批订正」改为「已同批订正」；回滚清单 `model-fallback.json` 的 **edit #6**（§5.4 整节）锚点同批同步 ⇒ registry 条目按 `proving → active` 走（清单已改、演练待跑 ⇒ drill PASS 后回填 `last_drill`）。
+> **审查**：oracle（`审查域: 治理面`）+ critic（见本轮评审记录）。
+
+---
+
 > **v2.64 审查口径表补机制面（`lib/**` + `plugins/**`，2026-11-23）**：
 > `prompts/build.md` §审查配对 的「治理面作用域」表此前**不含 `lib/**` 与 `plugins/**`** —— 而它们正是权限的实际执行代码（`role-policy.ts` 写集真源 / `role-identity.ts` 身份 / `role-lease.ts` 租约 / `delegate-core.ts` 派发类边界 / `plugins/role-gate.ts` 门控挂载）。⇒ 执行层改动的审查触发**无登记口径**（角色对齐审计 `.rddf/reviews/role-matrix-rdd-workflow-alignment-audit.md` §5）。
 > 现补两行（「算治理面」列，右列均**无豁免**），并加注记区分**审查口径表**与**门控清单**（`GOVERNANCE_PATHS`）：前者决定「必须走 oracle→critic」，后者决定**写权限**；机制面**不进**门控清单（`ADR-governance-paths-ownership` D2 明文否决，否则 architect 借治理面身份拿到机制代码写权）。

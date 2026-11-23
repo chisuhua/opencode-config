@@ -68,17 +68,23 @@ minimax-cn-openai/MiniMax-M3.1-Flash（链头 = build 的默认模型；v2.60 �
 
 —— 链头是**自动补在第一位的**，候选里重复写了它也不会出现两次。`providerID` / `id` 就是模型 id 本身（用 `opencode models` 查全量），不是配置里的 `providers` 段写法。
 
-### 改完必须重启
+### 改完要不要重启：按版本区分
 
-插件在 **server 启动时**加载，常驻 server 不会热加载：
+**本机现为源码构建版**（2026-11-11 起从 `/workspace/main/opencode` 本地构建）：
+
+- 插件 / `lib/` 改动：**下一次工具调用**即生效，不需要重启。
+- 配置改动：由配置监视（`ConfigWatch`）热加载，**新会话**即刻读到新配置。
+- ⚠「运行中会话立即换用新配置」**未实证** —— 只观察到新会话读到新配置。
+
+**发布版 v2.2.5（历史）**才需要重启：
 
 ```bash
 opencode service restart
 ```
 
-没重启就改配置 = 没改。
+不确定自己的版本时，**重启一次**仍是最稳的兜底（重复重启无副作用）。
 
-> ⚠ **2026-11-22 实测与本段不符**：本环境的插件 / `lib/` 改动在下一次工具调用即生效、配置由 `ConfigWatch` 热加载（服务进程未重启）。本段写的是「插件在 server 启动时加载」的旧事实；口径统一前，改完**重启一次**仍是最稳的兜底（重复重启无副作用）。见 `docs/MULTI-AGENT-DESIGN.md` §5.4 与 `docs/CHANGELOG.md` v2.60 登记项 ⑦。
+> 口径真源：`docs/MULTI-AGENT-DESIGN.md` §5.4「生效时机」行；根因（**版本切换**而非加载时机变化）见 `.rddf/reviews/build-model-route-switch-ab.md` §7.2。
 
 ## 3. 降级行为
 

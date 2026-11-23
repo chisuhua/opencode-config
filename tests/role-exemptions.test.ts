@@ -12,8 +12,11 @@
  *   - **D5③** `role.json` / `role-claims.json` **可被改写**（`shell` 或 `edit`）⇒ 身份与租约都可被伪造。
  *   - **D5④** **saved approval**（宿主「Allow always」）会覆盖配置，层 1 看不见。
  *   - **D5⑤** **非 build agent 主会话**不参与（`plan` / `front` 等）⇒ 它们与 build 主会话并发时不受本 ADR 保护。
- *   - **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 未 `service restart` / 插件文件不在 `plugins/`）
+ *   - **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 插件文件不在 `plugins/`）
  *     ⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。
+ *     ⚠ **2026-11-23 订正**：原文含「未 `service restart`」—— 本机自源码构建版起，插件源码变更
+ *     **热加载**（上游 `supervisor` 订阅 + 100ms 防抖）⇒ 不再需要重启；改坏的后果是「上一次成功
+ *     加载的版本继续跑」（旧判定），门控**不缺席**。见 `ADR-role-aware-permissions` D5⑥。
  */
 import { describe, expect, test } from "bun:test"
 import {

@@ -75,7 +75,7 @@
 4. saved approval（宿主「Allow always」）会覆盖配置，层 1 看不见（`MULTI-AGENT-DESIGN.md` §3.4）；
 5. ⭐ **非 build agent 主会话不参与**：`plan` / `front` 等主会话不参与门控与租约（身份域见身份 ADR D3）⇒
    它们与 build 主会话在同一 worktree 并发时**不受本 ADR 保护**（worktree 互踩风险仍在）。
-6. ⭐ **执行点缺席**：插件未激活 / `--standalone` / 插件文件不在 `plugins/` ⇒ **D2 的门控不生效**；⚠ **2026-11-23 订正**：原文此处写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ **改插件不再需要重启**；改坏了的后果变成「**上一次成功加载的版本继续在跑**」（上游保留最后一次成功的 generation）⇒ 门控**不缺席**，但跑的是**旧判定**。⚠ **同款旧说法待同批订正**：`docs/MULTI-AGENT-DESIGN.md` §5.4「生效时机」行与 `docs/model-fallback-usage.md`「改完必须重启」段仍写旧事实 ⇒ 二者与回滚清单 `.rddf/rollback/model-fallback.json` 的 **edit #5 锚点**耦合（改正文 ⇒ 锚点必须同批同步），须由 builder 侧同批完成（登记：`.rddf/reviews/build-model-route-switch-ab.md` §6.7）。
+6. ⭐ **执行点缺席**：插件未激活 / `--standalone` / 插件文件不在 `plugins/` ⇒ **D2 的门控不生效**；⚠ **2026-11-23 订正**：原文此处写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ **改插件不再需要重启**；改坏了的后果变成「**上一次成功加载的版本继续在跑**」（上游保留最后一次成功的 generation）⇒ 门控**不缺席**，但跑的是**旧判定**。**同款旧说法已同批订正（2026-11-23）**：`docs/MULTI-AGENT-DESIGN.md` §5.4「生效时机」行与 `docs/model-fallback-usage.md`「改完必须重启」段已改为源码构建版口径；回滚清单 `.rddf/rollback/model-fallback.json` 的 edit #6 锚点同批同步，清单变更按 D5 走 `proving → active`（drill 基于含本订正的提交，回填证据见该清单的 `last_drill`；根因见 `.rddf/reviews/build-model-route-switch-ab.md` §7.2 / `docs/CHANGELOG.md` v2.65）。
    D6 的租约**仍剩两个执行点**：`role-switch.sh` 与**派发临界区**（后者属 `delegate` 路径，
    **不随门控插件消失**）；**开局 / 每次写类调用的校验随插件消失** ⇒ 「至多一个活跃 session」在插件缺席时**部分**不可保证。
 

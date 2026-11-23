@@ -37,7 +37,7 @@
     {
       "mechanism": "model-fallback",
       "adr_primary": ".rddf/reviews/model-fallback-verify.md",
-      "state": "active",
+      "state": "proving",
       "notes": "⚠ **本机制无 ADR** ⇒ 决策记录 = 验收报告（不参与 M1 的 docs/adr 集合比对）。2026-11-23：文档锚点同步（build 行 / §5.4 当前生效链 / provider 池）⇒ 按 ADR D5 撤 last_drill 并退回 proving，演练证据下一提交回填。演练（隔离副本）PASS：回滚后 `bun test tests/` 全绿，基线 a2dc627 ⇒ 转回 active。",
       "manifest_ref": "model-fallback",
       "watch": [

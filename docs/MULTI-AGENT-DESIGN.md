@@ -1008,7 +1008,7 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
 | 链耗尽 | `decision = { retry: false }`，原始错误交回用户；不循环重试 |
 | 配置链 | 独立配置文件 `~/.config/opencode/model-fallback.json`（`chains` / `policy` / `notify`）；环境变量 `MODEL_FALLBACK_CONFIG` 可指向别的文件；都没有则用内置默认链 |
 | 链头 | **不单独配**：失败时正在用的那个模型就是链首（即 agent 的默认模型，或用户临时 `/model` 切过去的模型）；文件里的 `chains` 是它后面的后备候选 |
-| 生效时机 | 插件在 **server 启动时**加载。改配置或插件代码后需 `opencode service restart` 才生效（常驻 server 不会热加载插件） |
+| 生效时机 | **本机现为源码构建版**（2026-11-11 起从 `/workspace/main/opencode` 本地构建）：插件与 `lib/` 改动在**下一次工具调用**即生效；配置改动由配置监视（`ConfigWatch`）热加载（**新会话**即刻可见）。发布版 v2.2.5 才需 `opencode service restart`（历史事实）。⚠「运行中会话立即换用新配置」**未实证** —— 只观察到新会话读到新配置 |
 | 生命周期 | 插件按 location 重复 setup，故会话状态、链、冷却表都放**模块级**共享，并对同一 retry 事件做**事件级去重**（避免多份 hook 各切一次模型）；session 状态 30 分钟不活跃即淘汰，避免长驻 server 下 Map 单调增长 |
 
 > **为什么配置走独立文件而不是 `opencode.jsonc`**：实测本地插件**拿不到**配置里的 options —— `plugins: [["model-fallback", {...}]]`、`plugins: [{"package": ..., "options": {...}}]`、以及已废弃的 `plugin: [[name, {...}]]` 三种写法下 `ctx.options` 恒为 `{}`。因此改用插件自己读的 JSON 文件。
