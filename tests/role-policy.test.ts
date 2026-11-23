@@ -197,6 +197,18 @@ describe("AC15 planner 写 src/** 被拒、写 roadmap/improvements 成功", () 
     expect(check(fx, "planner", ".rddf/state/iteration.json").allowed).toBe(false)
   })
 
+  test("planner 写改进索引（.rddf/improvement-suggestions.md / .rddf/improvement-approved.md）⇒ 放行", () => {
+    const fx = makeFixture()
+    expect(check(fx, "planner", ".rddf/improvement-suggestions.md").allowed).toBe(true)
+    expect(check(fx, "planner", ".rddf/improvement-approved.md").allowed).toBe(true)
+    // 成对：与索引同级的其他 .rddf/ 文件仍拒（精确路径，不是 .rddf/ 通配）
+    expect(check(fx, "planner", ".rddf/improvement-notes.md").allowed).toBe(false)
+    expect(check(fx, "planner", ".rddf/iteration.json").allowed).toBe(false)
+    // 成对：**项目根**同名索引未授权（上游 owns 声明在项目根；本仓落点取 .rddf/ 变体）
+    expect(check(fx, "planner", "improvement-suggestions.md").allowed).toBe(false)
+    expect(check(fx, "planner", "improvement-approved.md").allowed).toBe(false)
+  })
+
   test("planner 写 design.md ⇒ 拒（只能起草 proposal.md）", () => {
     const fx = makeFixture()
     expect(check(fx, "planner", "openspec/changes/c1/proposal.md").allowed).toBe(true)

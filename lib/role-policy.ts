@@ -160,12 +160,17 @@ export const ROLE_WRITE_POLICY: Record<Role, RoleWritePolicy> = {
       ".rddf/roadmap",
       ".rddf/roadmap.md",
       ".rddf/improvements",
+      // 改进索引（rdd-planner 阶段产出）。本仓落点取 `.rddf/` 变体（同审计 §4.2 对
+      // `.rddf/roadmap.md` 的裁决）；上游 skill 的 owns 声明在**项目根**、待上游同步。
+      // 与 `.rddf/improvements` 是**同级文件**，目录前缀语义不覆盖 ⇒ 必须逐条列。
+      ".rddf/improvement-suggestions.md",
+      ".rddf/improvement-approved.md",
       ".rddf/state/.planner-*",
       "openspec/changes/*/proposal.md",
     ],
     governance: false,
     denyAll: false,
-    why: "planner 的写集 = .rddf/roadmap/**、.rddf/roadmap.md、.rddf/improvements/**、.rddf/state/.planner-*（内置流程交接面）、proposal.md",
+    why: "planner 的写集 = .rddf/roadmap/**、.rddf/roadmap.md、.rddf/improvements/**、改进索引（.rddf/improvement-suggestions.md / .rddf/improvement-approved.md）、.rddf/state/.planner-*（内置流程交接面）、proposal.md",
   },
   builder: {
     allow: ["**"],

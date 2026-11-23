@@ -1,3 +1,9 @@
+---
+last_feedback_id: feedback-20261123-001
+last_feedback_at: '2026-11-23T11:04:35+00:00'
+feedback_status: noted
+---
+
 # improvement: role-write-set-machine-block
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
@@ -98,3 +104,22 @@
 - **风险**：6 个块让 `prompts/build.md` 变长（每块 4 行 × 6 = 24 行）—— 可接受（换来可机检）。
   ⚠ **不建议**改成「一块全角色汇总块」：它与 AC1「6 个角色各有块」互斥，且需要守卫支持第二种渲染形态 ⇒
   白加复杂度换 20 行篇幅，不划算。
+
+## Feedback
+
+### feedback-20261123-001
+
+- **source**: rdd-builder
+- **kind**: noted
+- **created_at**: 2026-11-23T11:04:35+00:00
+- **resolution**: open
+
+#### Body
+
+planner 写集扩展（2026-11-23，`lib/role-policy.ts`）带来的漂移与未决项 —— 本条（写集机读块化）是根治项：
+
+1. **投影漂移（主项）**：`ROLE_WRITE_POLICY.planner.allow` 新增 `.rddf/improvement-suggestions.md` / `.rddf/improvement-approved.md`（精确路径），但 `prompts/build.md` 的写集投影段（自称「逐字摘自 ROLE_WRITE_POLICY」）未同步，且**无守卫比对**。用户裁决：本次记 backlog、暂不同步文档。
+2. **系统性守卫建议（oracle note ② / critic SHOULD_FIX 2）**：`governance:false` 角色的 `allow` ∩ 生效治理面清单 = ∅ —— 否则治理面分支先于 allow 判定，未来把某条 allow 加进治理面清单会**静默架空**该权限。该风险对全部既有条目同样成立（`.rddf/roadmap.md`、`openspec/changes/*/proposal.md`、verifier 的 `.rddf/reviews`），不限于本次两条。
+3. **未决裁决**：索引落点取项目根（上游 `rdd-planner` owns 声明，`SKILL.md:30-31`）还是 `.rddf/` 变体（本仓现状，沿审计 §4.2 先例）—— 当前只授权 `.rddf/` 变体，项目根两条路径仍 DENY（测试已钉住）。
+4. **审计 §3.2 剩余 planner 缺口（本 patch 未修）**：`.rddf/state/.populate-state.json`、`.rddf/state/events.jsonl` 仍不在 planner 写集 —— 不得据此认为「planner 缺口已清零」。
+
