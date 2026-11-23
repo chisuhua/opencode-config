@@ -1,0 +1,9 @@
+# 本 change 不产生 openspec 的 spec delta（本仓不使用 openspec 的 spec registry）。
+#
+# 判据真源：本目录 proposal.md 的 `## 验收标准` 表（AC1–AC15）。
+# 登记来源：.rddf/improvements/rollback-manifest-find-narrowing.md（主）
+#           + .rddf/improvements/role-write-set-machine-block.md（段 B）
+#           + .rddf/improvements/rollback-drill-replace-pattern.md（段 C：实测已落地，本 change 只做账本登记）
+schema: spec-driven
+created: 2026-11-24
+skip_specs: true
