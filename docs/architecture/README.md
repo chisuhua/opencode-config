@@ -24,6 +24,6 @@
 
 ## 归属
 
-- **写权**：`architect` 角色（`.rddf/config/arch-docs.json` 的 `arch_paths` 命中 ⇒ 写门放行）；
+- **写权**：`architect` 角色（`.rddf/config/arch-docs.json` 的 `arch_paths` 命中 ⇒ 写门放行）；`planner` / `verifier` 不写架构文档（`decideWrite` 只对 `architect` 追加 `arch_paths`）；
 - **产出**：`rdd-arch` 的 theme-doc-sync 阶段（ADR ↔ theme doc 双向可追溯）；
 - **边界**：主题文档写「当前态快照 + 模块关系」，不重复 ADR 的决策叙述。

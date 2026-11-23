@@ -11,6 +11,8 @@
  *
  * **路径口径**：判定一律基于**归一绝对路径**（相对 cwd 先解析；`../` 收敛；symlink 走 realpath），
  *   再按「治理面表 / 仓库根 / arch_paths」三处相对定位（见 `decideWrite`）。
+ *   ⚠ **治理面检测是双命中**：调用路径 ∪ realpath **任一**命中即算治理面（挡符号链接绕过）；
+ *   **写集判定**仍按 realpath 归一后的相对路径，且 `arch_paths` **只对 architect 追加**。
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { homedir } from "node:os"
@@ -78,10 +80,16 @@ export const ROLE_WRITE_POLICY: Record<Role, RoleWritePolicy> = {
     why: "architect 的写集 = 架构文档（arch_paths 命中）+ 治理面 + .rddf/reviews/**",
   },
   planner: {
-    allow: [".rddf/roadmap", ".rddf/improvements", "openspec/changes/*/proposal.md"],
+    allow: [
+      ".rddf/roadmap",
+      ".rddf/roadmap.md",
+      ".rddf/improvements",
+      ".rddf/state/.planner-*",
+      "openspec/changes/*/proposal.md",
+    ],
     governance: false,
     denyAll: false,
-    why: "planner 的写集 = .rddf/roadmap/**、.rddf/improvements/**、proposal.md",
+    why: "planner 的写集 = .rddf/roadmap/**、.rddf/roadmap.md、.rddf/improvements/**、.rddf/state/.planner-*（内置流程交接面）、proposal.md",
   },
   builder: {
     allow: ["**"],
@@ -93,7 +101,7 @@ export const ROLE_WRITE_POLICY: Record<Role, RoleWritePolicy> = {
     allow: [".rddf/reviews", ".rddf/state/verifier"],
     governance: false,
     denyAll: false,
-    why: "verifier 只读实现面（验收不改实现）",
+    why: "verifier 只读实现面与决策记录（验收不改实现、不改 ADR / theme doc）",
   },
   "no-role": {
     allow: [],
@@ -278,7 +286,9 @@ export function decideWrite(input: WriteCheckInput): WriteCheckResult {
 
   // ③ 仓库内
   if (inRepo) {
-    const allow = [...policy.allow, ...archPaths]
+    // arch_paths 命中的架构文档**只对 architect 追加**：builder 靠 `**` 已覆盖（AC12 明文验收），
+    // planner / verifier 不得写架构文档（与 rdd-verifier 的 `not_owns: docs/adr/ADR-*.md` 及 planner 散文口径一致）。
+    const allow = input.role === "architect" ? [...policy.allow, ...archPaths] : policy.allow
     if (matchesAny(rel, allow)) return ok()
     return deny(policy.why)
   }

@@ -121,6 +121,31 @@ describe("AC12 builder 写 arch_paths 命中的架构文档成功", () => {
   })
 })
 
+describe("架构文档写权按角色收口（arch_paths 只对 architect 追加）", () => {
+  test("planner / verifier edit docs/adr/** ⇒ 拒（不写决策记录）", () => {
+    const fx = makeFixture()
+    for (const role of ["planner", "verifier"] as const) {
+      const r = check(fx, role, "docs/adr/ADR-1.md")
+      expect(r.allowed, `${role} 不应能写架构文档`).toBe(false)
+      expect(r.message).toContain(role)
+    }
+  })
+
+  test("arch_paths 含 docs/architecture 时，planner / verifier 仍拒 theme doc（§4.1 真实组合）", () => {
+    const fx = makeFixture()
+    mkdirSync(path.join(fx.repo, "docs", "architecture"), { recursive: true })
+    writeFileSync(
+      path.join(fx.repo, ".rddf", "config", "arch-docs.json"),
+      JSON.stringify({ arch_paths: ["docs/adr", "docs/architecture"], exclude_paths: [] }, null, 2) + "\n",
+    )
+    for (const role of ["planner", "verifier"] as const) {
+      expect(check(fx, role, "docs/architecture/t.md").allowed).toBe(false)
+    }
+    // 成对：architect 放行（arch_paths 实际并入其写集）
+    expect(check(fx, "architect", "docs/architecture/t.md").allowed).toBe(true)
+  })
+})
+
 describe("AC13 no-role 对任意仓库文件被拒，但**能完成角色切换**", () => {
   test("no-role edit src/foo.ts ⇒ 拒（连架构文档也拒：一切 edit）", () => {
     const fx = makeFixture()
@@ -161,6 +186,15 @@ describe("AC15 planner 写 src/** 被拒、写 roadmap/improvements 成功", () 
     const fx = makeFixture()
     expect(check(fx, "planner", ".rddf/roadmap/r.md").allowed).toBe(true)
     expect(check(fx, "planner", ".rddf/improvements/i.md").allowed).toBe(true)
+  })
+
+  test("planner 写内置流程交接面（.rddf/roadmap.md / .rddf/state/.planner-*）⇒ 放行", () => {
+    const fx = makeFixture()
+    expect(check(fx, "planner", ".rddf/roadmap.md").allowed).toBe(true)
+    expect(check(fx, "planner", ".rddf/state/.planner-handoff.json").allowed).toBe(true)
+    expect(check(fx, "planner", ".rddf/state/.planner-state.json").allowed).toBe(true)
+    // 成对：非 .planner- 前缀的状态文件仍拒
+    expect(check(fx, "planner", ".rddf/state/iteration.json").allowed).toBe(false)
   })
 
   test("planner 写 design.md ⇒ 拒（只能起草 proposal.md）", () => {

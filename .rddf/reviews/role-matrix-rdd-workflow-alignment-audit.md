@@ -124,6 +124,7 @@ bun /tmp/opencode/align_check.ts    # 用 lib/role-policy.ts 的真实 matchesPa
 - **冲突点**：`prompts/build.md` 的工件归属规则写「`.rddf/state/.planner-handoff.json` —— 任何角色都不手写」（rdd-planner owns），但同一文件又说没装 skill 时走内置流程。**机器层口径与散文层口径互斥**，需要裁决：
   - (a) 内置流程改由**脚本/CLI 通道**产出交接面（保持「角色不手写」不变，落点是新增一个由 `scripts/` 提供的写入入口）；
   - (b) planner 写集显式放开 `.rddf/state/.planner-*.json` + `.rddf/roadmap.md`，并在散文里标注「仅内置流程路径手写，skill 路径由 CLI 写」。
+- **裁决与落地（2026-11-23，用户选 b）**：`ROLE_WRITE_POLICY.planner.allow` 增 `.rddf/roadmap.md` 与 `.rddf/state/.planner-*`（`lib/role-policy.ts`）；`prompts/build.md` 的角色列表 planner 行 / 增强层 planner 行 / 工件归属表 `.rddf/state/.planner-handoff.json` 行同步标注「仅内置流程路径手写」。守卫：`tests/role-policy.test.ts` 加「planner 写内置流程交接面放行 + 非 `.planner-` 前缀状态文件仍拒」。⚠ glob 覆盖 `.planner-handoff.json` / `.planner-state.json` / `.planner-feedback.json`（比裁决原文 `.planner-*.json` 略宽）；`.planner-feedback.json` 虽被机器放行，其 `rddf feedback` CLI 单写入口（ADR-0037）不变 —— 机器放行 ≠ 应手写。
 
 ### 4.3 P1 —— verifier 写不了 iteration.json / improvement 文件
 
@@ -137,6 +138,7 @@ bun /tmp/opencode/align_check.ts    # 用 lib/role-policy.ts 的真实 matchesPa
 - **判定**：机器层**允许** builder 改 ADR 决策；散文层禁止 ⇒ 散文禁止在主会话路径上**无强制力**（`lib/role-policy.ts:9-10` 的 D5① 免宣称：防事故，不防绕过）。
 - **缓解事实**：**被派发后端**路径有硬边界 —— `lib/delegate-core.ts:882-895`（`archDenyRules`）对 arch 目录生成 `edit deny` 规则；`classAllowRoots("builder")` 返回 `[]`（builder 类 = scope 减去 arch roots）。⇒ **派发路径安全、主会话路径无保护**。
 - **建议（择一）**：① 把 builder 类的 arch deny 同样应用到主会话（`decideWrite` 里对 builder 排除 archPaths，并把 `**` 改成「除 arch_paths 外的全量」）—— ⚠ 代价：`tests/role-policy.test.ts:412-415` 的守卫用例断言 `ROLE_WRITE_POLICY.builder.allow` 含 `**`，须同步改守卫 + 角色矩阵散文；② 明确写成「主会话 builder 改 ADR 决策属流程违规、无机器强制」，并在审计/回滚里补检出。
+- **裁决与落地（2026-11-23，用户选 ②）**：`ROLE_WRITE_POLICY.builder.allow` 保持 `**`（**理由：AC12 已验收「builder 写 `docs/adr/**` 成功」，修法 ① 会推翻已签收的验收项**）。`prompts/build.md` 的 builder 行补「⚠ **本条是流程约束、机器层无强制**（AC12 明文验收 …）⇒ 只能靠流程与审稿发现」；`prompts/build.md` §架构文档范围 的「写权按角色收口」条同步同一口径。故 §4.4 的机器层零强制**是既定设计**（D5① 免宣称：防事故，不防绕过），不另做检出机制。
 
 ### 4.5 P2 —— 上游 owns 声明与实际路径脱节（产品侧 rdd-workflow 仓，非本仓缺陷）
 
@@ -164,6 +166,9 @@ bun /tmp/opencode/align_check.ts    # 用 lib/role-policy.ts 的真实 matchesPa
   | verifier | **ALLOW** | **ALLOW** | deny |
 
   （`no-role` 不受影响 —— `denyAll` 在 allow 并集之前短路。）
+
+> ⚠ 上表是 **2026-11-23 修复前**的实测；§4.6 裁决落地后 planner / verifier 两列已转 **deny**（`arch_paths` 只对 architect 追加），builder / general 仍 ALLOW（`**`）。
+
 - **与散文口径的冲突**：
   - 角色列表 planner 行禁止「edit `arch_paths` 之外的**项目内**文档」⇒ 按字面，planner **可**改架构文档；
   - 角色列表 verifier 行禁止「edit `src/**`」（不禁止 ADR），但 `rdd-verifier` 的 frontmatter 明写 `not_owns: docs/adr/ADR-*.md` ⇒ 机器层允许 = 与 skill 边界声明相反；
@@ -171,6 +176,7 @@ bun /tmp/opencode/align_check.ts    # 用 lib/role-policy.ts 的真实 matchesPa
 - **影响**：验收角色（verifier）**能改 ADR** ⇒ 「验收不改实现、不改决策记录」的硬边界在机器层不成立；本次 §4.1 的修复又把同一泄漏扩展到 theme doc。
 - **修法（择一）**：① `decideWrite` 的 allow 并集改为**仅 architect 追加 archPaths**（其余角色用 `policy.allow` 原样）—— 需同步 `tests/role-policy.test.ts` 与 `tests/config-guards.test.ts` 的相关断言 + `prompts/build.md` 散文口径（属治理面 ⇒ 须 oracle→critic）；② 明确把「所有角色都可写架构文档」写成**既定设计**并改散文（则 verifier 的 `not_owns` 声明与 skill 侧需同步澄清）。
 - **注**：本条与 §4.4（builder 改 ADR 决策无强制）是**同一个根因的两面** —— 架构文档归属在机器层只表现为「路径前缀」，没有角色维度。
+- **裁决与落地（2026-11-23，用户选修法 ①，但范围收窄到 planner / verifier）**：`decideWrite` 的仓库内分支改为 `const allow = input.role === "architect" ? [...policy.allow, ...archPaths] : policy.allow` —— `arch_paths` **只对 architect 追加**；`builder` 靠 `**` 已覆盖（**AC12 保持绿**，不动 `ROLE_WRITE_POLICY.builder.allow`）；`planner` / `verifier` 失去 `docs/adr` + `docs/architecture` 写权；`general` 仍 `**`。守卫：`tests/role-policy.test.ts` 加「planner / verifier 写 `docs/adr/**` 与 `docs/architecture/**` 被拒」。散文：`prompts/build.md` §架构文档范围 加「写权按角色收口」条、角色矩阵 planner / verifier 行补禁止项、`docs/architecture/README.md` 归属段同步。
 
 ---
 
@@ -193,8 +199,8 @@ bun /tmp/opencode/align_check.ts    # 用 lib/role-policy.ts 的真实 matchesPa
 ## 6. 建议的修复顺序
 
 1. ~~**先解 §4.1**~~ ✅ **已做（2026-11-23）**：`arch_paths` 增 `docs/architecture` + 建目录（`docs/architecture/README.md`）。
-2. **再裁决 §4.2**（内置流程的交接面通道）—— 需要口径决策，不能两说。
-3. **然后处理 §4.6 + §4.4**（机器层收口：架构文档归属要角色维度）—— 属治理面改动，须走 oracle → critic。
+2. ~~**再裁决 §4.2**~~ ✅ **已做（2026-11-23，用户选 b）**：`planner.allow` 增 `.rddf/roadmap.md` + `.rddf/state/.planner-*`；散文三处同步（角色列表 planner 行 / 增强层 planner 行 / 工件归属表）。
+3. ~~**然后处理 §4.6 + §4.4**~~ ✅ **已做（2026-11-23）**：`decideWrite` 的 `arch_paths` **只对 architect 追加**（AC12 保持绿）；§4.4 明确写成「流程约束、机器无强制」。治理面改动 ⇒ 本批走 oracle → critic。
 4. **§5**（审查口径表补 `lib/**` + `plugins/**`）—— 与在飞 ADR D2/D3 口径一致（只动审查口径表，不动门控清单）。
 5. §4.3 / §4.5 为口径与上游同步，可随文档修订一起做。
 
@@ -207,6 +213,9 @@ bun /tmp/opencode/align_check.ts    # 用 lib/role-policy.ts 的真实 matchesPa
 | 1 | 补登记在飞 ADR（registry 缺口 ⇒ `bun test tests/` 红的唯一来源） | `.rddf/rollback/registry.json` | `exempt` / `not-implemented` 条目（按 `.rddf/reviews/governance-paths-ownership-review.md` §4 给出的精确 JSON）；`bun scripts/rollback-registry.ts` = PASS（census: exempt 3→4） |
 | 2 | P0 修复（§4.1） | `.rddf/config/arch-docs.json` + `docs/architecture/README.md`（新建） | `resolveArchPaths()` → `["docs/adr", "docs/architecture"]`；`scripts/arch-docs-init.sh --check` = ok（无漂移）；architect 对 theme doc 放行 |
 | 3 | 回填本报告 | 本文件 | §4.1 标记已修 + 新增 §4.6（`archPaths` 泄漏） |
+| 4 | **D3 裁决落地** | `docs/adr/ADR-governance-paths-ownership.md` + `.rddf/improvements/governance-paths-config-migration.md`（新建） | ADR Status `Proposed → Accepted`（用户签批 2026-11-23）；backlog improvement 落库（5 段 + V1–V8 验收清单） |
+| 5 | **D1 裁决落地**（§4.6 + §4.4） | `lib/role-policy.ts`（`decideWrite`）+ `tests/role-policy.test.ts` + `prompts/build.md`（§架构文档范围 + 角色矩阵 3 行）+ `docs/architecture/README.md` | `arch_paths` 只对 architect 追加；planner / verifier 写 arch 被拒（新守卫）；builder 靠 `**`（AC12 绿）；§4.4 写成流程约束 |
+| 6 | **D2 裁决落地**（§4.2） | `lib/role-policy.ts`（`planner.allow`）+ `tests/role-policy.test.ts` + `prompts/build.md`（3 处散文） | planner 可写 `.rddf/roadmap.md` / `.rddf/state/.planner-*`（内置流程路径）；新守卫覆盖正反两面 |
 
 ⚠ **本轮的角色切换**：动作 1 触及 `.rddf/rollback/**`（architect 写集不含该目录 ⇒ role-gate 实证 DENY）⇒ 经用户口令切到 builder 后执行；动作 2、3 属 architect 写集。
 
