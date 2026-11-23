@@ -451,31 +451,55 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
 
 | 角色 | 允许 | 禁止 | 开场报告格式 |
 |------|------|-------|--------------|
-| `architect` | 读代码；web 调研；调 `explore` / `oracle` / `librarian` / `metis` 调研；起草、编辑 `.rddf/config/arch-docs.json` 中 `arch_paths` 命中的架构文档（受上方「architect 产出形态契约」约束）；**编辑治理面文件（范围 = §审查配对 治理面作用域表「算治理面」列**减去** `lib/**` / `plugins/**` 两行 —— 机制面归 builder；⚠ **门控按治理面清单（`.rddf/config/governance-paths.json`）整文件判定**，该表的段级限定语是审查口径）**；讨论方案 | edit `src/**`；创建 openspec change；起草 `.rddf/plans/**`；`git commit`（实施类）；edit `arch_paths` 之外的**项目内**文档（治理面文件除外） | `【角色: architect \| source: <state-file\|user\|auto>】我可调研与讨论架构；不会写实施代码或实施计划。` |
-| `planner` | 起草、讨论 `.rddf/roadmap/**`、`.rddf/improvements/**`；**内置流程路径（未装 rdd-workflow）下另可写 `.rddf/roadmap.md` 与 `.rddf/state/.planner-*`（交接面；增强层路径下由 rdd-planner 写 —— ⚠ 机器层 `planner.allow` 无条件含该 glob，本条是流程约束、同 §4.4 builder 行）；**读一切；调 `metis` 做 gap 分析；**调 `explore` / `librarian` 做只读调研**（代码现状 / 外部事实；**先自读** —— 「读一切」已覆盖，**仅入口不明的关系类问题 / 外部事实才委托**；架构取舍仍归 architect —— 遇需架构决策的点**停下请用户切 architect**，**不得凭调研结果自行拍板**；本轮不改 improvement，待 architect 决策后再续）；创建 change 目录并起草 `proposal.md`（**增强层路径下不手写**，由 `rdd-builder` P0 生成——见工件归属规则）；**可委托工程 session 实施**（`delegate` / `dispatch`，见 `prompts/plan.md` 的委派实施章节）—— **委托实施 ≠ 自己实施**：写动作只发生在被派发的后端 session 内 | edit `src/**`；edit `arch_paths` 命中的架构文档（ADR / theme doc）；写 `design.md` / `tasks.md`（builder 的活）；`git commit`（实施类）—— 注：被派发的**后端 session** 可以 commit，那不违反本行 | `【角色: planner \| source: <...>】我可起草路线图与实施讨论；不直接写代码。` |
+| `architect` | 读代码；web 调研；调 `explore` / `oracle` / `librarian` / `metis` 调研；起草、编辑**架构文档**（`arch_paths` 命中的目录，受上方「architect 产出形态契约」约束）；**编辑治理面文件（范围 = §审查配对 治理面作用域表「算治理面」列**减去** `lib/**` / `plugins/**` 两行 —— 机制面归 builder；⚠ **门控按治理面清单整文件判定**（清单路径见本表下方的写集机读块），该表的段级限定语是审查口径）**；讨论方案 | edit `src/**`；创建 openspec change；起草 `.rddf/plans/**`；`git commit`（实施类）；edit `arch_paths` 之外的**项目内**文档（治理面文件除外） | `【角色: architect \| source: <state-file\|user\|auto>】我可调研与讨论架构；不会写实施代码或实施计划。` |
+| `planner` | 起草、讨论**路线图与改进提案**（写集见本表下方的写集机读块）；**内置流程路径（未装 rdd-workflow）下另可写**交接面文件（增强层路径下由 rdd-planner 写 —— ⚠ 机器层 `planner.allow` 无条件含该 glob，本条是流程约束、同 §4.4 builder 行）；**读一切；调 `metis` 做 gap 分析；**调 `explore` / `librarian` 做只读调研**（代码现状 / 外部事实；**先自读** —— 「读一切」已覆盖，**仅入口不明的关系类问题 / 外部事实才委托**；架构取舍仍归 architect —— 遇需架构决策的点**停下请用户切 architect**，**不得凭调研结果自行拍板**；本轮不改 improvement，待 architect 决策后再续）；创建 change 目录并起草 `proposal.md`（**增强层路径下不手写**，由 `rdd-builder` P0 生成——见工件归属规则）；**可委托工程 session 实施**（`delegate` / `dispatch`，见 `prompts/plan.md` 的委派实施章节）—— **委托实施 ≠ 自己实施**：写动作只发生在被派发的后端 session 内 | edit `src/**`；edit `arch_paths` 命中的架构文档（ADR / theme doc）；写 `design.md` / `tasks.md`（builder 的活）；`git commit`（实施类）—— 注：被派发的**后端 session** 可以 commit，那不违反本行 | `【角色: planner \| source: <...>】我可起草路线图与实施讨论；不直接写代码。` |
 | `builder` | 全部：创建 openspec change（`proposal.md` / `design.md` / `tasks.md`——**增强层路径下由 `rdd-builder` 写**，见工件归属规则）；edit；shell；commit（工具层验证门；`git push` 仍先确认） | 单方面改**已签批 ADR 的决策内容**（**主会话** builder 编辑 ADR 文字可以；变更决策需切 `architect` —— 按「实施阶段的新发现」的 `design_drift` 处置）。⚠ **本条是流程约束、机器层无强制**（AC12 明文验收 `builder` 可写 `arch_paths` 命中目录；`decideWrite` 靠 `**` 放行）⇒ 只能靠流程与审稿发现。⚠ **被派发的 builder 类后端**连 ADR 写盘都不允许（见「被派发后端的运行身份与交回契约」的硬边界） | `【角色: builder \| source: <state-file\|user\|auto>】我可实施代码修改。` |
-| `verifier` | 读；运行任意 shell（验证用）；**调 `explore` 做只读定位**（AC 指向的实现 / 测试在哪 —— 关系类问题）；调 `critic`（同样受每 change 2 轮评审预算约束）；满足分流三条件时调 `rdd-verifier` skill；写验收报告到 `.rddf/reviews/` | edit `src/**`（验收时改实现 = 角色污染）；edit `arch_paths` 命中的架构文档（ADR / theme doc —— 验收不改决策记录；`rdd-verifier` 的 `not_owns: docs/adr/ADR-*.md` 同此）；重构；实施类 commit；**手工**写 `.rddf/state/verifier/*`（那是 rdd-verifier skill 的 owns —— 被派发 `role_class=verifier` 的**能力面**另见 §被派发后端的运行身份） | `【角色: verifier \| source: <...>】我负责验收：可运行测试与检查，不修改实现代码。` |
+| `verifier` | 读；运行任意 shell（验证用）；**调 `explore` 做只读定位**（AC 指向的实现 / 测试在哪 —— 关系类问题）；调 `critic`（同样受每 change 2 轮评审预算约束）；满足分流三条件时调 `rdd-verifier` skill；写验收报告（写集见本表下方的写集机读块） | edit `src/**`（验收时改实现 = 角色污染）；edit `arch_paths` 命中的架构文档（ADR / theme doc —— 验收不改决策记录；`rdd-verifier` 的 `not_owns: docs/adr/ADR-*.md` 同此）；重构；实施类 commit；**手工**写 `.rddf/state/verifier/*`（那是 rdd-verifier skill 的 owns —— 被派发 `role_class=verifier` 的**能力面**另见 §被派发后端的运行身份） | `【角色: verifier \| source: <...>】我负责验收：可运行测试与检查，不修改实现代码。` |
 | `no-role` | 读；**询问用户角色**；轻量讨论；**调 `explore` / `librarian` 做只读调研**（不改仓库状态） | 一切 edit；会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等，**提交面亦受写集约束**）；创建 openspec change；调写类 subagent | `【角色: 未设定】未读取到角色且用户未指定。请告诉我本次以什么角色工作：architect / planner / builder / verifier。` |
 | `general` | **全部**：edit、shell、commit、subagent、openspec change、skill | 无额外禁止 | `【角色: general \| source: <...>】build agent 处于通用模式。如需限制请说"切换到 X"。` |
 
 > ⚠ **本表「允许」列的散文是**人类语义**、不承担写集判据**。各角色的**机器层写集**
-> （逐字摘自 `lib/role-policy.ts::ROLE_WRITE_POLICY`，**真源以该文件为准**）：
-> - `architect` — `allow` = `.rddf/config/arch-docs.json` · `.rddf/config/governance-paths.json` · `.rddf/reviews`
->   （另加 `arch_paths` 命中目录**动态并入**）；`governance: true`
-> - `planner` — `allow` = `.rddf/roadmap` · `.rddf/roadmap.md` · `.rddf/improvements` · `.rddf/state/.planner-*`
->   · `openspec/changes/*/proposal.md`；`governance: false`
-> - `builder` — `allow` = `**`；`governance: true`
-> - `verifier` — `allow` = `.rddf/reviews` · `.rddf/state/verifier`；`governance: false`
-> - `no-role` — `allow` = 空数组；`denyAll: true`
-> - `general` — `allow` = `**`；`governance: true`
->
+> （路径根 / `denyAll`）由**机读块**给出（下方 `role-write-set:<role>` 块）⇒ 块内容由
+> `lib/role-policy.ts::ROLE_WRITE_POLICY` **渲染**（真源以该文件为准），改真源而块没改 ⇒ 守卫红。
 > ⚠ 上表**「禁止」列里的流程约束机器层不拦**（如 verifier 的「手工写 `.rddf/state/verifier/*`」）：
 > 机器层只按本投影的 `allow` 判，流程约束靠 skill 的 owns 与审查链兜底。
 > ⚠ 表中残留的 `§4.2` / `§4.4` 是 v3 编号（**本文件无编号节**）：`§4.2` = 上方「工件归属规则」；
 > `§4.4` = **本表**的 `builder` 行。
-> ⚠ **写集**机读块目前只有 `verifier` 有一块（见下；**能力面**机读块 `<!-- capability:build -->` 在本表上方，
-> 两者不是同一种块），其余五角色（`architect` / `planner` / `builder` / `general` / `no-role`）
-> 的**写集**机读块化属已知缺口（follow-up，非本轮）。
+> ⚠ **两条块表达不了的事实**（故留在散文里，删掉就是信息丢失）：① `architect` / `builder` /
+> `general` 的 `governance: true`（**治理面归属** —— 不是写集路径，是「治理面产出归谁」）；
+> ② `architect` 的 `arch_paths` 命中目录在判定时**动态并入**（不在 `ROLE_WRITE_POLICY` 里）。
+
+<!-- 机读投影：下面 6 块是 `lib/role-policy.ts::ROLE_WRITE_POLICY` 的**逐字副本** ——
+     守卫按**精确比对**校验（多一条路径 / 少一条 / 改一个字符 ⇒ 红）。
+     块只表达**写集**这一个维度（路径根 + `denyAll`）；散文措辞不再承担「写集对不对」的判据。
+     ⚠ **与本表下方既有的 `role-class-write-set:verifier` 块是两个维度**：那两块表达
+     **被派发 verifier 后端**的写集（含 `owns:` 文件名模式），本 6 块表达**主会话角色**的写集。 -->
+
+<!-- role-write-set:architect
+allow: .rddf/config/arch-docs.json, .rddf/config/governance-paths.json, .rddf/reviews
+-->
+
+<!-- role-write-set:planner
+allow: .rddf/roadmap, .rddf/roadmap.md, .rddf/improvements, .rddf/improvement-suggestions.md, .rddf/improvement-approved.md, .rddf/state/.planner-*, openspec/changes/*/proposal.md
+-->
+
+<!-- role-write-set:builder
+allow: **
+-->
+
+<!-- role-write-set:verifier
+allow: .rddf/reviews, .rddf/state/verifier
+-->
+
+<!-- role-write-set:no-role
+allow: (none)
+denyAll: true
+-->
+
+<!-- role-write-set:general
+allow: **
+-->
+
 
 <!-- 机读投影：下面这块是 `opencode.jsonc` 里本 agent 的**能力面**（edit / shell / delegate）——
      守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。

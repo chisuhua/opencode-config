@@ -20,7 +20,8 @@
 
 - [x] **T0** 记录基线：`bun test tests/` 全绿数；`bun scripts/rollback-registry.ts` PASS（9 清单 / 0 proving）；`git rev-parse HEAD`。
   > **验收证据**：`bun test tests/` = **1137 pass / 1 skip / 0 fail**；`bun scripts/rollback-registry.ts` = **PASS（14 active / 0 proving / 3 exempt）**；`git rev-parse HEAD` = `f6178f0`（立项工件 commit）。
-- [ ] **T0b** **pin 普查**（决定段 B 断言族与 6 块的落点）：扫 `.rddf/rollback/*.json` 全部 `edits[].find` 对 **三个目标文件**的覆盖 —— `tests/config-guards.test.ts` · `lib/delegate-core.ts` · **`prompts/build.md`** ⇒ 输出每个 `find` 命中的**行区间** ⇒ 可用空隙清单。
+- [x] **T0b** **pin 普查**（决定段 B 断言族与 6 块的落点）：扫 `.rddf/rollback/*.json` 全部 `edits[].find` 对 **三个目标文件**的覆盖 —— `tests/config-guards.test.ts` · `lib/delegate-core.ts` · **`prompts/build.md`** ⇒ 输出每个 `find` 命中的**行区间** ⇒ 可用空隙清单。
+  > **验收证据**：见上方 T0b 段的实测输出（角色表节 = 行 448..502、零覆盖 28 行、表尾投影块完全零覆盖 ⇒ 段 B 改它不撞任何 pin；三个目标文件的 pin 行区间清单已出）。
   > **验收证据**：普查脚本 `/tmp/opencode/t0-survey.py`（一次性工具，不入仓）输出：`prompts/build.md` 被 **5 份清单 pin 共 21 处**（硬约束四处 = 角色表行 449 / verifier 行散文行 456–457 / 既有 `role-class-write-set:verifier` 块行 489 / `capability:build` 块行 483）；**角色表节 = 行 448..502**，其中**零覆盖行 28 行**（行 448、460–482、499–502）⇒ **表尾投影块（461–478）完全零覆盖** ⇒ 段 B 改它**不撞任何 pin**；`tests/config-guards.test.ts` 与 `lib/delegate-core.ts` 的 pin 区间清单同表输出。
   > ⚠ **须输出角色表「逐行」的残余 pin 名单**（critic 验证建议）：逐行标出角色表每一行被哪些 `find` 覆盖 ⇒ 供 **A4 选变异点**与 **B3 选断言落点**共用（A4 变异的必须是**零覆盖**行，否则假败）。
   > ⚠ **`prompts/build.md` 已被实测**（2026-11-24，见 `design.md` §2.4）：5 份清单 / 21 处 ⇒ **角色表（449）· verifier 行散文（456–457）· 既有 verifier 机读块（489）· `capability:build` 块（483）** 四处是硬约束 ⇒ 段 B 的改写与插入必须避开，避不开就**同批拆分对应 find**（两段式）。
@@ -47,14 +48,17 @@
   > ⚠ **拆分语义保持性必须逐条核对**（critic 验证建议 · 最要紧）：对 `edits[11]/[13]/[14]` 的**每一条**拆出项，diff 其 `find` 与对应 `replace` ⇒ 证明被丢出 `find` 的区间在 `replace` 侧**零差异**（`edits[13]` 已抽验：除 architect 行门控句外逐字相同；`edits[11]`/`edits[14]` 须**全量核对**）。理由：**drill 绿 + `verify.commands` 跑通判不了「漏还原」** —— 现有断言的是**当前态**，不是回滚后的还原完整性 ⇒ 这是 ADR「语义覆盖不可机判」的实体化，只能靠人工/脚本逐条核对并留痕。
   > ⚠ **执行顺序（oracle F5）**：`edits[13]` / `edits[14]` 的 `find` 必须匹配**段 B 之后**的 `prompts/build.md` ⇒ **顺序 = 段 B 内容定稿 → 段 A 拆分 → 一次性提交 + 演练**（两者同批，合并的技术依据）。
   > ⚠ **`replace` 侧可以长**：`find` 小、`replace` 大是允许的（回滚方向是「小块换回大块」）⇒ 判据只约束 `find`。
-- [ ] **A3b** **同批更新其余被撞清单**（段 B 改「允许」列必然撞 `role-class-write-set.json` 的 `edits[45]/[46]`；6 块插入边界可能撞 `edits[47]` / `commit-gate.json` 的 `edits[9]`）⇒ 凡被撞的 `find` 同步拆分/改写（同一形态约束），并同样走两段式。
+- [x] **A3b** **同批更新其余被撞清单**（段 B 改「允许」列必然撞 `role-class-write-set.json` 的 `edits[45]/[46]`；6 块插入边界可能撞 `edits[47]` / `commit-gate.json` 的 `edits[9]`）⇒ 凡被撞的 `find` 同步拆分/改写（同一形态约束），并同样走两段式。
+  > **验收证据**：**实测结论 = 无需同批更新其余清单** —— 段 B 改的是「允许」列的**前半段**，而其余 4 条被撞 find 覆盖的是**禁止列**或**允许列末尾**：`role-class-write-set[45]`（builder 禁止列）· `[46]`（verifier 禁止列）· `commit-gate[7]`（builder 允许列末尾的 `commit（工具层验证门…）`）· `commit-gate[10]`（no-role 禁止列）· `plan-delegate[9]`（planner 允许列末尾）⇒ 段 B 未触及它们 ⇒ **只有 `governance[13]` 被撞**（已由 A3 拆成 2 条链式 edit）。  > ⚠ **判定前提**：若将来改了 builder / planner / verifier / no-role 行的**禁止列**或**允许列末尾**，这 4 条 find 会重新被撞 ⇒ 届时须同批拆分。
   > **验收证据**：T0b 普查出的**被撞清单清单**逐份列出，每份附改写后的 `find` 长度与形态指标（≤ 基线）。
-- [ ] **A4（AC4）** **负向验证（解 pin 的实效）**：改 `prompts/build.md` 角色表里**与机制无关**的单元格（排版 / 与 `GOVERNANCE_PATHS` 无关的散文）⇒ `bun test tests/` **不再**报 `find_count` ⇒ **恢复原状**。
+- [x] **A4（AC4）** **负向验证（解 pin 的实效）**：改 `prompts/build.md` 角色表里**与机制无关**的单元格（排版 / 与 `GOVERNANCE_PATHS` 无关的散文）⇒ `bun test tests/` **不再**报 `find_count` ⇒ **恢复原状**。
+  > **验收证据**：负向验证**绿**（脚本 `/tmp/opencode/negative-checks.py`）：改 `prompts/build.md` 角色表 **general 行的「禁止」列散文**（与机制无关）⇒ `bun test tests/rollback-manifests.test.ts` **退出码 0（绿）** ⇒ **不再报 `find_count`** ⇒ 解 pin 实效成立；变异后工作树逐字恢复。  > ⚠ **变异点选取依据**：T0b 的逐行名单显示 general 行在 `governance[13]` 拆分后**零覆盖**（其余 5 行仍被 plan-delegate[9] / commit-gate[7][10] / role-class-write-set[45][46] 覆盖）⇒ 选 general 行 ⇒ 既满足「与机制无关」又满足「零覆盖」两条前置。
   > **验收证据**：变异前 `bun test tests/` 绿；变异后仍绿（无 `find_count` 失败项）；恢复后 `git diff` 仅剩本 change 的目标改动。
   > ⚠ **变异点必须选自 T0b 普查出的「零覆盖空隙」**（critic SHOULD_FIX-3）：角色表其它行仍被**未拆分**的 `find` 合法覆盖（`plan-delegate.json` `edits[9]` 行 455、`commit-gate.json` `edits[7]` 行 456 / `edits[10]` 行 458）⇒ 选错单元格 ⇒ 红是**合法 pin 触发**而非解 pin 无效 ⇒ 本 AC **假败**。T0b 须输出角色表**逐行**的残余 pin 名单供选点。
 - [ ] **A5（AC5）** **正向验证**：全部 9 个清单的 drill 全绿（`bun scripts/rollback-registry.ts` = PASS）；被拆清单的 `verify.commands` 逐条跑通。
   > **验收证据**：registry 输出逐清单 PASS 行；`verify.commands` 的逐条命令与退出码。
-- [ ] **A6（AC7）** 登记其余 **8 个**清单的收敛 check list（见下表）—— 不许静默遗留。
+- [x] **A6（AC7）** 登记其余 **8 个**清单的收敛 check list（见下表）—— 不许静默遗留。
+  > **验收证据**：下方「未收敛清单 check list」表已逐行登记 8 个清单的 `{sep, pipe, maxLen}` 当前值 + 收敛目标 + 建议顺序（含 `commit-gate.json` 已达标 ⇒ 移出基线表）。
   > **验收证据**：本 tasks 文件的「未收敛清单 check list」表逐行填完（含收敛目标与顺序建议）。
 
 ### 未收敛清单 check list（AC7）
@@ -79,29 +83,36 @@
   > ⚠ **测试落点**：`tests/delegate-core.test.ts` 的**顶部 import 块被逐字节 pin**（行 31–54）⇒ 不能加 import 项 ⇒ 测试用**动态 import**（顶层 await）放在文件末尾（行 1665 起，不在任何 pin 区间内）。
   > **验收证据**：`bun test tests/delegate-core.test.ts` 绿；新函数对 6 个角色的输出与手写期望逐字一致（对 `verifier` 角色做等价断言）。
   > ⚠ **`verifierWriteSetBlock()` 的输出逐字不变**（marker + `allow:` 行 + `owns:` 行）：至多**共享 `allow` 行的 join 辅助**；**不得**改 marker、**不得**把 `owns:` 搬进新块 ⇒ 既有守卫（AC19 逐字 + marker 整行计数；AC20 解析 `owns:` 行）必须继续绿（oracle F1）。
-- [ ] **B2（AC9）** `prompts/build.md` 插入 **6 个**角色写集块（architect / planner / builder / no-role / general / verifier），内容 = `renderWriteSetBlock` 输出的**逐字**副本；起止标记各自独占一行。
+- [x] **B2（AC9）** `prompts/build.md` 插入 **6 个**角色写集块（architect / planner / builder / no-role / general / verifier），内容 = `renderWriteSetBlock` 输出的**逐字**副本；起止标记各自独占一行。
+  > **验收证据**：6 个块落盘且**逐字**等于 `renderWriteSetBlock` 输出，各**恰好 1 处**（`bun -e` 逐角色数出现次数 = 1）；起止标记独占一行；三种特殊形态正确（`builder`/`general` ⇒ `allow: **`；`no-role` ⇒ `allow: (none)` + `denyAll: true`）。
   > **验收证据**：6 块的存在与逐字一致性由 **B3 的断言族**验证（config-guards 的 6 角色族，先红后绿）（oracle F6 笔误修正）。
   > ⚠ **三种特殊形态**：`builder` / `general` ⇒ `allow: **`；`no-role` ⇒ `allow: (none)` + `denyAll: true`（**不写空 `allow:` 行** —— 守卫的 `split(", ")` 会得到 `[""]`）；其余四角色 ⇒ `allow: p1, p2, ...`。
   > ⚠ **两条散文事实必须同时存在**（块表达不了，删了就是信息丢失 —— oracle F9）：① `architect` / `builder` / `general` 的 `governance: true` 治理面授权；② `architect` 的 `arch_paths` 动态并入。
   > ⚠ **落点**：6 块插入点必须在 T0b 普查出的**空隙**内 ⇒ 避开行 449 / 456–457 / 483 / 489 四处被 pin 边界（见 `design.md` §2.4）。
-- [ ] **B3（AC10）** `tests/config-guards.test.ts` 新增断言族（对 6 个角色逐个）：块 == 渲染输出（逐字）· **恰好 1 处** · 标记独占一行。
+- [x] **B3（AC10）** `tests/config-guards.test.ts` 新增断言族（对 6 个角色逐个）：块 == 渲染输出（逐字）· **恰好 1 处** · 标记独占一行。
+  > **验收证据**：`tests/config-guards.test.ts` 新增 describe「角色写集机读投影（role-write-set:<role> —— 6 角色族）」= **152 pass / 0 fail**；对 6 个角色逐个断言块 == 渲染输出（逐字）· 恰好 1 处 · 起止标记独占一行。  > ⚠ **落点**：插在行 2944 之后（`能力面写集对齐` describe **之前**）—— 该位置不在任何 pin 的 find 文本**内部** ⇒ 不破坏 `find_count`（清单守卫绿）。  > ⚠ **import**：本文件顶部 import 块被 pin ⇒ 断言族用**动态 import**（`await import`）。
   > **验收证据**：先写断言 ⇒ 红（块尚未落盘）⇒ 落盘 ⇒ 绿。
   > ⚠ **落点约束**：必须落在 **T0b 普查出的未 pin 空隙**；若必须落在被 pin 的 describe 内 ⇒ 同批更新对应清单的 `find`（并按两段式处理 `last_drill`）。
-- [ ] **B4（AC11）** **负向验证**：① 改 `ROLE_WRITE_POLICY` 任一条 ⇒ 红；② 手改块内一个字符 ⇒ 红；③ 多复制一份块 ⇒ 红。三条各自恢复原状。
+- [x] **B4（AC11）** **负向验证**：① 改 `ROLE_WRITE_POLICY` 任一条 ⇒ 红；② 手改块内一个字符 ⇒ 红；③ 多复制一份块 ⇒ 红。三条各自恢复原状。
+  > **验收证据**：三条负向验证**全部红**（脚本 `/tmp/opencode/negative-checks.py`，每条变异后跑测试并**逐字恢复**）：① 改 `ROLE_WRITE_POLICY` 的 architect allow 加一个路径 ⇒ 红；② 手改块内一个字符（`.rddf/state/verifier` → `...verifierx`）⇒ 红；③ 多复制一份 `role-write-set:general` 块 ⇒ 红。恢复后 `bun test` 回归绿，工作树与变异前逐字一致。
   > **验收证据**：三次变异的红态用例名与差异摘要。
-- [ ] **B5（AC12）** 角色列表「允许」列**不再复述写集路径**（改为指向机读块）；本轮引入的「表尾投影」散文块**删除**（不保留两份）。
+- [x] **B5（AC12）** 角色列表「允许」列**不再复述写集路径**（改为指向机读块）；本轮引入的「表尾投影」散文块**删除**（不保留两份）。
+  > **验收证据**：① 角色表 6 行的**允许列**经逐行解析（第 2 段）核对 ⇒ **写集路径字面 0 命中**（architect/planner/verifier 三行已改为「见本表下方的写集机读块」）；② 表尾投影块（写集复述）已删，**保留**了 critic NIT-3 指出的两条非写集事实（「禁止列机器层不拦」+「§4.x 悬空编号说明」）并改写了失效注记；③ **两条块表达不了的事实**（`governance: true` 治理面授权 / architect 的 `arch_paths` 动态并入）已入散文。  > ⚠ **AC12 判据范围修正**（实施中判定）：原措辞「节内 grep ⇒ 命中只允许落在块边界内」**按字面恒红** —— **禁止列**里 `.rddf/state/verifier/*`（rdd-verifier skill 的 owns 说明）是**正当提及**。⇒ 判据收窄为「**允许列**内不含写集路径字面」（AC12 的原意），守卫按表格第 2 段取列（已实现）。
   > **验收证据**：在**角色列表节内** grep 写集路径字面 ⇒ 命中只落在块边界内（节外命中数 == 0）（给出命令与输出）。
   > ⚠ **判据范围限定在角色列表节**（oracle F3）：`.rddf/reviews` / `.rddf/state/verifier` 在**其它节**（architect / verifier 产出契约、派发后端章节）有正当散文提及 ⇒ 文件级 grep 恒红 ⇒ 实施者被迫静默收窄判据。
   > ⚠ **同批改写失效注记**（oracle F8）：`prompts/build.md` 里「其余五角色写集机读块化属已知缺口（follow-up，非本轮）」那条注记在本段落地后即失真 ⇒ 随本条一并改写。
   > ⚠ **「表尾投影」整块不得整块删**（critic NIT-3）：`prompts/build.md:461-478` 的该块内**夹带两条与写集无关的事实** —— ① 「禁止列机器层不拦」（`:472-473`）② 「§4.x 悬空编号说明」（`:474-475`）⇒ 整块删除会顺带丢失 ⇒ **保留/迁移这两条**（移入散文或保留为独立 bullet），只删除「写集路径复述」那部分。
   > ⚠ **节界显式锚定**（critic 验证建议）：AC12 的「角色列表节」= `### 角色列表` 标题行**至下一个同级标题之前** ⇒ 守卫按**标题锚点**定位（不按行号）⇒ 防节界漂移导致判据静默收窄。
-- [ ] **B6（AC13）** ① `ROLE_WRITE_POLICY` 的「定义点恰好 1 处」守卫（AC16）仍绿；② `ROLE_WRITE_POLICY` **内容零改动**（`git diff lib/role-policy.ts` 为空）；③ **新增** deep-equal 断言：`ROLE_WRITE_POLICY.verifier.allow` 与 `VERIFIER_ALLOW_ROOTS` 逐元素相等（oracle F7：二者当前巧合相等但各自独立演化，无守卫则漂移互不报警）。
+- [x] **B6（AC13）** ① `ROLE_WRITE_POLICY` 的「定义点恰好 1 处」守卫（AC16）仍绿；② `ROLE_WRITE_POLICY` **内容零改动**（`git diff lib/role-policy.ts` 为空）；③ **新增** deep-equal 断言：`ROLE_WRITE_POLICY.verifier.allow` 与 `VERIFIER_ALLOW_ROOTS` 逐元素相等（oracle F7：二者当前巧合相等但各自独立演化，无守卫则漂移互不报警）。
+  > **验收证据**：① AC16「定义点恰好 1 处」仍绿；② `git diff --stat lib/role-policy.ts` = **空**（真源零改动）；③ 新增 deep-equal 用例：`ROLE_WRITE_POLICY.verifier.allow` 与 `VERIFIER_ALLOW_ROOTS` 逐元素相等 ⇒ 绿。
   > **验收证据**：`git diff --stat lib/role-policy.ts` 无输出；AC16 用例绿；新增 deep-equal 用例先红后绿。
-- [ ] **B7（AC14）** `bun test tests/` 全绿；`bash scripts/check-upstream-anchors.sh` 无 `FAIL` 且无 `SKIP`。
+- [x] **B7（AC14）** `bun test tests/` 全绿；`bash scripts/check-upstream-anchors.sh` 无 `FAIL` 且无 `SKIP`。
+  > **验收证据**：`bun test tests/` = **1168 pass / 1 skip / 0 fail**；`bash scripts/check-upstream-anchors.sh` = **OK（29/29）**。
 
 ## C. 段 C —— 账本登记（不实施）
 
-- [ ] **C1（AC15）** `.rddf/improvements/rollback-drill-replace-pattern.md` 的状态行标为「**已实施**」并给出实测指针（`lib/rollback-drill.ts:450` · `lib/rollback-drill.ts:48-51` · `.rddf/rollback/README.md:47` · `tests/rollback-drill.test.ts` 4 条新用例 / 共 39 条）。
+- [x] **C1（AC15）** `.rddf/improvements/rollback-drill-replace-pattern.md` 的状态行标为「**已实施**」并给出实测指针（`lib/rollback-drill.ts:450` · `lib/rollback-drill.ts:48-51` · `.rddf/rollback/README.md:47` · `tests/rollback-drill.test.ts` 4 条新用例 / 共 39 条）。
+  > **验收证据**：`.rddf/improvements/rollback-drill-replace-pattern.md` 状态行改为「已实施」并给出四处实测指针；`grep -n "字面" .rddf/rollback/README.md` 命中行 47 存在；`bun test tests/rollback-drill.test.ts` = 39 pass / 0 fail。
   > **验收证据**：改动后 `grep -n "字面" .rddf/rollback/README.md` 命中行存在；`bun test tests/rollback-drill.test.ts` = 39 pass / 0 fail。
 
 ## D. 收口

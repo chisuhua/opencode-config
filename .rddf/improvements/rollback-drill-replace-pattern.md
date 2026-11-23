@@ -2,6 +2,8 @@
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。
 > 无 ADR：这是 `lib/rollback-drill.ts` 的**实现层缺陷**，不改 `ADR-rollback-manifest-enforcement` 的任何决策。
+> **实施状态**：✅ **已实施**（2026-11-23 批次）⇒ 6 条 AC **实测全部落地**：`lib/rollback-drill.ts:450` 已是函数式 replacement（`buf.replace(e.find, () => e.replace)` ⇒ 不解析 `$` 模式）· `ManifestEdit` JSDoc（`lib/rollback-drill.ts:48-51`）已写明「字符串 pattern」与「按字面写入」· `.rddf/rollback/README.md:47` 已含同义 bullet · `tests/rollback-drill.test.ts:220` 起 4 条「按字面」用例（共 39 条）。
+> ⚠ 本条同时是 `rollback-manifest-find-narrowing`（change）的**段 C**：「`find` 侧是字符串 pattern ⇒ 正则元字符与 `$&` 按字面匹配」这条不变量，正是段 A 拆 `find` 时可以放心写入任意文本的依据。
 > ⚠ 缺陷在 **`planDrill` 的 edits 应用步骤**（`buf.replace(e.find, e.replace)`）；`applyDrill` 只是消费方
 > （它落盘 `planDrill` 算出的 `after`）⇒ 按符号 grep 时请搜 `planDrill` 的 edit 循环。
 
