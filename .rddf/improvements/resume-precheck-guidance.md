@@ -4,6 +4,7 @@
 > 来源：`backend-handoff-role-class` 的 What Changes C.11（**明确拆出**）
 > 决策依据：`docs/adr/ADR-backend-handoff-role-class.md`（D5 / D6，Accepted）
 > planner 审查：metis 1 轮（`.rddf/reviews/resume-precheck-guidance-planner-review.md`）
+> **实施状态**：✅ **已归档**（2026-11-13）⇒ `openspec/changes/archive/2026-11-13-resume-precheck-guidance/`（逐条判据以该 proposal 的 AC 表为**唯一真源**；**验收报告 = `.rddf/reviews/resume-precheck-guidance-verify.md`**；**审查记录 = `.rddf/reviews/resume-precheck-guidance-prompt-review.md`**；本文只保留**动机与机制**）。
 
 ## Why
 

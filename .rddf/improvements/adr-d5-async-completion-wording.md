@@ -3,7 +3,7 @@
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
 > 决策依据：`docs/adr/ADR-backend-handoff-role-class.md`（D5，**Accepted**）—— **本项是既有 ADR 的描述性措辞修订，不是新决策**
 > 来源：oracle（`resume-precheck-guidance` 的 prompt 评审第 1 条 finding）+ critic（`resume-precheck-guidance` 第二审 SHOULD_FIX 2）
-> 关联 change：`openspec/changes/adr-d5-async-completion-wording/`（**已立项** 2026-11-13；逐条判据以该 change 的 proposal AC 表为唯一真源。ADR 元数据「关联 change」仍指向 `backend-handoff-role-class`，**不新增 `backlog:` 占位**）
+> 关联 change：`openspec/changes/archive/2026-11-14-adr-d5-async-completion-wording/`（**已归档** 2026-11-14；逐条判据以该 change 的 proposal AC 表为唯一真源。ADR 元数据「关联 change」仍指向 `backend-handoff-role-class`，**不新增 `backlog:` 占位**）
 > planner 审查：metis 1 轮（`.rddf/reviews/adr-d5-async-completion-wording-planner-review.md`）
 > 执行路径：**常规 change**（2026-11-14 扩展后跨 ADR / prompts / 守卫 ⇒ 治理面 ⇒ oracle → critic 各 1 轮）；ADR 落笔由 architect 承担，prompts / 守卫由 builder 实施。
 

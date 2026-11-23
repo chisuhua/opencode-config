@@ -1,7 +1,7 @@
 # subagent-contract-critic-enforce — subagent 输入契约的灰度观察与推广决策
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
-> 决策依据：`openspec/changes/archive/2026-11-11-subagent-input-contract/`（原 change，已实施）+ `.rddf/reviews/subagent-contract-exemption-sampling.md` §1 的复核口径
+> 决策依据：`openspec/changes/archive/2026-11-13-subagent-input-contract/`（原 change，已实施）+ `.rddf/reviews/subagent-contract-exemption-sampling.md` §1 的复核口径
 > 来源：`subagent-input-contract` 的 tasks.md 遗留项 **7.1（灰度观察）** 与 **7.4（契约推广）**（两者前置均未到，故未随该 change 归档）
 > 关联 change：`openspec/changes/archive/2026-11-19-subagent-contract-critic-enforce/`（**已归档** 2026-11-19；逐条判据以该 change 的 proposal AC 表为唯一真源）
 > **复评/翻档段已移交**：`openspec/changes/subagent-contract-critic-reeval/`（2026-11-19 范围切分；入场条件可机判：`N ≥ 150` 且 `t1−t0 ≥ 7 天` 且 `core hash` 未变）

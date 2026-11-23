@@ -2,7 +2,7 @@
 revision_count: 1
 last_feedback_id: feedback-20261113-001
 last_feedback_at: '2026-11-13T09:59:41+00:00'
-feedback_status: needs-revision
+feedback_status: resolved
 ---
 
 # backend-handoff-role-class — 派发契约显式化：`role_class` + 凭据化 handoff
@@ -10,8 +10,11 @@ feedback_status: needs-revision
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
 > 决策：`docs/adr/ADR-backend-handoff-role-class.md`（**Accepted**，2026-11-13 用户签批；oracle 1 + metis 1 + critic 1 轮，critic `APPROVE_WITH_CONDITIONS` 无 BLOCKER）
 > 规格：`.rddf/reviews/backend-handoff-protocol-spec.md`（v3）
-> 逐条验收：**以 `openspec/changes/backend-handoff-role-class/proposal.md` 的 AC 表为准**（本文件不复述规则）
+> 逐条验收：**以 `openspec/changes/archive/2026-11-13-backend-handoff-role-class/proposal.md` 的 AC 表为准**（本文件不复述规则）
 > planner 审查：metis 1 轮（`.rddf/reviews/backend-handoff-role-class-planner-review.md`）
+> **实施状态**：✅ **已归档**（2026-11-13）⇒ `openspec/changes/archive/2026-11-13-backend-handoff-role-class/`（逐条判据以该 proposal 的 AC 表为**唯一真源**；**验收报告 = `.rddf/reviews/backend-handoff-role-class-verify.md`**；本文只保留**动机与机制**）。
+> **feedback-20261113-001 的处置**：该条（kind `ac-fail`）提出的「builder 上限 = scope − archRoots」修订**已实质消化** —— 由 2026-11-13 的 commit `fix(delegate): builder 上限 = scope − archRoots（D3 修订，两级规则）` 落地（`lib/delegate-core.ts` 的 `classAllowRoots("builder")` + 派发拒绝路径 + 测试），并随本 change 归档；配套的另两条归档 change：`openspec/changes/archive/2026-11-14-class-write-scope-alignment/`、`openspec/changes/archive/2026-11-14-role-class-rubric-alignment/`。
+> ⚠ **遗留**：该反馈条目正文里的 `resolution` 字段**仍为 `open`** —— `rddf feedback` CLI 只有 submit / list、**无 resolve 子命令** ⇒ 无 single-writer 途径更新（ADR-0037 的写入面只有 `rddf feedback add`）。本行的 `feedback_status: resolved` 是**本 improvement 的状态索引**（无 CLI / 无脚本写它，见 `grep -rn "feedback_status" scripts/ lib/ tests/` 零命中），**不是**对反馈条目本体的改写。
 
 ## Why
 
@@ -34,7 +37,7 @@ feedback_status: needs-revision
 
 ## Acceptance
 
-AC1–AC23 ↔ `openspec/changes/backend-handoff-role-class/proposal.md`（同号，该表为唯一逐条口径）。结构性判据进 `tests/delegate-core.test.ts` / `tests/delegate-async.test.ts` / `tests/delegate-tool.test.ts`；AC13 / AC14 属 prompt 判据，不进 CI。
+AC1–AC23 ↔ `openspec/changes/archive/2026-11-13-backend-handoff-role-class/proposal.md`（同号，该表为唯一逐条口径）。结构性判据进 `tests/delegate-core.test.ts` / `tests/delegate-async.test.ts` / `tests/delegate-tool.test.ts`；AC13 / AC14 属 prompt 判据，不进 CI。
 
 ## Capabilities
 

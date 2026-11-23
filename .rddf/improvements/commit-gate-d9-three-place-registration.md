@@ -46,7 +46,7 @@ ADR 自己给 D9 表写下了登记承诺，Verification 又把它写成可验�
 
 ## Acceptance
 
-> 判据真源 = `openspec/changes/commit-gate-d9-three-place-registration/proposal.md` 的 **AC1–AC13**（本文不重复，避免两处判据漂移）。摘要：
+> 判据真源 = `openspec/changes/archive/2026-11-18-commit-gate-d9-three-place-registration/proposal.md` 的 **AC1–AC13**（本文不重复，避免两处判据漂移）。摘要：
 
 - [x] **AC1** 三处齐全（AC 面并集 / 测试文件头 / MAD §2.8.8 各覆盖全部 id，缺项 = 0）（**取红**）
 - [x] **AC2** 行形态 + 标题保真（只写编号 / `……` / 标题走样 ⇒ 红）（**取红**）
@@ -66,7 +66,7 @@ ADR 自己给 D9 表写下了登记承诺，Verification 又把它写成可验�
 
 - **免宣称项有了机械登记载体** ⇒ 新增 D9 项时「忘登记」立刻变红（**AC4** 钉住「加第 ⑰ 行 ⇒ 必红」），不必靠人工翻三处文档。
 - **判别力自证内建**（AC4 / AC5 / AC7 / AC8 四个分支突变）⇒ 守卫不会退化成恒真判定（**不照抄** `tests/role-exemptions.test.ts` 里 `text.slice(at, at+400)` 那种近乎恒真的判据，只借它的**形态**：`PLACES` + 缺项列表 + 判别力用例）。
-- **归档韧性**（AC6）⇒ 本 change 归档当天守卫不断（对照：既有 AC23 守卫把 `openspec/changes/role-aware-permissions/proposal.md` 写死 ⇒ 该 change 一归档即断，已登记为另案）。
+- **归档韧性**（AC6）⇒ 本 change 归档当天守卫不断（对照：既有 AC23 守卫把 `openspec/changes/role-aware-permissions/proposal.md` 写死 ⇒ 该 change 一归档即断 —— 该隐患**已由另案解决并归档**：`openspec/changes/archive/2026-11-19-role-exemptions-guard-archive-resilience/`，把写死路径改为**解析式**载体定位，验收报告 `.rddf/reviews/role-exemptions-guard-archive-resilience-verify.md`）。
 - **V10 从人工核升级为机械核** ⇒ ADR 的 Verification 项第一次有可指认的执行点。
 
 ## Impact

@@ -1,7 +1,7 @@
 # improvement: plan-multi-session-collaboration
 
 > 措辞说明：本文件是**改进提案**（`.rddf/improvements/`），不是 openspec proposal。
-> `openspec/changes/plan-multi-session-collaboration/` 由 **builder** 侧生成（工件归属：`rdd-builder` owns）。
+> `openspec/changes/archive/2026-11-20-plan-multi-session-collaboration/` 由 **builder** 侧生成（工件归属：`rdd-builder` owns）；**已归档**（2026-11-20，验收 **pass**，round 3 ⇒ `.rddf/reviews/plan-multi-session-collaboration-verify.md`；e2e 证据 `.rddf/reviews/plan-multi-session-collaboration-e2e.md`）。
 > ⚠ **本路径未启用 `add-improve`**：其 HARD-GATE 要求 YAML frontmatter + 7 段 + `**主题**` 精确匹配 `.rddf/roadmap.md` 的 Phase Skeleton Theme 列，而本仓（a）无 `.rddf/roadmap.md`，（b）既有 24 个 improvement 全为 5 段无 frontmatter ⇒ 走**内置流程**，形态与本仓惯例一致。
 > 修订记录：**第 2 版** —— 按 metis gap 分析（1 轮）修订：Acceptance 段由「名词型」改为**可执行判据**；补充 `progress` / `status` 正交拆分、`graph.json` schema、node id 字符集、归档前置机械件。
 
@@ -43,7 +43,7 @@
 
 ## Acceptance
 
-> **判据真源** = `openspec/changes/plan-multi-session-collaboration/proposal.md` 的「验收标准」表（立项后由 builder 起草、planner 审定）。本段是**最小可验收集合**，每条写成可直接执行的形态。
+> **判据真源** = `openspec/changes/archive/2026-11-20-plan-multi-session-collaboration/proposal.md` 的「验收标准」表（立项后由 builder 起草、planner 审定）。本段是**最小可验收集合**，每条写成可直接执行的形态。
 
 ### A. 自动化（唯一真实闸门）
 

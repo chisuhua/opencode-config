@@ -4,6 +4,7 @@
 > 来源：`docs/adr/ADR-governance-paths-ownership.md`（Status = **Accepted**，2026-11-23 用户签批）的 D5 实现清单 + Verification V1–V8。
 > 关联 ADR：`ADR-governance-paths-ownership`（本次迁移的决策真源）、`ADR-role-aware-permissions`（D2 门控面 / D3 会话类型不相交 / D5 宣称边界 —— 本迁移**不改判定语义**）。
 > ⚠ 本文件由 builder 按**内置流程**代写（`rdd-planner` skill 的 canonical precondition 未满足：本仓无 `.rddf/state/.arch-handoff.json`）⇒ 立项与 AC 编号由 planner 阶段补，之后回填 ADR 的 AC 映射。
+> **实施状态**：✅ **已归档**（2026-11-23）⇒ `openspec/changes/archive/2026-11-23-governance-paths-config-migration/`（逐条判据以该 proposal 的 AC 表为**唯一真源**；**验收报告 = `.rddf/reviews/governance-paths-config-migration-verify.md`**；**审查记录 = `.rddf/reviews/governance-paths-config-migration-review.md`**；本文只保留**动机与机制**）。
 
 ## Why
 

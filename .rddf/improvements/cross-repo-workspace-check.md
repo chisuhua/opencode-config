@@ -6,6 +6,7 @@
 > 关联 ADR：无 —— 本方案**不改变** `docs/front-delegate-architecture.md` §2.3 的「4 个独立 git 仓库」边界。
 > planner 审查：metis 1 轮 —— `.rddf/reviews/cross-repo-workspace-check-planner-review.md`（P0×5 / P1×5 / P2×4 findings 的逐条处置）
 > 执行路径预估：**常规 change**（新增 `scripts/**` + `tests/**` + 项目配置文件 + `docs/guard-authoring.md` 三处指向；不动 `lib/**`、不动 `prompts/**` ⇒ 非治理面）。
+> **实施状态**：✅ **已归档**（2026-11-16）⇒ `openspec/changes/archive/2026-11-16-cross-repo-workspace-check/`（逐条判据以该 proposal 的 AC 表为**唯一真源**；**验收报告 = `.rddf/reviews/cross-repo-workspace-check-verify.md`**；本文只保留**动机与机制**）。
 
 ## Why
 
