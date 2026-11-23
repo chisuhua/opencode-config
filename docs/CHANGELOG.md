@@ -10,6 +10,19 @@
 
 ---
 
+> **v2.69 AC10④ 判据对象收窄到「父篇的决策锚点」（2026-11-23）**：
+> 守卫 `tests/config-guards.test.ts` 的 **AC10④**（父篇 ADR 的 commit 必须是代码 commit 的祖先或同一 commit）此前按**文件级**定位父篇侧 ⇒ **只要有人后来碰过父篇 ADR 这个文件**（哪怕只改「关联 change」指针），父篇的「最后提交」就比代码新 ⇒ 判红 ⇒ `.rddf/commit-gate.json` 声明的 `bun test tests/` 退出非 0 ⇒ 工具层验证门（fail-closed）拒绝对**本仓此后任何提交**。
+> **已发生**：提交 `0f09b9c`（**纯文档**：改父篇 ADR 的「关联 change」元数据行 + D7 归档指针；文件集见 `git show --stat 0f09b9c`，其中不含 `lib/delegate-core.ts`）提交**前**套件绿、提交**后** AC10④ 转红 ⇒ 仓库进入「不可提交」状态 ⇒ `librarian-delegate-contradiction` 的提交被门禁实测拒绝。
+> **改动**：父篇侧改为定位**决策锚点** —— 父篇 D3 的 verifier **写集 roots 声明段**（`` `.rddf/reviews/**` + `.rddf/state/verifier/**` ``）的**最后一次内容变更**提交（`git log -1 -S<锚点> --format=%H -- <file>`）⇒ ①「决策行增删」**必触发**（判别力保留）②「纯元数据编辑」**不触发**（误报消除）③ 括号里的交叉引用（改指针）不在锚点内 ⇒ 仍不触发。
+> **实现面**：`tests/helpers/real-repo-git.ts` 的 `lastCommitSha` / `lastCommitShaInRepo` 增加**可选第三参 `literal`**（不给出 ⇒ 文件级语义**逐字不变**；两条命令形态在源码里**逐字并存**）⇒ **元守卫 `tests/real-repo-git-budget.test.ts` 零改动**（helper 计数仍 2、预算仍 3、用例标题逐字保留）—— 这是刻意选择：新增函数或改 import 片段都会撞上被逐字节 pin 的片段 ⇒ 漂移面从 4 处降到 3 处。
+> **守卫**：AC10④ 用例改用锚点定位；新增一条**零 git**精度断言（锚点在父篇中**恰好 1 次**且位于 D3 写集行 ⇒ 父篇重构时响亮地红）；fixture 扩到**四态**（锚点先改 ⇒ 绿 / 代码先改 ⇒ **红**（判别力保留）/ 同提交 ⇒ 绿 / **锚点改动后另有纯元数据提交 ⇒ 仍绿**（误报消除））；「命令形态不得漂移」用例**增钉**新形态（归档 spec 的两条原形态逐字保留）。
+> ⚠ **机制面连带面**（不可避免）：组清单 `.rddf/rollback/role-class-write-set.json` 的 `edits[113]/[114]/[115]` 的 `find` **逐字节 pin** 着本次改的三个区块 ⇒ 判据一改即 `find_count` 漂移 ⇒ 按回滚清单的既定处置**同批更新清单**，并按 ADR D5 **两段式**撤 `last_drill` + registry 两条目退 `proving` ⇒ 演练 PASS 后回填转 `active`。
+> **验证**：`bun test tests/` = **1137 pass / 1 skip / 0 fail**（改动前 1133 / 1 / **1 fail** ⇒ 提交门恢复可用）；`bash tests/verify_record_discipline.sh` = OK。
+> **审查**：oracle（`审查域: 治理面`）`治理面判定: PASS-WITH-NOTES`（**1 条实质 finding 已当场采纳**：锚点由「单个根」加宽为「roots 声明段」⇒ 消除「改另一个根时 `-S` 不触发」的漏检面；残余面已登记在 proposal 的 Out of Scope）→ critic 第 1 轮（见 `.rddf/reviews/ac10-four-decision-anchor-review.md`）。
+
+
+---
+
 > **v2.67 治理面路径清单**配置化**（B1 机制落地，2026-11-23）**：
 > 治理面路径清单（哪路径算「治理面」⇒ 决定**写权限**归属）此前是**政策数据**却写在**机制代码** `lib/role-policy.ts` 里 ⇒ 归属与写权结构性反转：**architect 改不了「什么算治理面」这份清单**（其写集不含 `lib/**`），而 builder 凭 `**` 可以改 —— 2026-11-23 已实际发生一次排队卡死（为把 `opencode.json.*` 变体补进清单须由 builder 代改）。
 > 本批把清单迁到 `.rddf/config/governance-paths.json`（**政策数据**，与 `arch-docs.json` 同形，归 architect），机制代码只留**兜底默认**（`DEFAULT_GOVERNANCE_PATHS`）+ `resolveGovernancePaths()` 三态解析（**读根 = 治理根** ⇒ 项目仓放同名文件劫持不了判定；**每次判定重读** ⇒ 改完下一次写调用即生效，无需重启）。

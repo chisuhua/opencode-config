@@ -217,6 +217,10 @@ bun 默认**每用例 5000ms** 超时 ⇒ 负载尾部一旦越过就是**假红
 
    > ⚠ **本闸门只约束成本形态，不授权弱化判据**：把真实仓判据改写成 fixture、删清单项、调低预算常量、
    > 或把 `cwd` 写成形参以绕过检测 —— 这些都是**改判据强度**，不是「让闸门变绿」的手段，须另走变更。
+   > **可选第三参 `literal`**（2026-11-23 起）：`lastCommitShaInRepo(file, literal)` / `lastCommitSha(cwd, file, literal)`
+   > 在给出 `literal` 时语义收窄为「该字面量在文件里的**出现次数**发生过变化」的最后提交（`git log -1 -S<literal>`）
+   > ⇒ 用来区分「**决策内容**被改过」与「**文件**被碰过」（纯元数据编辑不该让顺序类判据误报）。
+   > 代价：调用点数不变（仍是「一次 `git log`」），但**判据对象变了** ⇒ 属**改判据** ⇒ 须走 oracle → critic。
 2. **两层预算，禁止一个常量承担两种语义**：用例级 `REAL_REPO_GIT_TEST_TIMEOUT_MS = 20s`（守卫写成 `{ timeout: 该常量 }`）
    + 每次调用 `REAL_REPO_GIT_CALL_TIMEOUT_MS = 6s`（算式 `3 × 6s = 18s < 20s`）。**禁重试**（重试会把「一次慢」放大成「必然超用例」）。
 3. **超时不得被吞**：per-call 超时（`err.code === "ETIMEDOUT"`）必须**抛带指引的错**；`lastCommitSha` 的

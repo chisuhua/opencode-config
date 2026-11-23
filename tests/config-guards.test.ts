@@ -287,6 +287,7 @@ describe("front 的 subagent 门控顺序（ADR D2.1：顺序即语义）", () =
   })
 })
 
+
 /**
  * L4 防漂移：subagent 输入契约的**规则真源**必须与
  * ① prompts/critic.md 里声明的 7 字段契约、② 每个 agent 的 description / prompt 文件一致。
@@ -2878,6 +2879,20 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     path.join(import.meta.dir, "..", "docs", "adr", "ADR-backend-handoff-role-class.md"),
     "utf8",
   )
+  /** 父篇 ADR 的**仓相对路径**（顺序判据的父篇侧定位用；内容侧的 `ADR_PARENT` 只读文本）。 */
+  const ADR_PARENT_REL = "docs/adr/ADR-backend-handoff-role-class.md"
+  /**
+   * AC10④ 的**决策锚点**：父篇 D3 的 verifier **写集 roots 声明段**。
+   *
+   * 为什么取「roots 声明段」而不是其中某一个根（oracle 审查第 1 条的修正）：
+   *   `-S` 的触发条件是「该字面量在文件里的**出现次数**变化」⇒ 若只钉其中一个根
+   *   （如 `.rddf/state/verifier/**`），那么**另一个根**被改时计数不变 ⇒ 不触发
+   *   ⇒ 决策已滞后而顺序判据假绿。⇒ 锚点取**两段 roots 声明的连续子串**
+   *   （`` `.rddf/reviews/**` + `.rddf/state/verifier/**` ``）：任一根增删/改名 ⇒ 该段计数变化 ⇒ 必触发；
+   *   而单元格里的**括注/交叉引用**（如「见 `ADR-class-write-scope-alignment` D1b」）**不在**锚点内
+   *   ⇒ 改指针这类**元数据**编辑不触发 ⇒ 误报面仍然消除。
+   */
+  const DECISION_ANCHOR = "`.rddf/reviews/**` + `.rddf/state/verifier/**`"
   const BACKLOG = path.join(
     import.meta.dir, "..", ".rddf", "improvements", "rdd-verifier-state-consolidation.md",
   )
@@ -3173,13 +3188,21 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
   test(
     "AC10④：父篇 ADR 的 commit 必须是代码 commit 的祖先或同一 commit（父篇滞后必红）",
     () => {
-      // ⚠ **慢执行不判红**：本用例对**真实仓库**跑 3 次 git 子进程（2× `git log -1 --format=%H` 走
-      //   pathspec 全历史 + 1× `git merge-base --is-ancestor`）⇒ 常态 0.2–0.3s，但负载尾部实测
-      //   5.0–5.1s，会越过 bun 默认的 5000ms 每用例超时 ⇒ **假红**（且文案读起来像「父篇滞后」的
-      //   真问题 ⇒ 把排查引向 ADR 提交顺序，而不是机器负载）。
+      // ⚠ **慢执行不判红**：本用例对**真实仓库**跑 3 次 git 子进程（1× `git log -1 --format=%H` 走
+      //   pathspec 全历史 + 1× `git log -1 -S<锚点> --format=%H` + 1× `git merge-base --is-ancestor`）⇒
+      //   常态 0.2–0.3s，但负载尾部实测 5.0–5.1s，会越过 bun 默认的 5000ms 每用例超时 ⇒ **假红**
+      //   （且文案读起来像「父篇滞后」的真问题 ⇒ 把排查引向 ADR 提交顺序，而不是机器负载）。
       //   显式超时取负载尾部上界的 ≈4 倍（20s）：慢不再判红，**超时 ≠ 父篇滞后**，~20s 才红只可能是真挂死。
       // 真实仓访问只经 `tests/helpers/real-repo-git.ts` 的两个 InRepo 包装（预算与错误语义在那边）
-      const parentSha = lastCommitShaInRepo("docs/adr/ADR-backend-handoff-role-class.md")
+      //
+      // ⚠ **父篇侧定位 = 决策锚点，不是父篇文件**（2026-11-23 精化）：文件级定位分不清
+      //   「父篇的**决策行**被改」与「父篇的**元数据指针**被更新」⇒ 一次纯文档提交
+      //   （`0f09b9c`：只改「关联 change」指针 + D7 归档指针）就能让父篇的「最后提交」变新
+      //   ⇒ AC10④ 转红 ⇒ `.rddf/commit-gate.json` 的 `bun test tests/` 退出非 0 ⇒ 工具层验证门
+      //   fail-closed ⇒ **本仓此后任何提交都被拒**（2026-11-23 实测：`librarian-delegate-contradiction` 被拒）。
+      //   锚点 = 父篇 D3 的 verifier 写集声明（内容锚点）⇒ 「决策行增删」必触发、「元数据编辑」不触发
+      //   ⇒ 判据的**原有判别力完整保留**（fixture 态②仍红），只消除误报。
+      const parentSha = lastCommitShaInRepo(ADR_PARENT_REL, DECISION_ANCHOR)
       const codeSha = lastCommitShaInRepo("lib/delegate-core.ts")
       if (!parentSha || !codeSha) return // 环境无 git ⇒ 跳过（判据在验收报告里人工核对）
       // is-ancestor 退出码 0 ⇒ 父篇 commit 是代码 commit 的祖先或同一 commit（父篇滞后 ⇒ 退出码 1 ⇒ 红）
@@ -3189,11 +3212,33 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     { timeout: REAL_REPO_GIT_TEST_TIMEOUT_MS },
   )
 
-  test("AC10④ 的祖先判定（确定性 fixture）：父篇先改 ⇒ 绿 / 代码先改 ⇒ 红 / 同提交 ⇒ 绿", () => {
-    // 为什么需要：真实仓的「哪个文件提交更晚」会被**后续提交翻转** ⇒ 只有 fixture 能钉住三态。
-    // 两个仓库各造两个提交（线性历史里「两文件最后提交的先后」只能有一个方向）。
+  test("AC10④ 的精度前提：决策锚点（roots 声明段）在父篇中**恰好 1 次**且位于 D3 写集行（否则锚点定位失准 ⇒ 必须红）", () => {
+    // 为什么需要：`-S` 的语义是「该字面量的**出现次数**变化」⇒ 若锚点在父篇里出现多次，
+    //   「次数变化」可能来自**别处**的增删 ⇒ 判据会定位到错误的提交 ⇒ **静默失去精度**。
+    //   ⇒ 这里把「唯一 + 落在 D3 行」钉成硬前提：父篇一旦重构 ⇒ 响亮地红（fail-closed），
+    //   而不是让顺序判据悄悄判错对象。
+    // ⚠ **已知残余面**（登记）：`-S` 的键是**精确子串** ⇒ 锚点**之外**的编辑（如改写 D3 行里
+    //   「过渡期规则已退役」这类注记）**不触发** ⇒ 顺序信号在该面失效；此时由内容守卫
+    //   `AC10：父篇 D3 verifier 行已落改…` 兜底（内容不符 ⇒ 必红）。
+    //   ⚠ 反之：**roots 声明本身**的任何编辑（增删根、改名、把两段顺序对调 ⇒ 锚点计数 1→0）
+    //   **必触发** `-S` ⇒ 写集决策滞后无漏检面。
+    const occurrences = ADR_PARENT.split("\n").filter((l) => l.includes(DECISION_ANCHOR))
+    expect(occurrences.length, `决策锚点在父篇 ADR 中必须恰好出现 1 次，实际 ${occurrences.length} 次`).toBe(1)
+    expect(
+      occurrences[0]!.startsWith("| `verifier` |"),
+      "决策锚点必须落在 D3 的 verifier 写集行（`| `verifier` |` 开头）",
+    ).toBe(true)
+  })
+
+  test("AC10④ 的祖先判定（确定性 fixture）：锚点先改 ⇒ 绿 / 代码先改 ⇒ 红 / 同提交 ⇒ 绿 / 锚点后有纯元数据提交 ⇒ 仍绿", () => {
+    // 为什么需要：真实仓的「哪个文件提交更晚」会被**后续提交翻转** ⇒ 只有 fixture 能钉住四态。
+    // 四个仓库各造 2–3 个提交（线性历史里「两文件最后提交的先后」只能有一个方向）。
+    // ⚠ **态④是本条精化新增的**：锚点（D3 写集声明）改动之后再来一次**只改元数据**的提交
+    //   ⇒ 文件级判据会误报红（`0f09b9c` 的形态）⇒ 锚点级判据必须**仍绿**。
     const ADR = "docs/adr/ADR-parent.md"
     const CODE = "lib/code.ts"
+    const ANCHOR = "`.rddf/reviews/**` + `.rddf/state/verifier/**`"
+    const adrRow = (extra: string) => `| \`verifier\` | ${ANCHOR}${extra}\n`
     const withRepo = (fn: (repo: string, commit: (files: Record<string, string>) => string) => void) => {
       const repo = mkdtempSync(path.join(tmpdir(), "ac10-ancestor-"))
       const commit = (files: Record<string, string>): string => {
@@ -3213,34 +3258,50 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
       }
     }
 
-    // ① 父篇先改、代码后改 ⇒ 父篇 sha 是代码 sha 的祖先 ⇒ 绿
+    // ① 锚点先改、代码后改 ⇒ 决策 commit 是代码 commit 的祖先 ⇒ 绿
     withRepo((repo, commit) => {
-      commit({ [ADR]: "v1\n" })
+      commit({ [ADR]: adrRow("") })
       commit({ [CODE]: "v1\n" })
-      const parentSha = lastCommitSha(repo, ADR)
+      const decisionSha = lastCommitSha(repo, ADR, ANCHOR)
       const codeSha = lastCommitSha(repo, CODE)
-      expect(parentSha).not.toBe("")
+      expect(decisionSha).not.toBe("")
       expect(codeSha).not.toBe("")
-      expect(isAncestor(repo, parentSha, codeSha)).toBe(true)
+      expect(isAncestor(repo, decisionSha, codeSha)).toBe(true)
     })
 
-    // ② 代码先改、父篇后改 ⇒ 父篇不是代码的祖先 ⇒ isAncestor false ⇒ 真实仓上该形态必红
+    // ② 代码先改、锚点后改 ⇒ 决策 commit 不是代码 commit 的祖先 ⇒ isAncestor false ⇒ 真实仓上该形态必红
+    //    （**判别力保留**：这是「父篇决策滞后于代码」的真违规）
     withRepo((repo, commit) => {
       commit({ [CODE]: "v2\n" })
-      commit({ [ADR]: "v2\n" })
+      commit({ [ADR]: adrRow("") })
       const codeSha = lastCommitSha(repo, CODE)
-      const parentSha = lastCommitSha(repo, ADR)
+      const decisionSha = lastCommitSha(repo, ADR, ANCHOR)
       expect(codeSha).not.toBe("")
-      expect(parentSha).not.toBe("")
-      expect(isAncestor(repo, parentSha, codeSha)).toBe(false)
+      expect(decisionSha).not.toBe("")
+      expect(isAncestor(repo, decisionSha, codeSha)).toBe(false)
     })
 
     // ③ 同一个提交同时改两个文件 ⇒ 同一 commit ⇒ 绿
     withRepo((repo, commit) => {
-      const same = commit({ [ADR]: "v3\n", [CODE]: "v3\n" })
+      const same = commit({ [ADR]: adrRow(""), [CODE]: "v3\n" })
       expect(lastCommitSha(repo, ADR)).toBe(same)
       expect(lastCommitSha(repo, CODE)).toBe(same)
       expect(isAncestor(repo, same, same)).toBe(true)
+    })
+
+    // ④ **锚点改动之后又有一次纯元数据提交**（只改 ADR 的别的行，不碰锚点）⇒ 决策 commit 不变 ⇒ 仍绿
+    //    （这正是 `0f09b9c` 的形态：改「关联 change」指针 ⇒ 文件级定位会误报红、锚点级定位仍绿）
+    withRepo((repo, commit) => {
+      commit({ [ADR]: adrRow("") })
+      commit({ [CODE]: "v4\n" })
+      const decisionBefore = lastCommitSha(repo, ADR, ANCHOR)
+      commit({ [ADR]: adrRow("") + "| 关联 change | `openspec/changes/archive/x/`（已归档） |\n" })
+      const decisionAfter = lastCommitSha(repo, ADR, ANCHOR)
+      const codeSha = lastCommitSha(repo, CODE)
+      expect(decisionAfter, "纯元数据提交不得改变锚点的定位提交").toBe(decisionBefore)
+      expect(isAncestor(repo, decisionAfter, codeSha)).toBe(true)
+      // 文件级定位会被这次元数据提交带偏 ⇒ 正是本条精化要消除的误报面（此处显式记录差异）
+      expect(lastCommitSha(repo, ADR)).not.toBe(decisionAfter)
     })
   })
 
@@ -3248,11 +3309,17 @@ describe("能力面写集对齐（class-write-scope-alignment 投影守卫）", 
     // 为什么需要：形态漂移后**用例仍然绿**（git 输出等价，实测 M4）⇒ 只有源码级判据能钉住归档
     //   spec（`class-write-scope-alignment` 的 AC10④）对命令形态的逐字要求。
     // 命令形态的唯一落点是 helper（`tests/helpers/real-repo-git.ts`）；期望串用变量拼出，避免判据自匹配。
+    // ⚠ **2026-11-23 精化**：父篇侧新增**内容锚点**查询（`-S`）—— 归档 spec 的两条形态**逐字保留**
+    //   （代码侧仍用 `git log -1 --format=%H`、祖先判定仍用 `git merge-base --is-ancestor`），
+    //   新形态另钉一行 ⇒ 「精化」与「漂移」可区分。
+    // ⚠ **父篇侧的归档形态已由 `ac10-four-decision-anchor` 取代**（顺序判据的父篇侧走 `-S` 分支）
+    //   ⇒ 这两条 pin 保留的作用是「**helper 的命令形态不漂移**」，不再表示「父篇侧仍按归档形态执行」。
     const fmt = "--format=%H"
     const flag = "--is-ancestor"
     const src = readFileSync(path.join(import.meta.dir, "helpers", "real-repo-git.ts"), "utf8")
     expect(src).toContain(`["log", "-1", "${fmt}", "--", file]`)
     expect(src).toContain(`["merge-base", "${flag}", a, b]`)
+    expect(src).toContain(`["log", "-1", "-S", literal, "${fmt}", "--", file]`)
   })
 
   test("ADR-commit-verification-gate V10 宣称为机械载体的路径真实存在（改名 ⇒ 悬空必红）", () => {

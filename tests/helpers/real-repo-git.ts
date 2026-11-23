@@ -59,18 +59,27 @@ function rethrowIfCallTimeout(err: unknown, what: string): void {
 /**
  * 某文件在给定仓库里的最后提交 sha。
  *
- * 任何**非超时**失败（无 git / 非零退出 / 浅克隆 ⇒ 空历史）⇒ 空串 ⇒ 调用方按「跳过」处理
- * （语义与抽函数前逐字一致）。`cwd` 参数化：真仓传仓根，fixture 用例传临时仓。
+ * ⚠ **可选第三参 `literal`**：给出时，语义收窄为「**该字面量在文件里的出现次数发生过变化**的最后提交」
+ *   （`git log -1 -S<literal>`）—— 用来区分「**决策内容**被改过」与「**文件**被碰过」：
+ *   文件级语义分不清这两者 ⇒ 任何后续的**纯元数据**编辑（改指针 / 改归档标记）都会让
+ *   「父篇 ADR 的最后提交」变新 ⇒ 顺序类判据误报 ⇒ 提交门被卡死。
+ *   不给出 ⇒ 文件级语义（与本函数引入时逐字一致）。
+ * ⚠ 精度前提：该字面量在目标文件里应**只出现一次**（否则「次数变化」可能来自别处 ⇒ 调用方负责断言）。
  */
-export function lastCommitSha(cwd: string, file: string): string {
+export function lastCommitSha(cwd: string, file: string, literal?: string): string {
+  // ⚠ **两条命令形态都逐字保留**（归档 spec `class-write-scope-alignment` 的 AC10④ 对形态的逐字要求
+  //   ⇒ 由 `tests/config-guards.test.ts` 的「命令形态不得漂移」用例钉住）⇒ 用三元而非拼接参数。
+  const args = literal
+    ? ["log", "-1", "-S", literal, "--format=%H", "--", file]
+    : ["log", "-1", "--format=%H", "--", file]
   try {
-    return execFileSync("git", ["log", "-1", "--format=%H", "--", file], {
+    return execFileSync("git", args, {
       cwd,
       encoding: "utf8",
       timeout: REAL_REPO_GIT_CALL_TIMEOUT_MS,
     }).trim()
   } catch (err) {
-    rethrowIfCallTimeout(err, `git log -1 --format=%H -- ${file}`)
+    rethrowIfCallTimeout(err, `git log -1 ${literal ? `-S${literal} ` : ""}--format=%H -- ${file}`)
     return ""
   }
 }
@@ -90,9 +99,9 @@ export function isAncestor(cwd: string, a: string, b: string): boolean {
   }
 }
 
-/** 真仓薄包装：该文件在**本仓**的最后提交 sha。 */
-export function lastCommitShaInRepo(file: string): string {
-  return lastCommitSha(ROOT, file)
+/** 真仓薄包装：某文件在本仓的最后提交 sha（`literal` 给出时 = 该字面量出现次数最后变化的提交）。 */
+export function lastCommitShaInRepo(file: string, literal?: string): string {
+  return lastCommitSha(ROOT, file, literal)
 }
 
 /** 真仓薄包装：`a` 是否为 `b` 的祖先或同一 commit（两者都在**本仓**）。 */
