@@ -131,6 +131,7 @@ bun /tmp/opencode/align_check.ts    # 用 lib/role-policy.ts 的真实 matchesPa
 - **事实**：`rddf rdd-verify` 会写 `.rddf/state/iteration.json`（`_lib/cli/rdd_verify_cmd.py:106-119`），归档门控读它；feedback 凭据落 `.rddf/improvements/<x>.md`（`_lib/cli/feedback_cmd.py:70`）。两者都不在 verifier 写集（`.rddf/reviews` + `.rddf/state/verifier`）。
 - **判定**：**当前不构成缺陷** —— 两者都是 CLI 单写入口（ADR-0037），且 `prompts/build.md` 已把 verifier 的记账落点收拢为 `.rddf/state/verifier/`。列为 P1 是因为：一旦产品侧把其中任一改成 agent 直写，或 verifier 需要**直接修正**过期 iteration 记录，就会撞门控。
 - **建议**：在 `prompts/build.md` 的 verifier 产出契约里补一句「iteration.json / improvement 文件由 CLI 单写，verifier 不得手写」，把口径写死（当前只对 improvement 文件有「single writer」表述，iteration.json 无）。
+- **裁决与落地（2026-11-23，C1）**：`prompts/build.md` 的 verifier 产出契约新增 bullet「另两处落点不归 verifier」—— 写明 `iteration.json`（`rddf` CLI 单写）与 improvement feedback 段（`rddf feedback add` 单写，ADR-0037）**verifier 不得手写**、不在 `VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS`、走 CLI 或 HANDOFF；并补一句「verifier 写集仍含 `.rddf/reviews` / `.rddf/state/verifier`」防误读。
 
 ### 4.4 P1 —— 散文层「禁止 builder 改 ADR」在机器层没有对应实现
 
@@ -193,6 +194,8 @@ bun /tmp/opencode/align_check.ts    # 用 lib/role-policy.ts 的真实 matchesPa
 - 在飞 ADR 的一致性：仓内未提交的 `docs/adr/ADR-governance-paths-ownership.md`（Status = **Proposed**，待用户签批）已裁定「机制面文件**不进核心集**」（D2 注）—— 即 `lib/**` 不得进入**门控清单**（否则 architect 借治理面身份拿到机制代码写权 = 被否决的方案 A）；同时 D3 声明「机制面归 builder，改动 `lib/**` 与守卫断言 ⇒ **治理面必审**」。
 - 缺口：该「必审」声明目前**只活在 ADR 散文里** —— 审查口径表没有 `lib/**` 行 ⇒ 执行层改动的审查触发**无登记口径**（注：oracle→critic 触发本身对治理面全是散文驱动，故此处是「无声明」而非「机器漏判」）。
 - 建议：**只**在 `prompts/build.md` 的**审查口径表**补 `lib/**` + `plugins/**` 行（审查范围 ≠ 写权限；不触碰 `GOVERNANCE_PATHS`）⇒ 与在飞 ADR 的 D2/D3 口径一致，且不与其冲突。
+- **裁决与落地（2026-11-23，C2）**：`prompts/build.md` §审查配对 的治理面作用域表加 `lib/**` + `plugins/**` 两行（右列均「无豁免」）+「审查口径 ≠ 门控清单」注记；`docs/MULTI-AGENT-DESIGN.md` §2.7 复述同步；`docs/CHANGELOG.md` v2.64。审查：oracle **PASS-WITH-NOTES**（C2 为**自指审查** —— 改的是审查规则本身）→ critic **APPROVE**（0 BLOCKER / 0 SHOULD_FIX）。
+- **遗留（另批，oracle NOTE-1）**：`prompts/build.md` 角色列表 `architect` 行「编辑治理面文件 `~/.config/opencode/**`」是**既有宽泛措辞**；表加 `lib/**` 后理论上可被误读为「architect 可写 `lib/**`」（机器门兜底：`GOVERNANCE_PATHS` 不含 `lib/**` / `plugins/**`，architect 实际写不到）。建议另批收紧为「按 §审查配对 作用域表 + `GOVERNANCE_PATHS` 写集」，**本批不改**（避免在自指批次里混入第二处规则改动）。
 
 ---
 

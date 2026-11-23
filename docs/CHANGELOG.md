@@ -10,6 +10,14 @@
 
 ---
 
+> **v2.64 审查口径表补机制面（`lib/**` + `plugins/**`，2026-11-23）**：
+> `prompts/build.md` §审查配对 的「治理面作用域」表此前**不含 `lib/**` 与 `plugins/**`** —— 而它们正是权限的实际执行代码（`role-policy.ts` 写集真源 / `role-identity.ts` 身份 / `role-lease.ts` 租约 / `delegate-core.ts` 派发类边界 / `plugins/role-gate.ts` 门控挂载）。⇒ 执行层改动的审查触发**无登记口径**（角色对齐审计 `.rddf/reviews/role-matrix-rdd-workflow-alignment-audit.md` §5）。
+> 现补两行（「算治理面」列，右列均**无豁免**），并加注记区分**审查口径表**与**门控清单**（`GOVERNANCE_PATHS`）：前者决定「必须走 oracle→critic」，后者决定**写权限**；机制面**不进**门控清单（`ADR-governance-paths-ownership` D2 明文否决，否则 architect 借治理面身份拿到机制代码写权）。
+> 同批 `docs/MULTI-AGENT-DESIGN.md` §2.7 的作用域复述同步。
+> ⚠ **自指审查声明**：本改动修改的是 §审查配对 的作用域表**本身** ⇒ 审查实例跑的是旧版契约，只能记为「自指审查，不构成独立证据」（`prompts/build.md` §审查配对 的自指审查条）。
+
+---
+
 > **v2.63 metis 模型切换 + 模型归属表同步（2026-11-23）**：
 > 配置真源变更（`opencode.jsonc.opencode-go` 的 `agent.metis.model`）：`opencode-go/deepseek-v4.1-flash` → **`kimi-code/kimi-for-coding`**（未声明 `variant`；该模型有 provider 级 `limit.context = 1,048,576` ⇒ §2.1 表内不再带 `†`）。
 > 同批同步：§2.1 模型表 metis 行 / §5.1 provider 池表（metis 从 `commandcode` 行移到 `kimi-code` 行）/ §5.2 模型选择表 metis 行 / §5.3 关键决策「杂活链路」句 / `docs/SUBAGENT-ORCHESTRATION.md` 的 metis 行。

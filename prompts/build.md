@@ -371,6 +371,7 @@ rddf rdd-verify --dry-run    # scan + 建议，不改状态
   >
   > **不适用**（不是取证不可用）：① 「判据来源为空」（proposal 无 `## 验收标准` / `## Acceptance` 段）⇒ `proposal_drift` / `needs-revision`；② `rdd-verifier` skill 不可加载 ⇒ 视为未命中，走本地验收。
 - **verifier 状态落点（2026-11-14 起已收拢）**：**产品落点** = `.rddf/reviews/`（验收报告与受阻记录）｜**记账落点** = `.rddf/state/verifier/`（轮次 / 审计状态机 / verdict cache / shared audit log / staged context —— **skill 写入的全部状态文件都在这里**）。产品侧 change `consolidate-verifier-state` 已把原先躺在 `.rddf/state/` 根下的 4 个点文件收拢进记账落点 ⇒ `verifier` 类的允许集覆盖 skill 的**全部**状态面。**记账文件不得冒充验收报告**。
+- **另两处落点不归 verifier**：`.rddf/state/iteration.json`（归档门控与本地验收判据的**读入面**，由 `rddf` CLI 单写，如 `rddf rdd-verify`）与 `.rddf/improvements/<x>.md` 的 feedback 段（由 `rddf feedback add` 单写，ADR-0037）—— **verifier 不得手写**。两者都不在 `VERIFIER_ALLOW_ROOTS` / `VERIFIER_OWNS_PATHS`（`lib/delegate-core.ts`）内，role-gate 会拒；需要修正过期 iteration 记录时走 CLI，或按 §HANDOFF 交回主会话，**不新造写入口**。⚠ verifier 的写集仍含 `.rddf/reviews` 与 `.rddf/state/verifier`（见上一条）—— 不归它手写的是**这两个 CLI 落点**，不是验收报告。
 - ~~**过渡期规则**~~（`ADR-class-write-scope-alignment` D1b，**2026-11-14 已退役**，退役依据 = 产品侧 change `consolidate-verifier-state`）：产品侧收拢完成 ⇒ **不再需要**「状态机落盘由主会话代跑」这条绕路。**当前规则**：`verifier` 类后端可**直写**全部 skill 状态（verdict cache / loop state / audit），且必须直写（single writer）—— 判决仍落 `.rddf/reviews/<change>-verify.md`。两种异常各有处置：① 收到 `.rddf/state/verifier/**` 的 `Permission denied` ⇒ **派发 scope 没含记账落点**（不是契约生效），按 §HANDOFF 交回并写明缺哪个 scope 条目；② **既没被拒也没写**（scope 正常、后端却没落状态机）⇒ **后端违约** —— 按路径查 `.rddf/state/verifier/.ac-verdict-<change>.json` 是否存在（gitignore ⇒ `git status` 数不到），缺 ⇒ 记违约并按 §HANDOFF 处置，**主会话不代跑**。
   - **历史注记**（收拢前曾出现过，现已不应再发生）：在 `.rddf/state/.ac-*`（**根下**）收到 `Permission denied` 曾被解读为「过渡期契约生效」—— **新写入不再发生在根下**（该目录已收拢进 `.rddf/state/verifier/`；存量未迁移工作树里的残留文件可能仍在，**只读不受影响**）⇒ 此解读**作废**。
 - **失败分类**（走 skill 时由 skill 判，本地验收自己判）：`implementation_gap`（实现缺失 → 回 build 写代码）vs `proposal_drift`（实现与 AC 不符 → 回 planner 改 proposal）。判不出时默认 gap——重跑代码比重写提案便宜
@@ -529,6 +530,10 @@ oracle 判的是「这个决策在**给定意图**下会怎么坏」，critic �
 | `~/.config/opencode/opencode.json(c)` **及其变体**（`opencode.json.*` / `opencode.jsonc.*`，含 `.bak-*` / `.backup-*` 备份）的 agent / permission / provider 段 —— ⚠ 实现按**整文件**判定（`GOVERNANCE_PATHS` 列的是文件名），本表的「段级」是**审查口径**、不是门控行为 | 模型 ID 换版本号、JSON 注释错字 |
 | `~/.config/opencode/commands/**`（slash command = agent 行为指令，与 prompt 同级） | commands 内**不改指令语义**的纯错字 / 链接 / 格式微调 |
 | `~/.config/opencode/scripts/**` 中**被治理面规则行为依赖**的脚本（如 `arch-docs-init.sh`）—— 规则指示 agent 运行它、或规则语义依赖其输出 / 退出码时；改其**退出码 / 报错文案 / 落盘行为**时按治理面审 | 仅被治理面文档**历史记述性**提及的脚本；未被规则行为依赖的脚本；只改内部实现、不改可观测行为的改动 |
+| `~/.config/opencode/lib/**`（机制面：写集真源 `role-policy.ts` / 身份 `role-identity.ts` / 租约 `role-lease.ts` / 派发类边界 `delegate-core.ts` / `commit-gate.ts` / `rollback-*` / `model-fallback-*` —— 它们决定**谁被允许写什么**、门控何时生效） | **无豁免**（ADR-governance-paths-ownership D3：机制面归 builder，改 `lib/**` ⇒ 治理面必审。即便「看起来只是重构」，也可能移动 `decideWrite` 的判定边界 —— 审查是唯一发现途径） |
+| `~/.config/opencode/plugins/**`（门控挂载：`role-gate.ts` / `commit-gate.ts` / `model-fallback.ts` —— 决定门控**是否生效** / 挂在哪个工具上） | **无豁免**（同 `lib/**`；挂载点与判定调用顺序的变更无法靠「纯文案」自证无行为变化） |
+
+> ⚠ **审查口径 ≠ 门控清单**（本条区分两张表，别混）：上表新增的 `lib/**` / `plugins/**` 只表示「改动**必须**走 oracle→critic」，**不**把它们加入 `lib/role-policy.ts::GOVERNANCE_PATHS`（门控清单）—— 后者决定**写权限**归属。把机制面加进门控清单 = 让 architect 借治理面身份拿到机制代码写权，`docs/adr/ADR-governance-paths-ownership.md` D2 已明文否决。
 
 > **必须带 `~/.config/opencode/` 前缀**：裸文件名 `docs/MULTI-AGENT-DESIGN.md` 在项目 cwd 里**解析不到**（项目仓库没有这个文件），按字面执行会判「不属于治理面」→ 永不触发。
 
