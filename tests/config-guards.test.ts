@@ -2943,7 +2943,6 @@ describe("会话间对齐（派发方 ↔ 被派发方：返回值契约与能�
 })
 
 describe("角色写集机读投影（role-write-set:<role> —— 6 角色族）", async () => {
-  // ⚠ 本文件的顶部 import 块被回滚清单逐字节 pin ⇒ 这里用**动态 import**（不新增 import 项）。
   const { renderWriteSetBlock } = await import("../lib/delegate-core.ts")
   const { ROLE_WRITE_POLICY } = await import("../lib/role-policy.ts")
   const { VERIFIER_ALLOW_ROOTS } = await import("../lib/delegate-core.ts")
@@ -2951,7 +2950,7 @@ describe("角色写集机读投影（role-write-set:<role> —— 6 角色族）
   const BUILD_MD = readFileSync(path.join(import.meta.dir, "..", "prompts", "build.md"), "utf8")
   const ROLES = ["architect", "planner", "builder", "verifier", "no-role", "general"] as const
 
-  /** 角色表的 6 行（先定位**表头行**再往下取 ⇒ 不会误取上方其它以角色名开头的表）。 */
+  /** 角色表的 6 行（先定位表头行再往下取 ⇒ 不会误取上方其它以角色名开头的表）。 */
   function roleRows(): Array<{ role: string; cells: string[] }> {
     const lines = BUILD_MD.split("\n")
     const head = lines.findIndex((l) => l.trim() === "| 角色 | 允许 | 禁止 | 开场报告格式 |")
@@ -2967,15 +2966,12 @@ describe("角色写集机读投影（role-write-set:<role> —— 6 角色族）
   for (const role of ROLES) {
     test(`${role}：写集机读块 == 渲染输出（逐字）+ 恰好 1 处 + 起止标记独占一行`, () => {
       const canonical = renderWriteSetBlock(role)
-      // ① 恰好 1 处（多一份 = 副本漂移的风险）
       expect(BUILD_MD.split(canonical).length - 1, `${role} 的机读块必须恰好 1 处`).toBe(1)
-      // ② 起止标记各自独占一行
       const lines = BUILD_MD.split("\n")
       const start = lines.indexOf(`<!-- role-write-set:${role}`)
       expect(start, `${role} 的块起始标记必须独占一行`).toBeGreaterThanOrEqual(0)
       const end = lines.indexOf("-->", start)
       expect(end, `${role} 的块结束标记必须独占一行`).toBeGreaterThan(start)
-      // ③ 内容逐字（多一个路径 / 少一个 / 改一个字符 ⇒ 红）
       expect(lines.slice(start, end + 1).join("\n"), `${role} 的块内容必须逐字等于渲染输出`).toBe(canonical)
     })
   }

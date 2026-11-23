@@ -1662,15 +1662,14 @@ describe("delegate-base-channel：简报基线行 + 端到端静态闭环", () =
   })
 })
 
-// ⚠ 本文件的顶部 import 块被回滚清单（`delegate-knowledge-delivery.json` 等）**逐字节 pin**
-//   ⇒ 不能加 import 项 ⇒ 这里用**动态 import**（顶层 await，ESM 合法；放在文件末尾 ⇒ 不在任何 pin 区间内）。
+// ⚠ 本文件顶部 import 块被回滚清单逐字节 pin ⇒ 不能加 import 项 ⇒ 用动态 import（顶层 await；文件末尾不在任何 pin 区间内）。
 const { renderWriteSetBlock, verifierWriteSetBlock } = await import("../lib/delegate-core.ts")
 const { ROLE_WRITE_POLICY } = await import("../lib/role-policy.ts")
 
 describe("写集投影块渲染器（role-write-set:<role>）", () => {
   const ROLES = ["architect", "planner", "builder", "verifier", "no-role", "general"] as const
 
-  test("6 个角色各有块；marker 独占一行；起止标记各一行", () => {
+  test("6 个角色各有块；marker 独占一行", () => {
     for (const role of ROLES) {
       const block = renderWriteSetBlock(role)
       const lines = block.split("\n")
@@ -1680,7 +1679,7 @@ describe("写集投影块渲染器（role-write-set:<role>）", () => {
     }
   })
 
-  test("内容由 ROLE_WRITE_POLICY 派生（不手抄字面量）", () => {
+  test("内容由 ROLE_WRITE_POLICY 派生", () => {
     for (const role of ROLES) {
       const policy = ROLE_WRITE_POLICY[role]
       const expected = policy.allow.length === 0 ? "(none)" : policy.allow.join(", ")
@@ -1693,7 +1692,7 @@ describe("写集投影块渲染器（role-write-set:<role>）", () => {
     }
   })
 
-  test("三种特殊形态：builder / general = `allow: **`；no-role = `allow: (none)` + `denyAll: true`", () => {
+  test("三种特殊形态（builder/general = `**`；no-role = `(none)` + `denyAll: true`）", () => {
     expect(renderWriteSetBlock("builder")).toContain("allow: **")
     expect(renderWriteSetBlock("general")).toContain("allow: **")
     const noRole = renderWriteSetBlock("no-role")
@@ -1704,7 +1703,7 @@ describe("写集投影块渲染器（role-write-set:<role>）", () => {
     expect(noRole.split("\n").some((l) => /^allow:\s*$/.test(l)), "no-role 块出现了空 allow 行").toBe(false)
   })
 
-  test("块只表达「写集」维度：不含 governance 标记，也不含 arch_paths 动态并入", () => {
+  test("块只表达写集维度（无 governance 标记 / 无 arch_paths）", () => {
     for (const role of ROLES) {
       const block = renderWriteSetBlock(role)
       // ⚠ 判据必须精确到**标记**（`governance:`）—— architect 的 allow 里含路径
@@ -1714,7 +1713,7 @@ describe("写集投影块渲染器（role-write-set:<role>）", () => {
     }
   })
 
-  test("既有 verifierWriteSetBlock() 的输出逐字不变（含 owns 行与原 marker）", () => {
+  test("既有 verifierWriteSetBlock() 输出逐字不变", () => {
     const block = verifierWriteSetBlock()
     expect(block).toContain("<!-- role-class-write-set:verifier")
     expect(block).toContain("allow: .rddf/reviews, .rddf/state/verifier")
