@@ -124,7 +124,8 @@
   > **验收证据**：registry 输出 PASS（9 active / 0 proving）；`last_drill.content_hash` 与清单当前内容一致。
 - [x] **D2** `docs/CHANGELOG.md` 一条版本条目。
   > **验收证据**：`docs/CHANGELOG.md` 的 v2.70 条目（含「未完成」的 AC3 残留登记）。
-- [ ] **D3** 验收报告落 `.rddf/reviews/rollback-manifest-find-narrowing-verify.md`（AC1–AC15 逐条 + 工具证据）。
+- [x] **D3** 验收报告落 `.rddf/reviews/rollback-manifest-find-narrowing-verify.md`（AC1–AC15 逐条 + 工具证据）。
+  > **验收证据**：`.rddf/reviews/rollback-manifest-find-narrowing-verify.md`（第 2 轮，判定 **pass** 15/15；含 AC3 派生条件未达成的残留登记 + 判据口径澄清说明）。
 - [ ] **D4** 归档：`openspec archive` 前确认 `.openspec.yaml` 含 `skip_specs: true`。
 
 ## 未收敛清单 check list（AC7）
