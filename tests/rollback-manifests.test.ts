@@ -148,8 +148,10 @@ const MAX_FIND_LEN = 2894
 const FIND_SHAPE_BASELINE: Record<string, { sep: number; pipe: number; maxLen: number }> = {
   "delegate-knowledge-delivery.json": { sep: 0, pipe: 2, maxLen: 6524 },
   "delegate-slot-kernel.json": { sep: 5, pipe: 6, maxLen: 2894 },
-  // ⚠ 过渡态：阶段 1 登记（尚未拆分）⇒ 阶段 3（A3）拆分完成后**移除本项** ⇒ 终态 7 项
-  "governance-paths-config.json": { sep: 2, pipe: 2, maxLen: 12768 },
+  // ⚠ 过渡态：已拆分（3 条大 find → 16 条小 find，12768 ⇒ 3541）⇒ 但仍有 **2 条语法连续的
+  //   块**超 MAX_FIND_LEN（3541 的「注释头+describe头+helper+收尾」壳 + 3251 的完整单测）
+  //   —— 拆它们会破坏 JS 语法 ⇒ 该清单**留在表内**，登记当前实测值（只减不增）。
+  "governance-paths-config.json": { sep: 1, pipe: 1, maxLen: 3541 },
   "model-fallback.json": { sep: 1, pipe: 2, maxLen: 3003 },
   "plan-delegate.json": { sep: 1, pipe: 1, maxLen: 4849 },
   "plan-topics.json": { sep: 1, pipe: 1, maxLen: 5229 },
