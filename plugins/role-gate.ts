@@ -22,6 +22,14 @@ import { defaultGovernanceRoot, evaluateWrite, extractWriteTarget } from "../lib
 
 const WRITE_TOOLS = new Set(["edit", "write"])
 
+/**
+ * 治理面清单**降级告警**的去重记忆（同一告警只报一次）。
+ *
+ * ⚠ 清单**每次判定都重读**（不缓存 ⇒ 配置改完下一次写调用即生效）⇒ 不去重会每次写调用刷一行。
+ * ⚠ 这是**告警去重**，不是清单缓存 —— 生效清单永远是当次读到的结果。
+ */
+let lastGovernanceWarning = ""
+
 /** 该会话是否在 `pair.json` 里登记过（派发面登记的权威标记；文件缺失/损坏 ⇒ false）。 */
 function isRegisteredBackend(stateRoot: string, sessionID: string): boolean {
   try {
@@ -96,6 +104,20 @@ export default Plugin.define({
         cwd,
         repoRoot: workRoot,
       })
+
+      // ⚠ **治理面清单降级告警**（ADR-governance-paths-ownership D2.4）：配置缺失 / 损坏 / 缺核心集
+      //   ⇒ 运行期回退**内置默认清单**（**不是全拒** ⇒ 修复通道保持开放）。
+      //   告警必须**可见**：否则「配置坏了」就退化成一次静默的覆盖面收缩。
+      if (result.governanceWarning) {
+        if (result.governanceWarning !== lastGovernanceWarning) {
+          lastGovernanceWarning = result.governanceWarning
+          console.error(`role-gate: ${result.governanceWarning}`)
+        }
+      } else {
+        // ⚠ **恢复即复位**：配置修好后必须清零去重记忆 ⇒「坏 → 修 → 同款再坏」**仍会**告警
+        //   （oracle finding①：否则第二次坏永久静默 —— 那正是「配置坏了无人察觉」的唯一可达路径）。
+        lastGovernanceWarning = ""
+      }
 
       // 治理面留痕（review §6.5）：治理面写入的**放行与拒绝都记一行**（审计 / 事后取证 ——
       // 此前门控只有 throw，谁在什么角色下改过治理面没有落盘痕迹）。

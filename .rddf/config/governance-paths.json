@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-11-23",
+  "updated_by": "builder（ADR D5.1 落初值；此后归 architect 自主维护）",
+  "paths": [
+    "prompts",
+    "commands",
+    "scripts",
+    "AGENTS.md",
+    "opencode.json",
+    "opencode.jsonc",
+    "opencode.json.*",
+    "opencode.jsonc.*",
+    "docs/MULTI-AGENT-DESIGN.md",
+    "docs/CHANGELOG.md",
+    "docs/SUBAGENT-ORCHESTRATION.md",
+    "tests/config-guards.test.ts",
+    ".rddf/config/governance-paths.json"
+  ]
+}

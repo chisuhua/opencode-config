@@ -10,6 +10,17 @@
 
 ---
 
+> **v2.67 治理面路径清单**配置化**（B1 机制落地，2026-11-23）**：
+> 治理面路径清单（哪路径算「治理面」⇒ 决定**写权限**归属）此前是**政策数据**却写在**机制代码** `lib/role-policy.ts` 里 ⇒ 归属与写权结构性反转：**architect 改不了「什么算治理面」这份清单**（其写集不含 `lib/**`），而 builder 凭 `**` 可以改 —— 2026-11-23 已实际发生一次排队卡死（为把 `opencode.json.*` 变体补进清单须由 builder 代改）。
+> 本批把清单迁到 `.rddf/config/governance-paths.json`（**政策数据**，与 `arch-docs.json` 同形，归 architect），机制代码只留**兜底默认**（`DEFAULT_GOVERNANCE_PATHS`）+ `resolveGovernancePaths()` 三态解析（**读根 = 治理根** ⇒ 项目仓放同名文件劫持不了判定；**每次判定重读** ⇒ 改完下一次写调用即生效，无需重启）。
+> ⚠ **三条硬约束**：① **核心集下限**（`prompts` / `commands` / `scripts` / `AGENTS.md` / `opencode.json(c)*` / 三份 `docs` 汇总索引 / `tests/config-guards.test.ts` / 清单自身）**不可移除** ⇒ 配置缺任一条即视为损坏 ⇒ 运行期回退默认清单 + 告警（**不是全拒** ⇒ 修复通道保持开放）；② **机制面禁区**（`lib/**` + `plugins/**`）**永不治理** ⇒ 在**判定侧**结构性排除 ⇒ 「architect 往清单里加一条 `lib` 就拿到机制代码写权」= `ADR-governance-paths-ownership` D2 明文否决的方案 A，**被堵死**（安全不靠清单）；③ 写配置走 **tmp + rename 原子替换** ⇒ 读者不会读到半文件。
+> 守卫：`tests/config-guards.test.ts` 新增守卫族「治理面清单配置化（V1–V7）」**15 例** + `tests/role-gate-plugin.test.ts` 的清单本体留痕用例；**判别力自证** 8 个变异体（隔离副本）全部被守卫抓到。
+> ⚠ **过渡期结束**（`ADR-governance-paths-ownership` D4 失效）：清单的增删此后由 **architect 自主维护**（走治理面审查口径：清单 + 守卫双改必然进 oracle→critic 必审通道），**不再需要 builder 代改**。
+> **回滚**：registry 条目 `governance-paths-config` 按 `proving → active` 走（清单已写 ⇒ **演练待跑** ⇒ drill PASS 后回填 `last_drill`；证据见该清单的 `last_drill` 与 `.rddf/reviews/governance-paths-config-migration-verify.md`）＋ 回滚清单 `.rddf/rollback/governance-paths-config.json`（删新配置 + 还原机制/守卫/散文 + 结构化退役该条目）。
+> **审查**：oracle（`审查域: 治理面`）`治理面判定: PASS-WITH-NOTES`（5 条 finding 全部已处置）→ critic 第 1 轮 `REJECT`（1 个 BLOCKER：清单可加宽 ⇒ architect 借治理面身份拿到机制代码写权）→ 修复（机制面禁区）→ critic 复审 `APPROVE`（`mergeable: yes`）。逐条处置见 `.rddf/reviews/governance-paths-config-migration-review.md`。
+
+---
+
 > **v2.66 小债清扫：architect 治理面括注收紧 + 三份排障文档的重启口径（2026-11-23）**：
 > ① `prompts/build.md` 角色列表 `architect` 行的「编辑治理面文件 `~/.config/opencode/**`」是**宽泛措辞** —— v2.64 把 `lib/**` / `plugins/**` 加进审查口径表后，理论上可被误读为「architect 可写机制面」。收紧为「范围 = §审查配对 治理面作用域表的『算治理面』列；**不含** `lib/**` / `plugins/**`（机制面归 builder）」。**写权限不变**（机器门仍是 `GOVERNANCE_PATHS`，不含机制面）。
 > ② 三份其它机制的排障文档（`docs/dual-session-delegation.md` §6、`docs/front-delegate-testing.md` §8、`docs/front-delegate-usage.md` §10）的「重启」建议与源码构建版热加载事实有张力（v2.65 已统一 MAD §5.4 口径）⇒ 各加一条「版本口径」注记（重启非必需、仍可兜底），**不改表格内容**。

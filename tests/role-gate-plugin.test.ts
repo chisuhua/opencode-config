@@ -190,6 +190,28 @@ describe("治理面写门留痕：拒绝与放行都落一行 ledger", () => {
     expect(existsSync(fx.ledger)).toBe(false)
   })
 
+  test("治理面清单本体（ADR-governance-paths-ownership V4）：architect 放行 + 留痕；planner 被拒", async () => {
+    // ⚠ 清单本体是**自纳入**的治理面（ADR D2.2）⇒ 其变更既进写门留痕，也进治理面必审通道。
+    const cfgFile = path.join(GOV, ".rddf", "config", "governance-paths.json")
+
+    const ok = makeFixture({ role: "architect" })
+    const h1 = await loadHook(ok)
+    await expect(h1.hook(writeEvent(cfgFile, "edit"))).resolves.toBeUndefined()
+    const okRows = ledgerRows(ok)
+    expect(okRows.length, "architect 写清单本体应留一行痕").toBe(1)
+    expect(okRows[0].event).toBe("role_gate_write")
+    expect(okRows[0].decision).toBe("allow")
+    expect(okRows[0].path, "留痕的路径相对治理根").toBe(".rddf/config/governance-paths.json")
+
+    const no = makeFixture({ role: "planner" })
+    const h2 = await loadHook(no)
+    await expect(h2.hook(writeEvent(cfgFile, "edit"))).rejects.toThrow(/治理面/)
+    const noRows = ledgerRows(no)
+    expect(noRows.length).toBe(1)
+    expect(noRows[0].decision).toBe("deny")
+    expect(noRows[0].path).toBe(".rddf/config/governance-paths.json")
+  })
+
   test("租约拒绝分支也留痕：角色判定放行、但租约被他人持有 ⇒ ledger 记 deny（reason 含租约）", async () => {
     const fx = makeFixture({ role: "architect" })
     const now = new Date().toISOString()

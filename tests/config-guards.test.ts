@@ -11,7 +11,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -25,6 +25,14 @@ import {
 import { applyRules } from "../scripts/agent-guard-gen.ts"
 import { CONTRACTS } from "../lib/subagent-contract-core.ts"
 import { dispatchToolDefinition } from "../lib/delegate-async.ts"
+import {
+  DEFAULT_GOVERNANCE_PATHS,
+  GOVERNANCE_CORE_PATHS,
+  coversMechanismRoot,
+  decideWrite,
+  resolveGovernancePaths,
+  writeGovernancePathsConfig,
+} from "../lib/role-policy.ts"
 import {
   REAL_REPO_GIT_TEST_TIMEOUT_MS,
   isAncestor,
@@ -4422,6 +4430,302 @@ describe("plan 侧多会话协作：plan-worker 与协作区", () => {
       expect(checkIgnore(".rddf/plan-topics/demo/nodes/backup1/RESULT.md"), "backup 前缀会被 backup*/ 误伤").toBe(0)
     } finally {
       rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * 治理面路径清单**配置化**守卫族（ADR-governance-paths-ownership D5② / V1–V7 ⇒ AC1–AC7）。
+ *
+ * ## 判据真源
+ *
+ * `docs/adr/ADR-governance-paths-ownership.md` 的 Verification 章 V1–V7（**不复制判据正文**）。
+ *
+ * ## 为什么这族在 `config-guards.test.ts`
+ *
+ * 守卫 = 「什么算漂移」的判据本身（核心集第 7 项：`tests/config-guards.test.ts`）⇒
+ * 「治理面清单」的判据与其它漂移判据同处一册，避免清单判据散落。
+ *
+ * ## fixture 硬规则
+ *
+ * - 每个用例独立父目录（`mkdtempSync`）⇒ 同族 fixture 不互相构成「先例」；
+ * - **禁读真实 HOME** ⇒ 治理根一律注入临时目录（`governanceRoot` 参数）；
+ * - 治理根与仓库根**分离**（治理根不在仓库内）⇒ 「治理面」与「项目面」互不遮蔽。
+ */
+describe("治理面清单配置化（ADR-governance-paths-ownership V1–V7）", () => {
+  const ROOT = path.join(import.meta.dir, "..")
+  /** 清单文件的**相对治理根**路径。 */
+  const CONFIG_REL = ".rddf/config/governance-paths.json"
+  /** 非核心条目（用于 AC2「收紧非核心条目」）—— 核心集里没有、但配置可以加。 */
+  const NON_CORE = "docs/guard-authoring.md"
+
+  interface GovFixture {
+    root: string
+    repo: string
+    gov: string
+  }
+
+  function makeGovFixture(): GovFixture {
+    const root = mkdtempSync(path.join(tmpdir(), "gov-paths-"))
+    const repo = path.join(root, "repo")
+    const gov = path.join(root, "home", ".config", "opencode")
+    mkdirSync(path.join(repo, "src"), { recursive: true })
+    mkdirSync(path.join(gov, "prompts"), { recursive: true })
+    mkdirSync(path.join(gov, "docs"), { recursive: true })
+    writeFileSync(path.join(gov, "prompts", "build.md"), "# build\n")
+    writeFileSync(path.join(gov, "docs", "guard-authoring.md"), "# guard\n")
+    return { root, repo, gov }
+  }
+
+  /** 写清单配置（`raw` 给原文 ⇒ 覆盖损坏 / 类型错形态）。 */
+  function writeGovConfig(root: string, paths: string[] | null, raw?: string): void {
+    const dir = path.join(root, ".rddf", "config")
+    mkdirSync(dir, { recursive: true })
+    const file = path.join(dir, "governance-paths.json")
+    const body = raw !== undefined ? raw : JSON.stringify(
+      { schema_version: 1, updated_at: "2026-11-23", updated_by: "test", paths },
+      null,
+      2,
+    ) + "\n"
+    writeFileSync(file, body)
+  }
+
+  function judge(fx: GovFixture, role: string, filePath: string) {
+    return decideWrite({
+      role: role as any,
+      action: "edit",
+      filePath,
+      cwd: fx.repo,
+      repoRoot: fx.repo,
+      governanceRoot: fx.gov,
+    })
+  }
+
+  // ── 机制面禁区（critic BLOCKER 的闭合）：清单写 `lib` / `plugins` ⇒ architect 仍拿不到机制代码写权 ──
+  test("机制面禁区：清单含 `lib` / `plugins` ⇒ 条目被剔除 + 告警点名 + architect 仍写不到机制代码", () => {
+    const fx = makeGovFixture()
+    // ① 解析侧：覆盖机制面的条目被剔除 + 告警点名（配置的其余条目仍生效）
+    writeGovConfig(fx.gov, [...DEFAULT_GOVERNANCE_PATHS, "lib", "plugins/**"])
+    const r = resolveGovernancePaths(fx.gov)
+    expect(r.source, "含机制面条目的配置，其余部分仍有效").toBe("config")
+    expect(r.paths, "机制面条目必须被剔除").not.toContain("lib")
+    expect(r.paths.filter((p) => coversMechanismRoot(p)), "生效清单不得含任何机制面条目").toEqual([])
+    expect(r.warning, "剔除必须点名（不得静默）").toContain("lib")
+    expect(r.warning).toContain("plugins")
+    // ② 判定侧（**结构性保障**）：即便清单里有 `lib`，机制代码也**不是**治理面
+    const injected = decideWrite({
+      role: "architect",
+      action: "edit",
+      filePath: path.join(fx.gov, "lib", "role-policy.ts"),
+      cwd: fx.repo,
+      repoRoot: fx.repo,
+      governanceRoot: fx.gov,
+      governancePaths: ["**"], // 注入最宽的清单 ⇒ 洞必须仍被堵住（注入缝不绕过禁区）
+    })
+    expect(injected.governance.hit, "机制代码永远不是治理面（判定侧排除）").toBe(false)
+    // ③ 生产形（治理根 == 仓库根）：architect 写机制代码 ⇒ **拒**；builder（机制面归 builder）⇒ 放行
+    const prod = (role: string) =>
+      decideWrite({
+        role: role as any,
+        action: "edit",
+        filePath: path.join(fx.gov, "lib", "role-policy.ts"),
+        cwd: fx.gov,
+        repoRoot: fx.gov,
+        governanceRoot: fx.gov,
+        governancePaths: ["**"],
+      })
+    expect(prod("architect").allowed, "生产形下 architect 写机制代码必须被拒").toBe(false)
+    expect(prod("builder").allowed, "机制面归 builder ⇒ builder 可写").toBe(true)
+    expect(prod("planner").allowed, "planner 写机制代码必须被拒").toBe(false)
+    // ④ 默认清单（代码兜底）同样不得含机制面条目（安全不靠清单 ⇒ 兜底也干净）
+    expect(DEFAULT_GOVERNANCE_PATHS.filter(coversMechanismRoot), "默认清单不得含机制面条目").toEqual([])
+  })
+
+  // ── AC1（V1）：五态异常 ⇒ 回退默认 + 告警 + **不是全拒** ────────────────────
+  const BAD_CONFIGS: Array<{ name: string; raw: string | null }> = [
+    { name: "配置缺失", raw: null },
+    { name: "JSON 损坏", raw: "{ this is not json" },
+    { name: "paths 为空数组", raw: JSON.stringify({ paths: [] }) },
+    { name: "paths 字段类型错（字符串）", raw: JSON.stringify({ paths: "prompts" }) },
+    { name: "paths 元素类型错（非字符串）", raw: JSON.stringify({ paths: ["prompts", 7] }) },
+    {
+      name: "缺核心集条目（少了 prompts）",
+      raw: JSON.stringify({ paths: DEFAULT_GOVERNANCE_PATHS.filter((p) => p !== "prompts") }),
+    },
+  ]
+
+  for (const c of BAD_CONFIGS) {
+    test(`AC1：${c.name} ⇒ 回退默认清单 + 告警 + 非全拒（修复通道开放）`, () => {
+      const fx = makeGovFixture()
+      if (c.raw !== null) writeGovConfig(fx.gov, null, c.raw)
+      const r = resolveGovernancePaths(fx.gov)
+      expect(r.source, `${c.name} ⇒ 应回退内置默认`).toBe("default")
+      expect(r.paths, `${c.name} ⇒ 生效清单应等于默认清单`).toEqual(DEFAULT_GOVERNANCE_PATHS)
+      expect(r.warning, `${c.name} ⇒ 必须有告警（不得静默降级）`).not.toBe("")
+      // **不是全拒**：治理面路径仍按默认清单判定（architect 放行 / planner 拒）
+      const allowed = judge(fx, "architect", path.join(fx.gov, "prompts", "build.md"))
+      expect(allowed.allowed, `${c.name} ⇒ architect 应仍能写治理面（不是全拒）`).toBe(true)
+      const denied = judge(fx, "planner", path.join(fx.gov, "prompts", "build.md"))
+      expect(denied.allowed, `${c.name} ⇒ planner 写治理面应被拒`).toBe(false)
+      expect(denied.message).toContain("治理面")
+    })
+  }
+
+  // ── AC2（V2）：收紧非核心条目 ⇒ 放行行为随配置变化（读一次即生效）──────────
+  test("AC2：有效配置收紧非核心条目 ⇒ 放行行为随配置变化（读一次即生效，无需重启）", () => {
+    const fx = makeGovFixture()
+    const target = path.join(fx.gov, NON_CORE)
+    // ① 含非核心条目 ⇒ 该路径是治理面（planner 被拒）
+    writeGovConfig(fx.gov, [...DEFAULT_GOVERNANCE_PATHS, NON_CORE])
+    const rich = judge(fx, "planner", target)
+    expect(rich.allowed, "含非核心条目时该路径应是治理面").toBe(false)
+    expect(rich.governance.hit).toBe(true)
+
+    // ② **收紧**（删掉该非核心条目）⇒ 同一进程内立刻生效（清单不缓存）
+    writeGovConfig(fx.gov, [...DEFAULT_GOVERNANCE_PATHS])
+    const tight = judge(fx, "planner", target)
+    expect(tight.governance.hit, "收紧后该路径不应再是治理面").toBe(false)
+    expect(tight.allowed, "收紧后 planner 写该路径应放行（行为随配置变化）").toBe(true)
+
+    // ③ 收紧**非核心**条目不影响核心集条目（成对：同一份配置里两条都在）
+    writeGovConfig(fx.gov, [...DEFAULT_GOVERNANCE_PATHS, NON_CORE])
+    const stillGov = judge(fx, "planner", path.join(fx.gov, "prompts", "build.md"))
+    expect(stillGov.allowed, "核心集条目仍是治理面（收紧非核心条目不影响它）").toBe(false)
+  })
+
+  // ── 写配置路径（I5）：tmp+rename 原子替换 ⇒ 写后即生效、不留半文件 ──────────
+  test("写配置路径：原子替换 ⇒ 写后即生效，且不留 .tmp 残留 / 半文件", () => {
+    const fx = makeGovFixture()
+    writeGovernancePathsConfig(fx.gov, {
+      schema_version: 1,
+      updated_at: "2026-11-23",
+      updated_by: "test",
+      paths: [...DEFAULT_GOVERNANCE_PATHS, NON_CORE],
+    })
+    // 写后即生效（读一次即生效，无需重启）
+    const r = resolveGovernancePaths(fx.gov)
+    expect(r.source, "写入的合法配置应立即生效").toBe("config")
+    expect(r.paths).toContain(NON_CORE)
+    // 原子替换：目录里不留 tmp 残留，且读到的内容是**完整** JSON
+    const leftovers = readdirSync(path.join(fx.gov, ".rddf", "config")).filter((f) => f.includes(".tmp"))
+    expect(leftovers, "tmp+rename 后不得留残留").toEqual([])
+    const raw = readFileSync(path.join(fx.gov, ".rddf", "config", "governance-paths.json"), "utf8")
+    expect(() => JSON.parse(raw)).not.toThrow()
+  })
+
+  // ── AC3（V3）：移除核心集条目 ⇒ 运行期回退默认（不放宽）+ 告警 ──────────────
+  test("AC3：有效配置移除核心集条目 ⇒ 运行期回退默认清单（不放宽）+ 告警", () => {
+    const fx = makeGovFixture()
+    writeGovConfig(fx.gov, DEFAULT_GOVERNANCE_PATHS.filter((p) => p !== "prompts"))
+    const r = resolveGovernancePaths(fx.gov)
+    expect(r.source, "缺核心集条目 ⇒ 视为损坏 ⇒ 回退默认").toBe("default")
+    expect(r.paths).toEqual(DEFAULT_GOVERNANCE_PATHS)
+    expect(r.warning).not.toBe("")
+    // **不放宽**：被移出配置的核心路径仍按默认清单判为治理面（planner 被拒）
+    const denied = judge(fx, "planner", path.join(fx.gov, "prompts", "build.md"))
+    expect(denied.allowed, "核心集条目被移出配置 ⇒ 运行期不得放宽").toBe(false)
+    expect(denied.governance.hit).toBe(true)
+  })
+
+  test("AC3②：核心集不可移除（守卫有牙）—— 默认清单缺任一核心条目 ⇒ 用例变红", () => {
+    const missing = GOVERNANCE_CORE_PATHS.filter((p) => !DEFAULT_GOVERNANCE_PATHS.includes(p))
+    expect(missing, `默认清单缺核心集条目（不可移除）: ${missing.join(", ")}`).toEqual([])
+    // ⚠ 判别力自证：把默认清单抽掉一个核心条目 ⇒ 同一判据必须抓到它
+    const mutated = DEFAULT_GOVERNANCE_PATHS.filter((p) => p !== "prompts")
+    const missingInMutant = GOVERNANCE_CORE_PATHS.filter((p) => !mutated.includes(p))
+    expect(missingInMutant, "判别力自证：变异体必须被核心集判据抓到").toEqual(["prompts"])
+  })
+
+  // ── AC4（V4）：architect 可写清单本体；planner / verifier 被拒 ──────────────
+  test("AC4：architect 写治理面清单本体 ⇒ 放行；planner / verifier ⇒ 拒", () => {
+    const fx = makeGovFixture()
+    writeGovConfig(fx.gov, [...DEFAULT_GOVERNANCE_PATHS])
+    const file = path.join(fx.gov, CONFIG_REL)
+    const allowed = judge(fx, "architect", file)
+    expect(allowed.allowed, "architect 应能写治理面清单本体（政策归 architect）").toBe(true)
+    expect(allowed.governance, "清单本体的判定应是治理面命中（⇒ 写门留痕）").toEqual({
+      hit: true,
+      relPath: CONFIG_REL,
+    })
+    for (const role of ["planner", "verifier"]) {
+      const denied = judge(fx, role, file)
+      expect(denied.allowed, `${role} 不应能写治理面清单本体`).toBe(false)
+      expect(denied.message).toContain("治理面")
+    }
+  })
+
+  // ── AC5（V5）：项目仓同名配置**不影响**治理面判定（读根 = 治理根）───────────
+  test("AC5：项目仓放同名 .rddf/config/governance-paths.json ⇒ 不影响治理面判定", () => {
+    const fx = makeGovFixture()
+    // 治理根：有效配置（核心集）
+    writeGovConfig(fx.gov, [...DEFAULT_GOVERNANCE_PATHS])
+    // 项目仓：同名配置（**有效**且比治理根多一条）⇒ 若被读到，「扩展一条」就会生效 ⇒ 判定会变
+    writeGovConfig(fx.repo, [...DEFAULT_GOVERNANCE_PATHS, NON_CORE])
+    const r = resolveGovernancePaths(fx.gov)
+    expect(r.source, "应读**治理根**的配置").toBe("config")
+    expect(r.paths, "生效清单不得含项目仓那条（项目仓配置不参与判定）").not.toContain(NON_CORE)
+    // ① 治理面路径仍按治理根的清单判（核心集未被项目仓那份影响）
+    const denied = judge(fx, "planner", path.join(fx.gov, "prompts", "build.md"))
+    expect(denied.allowed, "项目仓同名配置不得劫持治理面判定").toBe(false)
+    // ② 项目仓那条扩展也不算数 ⇒ 该路径不是治理面
+    const notGov = judge(fx, "planner", path.join(fx.gov, NON_CORE))
+    expect(notGov.governance.hit, "项目仓那份扩展不得生效").toBe(false)
+    expect(notGov.allowed, "非治理面路径（仓库外）⇒ 不限制").toBe(true)
+    // 成对：项目仓若放一份「想把核心集移出治理面」的配置 ⇒ 该配置**无效**（缺核心集）⇒ 不算数
+    writeGovConfig(fx.repo, DEFAULT_GOVERNANCE_PATHS.filter((p) => p !== "prompts"))
+    expect(resolveGovernancePaths(fx.repo).source, "缺核心集的配置一律无效（被拒绝）").toBe("default")
+    expect(judge(fx, "planner", path.join(fx.gov, "prompts", "build.md")).allowed).toBe(false)
+  })
+
+  // ── AC6（V6）：默认清单定义点恰好 1 处 + decideWrite 内无字面清单 ───────────
+  test("AC6：默认清单定义点恰好 1 处，且 decideWrite 内无字面清单", () => {
+    const dirs = ["lib", "plugins", "scripts", "tools"]
+    const defs: string[] = []
+    for (const d of dirs) {
+      let names: string[] = []
+      try {
+        names = readdirSync(path.join(ROOT, d)) as string[]
+      } catch {
+        continue
+      }
+      for (const name of names) {
+        if (!/\.(ts|js)$/.test(name)) continue
+        const text = readFileSync(path.join(ROOT, d, name), "utf8")
+        if (/(?:export\s+)?(?:const|let|var)\s+(DEFAULT_GOVERNANCE_PATHS|GOVERNANCE_CORE_PATHS)\b/.test(text)) {
+          defs.push(`${d}/${name}`)
+        }
+      }
+    }
+    expect(defs, "默认清单 / 核心集的定义点必须恰好 1 处（两处真源不成立）").toEqual(["lib/role-policy.ts"])
+
+    // ② `decideWrite` 内**无字面清单**（清单只从解析结果来）
+    const src = readFileSync(path.join(ROOT, "lib", "role-policy.ts"), "utf8")
+    const start = src.indexOf("export function decideWrite")
+    expect(start, "找不到 decideWrite").toBeGreaterThan(-1)
+    const body = src.slice(start, src.indexOf("\n}\n", start))
+    // ⚠ 取两张表的**并集**（前瞻：默认清单日后若长出非核心条目，它也必须不在 `decideWrite` 里出现）
+    for (const lit of [...new Set([...GOVERNANCE_CORE_PATHS, ...DEFAULT_GOVERNANCE_PATHS])]) {
+      expect(body, `decideWrite 内出现字面清单条目「${lit}」（清单只能来自解析结果）`).not.toContain(`"${lit}"`)
+    }
+  })
+
+  // ── AC7（V7）：软链双命中毒桩在**解析后清单**上仍绿 ─────────────────────────
+  test("AC7：治理名软链 → 仓库外目标：在解析后清单上仍判治理面（双命中）", () => {
+    const fx = makeGovFixture()
+    // 写一份**有效**配置 ⇒ 生效清单来自配置（不是默认兜底）⇒ 判据落在「解析后清单」上
+    writeGovConfig(fx.gov, [...DEFAULT_GOVERNANCE_PATHS])
+    expect(resolveGovernancePaths(fx.gov).source, "本用例须走配置路径（否则测的是兜底清单）").toBe("config")
+    const outside = path.join(fx.root, "effective-config.jsonc")
+    writeFileSync(outside, "{}\n")
+    const link = path.join(fx.gov, "opencode.jsonc")
+    symlinkSync(outside, link)
+    try {
+      const r = judge(fx, "planner", link)
+      expect(r.allowed, "治理名软链 → 仓库外目标 ⇒ 仍须判治理面（不得 fail-open）").toBe(false)
+      expect(r.governance.hit).toBe(true)
+      expect(r.governance.relPath, "报「调用者写下的名字」").toBe("opencode.jsonc")
+    } finally {
+      rmSync(link, { force: true })
     }
   })
 })

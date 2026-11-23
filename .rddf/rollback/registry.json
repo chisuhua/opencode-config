@@ -154,11 +154,13 @@
     {
       "mechanism": "governance-paths-config",
       "adr_primary": "docs/adr/ADR-governance-paths-ownership.md",
-      "state": "exempt",
-      "exempt_class": "not-implemented",
-      "exempt_evidence": ".rddf/reviews/governance-paths-ownership-review.md",
-      "watch": [".rddf/config/governance-paths.json"],
-      "notes": "机制（治理面清单配置化）尚未落地（ADR 2026-11-23 裁定，实现清单见该 ADR D5）⇒ 无可回滚面；B1 落地后须转 active + 配清单（M3 会在 watch 路径出现时强制）"
+      "state": "proving",
+      "manifest_ref": "governance-paths-config",
+      "watch": [
+        ".rddf/config/governance-paths.json",
+        "lib/role-policy.ts"
+      ],
+      "notes": "治理面清单**配置化**（B1）已落地（2026-11-23；change = `openspec/changes/governance-paths-config-migration/`）：清单真源 = `.rddf/config/governance-paths.json`（**政策数据**，归 architect），`lib/role-policy.ts` 只留**兜底默认**（`DEFAULT_GOVERNANCE_PATHS`）+ `resolveGovernancePaths()` 三态解析（读根 = 治理根）。回滚清单 `.rddf/rollback/governance-paths-config.json`（删新配置 + 还原机制/守卫/散文 + 结构化退役本条目）。**过渡态 `proving`**：机制已落地、清单已写，**演练证据待回填** ⇒ drill PASS 后回填 `last_drill` 并转 `active`（M3 已因 watch 路径出现而强制重定性）。"
     }
   ]
 }
