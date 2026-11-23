@@ -126,7 +126,8 @@
   > **验收证据**：`docs/CHANGELOG.md` 的 v2.70 条目（含「未完成」的 AC3 残留登记）。
 - [x] **D3** 验收报告落 `.rddf/reviews/rollback-manifest-find-narrowing-verify.md`（AC1–AC15 逐条 + 工具证据）。
   > **验收证据**：`.rddf/reviews/rollback-manifest-find-narrowing-verify.md`（第 2 轮，判定 **pass** 15/15；含 AC3 派生条件未达成的残留登记 + 判据口径澄清说明）。
-- [ ] **D4** 归档：`openspec archive` 前确认 `.openspec.yaml` 含 `skip_specs: true`。
+- [x] **D4** 归档：`openspec archive` 前确认 `.openspec.yaml` 含 `skip_specs: true`。
+  > **验收证据**：`.openspec.yaml` 含 `skip_specs: true`（本仓不使用 openspec 的 spec registry）⇒ 归档命令 `openspec archive rollback-manifest-find-narrowing --skip-specs --yes`；归档后 change 目录落在 `openspec/changes/archive/2026-11-24-rollback-manifest-find-narrowing/`。
 
 ## 未收敛清单 check list（AC7）
 
