@@ -40,7 +40,7 @@ import path from "node:path"
 //   writeJsonAtomic / appendLedgerLine）。两边都只在**函数体**内使用，不在模块顶层求值
 //   ⇒ ESM 循环安全（与 `delegate-async.ts` ↔ `role-lease.ts` 同形）。
 import { acquireLeaseLocked, releaseLeaseLocked } from "./role-lease.ts"
-import { resolveArchPaths } from "./role-policy.ts"
+import { ROLE_WRITE_POLICY, resolveArchPaths } from "./role-policy.ts"
 
 const TOOL_NAME = "delegate"
 
@@ -634,6 +634,49 @@ export function capabilityBlock(agentId: string, perm: any): string {
     `delegate: ${perm?.delegate === "allow" ? "yes" : "no"}`,
     "-->",
   ].join("\n")
+}
+
+/**
+ * **主会话角色**的写集投影块渲染器（marker = `role-write-set:<role>`）。
+ *
+ * ## 用途
+ *
+ * `lib/role-policy.ts::ROLE_WRITE_POLICY`（AC16 声明为「角色 → 写根的唯一真源」）有 6 个角色，
+ * 而 prompt 侧此前只有 `verifier` 一个有规范机读块 ⇒ 其余 5 个角色的写集路径由**散文**复述
+ * ⇒ 散文与真源漂移时**无人报错**。本函数把真源**渲染**成块，prompt 侧嵌**逐字副本**，
+ * 守卫按**精确比对**校验（多一条路径 / 少一条 / 改一个字符 ⇒ 红）。
+ *
+ * ⚠ **不手抄字面量**：块的内容完全由 `ROLE_WRITE_POLICY` 派生 ⇒ 真源改了而块没改 ⇒ 守卫红。
+ *
+ * ## 与 `verifierWriteSetBlock()` 的关系（**两个维度，不是两份副本**）
+ *
+ * | 块 | 来源 | 语义 |
+ * |---|---|---|
+ * | `role-class-write-set:verifier`（既有） | `VERIFIER_ALLOW_ROOTS` + `VERIFIER_OWNS_PATHS` | **被派发 verifier 后端**能写什么（路径根 + **文件名模式** `owns:`） |
+ * | `role-write-set:<role>`（本函数） | `ROLE_WRITE_POLICY` | **主会话角色**能写什么（路径根 + `denyAll`） |
+ *
+ * ⇒ 两者 `allow` 恰好相同但语义不同；`owns:` **不进本块**（它不在 `ROLE_WRITE_POLICY` 里，
+ * 搬进来就变成手抄 ⇒ 违反「不手抄字面量」）。
+ *
+ * ## 三种特殊形态
+ *
+ * - `builder` / `general`：`allow = ["**"]` ⇒ 渲染成 `allow: **`（单元素）；
+ * - `no-role`：`allow = []` + `denyAll: true` ⇒ 渲染成 `allow: (none)` + `denyAll: true`
+ *   —— **不渲染空 `allow:` 行**（守卫按 `split(", ")` 解析会得到 `[""]` ⇒ 逐字比对必红）；
+ * - 其余四角色：`allow: p1, p2, ...`。
+ *
+ * ⚠ **块只表达「写集」这一个维度**：
+ * - `governance: true`（architect / builder / general）是**治理面身份**而非写集路径 ⇒ 不进块；
+ * - `architect` 的 `arch_paths` **动态并入**在 `decideWrite` 里发生 ⇒ 不在 `ROLE_WRITE_POLICY`
+ *   里 ⇒ 不进块。⇒ 这两条事实由 prompt 的**散文**承担（块表达不了）。
+ */
+export function renderWriteSetBlock(role: keyof typeof ROLE_WRITE_POLICY): string {
+  const policy = ROLE_WRITE_POLICY[role]
+  const allow = policy.allow.length === 0 ? "(none)" : policy.allow.join(", ")
+  const lines = [`<!-- role-write-set:${role}`, `allow: ${allow}`]
+  if (policy.denyAll) lines.push("denyAll: true")
+  lines.push("-->")
+  return lines.join("\n")
 }
 
 /**

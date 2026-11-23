@@ -72,7 +72,11 @@
 
 ## B. 段 B —— 写集机读投影
 
-- [ ] **B1（AC8）** `lib/delegate-core.ts` 新增 `renderWriteSetBlock(role)`：从 `lib/role-policy.ts::ROLE_WRITE_POLICY` 渲染（**不手抄字面量**）。
+- [x] **B1（AC8）** `lib/delegate-core.ts` 新增 `renderWriteSetBlock(role)`：从 `lib/role-policy.ts::ROLE_WRITE_POLICY` 渲染（**不手抄字面量**）。
+  > **验收证据**：`bun test tests/delegate-core.test.ts` = **168 pass / 0 fail**（新增 5 例）；6 个角色的块逐字等于真源派生（`allow` 行 + `denyAll` 行）；`builder`/`general` ⇒ `allow: **`；`no-role` ⇒ `allow: (none)` + `denyAll: true`（**无空 `allow:` 行**）；块内**不含** `governance:` 标记与 `arch_paths`（写集维度之外）。
+  > ⚠ **`verifierWriteSetBlock()` 的输出逐字不变**（marker + `allow:` 行 + `owns:` 行）：既有守卫（AC19 逐字 + marker 整行计数；AC20 解析 `owns:` 行）仍绿；新增用例断言旧块**不含** `role-write-set:`（两个维度不互吞）。
+  > ⚠ **落点**：`lib/delegate-core.ts` 的 import 区行 43（不在任何 pin 区间内）+ 函数体落在 `capabilityBlock` 之后的空隙（行 638 起）⇒ **不触碰**任何被 pin 的 find 文本（`role-class-write-set.json` 的 `edits[2]` 覆盖行 897–993，含既有 `verifierWriteSetBlock` ⇒ 该函数**零改动**）。
+  > ⚠ **测试落点**：`tests/delegate-core.test.ts` 的**顶部 import 块被逐字节 pin**（行 31–54）⇒ 不能加 import 项 ⇒ 测试用**动态 import**（顶层 await）放在文件末尾（行 1665 起，不在任何 pin 区间内）。
   > **验收证据**：`bun test tests/delegate-core.test.ts` 绿；新函数对 6 个角色的输出与手写期望逐字一致（对 `verifier` 角色做等价断言）。
   > ⚠ **`verifierWriteSetBlock()` 的输出逐字不变**（marker + `allow:` 行 + `owns:` 行）：至多**共享 `allow` 行的 join 辅助**；**不得**改 marker、**不得**把 `owns:` 搬进新块 ⇒ 既有守卫（AC19 逐字 + marker 整行计数；AC20 解析 `owns:` 行）必须继续绿（oracle F1）。
 - [ ] **B2（AC9）** `prompts/build.md` 插入 **6 个**角色写集块（architect / planner / builder / no-role / general / verifier），内容 = `renderWriteSetBlock` 输出的**逐字**副本；起止标记各自独占一行。

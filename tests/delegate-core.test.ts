@@ -1661,3 +1661,65 @@ describe("delegate-base-channel：简报基线行 + 端到端静态闭环", () =
     expect(out, "merge-base 失败 ⇒ 通道输出不可被消费端消费").toBe(HEAD_SHA)
   })
 })
+
+// ⚠ 本文件的顶部 import 块被回滚清单（`delegate-knowledge-delivery.json` 等）**逐字节 pin**
+//   ⇒ 不能加 import 项 ⇒ 这里用**动态 import**（顶层 await，ESM 合法；放在文件末尾 ⇒ 不在任何 pin 区间内）。
+const { renderWriteSetBlock, verifierWriteSetBlock } = await import("../lib/delegate-core.ts")
+const { ROLE_WRITE_POLICY } = await import("../lib/role-policy.ts")
+
+describe("写集投影块渲染器（role-write-set:<role>）", () => {
+  const ROLES = ["architect", "planner", "builder", "verifier", "no-role", "general"] as const
+
+  test("6 个角色各有块；marker 独占一行；起止标记各一行", () => {
+    for (const role of ROLES) {
+      const block = renderWriteSetBlock(role)
+      const lines = block.split("\n")
+      expect(lines[0], `${role}：首行必须是 marker`).toBe(`<!-- role-write-set:${role}`)
+      expect(lines[lines.length - 1], `${role}：末行必须是结束标记`).toBe("-->")
+      expect(lines.filter((l) => l.startsWith("<!--")).length, `${role}：只能有一个开始标记`).toBe(1)
+    }
+  })
+
+  test("内容由 ROLE_WRITE_POLICY 派生（不手抄字面量）", () => {
+    for (const role of ROLES) {
+      const policy = ROLE_WRITE_POLICY[role]
+      const expected = policy.allow.length === 0 ? "(none)" : policy.allow.join(", ")
+      expect(renderWriteSetBlock(role), `${role}：allow 行必须逐字等于真源派生`).toContain(`allow: ${expected}`)
+      if (policy.denyAll) {
+        expect(renderWriteSetBlock(role), `${role}：denyAll 必须与真源一致`).toContain("denyAll: true")
+      } else {
+        expect(renderWriteSetBlock(role), `${role}：denyAll=false 时不得出现该行`).not.toContain("denyAll")
+      }
+    }
+  })
+
+  test("三种特殊形态：builder / general = `allow: **`；no-role = `allow: (none)` + `denyAll: true`", () => {
+    expect(renderWriteSetBlock("builder")).toContain("allow: **")
+    expect(renderWriteSetBlock("general")).toContain("allow: **")
+    const noRole = renderWriteSetBlock("no-role")
+    expect(noRole).toContain("allow: (none)")
+    expect(noRole).toContain("denyAll: true")
+    // ⚠ 不得渲染空 `allow:` 行 —— 守卫按 `split(", ")` 解析会得到 `[""]`
+    expect(noRole).not.toContain("allow: \n")
+    expect(noRole.split("\n").some((l) => /^allow:\s*$/.test(l)), "no-role 块出现了空 allow 行").toBe(false)
+  })
+
+  test("块只表达「写集」维度：不含 governance 标记，也不含 arch_paths 动态并入", () => {
+    for (const role of ROLES) {
+      const block = renderWriteSetBlock(role)
+      // ⚠ 判据必须精确到**标记**（`governance:`）—— architect 的 allow 里含路径
+      //   `.rddf/config/governance-paths.json` ⇒ 用裸子串 "governance" 判会误伤。
+      expect(block, `${role}：块里不得出现 governance 标记（那是治理面身份，不是写集）`).not.toContain("governance:")
+      expect(block, `${role}：块里不得出现 arch_paths（动态并入不在真源里）`).not.toContain("arch_paths")
+    }
+  })
+
+  test("既有 verifierWriteSetBlock() 的输出逐字不变（含 owns 行与原 marker）", () => {
+    const block = verifierWriteSetBlock()
+    expect(block).toContain("<!-- role-class-write-set:verifier")
+    expect(block).toContain("allow: .rddf/reviews, .rddf/state/verifier")
+    expect(block).toContain("owns: .rddf/state/verifier/<name>.json")
+    // ⚠ 新块不得取代旧块（两者是不同维度：主会话角色 vs 被派发后端）
+    expect(block).not.toContain("role-write-set:")
+  })
+})
