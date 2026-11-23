@@ -287,6 +287,77 @@ describe("front 的 subagent 门控顺序（ADR D2.1：顺序即语义）", () =
   })
 })
 
+/**
+ * subagent 委派门控：**可派者集合**（按字符串 `"allow"` 计）+ `librarian` 的白名单（只放行 `explore`）。
+ *
+ * ⚠ **为什么单独一个 describe（而不是并进 `plan 侧多会话协作` 那块）**：
+ *   那一整块被 `.rddf/rollback/plan-topics.json` 的 `edits[8].find`（5229 字符）**逐字节 pin 住**
+ *   （回滚 plan-topics 时整块删除）⇒ 块内任何字节改动 ⇒ `planDrill` 判 `find_count` 漂移 ⇒
+ *   `tests/rollback-manifests.test.ts` 红 ⇒ 要么改机制面清单（`.rddf/rollback/**` ⇒ 须同批重跑该机制的
+ *   rollback drill 并回填 `last_drill`），要么等 `rollback-manifest-find-narrowing`（backlog）解 pin。
+ *   两者都与本组断言无关 ⇒ 本组放**块外**（本文件共 67 处被回滚清单 pin，普查口径见
+ *   `openspec/changes/librarian-delegate-contradiction/tasks.md` 的 T0d）。
+ *
+ * 为什么必须有：`prompts/librarian.md:24` 把「本地代码搜索 → 委派 `explore`」写成**核心职责**
+ *   （`:23` 且明令「不要自己 `grep` / `glob` 整个项目」）⇒ 机器层若 deny 整个 subagent 工具，
+ *   librarian 面对本地搜索只剩**编造 / 静默跳过 / 报错**三条路 —— 都不是设计意图
+ *   （登记来源：`.rddf/improvements/librarian-delegate-contradiction.md`）。
+ * 形态取 `front` 同款（字典 + `"*": "deny"` 打头）：last-match-wins 下 `"*": deny` 放末尾会**隐藏
+ *   整个 subagent 工具**（已发生过两次事故，见 `docs/SUBAGENT-ORCHESTRATION.md` §2.1）。
+ * 负向闭集同样钉住：深度 2 写链（front → librarian → general）必须仍被封死
+ *   （依据 `docs/adr/ADR-front-knowledge-capability.md` D2/D3）。
+ */
+describe("subagent 委派门控：可派者集合 + librarian 白名单（只放行 explore）", () => {
+  const agent = config.agent as Record<string, any>
+
+  test("AC4c：可派者分类 —— 字符串 \"allow\" == {build, plan}；字典白名单闭集 == {front, librarian}；字符串受限闭集 == 其余 7 个；无 subagent 键 == {title}", () => {
+    const explicitAllow: string[] = []
+    const dictWhitelist: string[] = []
+    const stringRestrict: string[] = []
+    const missing: string[] = []
+    for (const [id, a] of Object.entries(agent)) {
+      const perm = (a as any)?.permission
+      if (!perm || perm.subagent === undefined) {
+        missing.push(id)
+        continue
+      }
+      if (perm.subagent === "allow") explicitAllow.push(id)
+      else if (typeof perm.subagent === "object" && !Array.isArray(perm.subagent)) dictWhitelist.push(id)
+      // ⚠ 其余**字符串**取值（`"deny"` / `"ask"` …）单独成桶：否则某个 agent 从 `"deny"` 改成 `"ask"`
+      //   （或新增一个受限 agent）会**静默放行** —— 本桶的闭集要求「每次新增都做一次决定」。
+      else stringRestrict.push(id)
+    }
+    expect(
+      explicitAllow.sort(),
+      "显式**字符串** subagent:\"allow\" 的 agent 集合只能有 build / plan（字典白名单的 agent 不计入）",
+    ).toEqual(["build", "plan"])
+    expect(
+      dictWhitelist.sort(),
+      "字典白名单（`{\"*\": \"deny\", …}`）的 agent 闭集 —— 新增字典形态的 agent 必须做一次决定",
+    ).toEqual(["front", "librarian"])
+    expect(
+      stringRestrict.sort(),
+      "字符串受限（`\"deny\"` / `\"ask\"` …）的 agent 闭集 —— 新增受限 agent 必须做一次决定",
+    ).toEqual(["context-builder", "critic", "explore", "general", "metis", "oracle", "plan-worker"])
+    expect(missing.sort(), "无 subagent 键的 agent 闭集").toEqual(["title"])
+  })
+
+  test("AC4b：librarian 的 subagent 白名单 == { '*': deny, explore: allow }（委派 explore 是其 prompt 硬要求）", () => {
+    const libSub = agent.librarian.permission.subagent
+    expect(
+      libSub && typeof libSub === "object" && !Array.isArray(libSub),
+      "librarian 的 subagent 必须是**字典**白名单（字符串 \"deny\" 会让它 prompt 要求的委派必然失败）",
+    ).toBe(true)
+    const dict = libSub as Record<string, string>
+    expect(Object.keys(dict)[0], "librarian 的 subagent 首键必须是 *（last-match-wins：放末尾会隐藏整个工具）").toBe("*")
+    expect(dict["*"], "librarian 的 subagent 兜底必须是 deny").toBe("deny")
+    expect(dict["explore"], "librarian 必须能委派 explore（prompts/librarian.md:24 的硬要求）").toBe("allow")
+    expect(Object.keys(dict).sort(), "librarian 的白名单闭集 == [* , explore]").toEqual(["*", "explore"])
+    for (const forbidden of ["general", "oracle", "metis", "critic", "build", "plan", "context-builder"]) {
+      expect(dict[forbidden], `librarian 的 subagent 白名单不得放行 ${forbidden}`).toBeUndefined()
+    }
+  })
+})
 
 /**
  * L4 防漂移：subagent 输入契约的**规则真源**必须与

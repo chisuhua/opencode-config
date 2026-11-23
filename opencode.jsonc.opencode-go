@@ -691,7 +691,10 @@
         "edit": "deny",
         "webfetch": "allow",
         "websearch": "allow",
-        "subagent": "deny",
+        "subagent": {
+          "*": "deny",
+          "explore": "allow"
+        },
         "question": "deny",
         "doom_loop": "deny"
       },

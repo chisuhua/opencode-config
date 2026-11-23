@@ -35,7 +35,7 @@
 
 - **清单由运行时拼装**：父模型的工具描述里追加「Available subagents」，过滤条件 = `mode !== "primary" && !hidden && permission !== deny`（`subagent.ts`）。**这就是 agent 可见性的唯一机器面**。
 - `agent` 参数是**自由字符串**（不是 enum）—— 名字写错会在运行时被拒（`Unknown agent`），而不是被 schema 挡下。
-- agent 级 `permission.subagent` 白名单：`front` 只放行 5 个只读（explore / librarian / oracle / metis / critic）；`build` / `plan` 全量 allow。
+- agent 级 `permission.subagent` 白名单：`front` 只放行 5 个只读（explore / librarian / oracle / metis / critic）；`build` / `plan` 全量 allow；`librarian` 只放行 `explore`（本地代码搜索委派 —— `prompts/librarian.md` 的硬要求，其余 agent 一律 deny）。
 - **规则是 last-match-wins**：`"*": "deny"` 必须是**第一条**，放末尾会把整个工具隐藏（已发生过两次事故：① `*: deny` 放末尾导致工具被隐藏、② `curl * -o*` 漏首参形态致 librarian 落盘 —— 见 `docs/adr/ADR-front-knowledge-capability.md` D2.1 与 D3.1，事故记录见 `tests/config-guards.test.ts` 头注释）。
 
 ### 2.2 delegate（工程型，唯一通道）
@@ -169,9 +169,9 @@ openspec/changes/*/proposal.md
 
 **ADR**（`docs/adr/`）：`ADR-front-multi-backend`（多后端编排）、`ADR-front-stop-ownership`（归属与槽位释放）、`ADR-front-stop-confirmation`（停机证据）、`ADR-front-cancel-release`（取消放行）、`ADR-front-knowledge-capability`（只读 subagent 门控）、`ADR-delegate-delivery-evidence`（交付证据枚举）、`ADR-canonical-root-normalization`（stateRoot/workRoot 归一）、`ADR-plan-delegate-engineering-session`（**派发主体扩展 + D7 优先级**）。
 
-**审稿 / 调研记录**（`.rddf/reviews/`）——**本轮相关子集**（该目录持续累积，此处只列与本轮治理面改动直接相关者）：`adr-plan-delegate-engineering-session-review.md`（本篇 ADR 的 oracle/critic 审稿记录）、`subagent-oracle-intent-arch-review.md`、`subagent-oracle-intent-findings.md`、`metis-check-findings.md`、`review-profile-improvement-plan.md`、`context-builder-narrowing-spec.md`、`subagent-contract-e2e.md`、`subagent-contract-exemption-sampling.md`。
+**审稿 / 调研记录**（`.rddf/reviews/`）——**本轮相关子集**（该目录持续累积，此处只列与本轮治理面改动直接相关者）：`adr-plan-delegate-engineering-session-review.md`（本篇 ADR 的 oracle/critic 审稿记录）、`subagent-oracle-intent-arch-review.md`、`subagent-oracle-intent-findings.md`、`metis-check-findings.md`、`review-profile-improvement-plan.md`、`context-builder-narrowing-spec.md`、`subagent-contract-e2e.md`、`subagent-contract-exemption-sampling.md`、`librarian-delegate-contradiction-review.md`（librarian 的 subagent 白名单放开：oracle → critic 审稿记录）。
 
-**变更史**：`docs/CHANGELOG.md`（记录 `MULTI-AGENT-DESIGN.md` 的历史增量，起于 v1.1；**本文件首版沉淀于 v2.19**，2026-11-13；本行撰写时最新为 v2.67 —— 2026-11-23 快照，后续版本以该文件为准）。
+**变更史**：`docs/CHANGELOG.md`（记录 `MULTI-AGENT-DESIGN.md` 的历史增量，起于 v1.1；**本文件首版沉淀于 v2.19**，2026-11-13；本行撰写时最新为 v2.68 —— 2026-11-23 快照，后续版本以该文件为准）。
 
 **守卫**：`tests/config-guards.test.ts`（权限矩阵 / 词表单源 / 六节三处一致 / 描述非 orphan / 本文档的**引用路径存在性**）、`tests/subagent-contract-core.test.ts`（契约纯逻辑）、`tests/delegate-async.test.ts`（派发主体 / 归属 / 优先级）。
 

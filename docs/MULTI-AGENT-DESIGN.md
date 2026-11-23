@@ -656,7 +656,7 @@ builder 实施中发现**计划层 / 决策层**问题时必须**停下并路由
 > **context-builder** **流程上只由 build 调用**（大 diff 搬运），且不委派任何 agent——它只做上下文组装。**权限拓扑上 build/plan 均可调**（`ADR-front-knowledge-capability` D2/D4 备案）⇒ **可达 ≠ 有消费者**：plan 没有 critic 下游（`:551`「plan agent 不需要审稿」、矩阵 plan→critic = ❌），故 `prompts/plan.md` 不再列出该路径。
 > **front 的 "→ build" 不是 agent 委派**：front 不调 subagent 工具，而是调 `delegate` 插件工具，由插件在进程内建立并驱动一个 agent=build 的工程 session（跨目录）。详见 `docs/dual-session-delegation.md`。
 > **front → 五个只读 agent（v2.5）**：front 可直接调用 `explore` / `librarian` / `oracle` / `metis` / `critic`，产物仅"回答"，不产生文件变更；发现需要变更必须改判实施性走 `delegate`。依据：`docs/adr/ADR-front-knowledge-capability.md`（前置条件是这五个 agent 的 shell 已按三段式加固）。
-> **plan-worker**：**权限上** build / plan 均可调（两者 `permission.subagent = "allow"` 全量；守卫 `tests/config-guards.test.ts` 的 AC4 断言「显式 `subagent: allow` 的 agent 集合 == {build, plan}」，且 `front` 的 subagent 白名单**不得含** plan-worker）；**流程上只由 plan 派**（`prompts/plan.md` 离线协作节：父 plan 会话用 `subagent` 派并行 node；`prompts/plan-worker.md` 的输入契约是父 plan 写的 `nodes/<id>/BRIEF.md`；`prompts/build.md` 未列该路径）⇒ **权限可达 ≠ 流程有消费者**，与 context-builder 同型。
+> **plan-worker**：**权限上** build / plan 均可调（两者 `permission.subagent = "allow"` 全量；守卫 `tests/config-guards.test.ts` 的 AC4 断言「显式**字符串** `subagent: "allow"` 的 agent 集合 == {build, plan}」（**字典**白名单的 agent 不计入 —— `librarian` 自 2026-11-23 起是 `{ "*": deny, explore: allow }` 的字典，见 AC4b），且 `front` 的 subagent 白名单**不得含** plan-worker）；**流程上只由 plan 派**（`prompts/plan.md` 离线协作节：父 plan 会话用 `subagent` 派并行 node；`prompts/plan-worker.md` 的输入契约是父 plan 写的 `nodes/<id>/BRIEF.md`；`prompts/build.md` 未列该路径）⇒ **权限可达 ≠ 流程有消费者**，与 context-builder 同型。
 > **本矩阵只回答「允许调谁」；「哪个角色产出必须过谁」见 §2.7 审查配对**（architect → oracle + critic / planner → metis / builder → verifier）。允许 ≠ 必须：矩阵是权限上限，配对是流程下限。 `prompts/build.md` 的**角色列表表**同理只列**自由裁量**可用的工具，**固定审查者是流程义务、不受该列限制**（`no-role` 除外）—— 角色表与配对表是流程下限的两个刻度，不是互相限制的两道闸。（此处指角色列表表；**本节 agent 矩阵的 ❌ 不在豁免范围**。）
 
 ### 3.2 委派触发规则
@@ -853,7 +853,7 @@ OpenCode v2 的 `permission` 可以是单个 action，也可以是「工具 → 
 | edit | deny | allow | ask（限 `.plans/` 等） | deny | deny | deny | deny | deny | deny | deny |
 | grep/glob/list | allow | allow | allow | allow | allow | allow | allow | allow | allow | allow |
 | bash | 只读白名单‡ | allow\* | 只读子集\*\* | 三段式‡‡ | 三段式+网络‡‡ | 三段式‡‡ | 三段式‡‡ | 只读子集\*\* | 三段式‡‡ | 只读子集\*\* |
-| task（subagent 委派） | 仅五个只读 agent† | allow | allow | deny | allow | deny | deny | deny | deny | deny |
+| task（subagent 委派） | 仅五个只读 agent† | allow | allow | deny | 仅 explore§§ | deny | deny | deny | deny | deny |
 | webfetch | allow | allow | allow | allow | allow | allow | allow | allow | deny | deny |
 | websearch | allow | allow | allow | deny | allow | allow | allow | allow | deny | deny |
 | question | allow | allow | allow | deny | deny | deny | deny | deny | deny | deny |
@@ -866,6 +866,7 @@ OpenCode v2 的 `permission` 可以是单个 action，也可以是「工具 → 
 
 ‡ front 的 shell 是**只读白名单**：`*: deny` 打头 + 47 条只读 allow + 尾部守卫 deny（重定向 / `--output` / `-fprint` / `sort -o` / `.env` 族 + **首参形态** `curl -o*` / `sort -o*` / `git --output*` 等，ADR D3.1 通则）；另加 `"* /*": deny` 禁止绝对路径（`external_directory` 不约束 shell，见 ADR D4.1）。规则真源与漂移闸门：`scripts/agent-guard-rules.ts` + `tests/config-guards.test.ts`
 † front 的 `subagent` 仅 allow `explore` / `librarian` / `oracle` / `metis` / `critic`，且 `"*": deny` **排在第一条**（顺序是硬约束，见 `ADR-front-knowledge-capability` D2.1；顺序错 → 工具被整体隐藏）；这五个 agent 的 shell 已按三段式加固，产物为"回答"、不产生文件变更。依据 `docs/adr/ADR-front-knowledge-capability.md`
+§§ `librarian` 的 `subagent` 仅 allow `explore`（本地代码搜索委派 —— `prompts/librarian.md:24` 的硬要求；`"*": deny` 同样排在第一条）；其余 agent（`general` / `oracle` / `metis` / `critic`）仍被拒 ⇒ **深度 2 写链仍封死**（依据 `docs/adr/ADR-front-knowledge-capability.md` D2/D3）。守卫：`tests/config-guards.test.ts` 的 AC4b
 ‡‡ 三段式 shell：`*: deny` 打头 + 只读白名单 + 尾部守卫 deny（v2.5 加固，见 ADR-front-knowledge-capability D3）；`librarian` 额外保留 `curl`/`wget`/`git clone`/`git ls-remote`，clone 仅 `/tmp/opencode/*`，且不套 `* /*` 绝对路径守卫
 § front 的 `external_directory` 按路径 allow：`/workspace/**` 与 `/home/ubuntu/.config/opencode/**`；其余路径 deny（不写 `"*": allow`）
 \* build 唯一可改代码的 agent；bash 默认 allow，但 19 条危险命令 ask（git push/reset --hard/clean/checkout --/restore/branch -D/stash drop/stash clear/rm -rf|fr|r|f/sudo）
@@ -1292,10 +1293,11 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
    - **v1.2 专项**：实测 critic 4 段式输出（§7.3 实测建议）
    - **v1.3 专项**：实测 `experimental.subagent_depth: 2` 是否真的限制嵌套委派深度
 
-2. **librarian `subagent` 权限验证**
-   - 当前 `librarian.permission.subagent = "allow"`
-   - 需实测 librarian 真的会调 `agent: "explore"`
-   - 必要时考虑改回 `"ask"`（方案 A）作为兜底
+2. **librarian `subagent` 权限验证** —— ✅ **2026-11-23 定案**（`openspec/changes/librarian-delegate-contradiction/`）
+   - 当前 `librarian.permission.subagent = { "*": "deny", "explore": "allow" }`（**字典白名单**，只放行 `explore`）
+   - 原取舍（全量 `"allow"` / 改回 `"ask"` 兜底）**作废**：全量 allow 会重开深度 2 写链（`ADR-front-knowledge-capability` D2/D3）；
+     `"ask"` 也无必要 —— `explore` 直接放行即可（这正是 `prompts/librarian.md:24` 的硬要求）
+   - 剩余项（**运行时冒烟**，人工）：在 librarian 会话里确认 `explore` 出现在可用 subagent 清单、`general` 不出现
 
 3. **codebase-memory-mcp 服务端 Cypher 写检查**
    - v1.3 全局放行了 `codebase-memory-mcp_query_graph`（见 §8.1 P0-2）

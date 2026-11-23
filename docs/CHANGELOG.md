@@ -23,6 +23,19 @@
 
 ---
 
+> **v2.68 librarian → explore 委派：机器层放开白名单（2026-11-23）**：
+> `librarian` 的 prompt（`prompts/librarian.md:19-25`）把「本地代码搜索 → 委派 `explore`」写成**核心职责**（`:23` 且明令「不要自己 `grep` / `glob` 整个项目」），而**机器层** `agent.librarian.permission.subagent` 是字符串 `"deny"` ⇒ **prompt 要求的动作被机器层禁止、prompt 又禁止它自搜** ⇒ librarian 面对本地代码搜索只剩「编造 / 静默跳过 / 报错」三条路（都不是设计意图）。文档层（§3.1 矩阵 `librarian → explore = ✅✅（本地搜索）`、§2.3 卡片「**只能**委派 `explore`」）与 prompt 同向 ⇒ 三层里只有机器层是异类。
+> **A1（放开机器层）**：`opencode.jsonc.opencode-go` 的 `agent.librarian.permission.subagent` 由 `"deny"` 改为**默认拒绝字典** `{ "*": "deny", "explore": "allow" }`（`"*"` 打头 —— last-match-wins 下放末尾会隐藏整个 `subagent` 工具；与 `front` 同形）。**深度 2 写链仍封死**：`general` / `oracle` / `metis` / `critic` 一律回落首条 `"*": deny`，新放行的 `explore` 自身 `subagent: "deny"` + `edit: deny` ⇒ 终止于只读叶（依据 `ADR-front-knowledge-capability` D2/D3；其 Verification `:252` 仍成立）。
+> **守卫**：`tests/config-guards.test.ts` 新增 **AC4b**（librarian 白名单闭集 `["*","explore"]` + 首键 / 兜底值 / 负向 forbidden 循环）与 **AC4c**（可派者**四桶**闭集：字符串 `"allow"`=={build,plan} / 字典白名单=={front,librarian} / 字符串受限==其余 7 个 / 无 `subagent` 键=={title}）⇒ 逐桶闭合，新增或改档任何 agent 都会红。
+> **文档回填**：§4.3 权限对比表 `librarian` 的 task 列由 `allow` 改为「仅 explore」+ 新脚注 `§§`；§3.1 旁注的 AC4 引用措辞同步；§8.2 P1 第 2 条旧 TODO（「当前 `librarian.permission.subagent = "allow"`」）改为定案后的真值并留「运行时冒烟」为人工项；`docs/SUBAGENT-ORCHESTRATION.md` §2.1 白名单行补 `librarian`。
+> ⚠ **已登记的偏差**：improvement 的 AC4「把既有 AC4 断言文案改成『字符串 allow』」**未按字面落地** —— 该断言所在 describe 被 `.rddf/rollback/plan-topics.json` 的 `edits[8].find`（5229 字符）**逐字节 pin**（改它 ⇒ `find_count` 漂移 ⇒ `tests/rollback-manifests.test.ts` 红 ⇒ 须同批改机制面清单并重跑该机制的 rollback drill）⇒ 语义等价覆盖由 **AC4c** 提供（更强），待 `rollback-manifest-find-narrowing` 落地后一次性搬运。
+> ⚠ **ADR 措辞失真已单独立项**：`ADR-front-knowledge-capability` D2/D3 的机制记法（`librarian.subagent: deny`）与新真值不符（**不变量仍成立**）⇒ 属 architect 的 ADR 增补记录，backlog 实体 `.rddf/improvements/adr-front-knowledge-librarian-whitelist-annotation.md`。
+> **验证**：`bun test tests/` = **1135 pass / 1 skip / 1 fail**（基线 1133/1/1；唯一红项前后相同 = `AC10④` 父篇 ADR commit 祖先判定，与本改动无关）；**判别力自证**：把配置临时改回 `"deny"` ⇒ AC4b + AC4c 同时红（已恢复）。
+> **审查**：oracle（`审查域: 治理面`）`治理面判定: PASS-WITH-NOTES`（3 条 finding 已当场处置：AC4c 增第 4 桶、tasks.md 改显式偏差登记、ADR follow-up 落 backlog 实体）→ critic 第 1 轮 `APPROVE`（`mergeable: yes`，**0 BLOCKER**；2 条 NITS 已闭合）。记录：`.rddf/reviews/librarian-delegate-contradiction-review.md`；验收：`.rddf/reviews/librarian-delegate-contradiction-verify.md`。
+
+
+---
+
 > **v2.67 治理面路径清单**配置化**（B1 机制落地，2026-11-23）**：
 > 治理面路径清单（哪路径算「治理面」⇒ 决定**写权限**归属）此前是**政策数据**却写在**机制代码** `lib/role-policy.ts` 里 ⇒ 归属与写权结构性反转：**architect 改不了「什么算治理面」这份清单**（其写集不含 `lib/**`），而 builder 凭 `**` 可以改 —— 2026-11-23 已实际发生一次排队卡死（为把 `opencode.json.*` 变体补进清单须由 builder 代改）。
 > 本批把清单迁到 `.rddf/config/governance-paths.json`（**政策数据**，与 `arch-docs.json` 同形，归 architect），机制代码只留**兜底默认**（`DEFAULT_GOVERNANCE_PATHS`）+ `resolveGovernancePaths()` 三态解析（**读根 = 治理根** ⇒ 项目仓放同名文件劫持不了判定；**每次判定重读** ⇒ 改完下一次写调用即生效，无需重启）。
