@@ -1,6 +1,6 @@
 # ac10-four-decision-anchor — 验收报告（verifier）
 
-> **判据来源**：① 用户裁决（2026-11-23「先修判据，再提交本 change」）；② `openspec/changes/ac10-four-decision-anchor/proposal.md` 的 `## 验收标准` 表（AC1–AC8）；③ 审查记录 `.rddf/reviews/ac10-four-decision-anchor-review.md`（oracle → critic）。
+> **判据来源**：① 用户裁决（2026-11-23「先修判据，再提交本 change」）；② `openspec/changes/archive/2026-11-23-ac10-four-decision-anchor/proposal.md` 的 `## 验收标准` 表（AC1–AC8）；③ 审查记录 `.rddf/reviews/ac10-four-decision-anchor-review.md`（oracle → critic）。
 > **已用轮次**：1。**判定**：**通过**（0 BLOCKER；3 条 SHOULD_FIX 已当场处置并复验）。
 > **证据要求**：每条 AC 至少 1 条工具证据。
 

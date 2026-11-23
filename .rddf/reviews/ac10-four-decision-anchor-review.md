@@ -1,6 +1,6 @@
 # ac10-four-decision-anchor — 治理面审查记录（oracle → critic）
 
-> **对象**：`openspec/changes/ac10-four-decision-anchor/`（守卫判据精化 + 机制面连带面）
+> **对象**：`openspec/changes/archive/2026-11-23-ac10-four-decision-anchor/`（守卫判据精化 + 机制面连带面）
 > **档位**：oracle `审查域: 治理面`（词表 = `治理面判定:`）→ critic `review_profile: build, arch`
 > **预算**：oracle 1 轮 + critic 1 轮（**0 BLOCKER** ⇒ 无需复审；复审额度未动用）
 > **结论**：oracle `PASS-WITH-NOTES` → critic `APPROVE_WITH_CONDITIONS`（`mergeable: yes` · `scope_exceeded: false` · **0 BLOCKER** · 3 SHOULD_FIX **已当场处置**）
@@ -11,7 +11,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 改动文件 | `tests/helpers/real-repo-git.ts`（可选第三参）· `tests/config-guards.test.ts`（AC10④ 判据 + 精度断言 + fixture 四态 + 命令形态增钉）· `.rddf/rollback/role-class-write-set.json`（**机制面**：三处 `find` + 撤 `last_drill`）· `.rddf/rollback/registry.json`（两条目退 `proving`）· `docs/test-authoring.md` §9 · `docs/CHANGELOG.md` v2.69 · 新建 `openspec/changes/ac10-four-decision-anchor/{proposal,tasks}.md` |
+| 改动文件 | `tests/helpers/real-repo-git.ts`（可选第三参）· `tests/config-guards.test.ts`（AC10④ 判据 + 精度断言 + fixture 四态 + 命令形态增钉）· `.rddf/rollback/role-class-write-set.json`（**机制面**：三处 `find` + 撤 `last_drill`）· `.rddf/rollback/registry.json`（两条目退 `proving`）· `docs/test-authoring.md` §9 · `docs/CHANGELOG.md` v2.69 · 新建 `openspec/changes/archive/2026-11-23-ac10-four-decision-anchor/{proposal,tasks}.md` |
 | 意图 | AC10④ 按**文件级**定位父篇 ⇒ 一次纯文档提交（`0f09b9c`）就让父篇「最后提交」比代码新 ⇒ 判红 ⇒ `bun test tests/` 退出非 0 ⇒ 工具层验证门 fail-closed ⇒ **本仓此后任何提交都被拒**（实测：`librarian-delegate-contradiction` 被拒）。本条把父篇侧定位收窄到**决策锚点**（D3 写集 roots 声明段的最后一次内容变更提交）⇒ 误报消除、判别力保留 |
 | 不在范围 | `prompts/**` · 任何 `docs/adr/**` · `lib/**` · `plugins/**` · AC10①–③（内容判据）· 归档 spec · 其余清单的宽 `find`（backlog `rollback-manifest-find-narrowing`） |
 

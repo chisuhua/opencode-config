@@ -1293,7 +1293,7 @@ OpenCode v2.2.5 **没有**原生的模型链配置：`agent.model` 是单值，s
    - **v1.2 专项**：实测 critic 4 段式输出（§7.3 实测建议）
    - **v1.3 专项**：实测 `experimental.subagent_depth: 2` 是否真的限制嵌套委派深度
 
-2. **librarian `subagent` 权限验证** —— ✅ **2026-11-23 定案**（`openspec/changes/librarian-delegate-contradiction/`）
+2. **librarian `subagent` 权限验证** —— ✅ **2026-11-23 定案**（`openspec/changes/archive/2026-11-23-librarian-delegate-contradiction/`）
    - 当前 `librarian.permission.subagent = { "*": "deny", "explore": "allow" }`（**字典白名单**，只放行 `explore`）
    - 原取舍（全量 `"allow"` / 改回 `"ask"` 兜底）**作废**：全量 allow 会重开深度 2 写链（`ADR-front-knowledge-capability` D2/D3）；
      `"ask"` 也无必要 —— `explore` 直接放行即可（这正是 `prompts/librarian.md:24` 的硬要求）

@@ -3,7 +3,7 @@
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。
 > ⚠ **本文件由 builder 按内置流程代写**（`rdd-planner` skill 的 canonical precondition 未满足：无 `.rddf/state/.arch-handoff.json`）⇒ **登记稿**，未经 planner / metis 流程；立项时须补齐 5 段审查与 AC 编号。
 > **来源**：`librarian-delegate-contradiction` 的 critic 第 1 轮 **NITS-1**（「登记有沉底风险 —— 归档前请确认该 follow-up 在 backlog 有实体条目承接」）+ oracle O-1（最小必要动作 = architect 补一条 ADR 增补记录）。
-> 关联 change：`openspec/changes/librarian-delegate-contradiction/`（**已实施**，2026-11-23；审查与验收记录：`.rddf/reviews/librarian-delegate-contradiction-review.md` / `.rddf/reviews/librarian-delegate-contradiction-verify.md`）。
+> 关联 change：`openspec/changes/archive/2026-11-23-librarian-delegate-contradiction/`（**已实施**，2026-11-23；审查与验收记录：`.rddf/reviews/librarian-delegate-contradiction-review.md` / `.rddf/reviews/librarian-delegate-contradiction-verify.md`）。
 > **归属**：ADR 行（`docs/adr/**` 按 `prompts/build.md` §治理面作用域表**不属**治理面）⇒ 落笔由 **architect** 承担。
 
 ## Why

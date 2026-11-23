@@ -2,7 +2,7 @@
 
 > **判据来源**（按优先级）：
 > ① 用户指令「请实施 librarian-delegate-contradiction」；
-> ② `openspec/changes/librarian-delegate-contradiction/proposal.md` 的 `## 验收标准` 表（AC1–AC8）；
+> ② `openspec/changes/archive/2026-11-23-librarian-delegate-contradiction/proposal.md` 的 `## 验收标准` 表（AC1–AC8）；
 > ③ 其正文真源 = `.rddf/improvements/librarian-delegate-contradiction.md` 的 `## Acceptance` 段；
 > ④ 审查记录 `.rddf/reviews/librarian-delegate-contradiction-review.md`（oracle → critic）。
 > **已用轮次**：1（验收轮）。**判定**：**通过**（含 1 处已登记的**偏差**（AC4）与 2 项不在本条内的剩余项）。

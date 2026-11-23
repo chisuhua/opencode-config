@@ -296,7 +296,7 @@ describe("front 的 subagent 门控顺序（ADR D2.1：顺序即语义）", () =
  *   `tests/rollback-manifests.test.ts` 红 ⇒ 要么改机制面清单（`.rddf/rollback/**` ⇒ 须同批重跑该机制的
  *   rollback drill 并回填 `last_drill`），要么等 `rollback-manifest-find-narrowing`（backlog）解 pin。
  *   两者都与本组断言无关 ⇒ 本组放**块外**（本文件共 67 处被回滚清单 pin，普查口径见
- *   `openspec/changes/librarian-delegate-contradiction/tasks.md` 的 T0d）。
+ *   `openspec/changes/archive/2026-11-23-librarian-delegate-contradiction/tasks.md` 的 T0d）。
  *
  * 为什么必须有：`prompts/librarian.md:24` 把「本地代码搜索 → 委派 `explore`」写成**核心职责**
  *   （`:23` 且明令「不要自己 `grep` / `glob` 整个项目」）⇒ 机器层若 deny 整个 subagent 工具，

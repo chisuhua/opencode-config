@@ -1,6 +1,6 @@
 # librarian-delegate-contradiction — 治理面审查记录（oracle → critic）
 
-> **对象**：`openspec/changes/librarian-delegate-contradiction/`（配置真源 + 守卫 + 文档投影）
+> **对象**：`openspec/changes/archive/2026-11-23-librarian-delegate-contradiction/`（配置真源 + 守卫 + 文档投影）
 > **档位**：oracle `审查域: 治理面`（词表 = `治理面判定:`）→ critic `review_profile: build, arch`
 > **预算**：oracle 1 轮 + critic 1 轮（critic 无 BLOCKER ⇒ 无需复审；**复审额度未动用**）
 > **结论**：oracle `PASS-WITH-NOTES` → critic `APPROVE`（`mergeable: yes` · `scope_exceeded: false` · **0 BLOCKER**）
@@ -11,7 +11,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 改动文件 | `opencode.jsonc.opencode-go`（配置真源）· `tests/config-guards.test.ts`（守卫）· `docs/MULTI-AGENT-DESIGN.md` · `docs/SUBAGENT-ORCHESTRATION.md`（文档投影）· 新建 `openspec/changes/librarian-delegate-contradiction/{proposal,tasks}.md` |
+| 改动文件 | `opencode.jsonc.opencode-go`（配置真源）· `tests/config-guards.test.ts`（守卫）· `docs/MULTI-AGENT-DESIGN.md` · `docs/SUBAGENT-ORCHESTRATION.md`（文档投影）· 新建 `openspec/changes/archive/2026-11-23-librarian-delegate-contradiction/{proposal,tasks}.md` |
 | 意图 | `librarian` 的 prompt 要求「本地代码搜索 → 委派 `explore`」，机器层却是 `subagent: "deny"` ⇒ prompt 要求的动作被机器层禁止、prompt 又禁止它自搜 ⇒ 只能编造 / 静默跳过 / 报错。**A1**：放开机器层为字典白名单 `{ "*": deny, explore: allow }`，让机器层追上 prompt 与文档 |
 | 不在范围 | `prompts/librarian.md`（improvement 已登记「已知残留」）· 已签批 ADR（属 architect）· 新增回滚清单（须先做 `rollback-manifest-find-narrowing`）· §3.1 矩阵填充语义（`delegation-matrix-fill-semantics`，P2，依赖本条） |
 
@@ -26,7 +26,7 @@
 | O-2 | 字典形态与 `front` 逐字同构（首条 `*: deny` + 末条具体 allow）⇒ last-match-wins 可见性语义无新增风险面 | **采纳**：AC4b 已钉首键 / 兜底值 / 闭集；`§§` 脚注写明「`"*": deny` 同样排在第一条」 | `tests/config-guards.test.ts` AC4b |
 | O-3 | 守卫对两类回归（改回字符串 `deny` / 放宽到 `general`）均真红，无恒绿面 | **采纳**：判别力自证已做（改回 `"deny"` ⇒ AC4b + AC4c 同时红） | 本文件 §3 |
 | O-4（观察 a） | AC4c 的三桶**不划分**全部 agent：若某 agent 从 `"deny"` 改成 `"ask"` 或新增字符串受限 agent，AC4c 会**静默放行** | **当场闭合**：AC4c 增第 4 桶「字符串受限（`deny`/`ask` …）」并给闭集（7 个）⇒ 静默放行面关闭 | `tests/config-guards.test.ts` AC4c（本次已改） |
-| O-5（观察 c） | `tasks.md` 曾把「AC4 文案已改」写成完成项，与产物不符 ⇒ 后续审计会误判「造假」 | **当场闭合**：tasks.md 的 T2 改为显式**偏差登记**（未按字面落地 + 原因 + 等价覆盖 + 后续动作）；`proposal.md` 的 AC4 行同步登记偏差 | `openspec/changes/librarian-delegate-contradiction/tasks.md` T2 |
+| O-5（观察 c） | `tasks.md` 曾把「AC4 文案已改」写成完成项，与产物不符 ⇒ 后续审计会误判「造假」 | **当场闭合**：tasks.md 的 T2 改为显式**偏差登记**（未按字面落地 + 原因 + 等价覆盖 + 后续动作）；`proposal.md` 的 AC4 行同步登记偏差 | `openspec/changes/archive/2026-11-23-librarian-delegate-contradiction/tasks.md` T2 |
 | O-6 | 人工项：运行时冒烟（librarian 会话内确认 `explore` 在可用清单、`general` 不在）—— 静态守卫覆盖不到 | **登记为人工剩余项**（`docs/MULTI-AGENT-DESIGN.md` §8.2 第 2 条末行 + 本文件 §4） | 同左 |
 
 ## 3. critic 结论与逐条处置

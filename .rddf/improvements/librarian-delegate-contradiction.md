@@ -4,7 +4,7 @@
 > 来源：治理面 P1 审查（`critic` 第 1 轮 focus 外发现，`scope_exceeded: true`）——
 > 记录见 `rdd-workflow` 仓 `.rddf/reviews/governance-p1-docs-2026-11-23.md` §三、§六-4
 > 与 `.rddf/reviews/docs-alignment-debt-audit-2026-11-23.md` §3.6。
-> 关联 change：**已实施** —— `openspec/changes/librarian-delegate-contradiction/`（2026-11-23；oracle → critic 双审通过，见 `.rddf/reviews/librarian-delegate-contradiction-review.md`；验收报告 `.rddf/reviews/librarian-delegate-contradiction-verify.md`）。
+> 关联 change：**已归档**（2026-11-23） —— `openspec/changes/archive/2026-11-23-librarian-delegate-contradiction/`（2026-11-23；oracle → critic 双审通过，见 `.rddf/reviews/librarian-delegate-contradiction-review.md`；验收报告 `.rddf/reviews/librarian-delegate-contradiction-verify.md`）。
 > ⚠ **实施偏差（登记）**：下方 AC 第 4 条「把 AC4 断言文案改成『**字符串** `"allow"`』」**未按字面落地** —— 该断言所在的 describe 被 `.rddf/rollback/plan-topics.json` 的 `edits[8].find`（5229 字符）**逐字节 pin** 住（改它 ⇒ `find_count` 漂移 ⇒ `tests/rollback-manifests.test.ts` 红 ⇒ 须同批改机制面清单并重跑该机制的 rollback drill）。**语义等价覆盖**由新增用例 **AC4c** 提供（可派者四桶闭集，比原判据更强）⇒ 待 `rollback-manifest-find-narrowing`（backlog）落地后再一次性搬运。
 > ⚠ **ADR 措辞同步已单独立项**（本条**不改**已签批 ADR）：`docs/adr/ADR-front-knowledge-capability.md` D2 `:69` / D3 `:139` 的机制记法失真（**不变量本身仍成立**）⇒ 属 architect 的 ADR 增补记录，backlog 实体：`.rddf/improvements/adr-front-knowledge-librarian-whitelist-annotation.md`。
 > planner 审查：**metis 1 轮**（2026-11-23，与其余 3 份同批）。已按其建议修订：
