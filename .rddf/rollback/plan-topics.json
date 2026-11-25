@@ -2,7 +2,7 @@
   "version": 1,
   "mechanism": "plan-topics",
   "adr": "docs/adr/ADR-plan-multi-session-collaboration.md",
-  "notes": "覆盖面 = ADR 回滚路径的三步：① 移除 `plan-worker` agent 与 `plan` 的两条 `edit` 放行（配置的**目标文件** `opencode.jsonc.opencode-go`）；② 删 `prompts/plan-worker.md` + 撤出「新增文件闸门」清单 + 移除 `GUARDED_AGENTS` 登记 + 移除守卫用例整块；③ **保留** `.rddf/plan-topics/**` 已落盘产物与 `.rddf/state/plan-sessions.json`（停止写入即可）。另含文档投影（`prompts/plan.md` 的整节与 capability 行 / `docs/MULTI-AGENT-DESIGN.md` 的计数·表行·卡片 / `docs/SUBAGENT-ORCHESTRATION.md` 的表行·§2.3）—— 不回退会留**悬空引用**（它们描述一个已不存在的 agent 与 checker）。⚠ 与 plan-topics 无关但被顺带引出的事实：`docs/MULTI-AGENT-DESIGN.md` 的 agent 计数是**手写**的，回退时须重算为 11（4 primary + 7 subagent），**不是**还原成引入前的旧值 10（那个值在引入时就已陈旧，漏算 `front`）。⚠ `scripts/check-upstream-anchors.sh` 的 P1–P6 是**上游语义锚点**（宿主 `subagent` / `Wildcard` 的行为），与本机制退役无关 ⇒ 保留。 另含一条对 `.rddf/rollback/registry.json` 的编辑：回滚时把本机制条目还原为「active + 无 watch[]」（机制退役后其清单与 ADR 仍在 ⇒ 条目须继续覆盖 ADR（M1），而 watch[] 指向已删文件 ⇒ 须撤除（proving 态会触发 M7 的存在性检查））。",
+  "notes": "覆盖面 = ADR 回滚路径的三步：① 移除 `plan-worker` agent 与 `plan` 的两条 `edit` 放行（配置的**目标文件** `opencode.jsonc.opencode-go`）；② 删 `prompts/plan-worker.md` + 撤出「新增文件闸门」清单 + 移除 `GUARDED_AGENTS` 登记 + 移除守卫用例整块；③ **保留** `.rddf/plan-topics/**` 已落盘产物与 `.rddf/state/plan-sessions.json`（停止写入即可）。另含文档投影（`prompts/plan.md` 的整节与 capability 行 / `docs/MULTI-AGENT-DESIGN.md` 的计数·表行·卡片 / `docs/SUBAGENT-ORCHESTRATION.md` 的表行·§2.3）—— 不回退会留**悬空引用**（它们描述一个已不存在的 agent 与 checker）。⚠ 与 plan-topics 无关但被顺带引出的事实：`docs/MULTI-AGENT-DESIGN.md` 的 agent 计数是**手写**的，回退时须重算为 11（4 primary + 7 subagent），**不是**还原成引入前的旧值 10（那个值在引入时就已陈旧，漏算 `front`）。⚠ `scripts/check-upstream-anchors.sh` 的 P1–P6 是**上游语义锚点**（宿主 `subagent` / `Wildcard` 的行为），与本机制退役无关 ⇒ 保留。 另含一条对 `.rddf/rollback/registry.json` 的编辑：回滚时把本机制条目还原为「active + 无 watch[]」（机制退役后其清单与 ADR 仍在 ⇒ 条目须继续覆盖 ADR（M1），而 watch[] 指向已删文件 ⇒ 须撤除（proving 态会触发 M7 的存在性检查））。 另含守卫 AC4c 的「字符串受限 agent 闭集」改写：回滚后 `plan-worker` agent 不存在 ⇒ 闭集少一项（否则回滚后套件红）。",
   "delete": [
     "lib/plan-topics.ts",
     "scripts/plan-topic-check.ts",
@@ -30,7 +30,7 @@
     },
     {
       "path": "prompts/plan.md",
-      "find": "edit: *.rddf/plan-topics/*, *.rddf/state/plan-sessions/*, .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md\n",
+      "find": "edit: *.rddf/plan-topics/*, *.rddf/state/plan-sessions/*, .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md",
       "replace": "edit: .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md"
     },
     {
@@ -147,6 +147,11 @@
       "path": ".rddf/rollback/registry.json",
       "find": "{\n      \"mechanism\": \"plan-topics\",\n      \"adr_primary\": \"docs/adr/ADR-plan-multi-session-collaboration.md\",\n      \"state\": \"proving\",\n      \"notes\": \"plan 侧多会话协作（plan-worker + topic checker）的退役脚本。\",\n      \"manifest_ref\": \"plan-topics\",\n      \"watch\": [\n        \"lib/plan-topics.ts\",\n        \"scripts/plan-topic-check.ts\",\n        \"prompts/plan-worker.md\"\n      ]\n    }",
       "replace": "{\n      \"mechanism\": \"plan-topics\",\n      \"adr_primary\": \"docs/adr/ADR-plan-multi-session-collaboration.md\",\n      \"state\": \"active\",\n      \"notes\": \"plan 侧多会话协作（plan-worker + topic checker）的退役脚本。\",\n      \"manifest_ref\": \"plan-topics\"\n    }"
+    },
+    {
+      "path": "tests/config-guards.test.ts",
+      "find": "    ).toEqual([\"context-builder\", \"critic\", \"explore\", \"general\", \"metis\", \"oracle\", \"plan-worker\"])",
+      "replace": "    ).toEqual([\"context-builder\", \"critic\", \"explore\", \"general\", \"metis\", \"oracle\"])"
     }
   ],
   "drill_env": {
