@@ -50,6 +50,7 @@
 | **归属** | **builder**（`.rddf/rollback/**` 不在 planner 写集；也不是架构文档 ⇒ builder 面） |
 | **判据** | ① `python3 -c "import json;print('plan-sessions.json' in json.load(open('.rddf/rollback/plan-topics.json'))['notes'])"` ⇒ `False`；② `bun test tests/` 仍全绿；③ `bun scripts/rollback-drill.ts` 的清单自检（该清单的 `planDrill` 仍可执行）；④ **补验记录落盘（critic SF-4）**：新出一份 `.rddf/reviews/plan-topics-d9-d10-d11-verify-f1-closure.md`（**原报告不回改**，本仓惯例）⇒ 引原 verify 报告编号 + 复跑命令 + 输出 ⇒ 「闭合 needs-revision」有**新的**可见证据（`.rddf/reviews/**` 属 builder 面，A1 归属本就 builder） |
 | **依赖 / 风险** | 无依赖；风险 = 改散文时误改 `edits[]`（⇒ 逐字节 diff 复核 `edits[]` 未变） |
+| **状态** | ✅ 2026-11-25 完成（commit `cb91be2`）：`notes` 已刷 + 补验记录 `.rddf/reviews/plan-topics-d9-d10-d11-verify-f1-closure.md` 落盘（原报告不回改）+ 按 V8 回填 `last_drill.content_hash` |
 
 ### A2 ｜ 改进池状态机读化 + 失效指针修正
 
@@ -72,6 +73,7 @@
 | **归属** | **builder**（`tests/**`；`tests/README.md` 亦 builder 面） |
 | **判据** | ① `E2E_BED_DIR=/nonexistent bun test tests/arch-docs-scope.test.ts` ⇒ **1 pass**（不再是 skip），输出含 `local-fallback`；② 床在时 ⇒ 1 pass 且输出含 `e2e-bed`；③ 变红演练：临时改坏脚本里一条断言 ⇒ 该用例红 ⇒ 恢复复绿；④ `bun test tests/` 全绿 |
 | **依赖 / 风险** | 无依赖；风险 = 本地兜底的项目形状与 e2e 真实 fixture 有细微差异 ⇒ 降级时必须**可见**（第 ② 条判据） |
+| **状态** | ✅ 2026-11-25 完成（commit `cb91be2`）：wrapper 总是执行 + 断言 `项目形状：e2e-bed|local-fallback` + 强制 `/nonexistent` 时仍 `PASS=64 FAIL=0`；`tests/README.md` 已同步 |
 
 ### A4 ｜ V25 并发子句进 CI（确定性编排，禁裸并发）
 
@@ -82,6 +84,7 @@
 | **归属** | **builder**（`tests/**`） |
 | **判据** | ① 新用例在 `bun test tests/` 中**连续跑 10 次全绿**（防 flaky）；② 断言 `attempts.length === 1` 且被拒方 exit ≠ 0；③ 变红演练：把 `scripts/plan-topic-check.ts` 的锁判据去掉（临时）⇒ 新用例红 ⇒ 恢复复绿；④ 既有 `plan-topics*` 用例零回归 |
 | **依赖 / 风险** | 无依赖；风险 = barrier 实现不当 ⇒ flaky ⇒ 判据第 ① 条（连跑 10 次）即为兜底 |
+| **状态** | ✅ 2026-11-25 完成（commit `cb91be2`）：`tests/fixtures/plan-claim-child.ts` + V25 并发用例；连跑 10 次全绿；变红演练两条 V25 用例均红 |
 
 ### A5 ｜ 登记订正：ADR 残留「已闭合」标注 + Verification 章导语（**走 architect ⇒ 另案，不进 A 批**）
 
@@ -124,6 +127,7 @@
 | **归属** | **builder**（`tests/**`；守卫落点建议 `tests/config-guards.test.ts` 的 plan-topics 块**之外**的新用例。⚠ **真实交互不是同文件冲突，而是「front-matter 行数 × AC20 的 15 行窗口」** —— 见判据 ③） |
 | **判据** | ① 祖父名单 22 份**逐条列名**且被断言冻结（改动名单 ⇒ 守卫红 ⇒ 只能通过给该文件补字段来减）；② 名单外的任一文件缺 `状态:` ⇒ 守卫红（**变红演练**：临时新建一份无字段的 improvement ⇒ 红 ⇒ 删掉复绿）；③ **联合断言（critic S5）**：新增文件的 `> **实施状态**` / `> **状态**` 引用行必须落在文件**前 15 行内**（= AC20 `isClosedImprovement()` 的窗口，`tests/config-guards.test.ts:3141`）⇒ 否则该文件日后被关闭时 AC20 判它「未关闭」而扫正文旧 token ⇒ **A6 绿、AC20 红**（两条判据无边界）；④ `bun test tests/` 全绿 + `bun test tests/config-guards.test.ts` 专项确认 AC20 未翻转；⑤ **落地时点断言（oracle Q4）**：A2→A6 窗口期内新增的 improvement 已带字段（防换人起草时守卫落地即红） |
 | **依赖 / 风险** | 依赖 A2（祖父名单的基线 = A2 之后的实际状态）⇒ **必须排在 A2 之后**；**change 落点 = A 批 change（`test-debt-cleanup-local`）**，A2 是其 change 外前置；风险 = 守卫太紧 ⇒ 新人写 improvement 忘了字段就被红 ⇒ 缓解：守卫的失败信息直接给出「补这两行」的提示；风险 = 与产品侧 C4 重复 ⇒ **互补不冲突**（本条管本仓纪律，产品侧管模板产出） |
+| **状态** | ✅ 2026-11-25 完成（commit `cb91be2`）：22 份祖父名单冻结 + 名单外缺字段红 + 已补未移出名单红 + 散文状态行 ≤15 行；双向变红演练均带名字断言 |
 
 ### C1–C4 ｜ 跨仓维护项（不阻塞本仓）
 
