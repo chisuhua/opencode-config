@@ -269,6 +269,6 @@
    - **oracle 已核安全面**：该文件无 front-matter、无 `> **实施状态**` 行 ⇒ 顶部加一行把状态行从 `:4` 挤到 `:5` ⇒ **仍在 AC20 的 15 行窗口内**。
    - ⚠ **oracle 修正了我写漏的一处**：**AC9 也是历史判据**（我只点名了 AC7 / AC13）⇒ 横幅须含 AC7 / **AC9** / AC13 三条。
    - ⇒ **最终形态（critic SF-3）：知会 + 否决口** —— 默认按上述形态执行；**你有异议即停**。不占决策位是因为「加注 ≠ 回改」有本仓先例，但这是该先例的**首次适用** ⇒ 给你否决权，而非 planner 默认自决。
-   - **归属（critic/oracle 订正）**：目标文件在 `.rddf/roadmap/**`（**不在 `improvements/`**）⇒ planner 写集覆盖；**不进 A 批**（A 批 = A1/A3/A4/A6）⇒ 与 A2 同批执行（同写集、同 planner 自办）。
+   - **归属（critic/oracle 订正 + 我复核）**：**目标文件是 `.rddf/improvements/plan-multi-session-collaboration.md`** —— 实测该文件含 **6 处** `plan-sessions.json` 且 **AC7/AC9/AC13 都在此**；`.rddf/roadmap/` 下同名的另一份**不含** AC7/AC9/AC13（11 处旧路径是另一件事，不在本项范围）⇒ planner 写集覆盖 `.rddf/improvements/**`；**不进 A 批**（A 批 = A1/A3/A4/A6）⇒ 与 A2 同批执行（同写集、同 planner 自办）。
 6. **SF-5（`docs/CHANGELOG.md` v2.75）** —— 用户自办，但**当前只活在 verify 报告里** ⇒ oracle 建议**列进路线图防丢** ⇒ 登记在此（§2 无独立任务项，随 A1 收尾一并提醒）。
 7. **`rddf feedback` 的 `resolution` 永久残留**（`feedback-20261113-001`；`rddf feedback` CLI **无 resolve 子命令** ⇒ 无 single-writer 途径）—— oracle 判为**次要**但建议登记进 backlog ⇒ 防下一批重新发现。
