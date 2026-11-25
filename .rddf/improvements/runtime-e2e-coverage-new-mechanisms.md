@@ -76,6 +76,7 @@
 
    ⚠ **零模型层的额外价值与它的 CI 前提（critic S2 修订）**：它们进 e2e 仓**默认套件**（`bats -r tests/`，零模型 67 条那一组）⇒ **本仓改 CLI 输出契约后，e2e 仓会报「新增失败」**。
    - **实况核对**（取代此前「无 CI」的假设）：e2e 仓**有** `.github/workflows/test.yml` —— 触发 = `push`（master/main）/ `pull_request` / `workflow_dispatch` / **nightly cron `0 2 * * *`**；跑 `bats tests/integration/ tests/_lib/` ⇒ 新增的 `test_plan_topics_cli.bats` **必须落在 `tests/integration/`**（落在 `tests/` 根下 CI 不会跑它）。
+   - ⚠ **实施后发现的 CI 缺口（2026-11-25 实测）**：该 workflow **只安装 `rdd-workflow`**（`install_testbed.sh --clone`），**既没有** opencode 配置仓（`OC_ROOT`，CLI 所在），**也没有装 `bun`** ⇒ 零模型用例在 CI 里会**显式 skip**（有原因、不假装通过），今天仍然**零判别力**。要兑现 L2 需在 workflow 增加两步：① `git clone <opencode 配置仓> ~/.config/opencode`；② 安装 bun。在此之前，零模型层的价值是 **L1（本地契约检查）** —— 改 `scripts/plan-topic-check.ts` 输出契约后本地立刻发现。
    - ⚠ **收益三层化（critic SF-1，已用 CI 实况核准）**：**L0 用例存在**（今天兑现）；**L1 本地可跑 + 可作 builder 的 CLI 契约检查**（今天兑现、成本≈0 ⇒ 足以支撑「现在批」）；**L2「CI 自动抓漂移」= 跟踪项**，前置 = **e2e 仓 CI 红清零**。实况（2026-11-25）：`gh run list` 近 5 次 nightly **全部 failure**；日志 `已知失败: 0 / 新增失败: 17`；根因 A = `origin/master` 的 `KNOWN_FAILURES.txt` **0 条有效条目**（8 条在**未推送**的本地 commit `073421b`）；根因 B = 另 **9 条真新增**（C1–C7、AC7-①/①b，性质未查明）⇒ **L2 今天不成立**，且 **C1 单靠迁移 8 条不足以修好**（还要推送基线 + 处置 9 条）。**L2 不进 B1 验收门**。
    - **跨仓漂移纪律**（本仓侧）：凡动 `scripts/plan-topic-check.ts` 输出契约的 change，其 AC 必须含「同步 e2e 期望」一步 —— 登记为**本仓 builder 的 AC 纪律**（不在本条范围，本条只提供被同步的对象）。
 
