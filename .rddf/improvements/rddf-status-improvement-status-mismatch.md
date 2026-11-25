@@ -1,3 +1,7 @@
+---
+状态: 未立项
+优先级: P2
+---
 # improvement: rddf-status-improvement-status-mismatch — `rddf status` 的 improvement 状态列失真
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。

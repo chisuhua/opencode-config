@@ -4,7 +4,7 @@
 > 来源：治理面 P1 审查（本轮**执行时被守卫抓到两次**）——
 > 记录见 `rdd-workflow` 仓 `.rddf/reviews/governance-p1-docs-2026-11-23.md` §三 SF-3 / §四
 > 与 `.rddf/reviews/docs-alignment-debt-audit-2026-11-23.md` §3.6。
-> 关联 change：**尚未立项**（`backlog: rollback-manifest-find-narrowing`）。
+> 关联 change：**已归档**（`openspec/changes/archive/2026-11-24-rollback-manifest-find-narrowing/`，2026-11-24）。
 > planner 审查：**metis 1 轮**（2026-11-23，与其余 3 份同批）。已按其建议修订：
 > **9 清单全量普查从 P1 剥离**为后续 check list（避免被体力活拖住）· 守卫加「`|` 起始行 ≤ 1」
 > 堵住「避开分隔行仍 pin 表」的绕过 · AC 去掉「不含任何与机制无关的行」这一开放判据 ·

@@ -2,6 +2,8 @@
 last_feedback_id: feedback-20261123-001
 last_feedback_at: '2026-11-23T11:04:35+00:00'
 feedback_status: noted
+状态: 已实施（2026-11-25）
+优先级: P2
 ---
 
 # improvement: role-write-set-machine-block

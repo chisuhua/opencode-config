@@ -1,3 +1,7 @@
+---
+状态: 待审查
+优先级: P2
+---
 # delegate-base-resolved-return — 把「实际用的基线 sha」放进返回值契约
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。

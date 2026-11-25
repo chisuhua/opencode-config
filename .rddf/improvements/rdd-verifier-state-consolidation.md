@@ -1,3 +1,7 @@
+---
+状态: 已归档（2026-11-14）
+优先级: P2
+---
 # rdd-verifier-state-consolidation — 产品侧：把 verifier 的状态文件收拢进 `verifier/` 子目录
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。

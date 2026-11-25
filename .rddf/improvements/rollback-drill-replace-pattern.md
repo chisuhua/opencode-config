@@ -1,3 +1,7 @@
+---
+状态: 已实施（2026-11-23）
+优先级: P3
+---
 # rollback-drill-replace-pattern — `planDrill` 的替换文本被 `String.replace` 模式解释
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。

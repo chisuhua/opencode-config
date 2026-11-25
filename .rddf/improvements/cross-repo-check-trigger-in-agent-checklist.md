@@ -1,3 +1,7 @@
+---
+状态: 未立项
+优先级: P2
+---
 # cross-repo-check-trigger-in-agent-checklist — 把「改了就跑」写进 agent 自查清单
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。

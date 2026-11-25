@@ -1,5 +1,5 @@
 ---
-状态: 待实施
+状态: 已实施（2026-11-25）
 优先级: P2
 ---
 
@@ -76,7 +76,7 @@ rollback-drill-replace-pattern               -      待讨论          -
    | `rddf-status-improvement-status-mismatch.md` | ❌ 未立项（跨仓） | `未立项` | `P2` |
    | `role-matrix-allow-deny-guard-design.md` | ❌ 设计草案（明写「先设计，不硬上弱断言」） | `规划输入` | `P3` |
 
-   ⇒ **净效果：pending 10 → 7**（3 条已完成项移出）+ 7 条真待办的 STATUS 列**不再是兜底「待讨论」**、PRI 列**不再是 `-`**。
+   ⇒ **净效果：pending 12 → 8**（3 条已完成项移出 + 本条自身标已实施）+ 7 条真待办的 STATUS 列**不再是兜底「待讨论」**、PRI 列**不再是 `-`**。⚠ 成稿时 pending 是 10；此后新增 2 份规划提案（本条 + `runtime-e2e-coverage-new-mechanisms`）⇒ **实测基线 12，落地后 8**（7 真待办 + 1 份待拍板的新提案）。
 
    ⚠ **写入形态的硬约束（4 行，不是 3 行）**：`---` / `状态: …` / `优先级: …` / `---`（**4 行**），置于文件最前；**目标文件已有 frontmatter 块时必须「合并键进既有块」**（如 `role-write-set-machine-block.md` 的块含 `feedback_status`）⇒ **禁止在最前新建第二块** —— 产品侧 `_parse_improvement_meta` 只读**第一个** `---` 块（`content.startswith("---\n")` + `content.find("\n---", 4)`）⇒ 新建第二块会把旧块降级成正文（`feedback_status` 消失 ⇒ 若有消费者即回归）。
    ⚠ **YAML 值形态**：**禁止半角冒号 + 空格**（如 `已实施: 2026-11-25`）⇒ 会炸 YAML ⇒ 触发 `_scan_meta_lines` 降级并记 `meta_parse_error`。日期一律用**全角括号**：`已归档（2026-11-14）`。
@@ -93,14 +93,14 @@ rollback-drill-replace-pattern               -      待讨论          -
 ## Acceptance
 
 - [ ] **第 0 步已先做**：本文件自身补了 front-matter（`状态: 已实施（<日期>）`）⇒ 否则下面所有 pending 计数断言的前提不成立
-- [ ] `rddf status` 的 improvement 区：`Total pending: 7`（= 上表 7 条真待办），且这 7 条的 STATUS 列**不是**「待讨论」、PRI 列**不是** `-`
+- [ ] `rddf status` 的 improvement 区：`Total pending: 8`（= 上表 7 条真待办 + `runtime-e2e-coverage-new-mechanisms`），且这 8 条的 STATUS 列**不是**「待讨论」、PRI 列**不是** `-`
 - [ ] 3 条已完成项（`rdd-verifier-state-consolidation` / `role-write-set-machine-block` / `rollback-drill-replace-pattern`）**不出现在** pending 区（产品侧 terminal 判定命中 ⇒ 跳过）
-- [ ] **词表硬断言**（不只看 `rddf status` 的输出）：用本机产品侧 lib 对**全部 10 个写入值**逐一断言 `classify_improvement_status()` 的返回值符合预期表 —— 3 条 `terminal == True`；7 条 `terminal == False` 且 `label` 分别为 `未立项`（×4）/ `待审查` / `部分闭合` / `规划输入`；**输出贴进完成证据**（`~/.agents/skills/rdd-workflow/_lib/dashboard/improvement_status.py`）
-- [ ] `grep -lE "^(status|状态):" .rddf/improvements/*.md` ⇒ **命中 ≥ 10**（3 已完成 + 7 真待办）
+- [ ] **词表硬断言**（不只看 `rddf status` 的输出）：用本机产品侧 lib 对**全部 10 个写入值**逐一断言 `classify_improvement_status()` 的返回值符合预期表 —— 3 条 `terminal == True`；7 条 `terminal == False` 且 `label` 分别为 `未立项`（×4）/ `待审查` / `部分闭合` / `规划输入`；**输出贴进完成证据**（`~/.agents/skills/rdd-workflow/_lib/dashboard/improvement_status.py`）。另有第 8 条 `runtime-e2e-coverage-new-mechanisms`（`状态: 待用户裁决`）⇒ `classify` 返回 `(False, "待用户裁决")`（`marker[:16]` 兜底）；非 terminal 即正确
+- [ ] `grep -lE "^(status|状态):" .rddf/improvements/*.md` ⇒ **命中 ≥ 12**（3 已完成 + 7 真待办 + 2 规划提案）
 - [ ] **frontmatter 形态断言**：① `role-write-set-machine-block.md` 仍含 `feedback_status` 键（合并而非新建第二块）；② 每个目标文件**只有一个** `---` 起块（`grep -c "^---$"` ⇒ 恰 2）
 - [ ] **散文状态行不动**：各目标文件 `grep -cE "^\s*>\s*\*\*(实施状态|状态)\*\*"` 的**计数不变**，且该引用行**行号变化 == frontmatter 行数（4）**、**仍在文件前 15 行内**
 - [ ] `rollback-manifest-find-narrowing.md` 的 change 指针指向 `openspec/changes/archive/2026-11-24-rollback-manifest-find-narrowing/`（与实际归档目录一致）
-- [ ] **变红演练（带名字断言）**：删掉 `rdd-verifier-state-consolidation.md` 的 front-matter ⇒ pending 由 7 变 8 **且新增条目名 == `rdd-verifier-state-consolidation`** ⇒ 恢复后 pending 回 7 且该条 label 复原 ⇒ 证明判据有判别力（只数数字会被「删错文件也能复绿」骗过）
+- [ ] **变红演练（带名字断言）**：删掉 `rdd-verifier-state-consolidation.md` 的 front-matter ⇒ pending 由 8 变 9 **且新增条目名 == `rdd-verifier-state-consolidation`** ⇒ 恢复后 pending 回 8 且该条 label 复原 ⇒ 证明判据有判别力（只数数字会被「删错文件也能复绿」骗过）
 - [ ] **变红演练的对象约束**：演练对象必须**不是**同名短路项（即删掉 front-matter 不影响 pending ⇒ 演练假失败）⇒ 本仓当前 3 条已完成项均无同名 archive 条目 ⇒ 安全
 - [ ] `bun test tests/` 全绿（其中 `tests/record-discipline.test.ts` 薄包装 `tests/verify_record_discipline.sh` ⇒ **C5「活文档指针不悬空」覆盖本条第 2 项的指针改动**；`tests/config-guards.test.ts` 的 **AC20** 覆盖 improvement 形态与「已关闭」判定 ⇒ 本条第 3 项的窗口约束由它兜底）
 - [ ] `bash scripts/check-upstream-anchors.sh` 全绿

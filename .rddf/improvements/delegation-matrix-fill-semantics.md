@@ -1,3 +1,7 @@
+---
+状态: 未立项
+优先级: P2
+---
 # improvement: delegation-matrix-fill-semantics
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。

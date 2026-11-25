@@ -1,3 +1,7 @@
+---
+状态: 未立项
+优先级: P3
+---
 # improvement: adr-front-knowledge-librarian-whitelist-annotation
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。

@@ -1,3 +1,5 @@
+> **2026-11-25（D5 修订）之后**，plan 会话状态为 `.rddf/state/plan-sessions/` **目录**形态；本文其余处按当时路径记述，其中 **AC7 / AC9 / AC13 为历史验收判据**（不回改）。
+
 # improvement: plan-multi-session-collaboration
 
 > 措辞说明：本文件是**改进提案**（`.rddf/improvements/`），不是 openspec proposal。

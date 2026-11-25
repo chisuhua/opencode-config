@@ -1,3 +1,7 @@
+---
+状态: 部分闭合（已闭合的判据 3 条，未实测 3 条）
+优先级: P1
+---
 # Improvement: front-agent-redesign（front agent 重设计实施路径）
 
 | 字段 | 值 |
