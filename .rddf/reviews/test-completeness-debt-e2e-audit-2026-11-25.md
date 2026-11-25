@@ -11,8 +11,8 @@
 | 问题 | 结论 | 一句话依据 |
 |---|---|---|
 | **测试是否完备** | **单测层完备且全绿；运行时层有 3 个开口** | `bun test tests/` = 1230 例（1229 pass / 1 skip / 0 fail，34 文件）；每个 `lib/*` / `plugins/*` 模块都有本地用例；**缺口**：`plan-topics`（本批 D9/D10/D11）、`model-fallback`、`push-gate` 三个运行面**无任何运行时 e2e**；另 `arch-docs-scope` 一族（64 条断言）**判别力依赖外部 fixture 床**，床不在即静默 skip |
-| **是否有债务清理** | **未清**（且债本身不可见） | 改进池 **32 条中 25 条指向已归档 change**（已完成的事仍挂在待办池）；债可见性本身是一个**已登记未修**的跨仓 improvement（`rddf-status-improvement-status-mismatch`）；本批验收另留 **1 项未闭合**（F-1）+ **5 项观察项**（SF-1…SF-5）；e2e 仓另有 **8 条 KNOWN_FAILURES** 与 **1 份自 2026-11-08 起未更新的跨仓缺口表**（其中 ≥2 条已在本仓闭合、1 条仍开放且无人认领） |
-| **rdd-workflow-e2e 端到端是否完备** | **契约层完备；能力层 / 对抗层缺位（按设计分期到 P1，未立项）** | 22 个 bats 文件 / 约 141 例；**零模型约 70 例默认进 CI**，**71 例真实运行时默认 skip**；e2e 仓自己的 ADR-0003 自陈「现有 e2e 几乎全是**契约测试**」；ADR-0005 的 **CI gate 属 P1 且未立项** ⇒ 今天只有「防回归」，没有「能力变好/变坏」的判据；本仓 5 个运行面 **0 例** |
+| **是否有债务清理** | **未清**（但**本仓可自行止血**，已验证） | 实测 `rddf status`：**pending 10 条，STATUS 全「待讨论」、PRI 全 `-`，其中 6 条其实已完成**（真正待办只有 4 条）；根因定位到产品侧 `collect_pending()` 只认「同名归档目录」+「front-matter `状态`」两条通路，而本仓 **0/32** 提供该字段、名字又常与 change 名不同 ⇒ **补 front-matter 即可让 pending 10 → 4（已用产品侧 `collect_pending` 在临时副本上实测通过）**；另有本批验收遗留 **1 项未闭合**（F-1）+ **5 项观察项**（SF-1…SF-5）、ADR 残留 #9/#11 已完成却未标闭合、e2e 仓 **8 条 KNOWN_FAILURES** 与 **1 份自 2026-11-08 起未更新的跨仓缺口表**（其中 ≥2 条已在本仓闭合、3 条仍开放且无人认领） |
+| **rdd-workflow-e2e 端到端是否完备** | **契约层完备；能力层 / 对抗层缺位（按设计分期到 P1，未立项）** | 22 个 bats 文件 / **143 例**（实跑）；**零模型 67 例默认跑全绿**，**68 例真实运行时默认 skip**，**8 条失败 = 已登记的已知失败**；e2e 仓自己的 ADR-0003 自陈「现有 e2e 几乎全是**契约测试**」；ADR-0005 的 **CI gate 属 P1 且未立项** ⇒ 今天只有「防回归」，没有「能力变好/变坏」的判据；本仓 5 个运行面 **0 例** |
 
 ---
 
@@ -26,7 +26,7 @@
 | **L1b 上游语义锚点** | `bash scripts/check-upstream-anchors.sh` | 30 个语义锚点 | ✅ 同上 | 完整（`OK（30/30）`） |
 | **L1c 守卫派生一致性** | `bun scripts/agent-guard-gen.ts --check` | 7 个 agent 的 shell 块 | 手动（未进 commit gate 的 `verify_commands`） | 完整 |
 | **L1d 记录纪律** | `tests/record-discipline.test.ts` + `verify_record_discipline.sh` | 7 条判据（C1–C7）+ `--selftest` 判别力自测 | 手动 | 完整 |
-| **L2 运行时（真实宿主 + 真实模型）** | 外部仓 `rdd-workflow-e2e` 的 bats | **71 例**（8 个文件门控） | ❌ **默认 skip**（需 `E2E_REAL_RUNTIME=1`） | 需真实模型额度 ⇒ 本机默认不可用 |
+| **L2 运行时（真实宿主 + 真实模型）** | 外部仓 `rdd-workflow-e2e` 的 bats | **68 例实跑 skip**（`@test` 口径 71；8 个文件门控） | ❌ **默认 skip**（需 `E2E_REAL_RUNTIME=1`） | 需真实模型额度 ⇒ 本机默认不可用 |
 | **L3 人工 e2e** | `.rddf/reviews/*e2e*.md`（8 份） | 手工取证 | ❌ | 一次性证据，**不可重跑** ⇒ 回归无保护 |
 | **L4 观测（无判据）** | e2e 仓 `harness/`（P0） | session DB 离线快照 + 指标 | 手动 | **只有指标、无阈值门禁**（ADR-0005 的 gate 属 P1，未立项） |
 
@@ -84,9 +84,38 @@
 
 ⇒ **清账是逐条手工做的一次性动作，没有机制**；下一批新增的 8 条改进（本次 32 条中大部分）又落回「已完成但没标」的状态。
 
-**根因（已登记）**：`.rddf/improvements/rddf-status-improvement-status-mismatch.md` 实测 `rddf status` 的 improvement 区：`Total pending: 9`（其中 2 项已终结）、STATUS 列全「待讨论」（连今天刚标「已实施」的和 8 项已归档的都显示「待讨论」）、PRI 列全 `-`。
-⚠ **该条判定逻辑在产品侧仓**（`_lib/dashboard/improvement_status.py`）⇒ **跨仓，不属本仓**；本仓侧只能「加 frontmatter 止血」或登记。
-⇒ **本仓可做的**（低成本、纯本地）：给 25 条已归档 improvement 补**统一的 frontmatter 状态字段**（如 `status: implemented` + `archived_change: <路径>`），让 `rddf status` 至少能读到事实（该 improvement 的验收段里已写明「判断依据是判据来源 §1」等）。
+**根因（已定位到机制，且**本仓可自行止血**）**：
+产品侧 `_lib/dashboard/__init__.py::collect_pending()` 的「已归档 ⇒ 不是待办」判定只有**两条**通路：
+1. **同名短路** —— improvement 文件名命中 `openspec/changes/archive/<date>-<name>/` 的 `<name>` ⇒ 跳过；
+2. **front-matter `状态` 字段** —— `read_improvement_entries` 归一 `status`/`状态`、`priority`/`优先级`、`phase`/`阶段`、`category`/`分类`、`source`/`来源`；`classify_improvement_status()` 按**前导标记**分类（`已归档`/`已完成`/`已实施`/`archived`/`implemented`… ⇒ terminal ⇒ 不进 pending；空 ⇒ 兜底「待讨论」）。
+
+⇒ **本仓两条都不成立**：① improvement 名与归档 change 名**经常不同**（`adr-front-knowledge-librarian-whitelist-annotation` ↔ `2026-11-23-librarian-delegate-contradiction`；`delegate-base-resolved-return` ↔ `2026-11-19-delegate-base-channel`；`cross-repo-check-trigger-in-agent-checklist` ↔ `2026-11-16-cross-repo-workspace-check`；`rdd-verifier-state-consolidation` ↔ `2026-11-14-consolidate-verifier-state`）；② **本仓 0 / 32 个 improvement 带 front-matter `状态` 字段**（`grep -l "^状态:" .rddf/improvements/*.md` ⇒ 0；7 个文件有 YAML frontmatter 但只含 `feedback_status`）。
+
+**实测（本机 `rddf status`）**：
+```
+📋 Improvement proposals
+   Total pending: 10
+NAME                                         PRI    STATUS       PHASE
+adr-front-knowledge-librarian-whitelist-anno -      待讨论          -
+cross-repo-check-trigger-in-agent-checklist  -      待讨论          -
+delegate-base-resolved-return                -      待讨论          -
+delegation-matrix-fill-semantics             -      待讨论          -
+front-agent-redesign                         -      待讨论          -
+rdd-verifier-state-consolidation             -      待讨论          -
+rddf-status-improvement-status-mismatch      -      待讨论          -
+role-matrix-allow-deny-guard-design          -      待讨论          -
+role-write-set-machine-block                 -      待讨论          -
+rollback-drill-replace-pattern               -      待讨论          -
+```
+⇒ **10 条待办里 6 条其实已完成**（4 条 = 名字不匹配的已归档项；2 条 = `role-write-set-machine-block` / `rollback-drill-replace-pattern` 实现已完成但未登记）⇒ 真正待办只有 **4 条**。
+
+**止血验证（只读实验，不改仓库）**：把 `.rddf/improvements/` 复制到临时目录，给那 6 条已完成的加 YAML front-matter（`status: 已归档（YYYY-MM-DD）` + `priority: P2`），再用产品侧 `collect_pending()` 读：
+```
+补 front-matter 前：pending=32  errors=0   （合成目录里没有 archive 目录 ⇒ 同名短路不生效 ⇒ 全显「待讨论」）
+补 front-matter 后：pending=26  errors=0   （6 条已完成项被移出 pending）
+```
+⇒ **补 front-matter 就能让「已完成的事」离开待办池**，**不需要改产品仓**（产品侧的分类器与别名已就位，缺的是本仓的数据）。
+⚠ 前提：本仓的 5 段散文形态与 frontmatter 并存时，**`status` 前导标记必须命中 terminal 词表**（`已归档`/`已完成`/`已实施`/`archived`/`implemented`…）否则会被兜底成「待讨论」。
 
 ### 2.2 本批（D9/D10/D11 + D5）验收遗留
 
@@ -117,6 +146,7 @@
 | **KNOWN_FAILURES** | **8 条**，全部因上游 `rdd-workflow` 退役 `guide` skill（`rddf_session_hook_poll_events` 已移除）⇒ `command not found` | `tests/KNOWN_FAILURES.txt`（AC-G1/AC-G2/AC-G3/REAL-2P-1/REAL-2P-2/AC-5/AC-6a/AC-6b）｜归因说明：「在 pristine HEAD 树（`git archive HEAD`）上可复现，与 harness/ 新增代码无关」 |
 | **跨仓缺口表** | **9 条**（opencode 仓归属），文档日期 **2026-11-06 / 最后修改 2026-11-08** ⇒ 距今 **17 天 / 本仓 347 个提交**未复核 | `docs/known-gaps-and-ownership.md`｜抽样复核：**#1 并发写盘**已由本仓 `tests/role-lease-claims.test.ts:283`「两子进程并发 acquire ⇒ 恰好一方成功（barrier 真并发）」闭合 ⇒ **表未更新**；**#5 `unknown` 语义**已由 `tests/delegate-tool.test.ts:519` 闭合 ⇒ **表未更新**；**#4 `failed`/`interrupted`**、**#6 scope 只约束 edit 类目**、**#7 pair 过期清理**（`lib/delegate-core.ts` 无淘汰策略）**仍开放** |
 | **README 计数漂移** | README 表格写 front_delegate **26**（实际 `@test` 25）· stage_guide **6**（实际 7） | `README.md:56-59` vs `grep -c "^@test"` |
+| **文件内自述漂移** | `test_class_scope_runtime.bats` 头注写「E2E_REAL_RUNTIME=1 → **4 条**用例真正执行」，实际该文件有 **7** 条（CS-1…CS-7） | `tests/integration/test_class_scope_runtime.bats:9` vs `grep -n "^@test"` |
 
 **旁证：产品侧 `rdd-workflow` 的 known-failure 面**（本轮顺带清点，未全量跑其套件）：
 `~/.agents/skills/rdd-workflow/tests/KNOWN_FAILURES.txt` 历史登记过 **28（2026-08-28）+ 19（2026-08-25）** 条 bats 预存失败，**当前只剩 2 条**（`env-bootstrap --help` 只渲染 4 个 flag ⇒ 跟踪 `feat-rdd-env-bootstrap-help-audit`；`mark_approved_completed.sh` 二次调用覆盖 completion date ⇒ 跟踪 `feat-rdd-builder-idempotency-audit (TBD)`）⇒ 产品侧的「预存失败债」基本已清，只剩 2 条且各有跟踪项；
@@ -132,8 +162,8 @@
 |---|---|---|
 | bats 文件 | **22**（`tests/integration/` 18 + `tests/_lib/` 4） | `find tests -name "*.bats"` |
 | `@test` 总数 | **约 141**（integration **129** + `_lib` 12） | 逐文件 `grep -c "^@test"`：front_delegate 25 · evidence_discipline 23 · subagent_contract 11 · role_gate 8 · stage_guide 7 · independent_build 7 · full_workflow 7 · class_scope 7 · rddf_cli 6 · oracle_intent 6 · install_global 6 · external_smoke 5 · role_class 4 · guide_polling 3 · two_owner 2 · vocab 2 · commit_gate 2 |
-| **需真实运行时（默认 skip）** | **71**（8 个文件：`E2E_REAL_RUNTIME=1` 门控）—— front_delegate 25 · subagent_contract 11 · role_gate 8 · independent_build 7 · class_scope 7 · oracle_intent_gate 6 · role_class 4 · commit_gate 2 | `grep -rl E2E_REAL_RUNTIME tests/integration/*.bats` ⇒ 9 个文件（其中 `independent_build_session_vocab.bats` **不**随门控跳过 ⇒ 实算 8 个） |
-| **零模型（默认跑）** | **约 70**（integration 余下 58 + `_lib` 12） | evidence_discipline 23 · full_workflow 7 · stage_guide 7 · rddf_cli 6 · install_global 6 · external_smoke 5 · guide_polling 3 · two_owner 2 · vocab 2 · `_lib` 12 |
+| **需真实运行时（默认 skip）** | **68**（实跑 skip 计数；8 个文件走 `E2E_REAL_RUNTIME=1` 门控；`@test` 计数口径为 71，差 3 条是门控粒度差异）—— front_delegate 25 · subagent_contract 11 · role_gate 8 · independent_build 7 · class_scope 7 · oracle_intent_gate 6 · role_class 4 · commit_gate 2 | `grep -rl E2E_REAL_RUNTIME tests/integration/*.bats` ⇒ 9 个文件（其中 `independent_build_session_vocab.bats` **不**随门控跳过 ⇒ 实算 8 个） |
+| **零模型（默认跑）** | **67 条真跑全绿**（实跑计数；integration 55 + `_lib` 12） | evidence_discipline 23 · full_workflow 7 · stage_guide 7 · rddf_cli 6 · install_global 6 · external_smoke 5 · guide_polling 3 · two_owner 2 · vocab 2 · `_lib` 12 |
 | ⚠ README 自身的计数 | e2e 仓 README 写「Plus **58** real-runtime cases」并只列 6 个文件 ⇒ **漏计** `class_scope` 7 + `oracle_intent_gate` 6（实算 71） | `README.md:68` vs 逐文件 `@test` 计数 |
 | 被测对象 | **产品侧** = `$HOME/.agents/skills/rdd-workflow`（`RDD_WORKFLOW_REPO`）；**本仓侧** = `$HOME/.config/opencode`（`OC_ROOT` / `TARGET_REPO` / `SC_SRC`）⇒ **测的是本机活仓**，改动即时生效 | `tests/test_helper.bash:20-24` + `test_role_gate_runtime.bats:48` `test_evidence_discipline.bats:34` `test_subagent_contract_runtime.bats:101` |
 | 本仓侧覆盖面 | 角色感知写门（8）· commit 验证门（2）· subagent 输入契约（11）· front 委派面（26）· 派发能力类边界（4）· 独立 build 会话（7）· oracle 意图闸门（6）· 能力面写集 + verifier 取证不可用（7）· 证据纪律（23） | 逐 bats 文件头注 |
@@ -161,11 +191,24 @@
 | **ADR-0005**（度量、CI gate 与版本 pin） | **Proposed** | 指标公式**写死并版本钉住**（`METRICS_VERSION`，改公式须升版本）；但 **CI gate 属 P1**（`backlog: harness-p1`，**未立项**）⇒ 今天**只有指标、没有阈值门禁**；P0 实测三条指标回写（未知率 / 错误类别分布 / 执行失败率）**未经 critic 复审**（ADR 自陈） |
 | **ADR-0001/0002/0004/0006** | Proposed | 数据面 / trace-outcome 契约 / RSI 写边界 / 评测隔离契约 —— 均**未立项** |
 
-⇒ **结论**：e2e 仓的**完备性是分期的**。今天的套件在**契约层**是完备的（22 文件 / ~141 例 / 零模型约 70 例默认进 CI）；**能力层与对抗层尚不存在**，且 P1（评测集 + CI gate）**未立项** ⇒ 「agent 变好还是变坏」这个问题**当前无法回答**。
+⇒ **结论**：e2e 仓的**完备性是分期的**。今天的套件在**契约层**是完备的（22 文件 / 143 例实跑：67 绿 + 68 跳过 + 8 条已知失败，零新增回归）；**能力层与对抗层尚不存在**，且 P1（评测集 + CI gate）**未立项** ⇒ 「agent 变好还是变坏」这个问题**当前无法回答**。
 
 ### 3.4 本轮实跑（默认模式）
 
-（见 §6 实跑记录）
+```
+$ cd /workspace/main/rdd-workflow-e2e && RDD_WORKFLOW_REPO=$HOME/.agents/skills/rdd-workflow bats -r tests/
+1..143
+… 67 条真跑全过 … 68 条 # skip（E2E_REAL_RUNTIME 门控）…
+not ok 82  AC-G1     not ok 83  AC-G2     not ok 84  AC-G3
+not ok 112 REAL-2P-1 not ok 113 REAL-2P-2
+not ok 130 AC-5      not ok 131 AC-6a    not ok 132 AC-6b
+（根因均为：bash: rddf_session_hook_poll_events: command not found
+          / skills/guide/scripts/guide_entry.sh: No such file or directory）
+exit=1
+```
+
+⇒ **失败集 == `tests/KNOWN_FAILURES.txt` 登记的 8 条，一一对应 ⇒ 零新增回归**；套件**当前可用**（67 条零模型用例全绿）；exit 1 仅因已知失败在场。
+⇒ 真实运行时层（68 条）本轮**未跑**（需真实模型 + 真实宿主）⇒ 该层的当前状态**本轮无新证据**（历史实跑证据见 e2e 仓 README 与本仓 `.rddf/reviews/*-e2e*.md`）。
 
 ---
 
@@ -183,11 +226,11 @@
 | 档 | # | 建议 | 成本 |
 |---|---|---|---|
 | **本仓可独立做** | S-1 | **补 F-1**（回滚清单 `notes` 的旧路径，一行）⇒ 本批从 `needs-revision` 转 `pass` | 1 行 + 一次 `bun test tests/` |
-| | S-2 | **改进池清账**：给 25 条已归档 improvement 补统一 frontmatter（`status: implemented` + `archived_change:`），并修 `rollback-manifest-find-narrowing` 的失效指针（正文写「尚未立项」但 change 已归档）⇒ 债立刻可见 | 25 个文件的机械小改（可脚本化） |
+| | S-2 | **改进池清账（本仓可独立做，已验证可行）**：给那 6 条「已完成却仍挂在待办池」的 improvement 补 YAML front-matter（`status: 已归档（YYYY-MM-DD）` + `priority: P2`）⇒ `rddf status` 的 pending **10 → 4**（只剩真待办的 `delegation-matrix-fill-semantics` / `front-agent-redesign` / `rddf-status-improvement-status-mismatch` / `role-matrix-allow-deny-guard-design`）；顺带修 `rollback-manifest-find-narrowing` 的失效指针（正文写「尚未立项」但 change 已归档 2026-11-24）⇒ 债立刻可见 | 6 个文件的 front-matter（各 3 行）+ 1 处指针 |
 | | S-3 | **SF-1**：把 V25 的并发子句按 ADR 要求做成**确定性编排**用例进 CI（编排层预置锁 + 一次性放行，避免裸并发 flaky） | 1 个用例 + 1 个 fixture 助手 |
 | | S-4 | **SF-3 / ADR 残留 #9 / #11**：在 ADR 残留章标「已由 D9/D10/D11 批闭合」⇒ 残留清单不骗人 | ADR 2 行（architect 面） |
 | | S-5 | **G-1**：`arch-docs-scope` 一族的「床不在 ⇒ 静默 skip」改成**可见信号**（至少在 `bun test` 输出里打一行「床缺失 ⇒ 本族零判别力」，或让 commit gate 的 `verify_commands` 显式检查床） | 小（测试文件 + commit-gate 声明） |
-| **需跨仓**（产品侧 `rdd-workflow`） | S-6 | **债可见性**：修 `_lib/dashboard/improvement_status.py`（`rddf status` 的 improvement 状态列）⇒ 已是 `backlog: rddf-status-improvement-status-mismatch`，等立项 | 跨仓 change |
+| **需跨仓**（产品侧 `rdd-workflow`） | S-6 | **债可见性的产品侧增强**（可选，不是 S-2 的前提）：`collect_pending` 目前只认「同名归档目录」+「front-matter `状态`」⇒ 若希望**零 front-matter 也能判**，需产品侧加一条「关联 change 已归档 ⇒ 视为 terminal」的解析（读 improvement 正文里的 change 指针）⇒ 属 `rddf-status-improvement-status-mismatch` 的跨仓立项内容 | 跨仓 change（**不阻塞 S-2**） |
 | | S-7 | **e2e 仓 P1**：`harness-p1`（CI gate + capability 集 ≥30 条）+ 把 8 条 KNOWN_FAILURES 迁到新推荐器实现路径 | 跨仓 change |
 | | S-8 | **e2e 仓跨仓缺口表刷新**（2026-11-08 ⇒ 今日）：把已闭合的 #1 / #5 标闭合，把仍开放的 #4 / #6 / #7 的归属写清（#4/#6/#7 归本仓） | 跨仓文档小改 |
 | **需你拍板** | S-9 | 本批 D9/D10/D11 是否补**运行时 e2e**（真 plan 会话派真 plan-worker 的 L2 用例）？成本 = 真实模型额度 + e2e 仓新文件；不补 = 这套机制永远只有单测保护 | 决策 |
@@ -203,12 +246,13 @@
 | `bun test tests/arch-docs-scope.test.ts` | 1 pass（14.83s）—— 床在本机 ⇒ 该族**有**判别力 |
 | `bash scripts/check-upstream-anchors.sh` | `RESULT: OK（30/30）` |
 | `bun scripts/agent-guard-gen.ts --check` | `OK：7 个 agent 的 shell 块与规则真源一致` |
-| `cd /workspace/main/rdd-workflow-e2e && RDD_WORKFLOW_REPO=$HOME/.agents/skills/rdd-workflow bats -r tests/` | 见下（BATS-RUN） |
+| `rddf status`（本仓） | pending **10** 条，STATUS 列全「待讨论」、PRI 列全 `-`（其中 **6 条已完成**）⇒ 见 §2.1 |
+| `cd /workspace/main/rdd-workflow-e2e && RDD_WORKFLOW_REPO=$HOME/.agents/skills/rdd-workflow bats -r tests/` | **143 例**：**67 真跑全过** + **68 跳过**（`E2E_REAL_RUNTIME` 门控）+ **8 失败** ⇒ **8 条失败与 `tests/KNOWN_FAILURES.txt` 登记的 8 条逐一对应**（AC-G1 / AC-G2 / AC-G3 / REAL-2P-1 / REAL-2P-2 / AC-5 / AC-6a / AC-6b），根因同为**上游 `rdd-workflow` 退役 `guide` skill**（`rddf_session_hook_poll_events: command not found` / `skills/guide/scripts/guide_entry.sh: No such file or directory`）⇒ **零新增回归**；bats exit 1（已知失败在场） |
 
 ---
 
 ## 7. 未取证 / 不在本轮范围
 
-- **L2 真实运行时 71 例**：需真实模型 + 真实宿主（`E2E_REAL_RUNTIME=1`）⇒ 本轮**未跑**（模型额度 + 宿主行为）；本仓侧的历史实跑证据见 e2e 仓 README 与 `.rddf/reviews/*-e2e*.md`。
+- **L2 真实运行时 68 例**：需真实模型 + 真实宿主（`E2E_REAL_RUNTIME=1`）⇒ 本轮**未跑**（模型额度 + 宿主行为）；本仓侧的历史实跑证据见 e2e 仓 README 与 `.rddf/reviews/*-e2e*.md`。
 - **`rdd-workflow` 产品侧的单测/集成**（`~/.agents/skills/rdd-workflow/tests/`，含 `KNOWN_FAILURES.txt` / `KNOWN_PYTHON_FAILURES.txt` / `KNOWN_UNEVALUATED.txt` 三份基线）：本轮**未跑**（本仓无 `rddf` CI 接线）⇒ 产品侧的债面**未清点**（只清点了 e2e 仓的 KNOWN_FAILURES）。
 - **本批 V16–V36 的运行时面**：见 `.rddf/reviews/plan-topics-d9-d10-d11-verify.md`（单测 + verifier 探针）；**人工 e2e 缺口**（V11 / V12）未补。
