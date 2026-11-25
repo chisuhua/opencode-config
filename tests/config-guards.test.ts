@@ -4601,7 +4601,9 @@ describe("plan 侧多会话协作：plan-worker 与协作区", () => {
     expect(Object.keys(edit)[0]).toBe("*")
     const keys = Object.keys(edit)
     expect(keys.indexOf("*.rddf/plan-topics/*")).toBeGreaterThan(0)
-    expect(keys.indexOf("*.rddf/state/plan-sessions.json")).toBeGreaterThan(0)
+    // D5 修订：运行态绑定改为**每会话一文件** ⇒ 白名单是目录通配
+    expect(keys.indexOf("*.rddf/state/plan-sessions/*")).toBeGreaterThan(0)
+    expect(keys).not.toContain("*.rddf/state/plan-sessions.json")
   })
 
   test("AC9：.gitignore 双向 + node id 反向（fixture 仓，不触真实仓）", () => {
@@ -4610,7 +4612,7 @@ describe("plan 侧多会话协作：plan-worker 与协作区", () => {
       execFileSync("git", ["init", "-q"], { cwd: fixture })
       writeFileSync(path.join(fixture, ".gitignore"), readFileSync(path.join(import.meta.dir, "..", ".gitignore"), "utf8"))
       for (const rel of [
-        ".rddf/state/plan-sessions.json",
+        ".rddf/state/plan-sessions/ses_x.json",
         ".rddf/plan-topics/demo/nodes/a1/RESULT.md",
         ".rddf/plan-topics/demo/nodes/foo.lock/RESULT.md",
         ".rddf/plan-topics/demo/nodes/x.bak/RESULT.md",
@@ -4628,7 +4630,9 @@ describe("plan 侧多会话协作：plan-worker 与协作区", () => {
           return (e as { status?: number }).status ?? 1
         }
       }
-      expect(checkIgnore(".rddf/state/plan-sessions.json"), "运行态绑定必须被 gitignore").toBe(0)
+      expect(checkIgnore(".rddf/state/plan-sessions/ses_x.json"), "运行态绑定必须被 gitignore").toBe(0)
+      // D5 修订：旧单文件形态**不再**被 ignore（防形态回退）
+      expect(checkIgnore(".rddf/state/plan-sessions.json"), "旧单文件形态应已退出 gitignore（每会话一文件）").not.toBe(0)
       expect(checkIgnore(".rddf/plan-topics/demo/nodes/a1/RESULT.md"), "协作产物不得被 gitignore").not.toBe(0)
       // 黑名单 node id 会被既有 .gitignore 规则误伤 ⇒ 字符集必须排除
       expect(checkIgnore(".rddf/plan-topics/demo/nodes/foo.lock/RESULT.md"), ".lock 结尾会被 .rddf/**/*.lock 误伤").toBe(0)

@@ -138,7 +138,7 @@ bun scripts/rollback-registry.ts --json     # 机读
 
 - `tests/commit-gate-d9-registration.test.ts`（commit-gate 的 V10 载体）与 `.rddf/commit-gate.json`（门禁声明）—— 各有守卫断言其存在；
 - `docs/MULTI-AGENT-DESIGN.md` 的 §2.8.8（D9 索引段）与 §3.4 的 **D9⑯ 指针行** —— 载体用例以「索引段之外仍提到 D9⑯」为前提。
-- `.rddf/plan-topics/**` / `.rddf/state/plan-sessions.json`（plan-topics）—— 已落盘的协作文档是版本化产物，退役后停止写入即可。
+- `.rddf/plan-topics/**` / `.rddf/state/plan-sessions/`（每会话一文件；plan-topics）—— 已落盘的协作文档是版本化产物，退役后停止写入即可。
 
 ## 机制 ⇒ ADR **并不成立**（实测）
 

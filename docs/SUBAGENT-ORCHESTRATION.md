@@ -58,10 +58,12 @@
 
 - **会话树 / 并行 / 完成唤醒 / 续接** 全部是宿主 `subagent` 的内建能力（`parentID` + 完成合成消息 + `sessionID` 续接）⇒ **不新建派发通道**，不占 delegate 的 `workRoot` 单槽。
 - **协作区**：`.rddf/plan-topics/<topic>/`（入 git）—— `TOPIC.md` / `graph.json` / `nodes/<id>/{BRIEF,TODO,RESULT}.md`，**每文件恰一写者**（父写 TOPIC/graph/BRIEF，子写 TODO/RESULT）。
-- **判据**：`bun scripts/plan-topic-check.ts check <topic>`（派生状态 + fork/join：无环 / 悬空 dep / 重复 id / 孤儿 / 缓存分叉 / brief 完整性）+ `scope-check`（越界写，**需基线**）+ `lock`（独占锁只读报告）。
-- **`progress` 与 `status` 正交**：子先干完而依赖未完成是**合法状态**（`progress=complete` / `status=blocked_by_deps`），checker 不得报错。
-- **锁**：`mkdir .rddf/state/plan-topics/<slug>.lock`（原子）+ 全节点 done 后 `rmdir`（不释放 = 默认死锁）；持有者已死时**须人确认**才可接管。
-- **本期不做**：派发**事前**闸门（技术上可行 —— `plugins/subagent-contract.ts` 的 L1 硬门挂在同一钩子上 —— 但属**范围决定**）；每节点精确写域（宿主 `subagent` 不传 permissions ⇒ `edit` 白名单只能到 topic 树粒度）。
+- **判据**：`bun scripts/plan-topic-check.ts check <topic>`（派生状态 + fork/join：无环 / 悬空 dep / 重复 id / 孤儿 / 缓存分叉 / brief 完整性；`--phase dispatch|final` 两口径，info 不阻断）+ `scope-check`（越界写，**需基线**）+ `lock`（独占锁只读报告）+ `claim`/`close`/`reap`/`cancel`（派发登记 / 闭合 / 接手 / 取消）。
+- **`progress` 与 `status` 正交**：子先干完而依赖未完成是**合法状态**（`progress=complete` / `status=blocked_by_deps`），checker 不得报错；`status` 另有第四态 `cancelled`（父的**取消声明**，派生时短路优先于 `done`）。
+- **在飞 = attempt 未闭合**：`attempts[]` 末条缺 `finished_at` ⇒ 该节点不可再派（`claim` 拒重复派发）；`ready --json` 的 `in_flight` 暴露在飞节点，`liveness_stale` 只是显示提示，**接管须显式确认**（`reap --confirm`）。
+- **收敛**：`check --json` 的 `converged` 恒按 `final` 口径给出「**还有没有未完成的活**」（调度信号，非交付信号）+ 七桶明细。
+- **锁**：`mkdir .rddf/state/plan-topics/<slug>.lock`（原子）+ 全节点 done/cancelled 后 `rmdir`（不释放 = 默认死锁）；持有者已死时**须人确认**才可接管。写 `graph.json` 另取一把**短**写锁 `<slug>.graph.lock`（协议级）。
+- **本期不做**：派发**事前**闸门（技术上可行 —— `plugins/subagent-contract.ts` 的 L1 硬门挂在同一钩子上 —— 但属**范围决定**）；每节点精确写域（宿主 `subagent` 不传 permissions ⇒ `edit` 白名单只能到 topic 树粒度）；TTL 自动接管（worker 写无围栏 ⇒ 会造双活体写者）。
 
 ## 3. 审查链与档位
 

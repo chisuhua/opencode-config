@@ -67,7 +67,7 @@
      守卫从配置真源**派生比对**（不手抄配置）⇒ 配置改了而本块没改 ⇒ 红。
      plan.md「与 build 的关键区别」表的能力面陈述若与本块不符 ⇒ AC24 红（**只覆盖那一张表**）。 -->
 <!-- capability:plan
-edit: *.rddf/plan-topics/*, *.rddf/state/plan-sessions.json, .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md
+edit: *.rddf/plan-topics/*, *.rddf/state/plan-sessions/*, .plans/*.md, .rddf/plans/*.md, docs/adr/draft-*.md, openspec/changes/*/design.md
 edit-wildcard: ask
 shell: allow-deny
 delegate: yes
@@ -227,10 +227,13 @@ openspec/changes/*/proposal.md
 ```jsonc
 { "version": 1, "topic": "<slug>", "nodes": [{
   "id": "a1", "title": "…", "deps": ["a0"], "owner": "parent|child",
-  "status": "pending|blocked_by_deps|done", "progress": "todo|partial|complete",
+  "status": "pending|blocked_by_deps|done|cancelled", "progress": "todo|partial|complete",
   "attempts": [{ "agent": "plan-worker", "started_at": "…", "finished_at": "…",
-                 "precheck": { "at": "…", "exit": 0 }, "baseline": "<sha>" }],
-  "deliverables": ["nodes/a1/RESULT.md"], "brief_sha256": "<可选>"
+                 "precheck": { "at": "…", "exit": 0, "graph_rev": "<sha256>" },
+                 "input": { "brief_sha256": "<sha256>", "deps": ["a0"], "deliverables": ["…"] },
+                 "inputs_reviewed": { "at": "…", "note": "…" } }],
+  "deliverables": ["nodes/a1/RESULT.md"], "brief_sha256": "<可选>",
+  "cancelled": { "by": "parent", "reason": "…", "at": "…" }
 }] }
 ```
 
@@ -239,39 +242,49 @@ openspec/changes/*/proposal.md
 - `progress` = 纯磁盘派生：`TODO.md` 全勾 **且** `RESULT.md` 有实质正文 ⇒ `complete`（零 checkbox ⇒ `todo`）。
 - `status` = 门控有效值：`complete ∧ deps 全 done ∧ deliverables 非空且路径存在` ⇒ `done`；否则 `blocked_by_deps` / `pending`。
 - ⇒ 子**先干完而依赖未完成** ⇒ `progress=complete` / `status=blocked_by_deps`，**这是合法状态**，不是错误。
-- `graph.json` 里的 `status`/`progress` 只是缓存，判据以派生为准；缓存与派生分叉 = 违规。
+- `cancelled` = **取消声明**（父写，派生时**短路优先于 done**）：取消一个节点时写 `cancelled: {by:"parent", reason:"…"}` ⇒ 该节点不再要求产物，且**不再满足**下游的 deps。
+- `graph.json` 里的 `status`/`progress` 只是缓存，判据以派生为准；缓存与派生分叉 = 违规（分两个方向：缓存声称完成而磁盘不支持 ⇒ 阻断；缓存落后 ⇒ info，不阻断）。
 
-#### 派发前 / 收尾后都跑 checker
+#### checker：派发前 / 收尾后都跑
 
 ```bash
-bun scripts/plan-topic-check.ts check .rddf/plan-topics/<topic> [--json] [--allow-empty]
-bun scripts/plan-topic-check.ts ready .rddf/plan-topics/<topic> [--json]      # 可派发节点（deps 全 done + BRIEF 存在）
+bun scripts/plan-topic-check.ts check .rddf/plan-topics/<topic> [--json] [--allow-empty] [--phase dispatch|final]
+bun scripts/plan-topic-check.ts ready .rddf/plan-topics/<topic> [--json]   # 可派节点 + in_flight + input_drift
 bun scripts/plan-topic-check.ts scope-check .rddf/plan-topics/<topic> <node-id> --baseline <sha>
 bun scripts/plan-topic-check.ts lock .rddf/plan-topics/<topic>
+bun scripts/plan-topic-check.ts claim .rddf/plan-topics/<topic> <node-id>    # 派发登记（spawn 前）
+bun scripts/plan-topic-check.ts close .rddf/plan-topics/<topic> <node-id>    # 闭合 attempt（join 后）
+bun scripts/plan-topic-check.ts reap  .rddf/plan-topics/<topic> <node-id> --confirm   # 接手（须显式确认）
+bun scripts/plan-topic-check.ts cancel .rddf/plan-topics/<topic> <node-id> --reason "…" [--cascade] [--detach <node-id>]
 ```
 
-- 退出码：`0` 全绿 / `1` 有违规 / `2` 用法错 / `3` `graph.json` 缺失或不可解析。
-- **派发前**跑 `check`，并把 `{at, exit}` 写进该节点的 `attempts[].precheck`（这是「跳过检查」事后可判的唯一凭据 —— 本期**不建**派发事前闸门）。
-- **收尾后**跑 `check` + `scope-check` 核对子会话有无越界写（`scope-check` 需要基线：派发前 `git rev-parse HEAD^{commit}` 解析出 sha）。
+- 退出码：`0` **无阻断项**（info 不阻断；violations 可能非空）/ `1` 有阻断违规或操作被拒 / `2` 用法错 / `3` `graph.json` 缺失或不可解析。
+- **两个口径**：`--phase dispatch` = 派发前的截面（只报会阻断下一步派发的问题：未到期节点缺 BRIEF、未完成节点缺交付物**都不报**）；`--phase final` = 全量收尾口径。默认 `final`。
+- **`converged`**：`check --json` 恒按 `final` 口径给出「**还有没有未完成的活**」（调度信号，**不是**「这件事做完了吗」）：`converged=true` ⇔ 零阻断违规 ∧ 每节点 `status ∈ {done, cancelled}` ∧ 无在飞。`summary` 同时给出七桶明细（`done` / `cancelled[{id,reason,at}]` / `in_flight` / `input_drift` / `ready` / `blocking` / `needs_review`）。
+- **`ready`**：可派节点 = deps 全 `done` ∧ `BRIEF.md` 存在 ∧ 自身非 `done`/`cancelled` ∧ **不在飞**；`in_flight` 是在飞节点（`liveness_stale` 只是**显示提示**，不授权接管）。
 
-#### fork / join / 续接 / 重建
+#### fork / join / 续接 / 重建 / 取消
 
-- **fork**：先跑 `ready` 拿可派节点（deps 全 `done` + `BRIEF.md` 存在 + 自身非 done），再同一轮内多次 `subagent(agent="plan-worker", background=true)` ⇒ 并行。**不要**自己猜依赖是否满足。
-- **join**：子会话完成时宿主会往你的会话投一条 `<subagent sessionID=… state=completed>` 合成消息 ⇒ 你被唤醒，继续下一波。
-- **续接（resume）**：同一父会话内 `subagent(sessionID=…)` ⇒ 子丢弃自己的上下文继续。**仅限同一父会话**。
-- **重建（rebuild）**：父会话死亡 / 换根会话时宿主**拒绝**续接 ⇒ 只能新派一个子会话，让它读 `BRIEF.md` + `TODO.md` 按 node 重建进度。**不要**承诺「跨会话续接」。
+- **fork（先登记后 spawn）**：先 `ready` 拿可派节点 → **对每个要派的节点先跑 `claim`**（登记 attempt + 输入投影快照；已有未闭合 attempt ⇒ 拒绝 ⇒ 同一节点不会被派两次）→ 再同一轮内多次 `subagent(agent="plan-worker", background=true)`。**不要**自己猜依赖是否满足，也**不要**绕过 `claim` 手写 `graph.json`。
+- **join**：子会话完成时宿主会往你的会话投一条 `<subagent sessionID=… state=completed>` 合成消息 ⇒ 你被唤醒 ⇒ 跑 `close` 闭合该 attempt，再跑 `check` 复核。
+- **续接（resume）**：同一父会话内 `subagent(sessionID=…)` ⇒ 子丢弃自己的上下文继续（**不追加 attempt**，不与 `claim` 打架）。**仅限同一父会话**。
+- **重建（rebuild）**：父会话死亡 / 换根会话时宿主**拒绝**续接 ⇒ 只能新派一个子会话，让它读 `BRIEF.md` + `TODO.md` 按 node 重建进度。
+- **接手（reap）**：在飞者疑似已死 ⇒ `reap --confirm`（**显式确认**；不做 TTL 自动接管 —— worker 的写没有围栏，自动接管会造出两个活体写者）。
+- **取消（cancel）**：`cancel <topic> <node> --reason "…"`；**禁止**取消已 `done` 的节点；有活跃下游时必须显式处置（`--cascade` 级联取消，或逐个 `--detach` 摘边）⇒ 默认拒绝（不消解就取消 ⇒ 图停在坏状态）。
+- **输入变了（fence）**：父改了节点的 BRIEF / deps / 交付物 ⇒ `check --phase final` 报 `stale_inputs`（指名变了哪一项）⇒ 复核后在该 attempt 上写 `inputs_reviewed` 即可放行。
 
 #### 同 topic 独占锁
 
 多根 plan 会话并行时，不同 topic 各写各的；**同一 topic 必须独占**：
 
 - 获取：`mkdir .rddf/state/plan-topics/<slug>.lock`（原子），成功后把 `session id` 写进该目录的 `owner` 文件。
-- 释放：**所有节点 `done` 后** `rmdir` 该锁目录（不写释放 = 默认死锁）。
+- 释放：**所有节点 `done` / `cancelled` 后** `rmdir` 该锁目录（不写释放 = 默认死锁）。
 - 接管：持有者已死时**须人确认**才可接管，不自动抢占。
+- `claim` / `close` / `reap` / `cancel` 写 `graph.json` 时另取一把**短**写锁 `.rddf/state/plan-topics/<slug>.graph.lock`（自动、原子、按硬超时回收）⇒ CLI 写者被串行化（**协议级**，手写 `graph.json` 仍能绕）。
 
 #### 运行态绑定
 
-`.rddf/state/plan-sessions.json`（gitignored）：`{ "<session_id>": { topic, node, role, parent_session_id, heartbeat } }`。写入用**原子替换**（临时文件 + rename）。这是 `lock` 子命令三方核对的输入。
+`.rddf/state/plan-sessions/<session_id>.json`（gitignored，**每会话一文件**）：`{ "topic": …, "node": …, "role": …, "parent_session_id": …, "heartbeat": … }`。每会话一文件 ⇒ 两个根会话**不会互相覆盖**。写入用**原子替换**（临时文件 + rename）。这是 `lock` 子命令 binding 查询的输入（按 owner 直接构造路径）。
 
 #### 子结果只回指针
 

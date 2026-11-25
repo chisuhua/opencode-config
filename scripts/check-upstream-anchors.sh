@@ -144,9 +144,17 @@ check "A13b session 域钩子不可失败" "packages/core/src/plugin/hooks.ts" \
   'readonly session: NoFailures' \
   "L2（session.prompt 钩子）只能检测不能拦 ⇒ 不得在此抛错"
 
-# ── P 族：plan 侧多会话协作（ADR-plan-multi-session-collaboration 前置事实 ①–⑥）──────────
+# ── P 族：plan 侧多会话协作（ADR-plan-multi-session-collaboration 前置事实 ①–⑤、⑦）──────────
 # 依据：该 ADR 的 D3/D4/D6 与「已知不可机判清单」全部押在这些宿主语义上；
 #       上游任一改动会静默击穿降级表述 ⇒ 必须以语义锚点钉住（只写语义，不写行号）。
+# ⚠ ⑥（delegate 单槽）是**本仓语义** ⇒ 本脚本无其锚点，由 `tests/delegate-core.test.ts` 覆盖。
+# ⚠ **撰写口径（2026-11-25 P5 事故的教训）**：锚点要钉**前提面**，不钉**偶然词汇** ——
+#    函数名（如 `merge(`）与行号同属易变指针 ⇒ 上游一次重构即假红 ⇒ **假红会阻断全仓提交**
+#    （提交门 verify_commands 含本脚本）。钉**语义 token / 行为标记**（`agent?.permissions`、
+#    `agent: agent.id,`）并接受「组合子改名不影响」。
+#    ⚠ **作用域**：本口径自 **P 族**起适用（该族被事故咬过）；**A 族历史锚点仍钉名称**
+#    （如 `Effect.fn("Session.wait")`）⇒ 漂移时再逐个语义化，**不在本次范围内**。
+
 check "P1 primary agent 拒绝作 subagent" "packages/core/src/tool/plugin/subagent.ts" \
   'cannot run as a subagent' \
   "plan 是 primary ⇒ 子会话不能是 plan 本身（ADR D4 新增 plan-worker 的前提）"
@@ -164,8 +172,26 @@ check "P4 resume 校验 parentID" "packages/core/src/tool/plugin/subagent.ts" \
   "续接仅限同一父会话（ADR D6 不承诺跨会话续接的判据）"
 
 check "P5 子会话权限取 agent 自身配置" "packages/core/src/permission.ts" \
-  'merge\(agent\?\.permissions' \
+  'agent\?\.permissions' \
   "权限是 agent 级静态、不是每会话级 ⇒ 单写者只能到 topic 树粒度（ADR 残留 #1）"
+
+# ⚠ 2026-11-25：P5 原模式为 `merge\(agent\?\.permissions`（钉函数名）⇒ 上游把 `merge` 重构为
+#    `PermissionPolicy.fromRules` 后**语义未变、模式失效** ⇒ 假红（且假红会阻断全仓提交）。
+#    改为只钉**语义 token**（`agent?.permissions` 出现在权限解析处），函数名/调用形态随上游演进自动跟随。
+#    ⚠ **本条的判别力前提（已核实，2026-11-25）**：`agent?.permissions` 在 `permission.ts` **单点出现**
+#    （`:194` 的 `PermissionPolicy.fromRules(agent?.permissions ?? …, session.permissions ?? [])`）
+#    ⇒ 「token 在 ⟺ 权限解析处咨询 agent 配置」成立。若上游在同文件引入**第二处** `agent?.permissions`
+#    （即把该字段从权限解析中解耦），本条会**无声失效** ⇒ 届时须人工复核（不在锚点能覆盖的范围）。
+#    为何不升级为 `agent\?\.permissions \?\?`（钉「带默认兜底」）：该模式要求 `??` 与 token 同行相邻
+#    ⇒ 上游一次 prettier 重排即假红（当前该行仅 9 字符余量）⇒ **假红阻断提交的风险高于漏检风险**。
+check "P5b 子会话按 agent id 建会话（权限随之取 agent 配置）" "packages/core/src/tool/plugin/subagent.ts" \
+  'agent: agent\.id,' \
+  "只钉「建会话绑定 agent id」；⚠ 「建会话不传 per-session permissions」**无法正向断言**（本脚本的 check helper 只支持**正向** grep）⇒ 上游若新增 permissions 下发入参，本锚点**不报警** ⇒ ADR 残留 #1 的前提需人工重估"
+#    ⚠ **P5b 的判别力前提（已核实 2026-11-25）**：判别力**全押在尾逗号**上 —— 上游 `subagent.ts`
+#       的 `sessions.create` 处写 `agent: agent.id,`（带逗号），而 `sessions.switchAgent`
+#       （resume 换 agent 路径）写 `agent: agent.id })`（无逗号）⇒ 逗号把命中点限定在 create。
+#       上游若翻转逗号风格（给 switchAgent 加逗号 / 给 create 去逗号）⇒ P5b **失锚或假红**
+#       ⇒ 届时须人工复核（与 P5 的单点前提同款登记）。
 
 check "P6 Wildcard 的 * 跨斜杠" "packages/core/src/util/wildcard.ts" \
   'replace\(/\\\*/g, "\.\*"\)' \

@@ -13,8 +13,28 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import path from "node:path"
 
 export type Progress = "todo" | "partial" | "complete"
-export type Status = "pending" | "blocked_by_deps" | "done"
+export type Status = "pending" | "blocked_by_deps" | "done" | "cancelled"
 export type Owner = "parent" | "child"
+
+/**
+ * 取消声明（D9）—— 父写进 `graph.json` 的**声明意图**（不是磁盘事实，也不是 status 自述）。
+ * 形状（类型）由 schema 校验；取值（by / reason）由 `cancelled_unattributed` 判。
+ */
+export interface Cancelled {
+  by: string
+  reason: string
+  at?: string
+}
+
+/**
+ * 节点输入投影快照（D10 fence）—— claim 时刻的 `{BRIEF 哈希, deps, deliverables}`。
+ * 比对时逐成分 diff ⇒ 能指名「变了什么」（brief / deps / deliverables）。
+ */
+export interface InputSnapshot {
+  brief_sha256: string
+  deps: string[]
+  deliverables: string[]
+}
 
 export interface Precheck {
   at: string
@@ -28,6 +48,10 @@ export interface Attempt {
   finished_at?: string
   precheck?: Precheck
   baseline?: string
+  /** D10：claim 时刻的输入投影快照（fence 的比对基准） */
+  input?: InputSnapshot
+  /** D10：父的复核豁免写点（写它 ⇒ 该 attempt 的输入漂移不再阻断） */
+  inputs_reviewed?: { at: string; note?: string }
 }
 
 export interface Node {
@@ -40,6 +64,8 @@ export interface Node {
   attempts: Attempt[]
   deliverables: string[]
   brief_sha256?: string
+  /** D9：取消声明（父写；派生时**短路优先于 done**） */
+  cancelled?: Cancelled
 }
 
 export interface Graph {
@@ -58,9 +84,15 @@ export type ViolationCode =
   | "duplicate_dep"
   | "orphan_node_dir"
   | "missing_brief"
-  | "cache_mismatch"
+  | "cache_behind"
+  | "cache_ahead"
   | "brief_tampered"
   | "missing_deliverable"
+  | "cancelled_unattributed"
+  | "cancelled_open_attempt"
+  | "cancelled_dep_active"
+  | "duplicate_open_attempt"
+  | "stale_inputs"
   | "out_of_scope"
   | "empty_topic"
   | "git_error"
@@ -69,6 +101,22 @@ export interface Violation {
   code: ViolationCode
   node?: string
   detail: string
+}
+
+/**
+ * 非阻断违规（info）。
+ *
+ * `cache_behind` = 缓存落后于磁盘。它**同时**覆盖两种情况，代码无法区分：
+ *   ① 并行执行期间的正常滞后（父尚未回填缓存）；
+ *   ② 磁盘进度倒退（TODO 被清空 / 格式化后计 0 / 工作被回滚）。
+ * 接受 ② 的漏报，理由是：磁盘是权威（D2 派生优先）、重派幂等（D6 重建）、
+ * 且 `final` 口径仍全量查交付物与 BRIEF —— **不是**因为「behind 必然良性」。
+ * 反向的 `cache_ahead`（缓存声称完成而磁盘不支持）才是违规。
+ */
+export const INFO_CODES: ReadonlySet<ViolationCode> = new Set<ViolationCode>(["cache_behind"])
+
+export function isBlocking(v: Violation): boolean {
+  return !INFO_CODES.has(v.code)
 }
 
 export class PlanTopicError extends Error {
@@ -106,7 +154,7 @@ export function assertValidNodeId(id: unknown): asserts id is string {
   }
 }
 
-const STATUSES: Status[] = ["pending", "blocked_by_deps", "done"]
+const STATUSES: Status[] = ["pending", "blocked_by_deps", "done", "cancelled"]
 const PROGRESSES: Progress[] = ["todo", "partial", "complete"]
 const OWNERS: Owner[] = ["parent", "child"]
 
@@ -168,12 +216,60 @@ export function assertSchema(g: unknown): asserts g is Graph {
       if (att.finished_at !== undefined && typeof att.finished_at !== "string") {
         throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].finished_at 必须是字符串（可选）`)
       }
+      // D10：`input` 快照的形状校验（畸形 ⇒ schema_invalid，不落进「未知键静默忽略」通道）
+      if (att.input !== undefined) {
+        const inp = att.input
+        if (typeof inp !== "object" || inp === null || Array.isArray(inp)) {
+          throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].input 必须是对象`)
+        }
+        const im = inp as Record<string, unknown>
+        if (typeof im.brief_sha256 !== "string") {
+          throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].input.brief_sha256 必须是字符串`)
+        }
+        if (!Array.isArray(im.deps) || im.deps.some((d) => typeof d !== "string")) {
+          throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].input.deps 必须是字符串数组`)
+        }
+        if (!Array.isArray(im.deliverables) || im.deliverables.some((d) => typeof d !== "string")) {
+          throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].input.deliverables 必须是字符串数组`)
+        }
+      }
+      if (att.inputs_reviewed !== undefined) {
+        const rev = att.inputs_reviewed
+        if (typeof rev !== "object" || rev === null || Array.isArray(rev)) {
+          throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].inputs_reviewed 必须是对象`)
+        }
+        const rm = rev as Record<string, unknown>
+        if (typeof rm.at !== "string") {
+          throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].inputs_reviewed.at 必须是字符串`)
+        }
+        if (rm.note !== undefined && typeof rm.note !== "string") {
+          throw new PlanTopicError("schema_invalid", `${where}.attempts[${j}].inputs_reviewed.note 必须是字符串（可选）`)
+        }
+      }
     }
     if (!Array.isArray(node.deliverables) || node.deliverables.some((d) => typeof d !== "string")) {
       throw new PlanTopicError("schema_invalid", `${where}.deliverables 必须是字符串数组`)
     }
     if (node.brief_sha256 !== undefined && typeof node.brief_sha256 !== "string") {
       throw new PlanTopicError("schema_invalid", `${where}.brief_sha256 必须是字符串（可选）`)
+    }
+    // D9：`cancelled` 的**形状**校验（by / reason / at 的类型）。
+    //   取值不合规（by ≠ "parent"、reason 空）不是 schema 错 ⇒ 由 `cancelled_unattributed` 判。
+    if (node.cancelled !== undefined) {
+      const c = node.cancelled
+      if (typeof c !== "object" || c === null || Array.isArray(c)) {
+        throw new PlanTopicError("schema_invalid", `${where}.cancelled 必须是对象`)
+      }
+      const cm = c as Record<string, unknown>
+      if (typeof cm.by !== "string") {
+        throw new PlanTopicError("schema_invalid", `${where}.cancelled.by 必须是字符串`)
+      }
+      if (typeof cm.reason !== "string") {
+        throw new PlanTopicError("schema_invalid", `${where}.cancelled.reason 必须是字符串`)
+      }
+      if (cm.at !== undefined && typeof cm.at !== "string") {
+        throw new PlanTopicError("schema_invalid", `${where}.cancelled.at 必须是字符串（可选）`)
+      }
     }
   }
 }
@@ -311,13 +407,21 @@ function deliverableOk(topicDir: string, rel: string): boolean {
 /**
  * 门控状态：迭代到不动点（deps 的 status 可能也是 blocked_by_deps）。
  * 返回 id → Status。
+ *
+ * D9：`cancelled` **短路**（优先于 `done`）—— 取消是父的声明意图，磁盘事实不再改变它。
+ * D10：在飞（attempt 未闭合）**不进入** status（status 保持纯磁盘/依赖派生）。
  */
 export function deriveStatus(g: Graph, topicDir: string): Map<string, Status> {
   const progress = new Map<string, Progress>()
   for (const n of g.nodes) progress.set(n.id, deriveProgress(topicDir, n))
 
   const status = new Map<string, Status>()
-  for (const n of g.nodes) status.set(n.id, n.deps.length === 0 ? "pending" : "blocked_by_deps")
+  for (const n of g.nodes) {
+    status.set(
+      n.id,
+      n.cancelled ? "cancelled" : n.deps.length === 0 ? "pending" : "blocked_by_deps",
+    )
+  }
 
   // 迭代到不动点
   let changed = true
@@ -325,6 +429,7 @@ export function deriveStatus(g: Graph, topicDir: string): Map<string, Status> {
   while (changed && guard++ < g.nodes.length + 2) {
     changed = false
     for (const n of g.nodes) {
+      if (n.cancelled) continue // 终态：不参与迭代
       const depsDone = n.deps.every((d) => status.get(d) === "done")
       const deliverablesOk = n.deliverables.length > 0 && n.deliverables.every((d) => deliverableOk(topicDir, d))
       const next: Status =
@@ -342,23 +447,99 @@ export function deriveStatus(g: Graph, topicDir: string): Map<string, Status> {
   return status
 }
 
+// ── 在飞与输入投影（D10）────────────────────────────────────────────────────
+
+/** 节点的**未闭合** attempt（末条缺 `finished_at`）—— D10 的「在飞」定义 */
+export function openAttempt(node: Node): Attempt | undefined {
+  const last = node.attempts[node.attempts.length - 1]
+  if (!last) return undefined
+  return last.finished_at === undefined ? last : undefined
+}
+
+export function isInFlight(node: Node): boolean {
+  return openAttempt(node) !== undefined
+}
+
+/** 当前输入投影（与 claim 时刻的快照同形，供逐成分比对） */
+export function currentInputProjection(topicDir: string, node: Node): InputSnapshot {
+  const brief = readIfExists(path.join(topicDir, "nodes", node.id, "BRIEF.md"))
+  return {
+    brief_sha256: brief === undefined ? "" : sha256(brief),
+    deps: [...node.deps],
+    deliverables: [...node.deliverables],
+  }
+}
+
+/** 逐成分 diff ⇒ 返回「变了哪些成分」（brief / deps / deliverables） */
+export function diffInputProjection(snapshot: InputSnapshot, current: InputSnapshot): string[] {
+  const changed: string[] = []
+  if (snapshot.brief_sha256 !== current.brief_sha256) changed.push("brief")
+  if (JSON.stringify(snapshot.deps) !== JSON.stringify(current.deps)) changed.push("deps")
+  if (JSON.stringify(snapshot.deliverables) !== JSON.stringify(current.deliverables)) {
+    changed.push("deliverables")
+  }
+  return changed
+}
+
+/** 活性陈旧阈值（ms）—— 只作**显示提示**，不授权接管（D10：worker 写无围栏 ⇒ 不做 TTL 自动接管） */
+export function attemptStaleTtlMs(): number {
+  const raw = Number(process.env.RDDF_PLAN_ATTEMPT_STALE_TTL_MS ?? 30 * 60 * 1000)
+  return Number.isFinite(raw) && raw > 0 ? raw : 30 * 60 * 1000
+}
+
+/**
+ * 图结构投影哈希（D10 溯源）—— `precheck.graph_rev` 的语义：
+ * 只投影**结构**（节点 id / deps / deliverables / BRIEF 哈希），
+ * **排除** `status` / `progress` / `attempts` ⇒ join 回填缓存**零污染**。
+ */
+export function graphStructureHash(topicDir: string, g: Graph): string {
+  const nodes = g.nodes.map((n) => ({
+    id: n.id,
+    deps: [...n.deps],
+    deliverables: [...n.deliverables],
+    brief: currentInputProjection(topicDir, n).brief_sha256,
+  }))
+  nodes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  return sha256(JSON.stringify(nodes))
+}
+
 // ── 违规收集 ──────────────────────────────────────────────────────────────────
 
 function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex")
 }
 
-export function assertCacheConsistent(g: Graph, topicDir: string): Violation[] {
-  const derivedStatus = deriveStatus(g, topicDir)
+/**
+ * 缓存一致性 —— **两个方向分开判**：
+ *   - `cache_ahead`（违规）：缓存声称 `done` / `complete`，而磁盘不支持 ⇒ 伪造完成。
+ *   - `cache_behind`（info）：缓存落后于磁盘 ⇒ 并行执行期间的正常滞后。
+ *
+ * 只按「是否声称完成」分向，不按进度序比较：`status` 的 `pending` / `blocked_by_deps`
+ * 不是单调序（依赖一完成 blocked → pending），按序比会把良性滞后误判成「超前」。
+ */
+export function assertCacheConsistent(
+  g: Graph,
+  topicDir: string,
+  pre: { status?: Map<string, Status>; progress?: Map<string, Progress> } = {},
+): Violation[] {
+  const derivedStatus = pre.status ?? deriveStatus(g, topicDir)
   const out: Violation[] = []
   for (const n of g.nodes) {
-    const p = deriveProgress(topicDir, n)
+    const p = pre.progress?.get(n.id) ?? deriveProgress(topicDir, n)
     const s = derivedStatus.get(n.id)
     if (n.progress !== p) {
-      out.push({ code: "cache_mismatch", node: n.id, detail: `progress 缓存=${n.progress} 派生=${p}` })
+      out.push({
+        code: n.progress === "complete" ? "cache_ahead" : "cache_behind",
+        node: n.id,
+        detail: `progress 缓存=${n.progress} 派生=${p}`,
+      })
     }
     if (n.status !== s) {
-      out.push({ code: "cache_mismatch", node: n.id, detail: `status 缓存=${n.status} 派生=${s}` })
+      out.push({
+        code: n.status === "done" ? "cache_ahead" : "cache_behind",
+        node: n.id,
+        detail: `status 缓存=${n.status} 派生=${s}`,
+      })
     }
   }
   return out
@@ -381,7 +562,12 @@ export function assertBriefIntegrity(g: Graph, topicDir: string): Violation[] {
   return out
 }
 
-export function assertNoOrphanNodes(g: Graph, topicDir: string): Violation[] {
+/**
+ * 孤儿目录（磁盘有、图里无）恒为违规；
+ * `briefRequired` 给定时只对该集合要求 `BRIEF.md` —— dispatch 阶段只要求「已到期」节点，
+ * 否则整图预声明的多级 DAG 会在第一层就红（见 checkTopic 的阶段口径）。
+ */
+export function assertNoOrphanNodes(g: Graph, topicDir: string, briefRequired?: ReadonlySet<string>): Violation[] {
   const out: Violation[] = []
   const ids = new Set(g.nodes.map((n) => n.id))
   const nodesDir = path.join(topicDir, "nodes")
@@ -394,6 +580,7 @@ export function assertNoOrphanNodes(g: Graph, topicDir: string): Violation[] {
     }
   }
   for (const n of g.nodes) {
+    if (briefRequired && !briefRequired.has(n.id)) continue
     if (!existsSync(path.join(topicDir, "nodes", n.id, "BRIEF.md"))) {
       out.push({ code: "missing_brief", node: n.id, detail: `nodes/${n.id}/BRIEF.md 不存在（该节点不可派发）` })
     }
@@ -401,9 +588,14 @@ export function assertNoOrphanNodes(g: Graph, topicDir: string): Violation[] {
   return out
 }
 
-export function missingDeliverables(g: Graph, topicDir: string): Violation[] {
+/**
+ * 交付物缺失。`onlyFor` 给定时只检查该集合 —— dispatch 阶段只对「progress 已完成」的节点要求交付物
+ * （交付物由 worker 产出，未完成的节点本来就没有）。
+ */
+export function missingDeliverables(g: Graph, topicDir: string, onlyFor?: ReadonlySet<string>): Violation[] {
   const out: Violation[] = []
   for (const n of g.nodes) {
+    if (onlyFor && !onlyFor.has(n.id)) continue
     for (const d of n.deliverables) {
       if (!deliverableOk(topicDir, d)) {
         out.push({ code: "missing_deliverable", node: n.id, detail: `交付物不存在或为空：${d}` })
@@ -413,7 +605,114 @@ export function missingDeliverables(g: Graph, topicDir: string): Violation[] {
   return out
 }
 
-/** 节点是否可派发：deps 全 done ∧ BRIEF.md 存在 ∧ 自身非 done（非法 id 一律排除） */
+/**
+ * 取消完整性（D9）—— 三个阻断码：
+ *   - `cancelled_unattributed`：`by ≠ "parent"` 或 `reason` 为空（声明无归属/无理由）
+ *   - `cancelled_open_attempt`：cancelled 节点仍有未闭合 attempt（须先闭合）
+ *   - `cancelled_dep_active`：**活跃**节点依赖 cancelled 节点 ⇒ 图停在坏状态
+ *     （父必须在取消事务里级联取消或摘除该边）
+ */
+export function assertCancelledIntegrity(
+  g: Graph,
+  topicDir: string,
+  derived?: Map<string, Status>,
+): Violation[] {
+  const out: Violation[] = []
+  const status = derived ?? deriveStatus(g, topicDir)
+  for (const n of g.nodes) {
+    if (!n.cancelled) continue
+    const c = n.cancelled
+    if (c.by !== "parent" || c.reason.trim().length === 0) {
+      out.push({
+        code: "cancelled_unattributed",
+        node: n.id,
+        detail: `cancelled 缺少归属或理由（by=${JSON.stringify(c.by)}, reason=${JSON.stringify(c.reason)}）`,
+      })
+    }
+    if (openAttempt(n)) {
+      out.push({
+        code: "cancelled_open_attempt",
+        node: n.id,
+        detail: `cancelled 节点仍有未闭合 attempt（取消事务必须闭合它）`,
+      })
+    }
+  }
+  const cancelledIds = new Set(g.nodes.filter((n) => n.cancelled).map((n) => n.id))
+  for (const n of g.nodes) {
+    if (n.cancelled) continue
+    if (status.get(n.id) === "done") continue // 已完成（历史事实）
+    const active = n.deps.filter((d) => cancelledIds.has(d))
+    if (active.length > 0) {
+      out.push({
+        code: "cancelled_dep_active",
+        node: n.id,
+        detail: `活跃节点依赖已取消节点：${active.join(", ")}（须级联取消或摘除该边）`,
+      })
+    }
+  }
+  return out
+}
+
+/** 同一节点出现两条以上未闭合 attempt ⇒ 重复派发（D10，阻断级） */
+export function assertNoDuplicateOpenAttempt(g: Graph): Violation[] {
+  const out: Violation[] = []
+  for (const n of g.nodes) {
+    let open = 0
+    for (const a of n.attempts) if (a.finished_at === undefined) open++
+    if (open > 1) {
+      out.push({
+        code: "duplicate_open_attempt",
+        node: n.id,
+        detail: `同一节点有 ${open} 条未闭合 attempt（重复派发）`,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * 输入漂移（D10 fence）—— **仅对已闭合 attempt**、**仅在 `final` 口径**产生（阻断级）。
+ * 每个节点**恰好一条**（跨 attempt 聚合成分）⇒ V27 的「恰好一条」可断言。
+ * 父写了 `inputs_reviewed` ⇒ 复核豁免（不再阻断）。
+ */
+export function assertNoStaleInputs(g: Graph, topicDir: string): Violation[] {
+  const out: Violation[] = []
+  for (const n of g.nodes) {
+    if (n.cancelled) continue // cancelled 节点豁免（取消事务已冻结其投影）
+    const changed = new Set<string>()
+    for (const a of n.attempts) {
+      if (a.finished_at === undefined) continue // 在飞不判（由 input_drift 暴露）
+      if (!a.input) continue
+      if (a.inputs_reviewed) continue // 父已复核豁免
+      for (const c of diffInputProjection(a.input, currentInputProjection(topicDir, n))) changed.add(c)
+    }
+    if (changed.size > 0) {
+      out.push({
+        code: "stale_inputs",
+        node: n.id,
+        detail: `输入已变：${[...changed].join(", ")}（父可写 attempts[].inputs_reviewed 复核豁免）`,
+      })
+    }
+  }
+  return out
+}
+
+/** 在飞 attempt 的输入漂移（D10）—— 只作**显示提示**（info），进 `summary.input_drift` */
+export function collectInputDrift(g: Graph, topicDir: string): Array<{ node: string; changed: string[] }> {
+  const out: Array<{ node: string; changed: string[] }> = []
+  for (const n of g.nodes) {
+    if (n.cancelled) continue
+    for (const a of n.attempts) {
+      if (a.finished_at !== undefined) continue // 只看在飞
+      if (!a.input) continue
+      const changed = diffInputProjection(a.input, currentInputProjection(topicDir, n))
+      if (changed.length > 0) out.push({ node: n.id, changed })
+    }
+  }
+  return out
+}
+
+/** 节点是否可派发：deps 全 done ∧ BRIEF.md 存在 ∧ 自身非 done/cancelled ∧ **不在飞**（D10） */
 export function dispatchableNodes(g: Graph, topicDir: string): string[] {
   const nodes = g.nodes.filter((n) => {
     try {
@@ -428,6 +727,8 @@ export function dispatchableNodes(g: Graph, topicDir: string): string[] {
     .filter((n) => n.deps.every((d) => status.get(d) === "done"))
     .filter((n) => existsSync(path.join(topicDir, "nodes", n.id, "BRIEF.md")))
     .filter((n) => status.get(n.id) !== "done")
+    .filter((n) => status.get(n.id) !== "cancelled")
+    .filter((n) => !isInFlight(n))
     .map((n) => n.id)
 }
 
@@ -441,7 +742,19 @@ export function loadGraph(topicDir: string): Graph {
   return parseGraph(readFileSync(p, "utf8"))
 }
 
-export function checkTopic(topicDir: string, opts: { allowEmpty?: boolean } = {}): Violation[] {
+export type CheckPhase = "dispatch" | "final"
+
+export interface CheckOptions {
+  allowEmpty?: boolean
+  /**
+   * 判据口径。默认 `final`：违规**枚举**与旧版一致（final 全量查交付物与 BRIEF）。
+   * ⚠ 退出码口径已变：`cache_behind` 属 info，不再使 exit 非零（见 `INFO_CODES` / `isBlocking`）。
+   * `dispatch` = 派发前的截面：只报「会阻断下一步派发」的问题。
+   */
+  phase?: CheckPhase
+}
+
+export function checkTopic(topicDir: string, opts: CheckOptions = {}): Violation[] {
   const g = loadGraph(topicDir)
   const out: Violation[] = []
 
@@ -490,10 +803,104 @@ export function checkTopic(topicDir: string, opts: { allowEmpty?: boolean } = {}
   }
   const safeGraph: Graph = { version: g.version, topic: g.topic, nodes: safeNodes }
 
-  out.push(...assertCacheConsistent(safeGraph, topicDir))
+  // 派生值只算一次，缓存判据与阶段门共用同一份（避免两次派生之间磁盘变化导致自相矛盾）
+  const derived = deriveStatus(safeGraph, topicDir)
+  const progress = new Map<string, Progress>(safeGraph.nodes.map((n) => [n.id, deriveProgress(topicDir, n)]))
+  const phase = opts.phase ?? "final"
+  // D9：**cancelled 节点豁免** BRIEF / 交付物 / due / finished / stale_inputs 四类判定
+  //   （否则 `final` 口径自带永红：取消一个没有产物的节点 ⇒ 永远 missing_*）
+  const cancelledIds = new Set(safeGraph.nodes.filter((n) => n.cancelled).map((n) => n.id))
+  const alive = safeGraph.nodes.filter((n) => !cancelledIds.has(n.id))
+  // 已到期 = deps 全 done（只有这些节点的 BRIEF 必须在盘上）
+  const due = new Set(alive.filter((n) => n.deps.every((d) => derived.get(d) === "done")).map((n) => n.id))
+  // 已完成 = progress complete（只有这些节点的交付物必须在盘上）
+  const finished = new Set(alive.filter((n) => progress.get(n.id) === "complete").map((n) => n.id))
+  const briefRequired = phase === "dispatch" ? due : new Set(alive.map((n) => n.id))
+  const deliverableScope = phase === "dispatch" ? finished : new Set(alive.map((n) => n.id))
+
+  out.push(...assertCacheConsistent(safeGraph, topicDir, { status: derived, progress }))
   out.push(...assertBriefIntegrity(safeGraph, topicDir))
-  out.push(...assertNoOrphanNodes(safeGraph, topicDir))
-  out.push(...missingDeliverables(safeGraph, topicDir))
+  out.push(...assertNoOrphanNodes(safeGraph, topicDir, briefRequired))
+  out.push(...missingDeliverables(safeGraph, topicDir, deliverableScope))
+  // D9 / D10 判据：cancel 完整性、重复派发、输入漂移（stale_inputs 仅 `final` 口径产生）
+  out.push(...assertCancelledIntegrity(safeGraph, topicDir, derived))
+  out.push(...assertNoDuplicateOpenAttempt(safeGraph))
+  if (phase === "final") out.push(...assertNoStaleInputs(safeGraph, topicDir))
 
   return out
+}
+
+// ── 收敛判据（D11）────────────────────────────────────────────────────────────
+
+export interface TopicSummary {
+  done: string[]
+  cancelled: Array<{ id: string; reason: string; at?: string }>
+  in_flight: Array<{ node: string; started_at: string; liveness_stale: boolean }>
+  input_drift: Array<{ node: string; changed: string[] }>
+  ready: string[]
+  blocking: Array<{ code: ViolationCode; node?: string; detail: string }>
+  needs_review: Array<{ node: string; changed: string[] }>
+}
+
+export interface TopicReport {
+  /** 恒按 `final` 口径派生（D11：口径恒定，`--phase` 只作用于 violations 列表与退出码） */
+  converged: boolean
+  violations: Violation[]
+  summary: TopicSummary
+}
+
+/** 节点活性是否陈旧（mtime 新鲜度）—— **只作显示提示，不授权接管**（D10） */
+export function isLivenessStale(topicDir: string, node: Node, attempt: Attempt, now = Date.now()): boolean {
+  const todo = path.join(topicDir, "nodes", node.id, "TODO.md")
+  let freshest = Number.isFinite(Date.parse(attempt.started_at)) ? Date.parse(attempt.started_at) : 0
+  try {
+    if (existsSync(todo)) {
+      const m = statSync(todo).mtimeMs
+      if (m > freshest) freshest = m
+    }
+  } catch {
+    /* ignore */
+  }
+  return now - freshest > attemptStaleTtlMs()
+}
+
+/**
+ * 收敛报告（D11）—— 「还有没有未完成的活」（**调度信号**，不是交付信号）。
+ * 判据：零阻断违规（`final` 口径）∧ 每节点派生 status ∈ {done, cancelled} ∧ 无在飞。
+ */
+export function reportTopic(topicDir: string, opts: CheckOptions = {}): TopicReport {
+  const violations = checkTopic(topicDir, { ...opts, phase: "final" })
+  const g = loadGraph(topicDir)
+  const derived = deriveStatus(g, topicDir)
+  const now = Date.now()
+
+  const done: string[] = []
+  const cancelled: TopicSummary["cancelled"] = []
+  const in_flight: TopicSummary["in_flight"] = []
+  for (const n of g.nodes) {
+    if (n.cancelled) {
+      cancelled.push({ id: n.id, reason: n.cancelled.reason, at: n.cancelled.at })
+      continue
+    }
+    if (derived.get(n.id) === "done") done.push(n.id)
+    const open = openAttempt(n)
+    if (open) {
+      in_flight.push({ node: n.id, started_at: open.started_at, liveness_stale: isLivenessStale(topicDir, n, open, now) })
+    }
+  }
+
+  const input_drift = collectInputDrift(g, topicDir)
+  const ready = dispatchableNodes(g, topicDir)
+  const blocking = violations.filter(isBlocking).map((v) => ({ code: v.code, node: v.node, detail: v.detail }))
+  const needs_review = violations
+    .filter((v) => v.code === "stale_inputs" && v.node !== undefined)
+    .map((v) => ({ node: v.node as string, changed: v.detail }))
+
+  const allTerminal = g.nodes.every((n) => {
+    const s = derived.get(n.id)
+    return s === "done" || s === "cancelled"
+  })
+  const converged = blocking.length === 0 && in_flight.length === 0 && allTerminal
+
+  return { converged, violations, summary: { done, cancelled, in_flight, input_drift, ready, blocking, needs_review } }
 }

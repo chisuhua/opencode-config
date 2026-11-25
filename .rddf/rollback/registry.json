@@ -11,16 +11,25 @@
     {
       "mechanism": "plan-topics",
       "adr_primary": "docs/adr/ADR-plan-multi-session-collaboration.md",
-      "state": "active",
+      "state": "proving",
       "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。",
-      "manifest_ref": "plan-topics"
+      "manifest_ref": "plan-topics",
+      "watch": [
+        "lib/plan-topics.ts",
+        "scripts/plan-topic-check.ts",
+        "prompts/plan-worker.md"
+      ]
     },
     {
       "mechanism": "plan-delegate",
       "adr_primary": "docs/adr/ADR-plan-delegate-engineering-session.md",
-      "state": "active",
+      "state": "proving",
       "notes": "plan 侧工程派发的**能力面**退役（内核保留、惰性）。",
-      "manifest_ref": "plan-delegate"
+      "manifest_ref": "plan-delegate",
+      "watch": [
+        "opencode.jsonc.opencode-go",
+        "docs/adr/ADR-plan-delegate-engineering-session.md"
+      ]
     },
     {
       "mechanism": "rollback-manifest-enforcement",

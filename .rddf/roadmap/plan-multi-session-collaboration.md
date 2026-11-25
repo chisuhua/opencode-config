@@ -5,6 +5,7 @@
 > 关联 change：**已立项并归档** —— `openspec/changes/archive/2026-11-20-plan-multi-session-collaboration/`；验收报告 `.rddf/reviews/plan-multi-session-collaboration-verify.md`（verdict=pass，第 2 轮）
 > 本文件是 **builder 的输入**：canonical 的 `.rddf/plans/plan-multi-session-collaboration.md`（TDD 5 步）与 `openspec/changes/plan-multi-session-collaboration/{proposal.md,design.md,tasks.md}` 由 **builder** 生成（工件归属：`rdd-workflow-writing-plans` / `rdd-builder` owns）。本文件**不替代**它们。
 > ⚠ **本路径未启用 `add-improve` / `rdd-planner`**：`rdd-planner` 前置（`.rddf/state/.arch-handoff.json`）不存在；`add-improve` 的 HARD-GATE（YAML frontmatter + 7 段 + `**主题**` 精确匹配 `.rddf/roadmap.md` 的 Phase Skeleton Theme 列）与本仓形态（24 个 improvement 全 5 段无 frontmatter、且**无** `.rddf/roadmap.md`）**不可兼容** ⇒ 走**内置流程**。
+> ⚠ **2026-11-25 D5 修订已取代下列条目**（ADR `…collaboration.md` D5 修订：运行态绑定由 `.rddf/state/plan-sessions.json`**单文件**改为 `.rddf/state/plan-sessions/<session_id>.json` **每会话一文件** ⇒ 天然免并发覆盖、消除跨 topic 互相覆盖）：**D5 行**、**§5 第 1 条**（「精确单文件，不扩 `.rddf/state/` 整目录」）、**任务 C9 / D2 / E1 / E2**、**风险行**、**回滚三步** —— 它们描述的旧形态**已被取代**，实现以 ADR D5 修订 + D9/D10/D11 为准。
 > 修订记录：**第 2 版** —— 按 metis gap 分析（1 轮，planner 固定审查配对）修订：① `done` 语义拆成 `progress` / `status` 两字段（原 A5/A9/A10 互相矛盾，会建出误报 checker）；② 补 `graph.json` schema；③ 锚点数以脚本自报为准（运行时基线 23：静态 16 行 + A7 循环展开）；④ V02b 改派生有效值 + 无键 agent 闭集；⑤ scope-check 改 fixture 仓 + 基线；⑥ 锁补释放、`plan-sessions.json` 补消费者；⑦ e2e 补负向探针与证据结构判据；⑧ 归档前置补机械件。
 
 ---
@@ -21,7 +22,7 @@
 | **D2** `graph.json` 派生状态 + 三条机械判据 | `lib/plan-topics.ts` + `scripts/plan-topic-check.ts` + `tests/plan-topics.test.ts` | ✅ |
 | **D3** 父子会话 = 宿主 `subagent` | **不写代码**（宿主内建）⇒ 只写进 prompt 的使用纪律 | ✅（prompt 侧） |
 | **D4** 新增 `plan-worker`（`mode: subagent`） | `opencode.jsonc.opencode-go` + `prompts/plan-worker.md` + 守卫登记 | ✅ |
-| **D5** 会话身份三落点 | `.rddf/state/plan-sessions.json`（gitignored）+ `graph.json` 的 `attempt[]` + `TODO.md` 头 | ✅（路径约定 + gitignore + checker 消费 + prompt 纪律） |
+| **D5** 会话身份三落点 | ⚠**2026-11-25 已被 D5 修订取代** ⇒ `.rddf/state/plan-sessions/<session_id>.json`（每会话一文件，gitignored）+ `graph.json` 的 `attempt[]` + `TODO.md` 头 | ✅（路径约定 + gitignore + checker 消费 + prompt 纪律） |
 | **D6** 续接 vs 重建 | prompt 纪律（父会话用 `sessionID` 续接；父死后按 node 重建） | ✅（prompt 侧） |
 | **D7** topic 独占锁 | `.rddf/state/plan-topics/<slug>.lock`（原子 `mkdir`）+ 接管需人确认 + **释放** | ✅（prompt 纪律 + checker 报告 + gitignore） |
 | **D8** 关闭范围 | — | ✅（本 change **不改** delegate / role.json / 角色矩阵 / rdd-workflow 产品侧 / CI） |
@@ -273,7 +274,7 @@ graph.json = {
 
 | # | 缺口 | 裁决 | 理由 |
 |---|---|---|---|
-| 1 | D5 的 `plan-sessions.json` 在 `.rddf/state/`，但 D4 只说 plan 的 `edit` 加 `.rddf/plan-topics/*` ⇒ 父写不了 | plan 的 `edit` **再加一条** `.rddf/state/plan-sessions.json`（**精确单文件**，不扩 `.rddf/state/` 整目录） | 只放行单个运行时文件 |
+| 1 | ⚠**2026-11-25 已被 D5 修订取代**（原：D5 的 `plan-sessions.json` 单文件在 `.rddf/state/`，但 D4 只说 plan 的 `edit` 加 `.rddf/plan-topics/*` ⇒ 父写不了 | plan 的 `edit` **再加一条** `.rddf/state/plan-sessions.json`（**精确单文件**，不扩 `.rddf/state/` 整目录） | 只放行单个运行时文件 |
 | 2 | D7 的锁落 `.rddf/state/plan-topics/<slug>.lock` | 锁用**目录**（原子 `mkdir`）+ 目录内 `owner` 文件；**补释放**：全节点 done ⇒ 父 `rmdir`；checker `lock` 只读报告 | `mkdir` 原子性最优；**不写释放 ⇒ 默认死锁**（metis §2-7 的新发现） |
 | 3 | D2 的 checker 落点未指定 | `lib/plan-topics.ts`（纯逻辑）+ `scripts/plan-topic-check.ts`（CLI）+ `tests/plan-topics.test.ts` | 与本仓三段结构一致；新增 `lib/` 文件触发 `EXPECTED.lib` 闸门 ⇒ 同步 |
 | 4 | plan 能否执行 checker | **能** —— plan 的 `shell` 首条 `"*": "allow"`（不在 `GUARDED_AGENTS`）⇒ `bun scripts/plan-topic-check.ts` 可跑；**`plan-worker` 进 `GUARDED_AGENTS` 后 shell 首键 deny 且白名单无 `bun`** ⇒ checker **只能父会话跑** | 已实测；与 ADR「父是唯一调度者」一致 |
@@ -299,13 +300,13 @@ graph.json = {
 | 子写越界到同 topic 其它 node | V10 事后核对（**需基线**）+ ADR 残留 #1 登记 | 收窄白名单（代价：跨 node 协作失效） |
 | 单写者被破坏 | D3 单一写者进 prompt + A15 `brief_sha256` + A3 重复 id + A17 孤儿 | checker 报错 + 重派 |
 | 锁僵尸 / 永不释放 | 补释放（全 done ⇒ `rmdir`）+ 不自动抢占 + `lock` 只读报告 | 人删锁目录 |
-| `plan` 新增 `.rddf/state/plan-sessions.json` 白名单被误用 | 精确单文件（非目录） | 从白名单移除 |
+| ⚠**2026-11-25 已被 D5 修订取代**（原：`plan` 新增 `plan-sessions.json` 白名单被误用 ⇒ 精确单文件） | 目录通配 `*.rddf/state/plan-sessions/*`（每会话一文件） | 从白名单移除 |
 | **工作区既有未暂存改动被误提交** | `cli.json`、`opencode.jsonc.opencode-go` = 前轮残留 ⇒ 提交时**逐文件 stage**，不 `git add -A` | 单独 revert 该两处 |
 | 「派发事前闸门」不做 ⇒ 父误派发 | `attempt[].precheck` 留痕 + 事后 checker | 触发条件达成 ⇒ 另立 change |
 | **人工 e2e 无法自动化** | I2 步骤逐条可复现 + 证据结构判据 + 主会话执行 | 记为不可自动，如实写进验收报告 |
 | **归档门无机械件** | H5 补 `test -f` + verdict 检查（本仓无 archive 钩子） | — |
 
-**回滚三步**：① 移除 `plan-worker` 条目 + plan 的 `edit` 去掉 `.rddf/plan-topics/*` 与 `.rddf/state/plan-sessions.json`；② 删 `prompts/plan-worker.md` + 撤出 `EXPECTED.prompts`；③ 保留 `.rddf/plan-topics/**` 已落盘内容。
+**回滚三步**（⚠2026-11-25 已随 D5 修订更新：`.rddf/state/plan-sessions.json` ⇒ `.rddf/state/plan-sessions/`）：① 移除 `plan-worker` 条目 + plan 的 `edit` 去掉 `.rddf/plan-topics/*` 与 `.rddf/state/plan-sessions/*`；② 删 `prompts/plan-worker.md` + 撤出 `EXPECTED.prompts`；③ 保留 `.rddf/plan-topics/**` 已落盘内容。
 
 ---
 

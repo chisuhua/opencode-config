@@ -39,7 +39,8 @@ skills.disable/
 # verifier 的**记账落点**（verdict 缓存 / 轮次 / 审计）；产品落点 = `.rddf/reviews/`（那才是入库物）
 .rddf/state/verifier/
 # plan 侧多会话协作的运行态绑定（活的 session id ↔ topic/node，非版本化）
-.rddf/state/plan-sessions.json
+# D5 修订：改为**每会话一文件**（`.rddf/state/plan-sessions/<session_id>.json`）⇒ 天然免并发覆盖
+.rddf/state/plan-sessions/
 
 # rddf CLI 运行时状态（计数器 / 目录锁），不入库
 .rddf/improvements/.feedback-counters.json

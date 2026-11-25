@@ -265,7 +265,7 @@ describe("status 门控（与 progress 正交）", () => {
     const s = deriveStatus(g, d)
     expect(deriveProgress(d, child)).toBe("complete")
     expect(s.get("a1")).toBe("blocked_by_deps")
-    // 缓存写成与派生一致 ⇒ 无 cache_mismatch
+    // 缓存写成与派生一致 ⇒ 无缓存类违规
     const cached: Graph = {
       version: 1,
       topic: "t",
@@ -275,7 +275,8 @@ describe("status 门控（与 progress 正交）", () => {
       ],
     }
     writeGraph(d, cached.nodes)
-    expect(codes(d)).not.toContain("cache_mismatch")
+    expect(codes(d)).not.toContain("cache_ahead")
+    expect(codes(d)).not.toContain("cache_behind")
   })
 
   test("deliverables 为空 / 路径不存在 ⇒ 不是 done", () => {
@@ -295,18 +296,21 @@ describe("status 门控（与 progress 正交）", () => {
 // ── A11/A12 缓存一致性 ─────────────────────────────────────────────────────
 
 describe("缓存一致性", () => {
-  test("status 缓存 done 但派生非 done ⇒ cache_mismatch", () => {
+  test("status 缓存 done 但派生非 done ⇒ cache_ahead（阻断）", () => {
     const d = tmpTopic()
     writeNode(d, "a1", { todo: "- [ ] a\n" })
     writeGraph(d, [node({ id: "a1", status: "done" })])
-    expect(codes(d)).toContain("cache_mismatch")
+    expect(codes(d)).toContain("cache_ahead")
+    expect(cli(["check", d]).status).toBe(1)
   })
 
-  test("progress 缓存不符 ⇒ cache_mismatch", () => {
+  test("progress 缓存落后于派生 ⇒ cache_behind（info，不阻断）", () => {
     const d = tmpTopic()
     writeNode(d, "a1", { todo: "- [x] a\n", result: "正文\n" })
     writeGraph(d, [node({ id: "a1", progress: "partial" })])
-    expect(codes(d)).toContain("cache_mismatch")
+    expect(codes(d)).toContain("cache_behind")
+    expect(cli(["check", d]).status).toBe(0)
+    expect(cli(["check", d]).stdout).toContain("[info]")
   })
 })
 
@@ -391,7 +395,7 @@ describe("CLI 退出码与 --json", () => {
     expect(Array.isArray(payload.violations)).toBe(true)
     const allowed = new Set([
       "schema_invalid", "invalid_node_id", "duplicate_node_id", "cycle", "dangling_dep",
-      "duplicate_dep", "orphan_node_dir", "missing_brief", "cache_mismatch",
+      "duplicate_dep", "orphan_node_dir", "missing_brief", "cache_behind", "cache_ahead",
       "brief_tampered", "missing_deliverable", "out_of_scope", "empty_topic", "git_error",
     ])
     for (const v of payload.violations) expect(allowed.has(v.code)).toBe(true)
@@ -432,13 +436,14 @@ describe("ready：可派发节点", () => {
 // ── 非法 id 的安全边界 ──────────────────────────────────────────────────────
 
 describe("非法 node id 不触发磁盘派生（不读 topic 外文件）", () => {
-  test("缓存写成 complete 但 id 非法 ⇒ 只报 invalid_node_id，不报 cache_mismatch", () => {
+  test("缓存写成 complete 但 id 非法 ⇒ 只报 invalid_node_id，不报缓存类违规", () => {
     const d = tmpTopic()
-    // 若派生被跑：d/nodes/../evil/TODO.md 读不到 ⇒ todo ≠ complete ⇒ cache_mismatch
+    // 若派生被跑：d/nodes/../evil/TODO.md 读不到 ⇒ todo ≠ complete ⇒ cache_ahead
     writeGraph(d, [node({ id: "../evil", progress: "complete", status: "done" })])
     const c = codes(d)
     expect(c).toContain("invalid_node_id")
-    expect(c).not.toContain("cache_mismatch")
+    expect(c).not.toContain("cache_ahead")
+    expect(c).not.toContain("cache_behind")
   })
 })
 
@@ -510,17 +515,29 @@ describe("lock 子命令（只读）", () => {
 
     mkdirSync(lockDir, { recursive: true })
     writeFileSync(path.join(lockDir, "owner"), "ses_x\n")
-    writeFileSync(
-      path.join(repo, ".rddf", "state", "plan-sessions.json"),
-      JSON.stringify({ ses_x: { topic: "demo", node: "a1" } }),
-    )
-    const before = readFileSync(path.join(repo, ".rddf", "state", "plan-sessions.json"), "utf8")
+    // D5：运行态绑定改为**每会话一文件** ⇒ binding 按 owner 直接构造路径
+    const sessionsDir = path.join(repo, ".rddf", "state", "plan-sessions")
+    mkdirSync(sessionsDir, { recursive: true })
+    const sessionFile = path.join(sessionsDir, "ses_x.json")
+    writeFileSync(sessionFile, JSON.stringify({ topic: "demo", node: "a1" }))
+    const before = readFileSync(sessionFile, "utf8")
     const r = cli(["lock", topicDir, "--json"])
     const payload = JSON.parse(r.stdout)
     expect(payload.present).toBe(true)
     expect(payload.owner).toBe("ses_x")
     expect(payload.binding).toEqual({ topic: "demo", node: "a1" })
-    expect(readFileSync(path.join(repo, ".rddf", "state", "plan-sessions.json"), "utf8")).toBe(before)
+    expect(readFileSync(sessionFile, "utf8")).toBe(before)
+  })
+
+  test("owner 存在但会话文件缺失 ⇒ binding=null（崩溃窗口 / 遗留态 ⇒ 读作「未知」）", () => {
+    const repo = makeGitRepo()
+    const topicDir = path.join(repo, ".rddf", "plan-topics", "demo")
+    const lockDir = path.join(repo, ".rddf", "state", "plan-topics", "demo.lock")
+    mkdirSync(lockDir, { recursive: true })
+    writeFileSync(path.join(lockDir, "owner"), "ses_gone\n")
+    const payload = JSON.parse(cli(["lock", topicDir, "--json"]).stdout)
+    expect(payload.owner).toBe("ses_gone")
+    expect(payload.binding).toBe(null)
   })
 })
 

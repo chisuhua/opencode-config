@@ -216,7 +216,7 @@
           "docs/adr/draft-*.md": "allow",
           "openspec/changes/*/design.md": "allow",
           "*.rddf/plan-topics/*": "allow",
-          "*.rddf/state/plan-sessions.json": "allow"
+          "*.rddf/state/plan-sessions/*": "allow"
         },
         "external_directory": "ask",
         "webfetch": "allow",

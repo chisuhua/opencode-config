@@ -28,6 +28,9 @@ bun test tests/delegate-tool.test.ts   # 假 ctx 端到端
 | （skip 态不假装通过，但**判别力依赖床存在** ⇒ 无该仓的检出上这一族等价于零判别力）
 | `bun test tests/`（此前它是「入库但无人执行」的第四态）；fixture 床（`E2E_BED_DIR`）不在时**明确 skip** |
 | `model-fallback-core.test.ts` | 模型降级链内核（链推进 / 冷却 / 换链） |
+| `plan-topics.test.ts` | 协作 topic 判据库 + CLI 契约：schema / node id / 成环 / 悬空 / progress·status 派生 / 缓存双向（`cache_ahead` 违规 vs `cache_behind` info）/ brief 完整性 / 孤儿 / 退出码四值 / `ready` / `scope-check` / `lock` |
+| `plan-topics-dag.test.ts` | **L1 语义 e2e**（真文件 + 真 git fixture）：5 级链·fan-out·fan-in·菱形·4 层跨层 DAG·森林·120 节点长链·800 级深栈 / 交付物门控 / 动态改图（增删节点、改 deps、改 BRIEF）/ 调度并发（重复派发·锁·scope-check 并行假阳性·baseline 漂移）/ 收敛信号 / `--phase dispatch\|final` 契约。带「钉住」字样的用例断言的是**已登记缺陷**的现状 |
+| `plan-topics-lifecycle.test.ts` | **生命周期语义**（ADR D9 取消 / D10 在飞与 fence / D11 收敛）：V16–V36 —— 取消派生与豁免·`cancelled_dep_active` 不变量·claim 互斥·close/reap·`stale_inputs` 逐成分指名·`inputs_reviewed` 豁免·图结构投影哈希（溯源）·`converged` + 七桶明细·dispatch 口径下的刻意不一致（`ok=true ∧ converged=false`） |
 | `rollback-drill.test.ts` | **回滚清单**的纯逻辑层 + CLI 退出码 + 判别力负向（少删一件 / `find` 漂移 / 路径写法差异 / 顺序语义 / `replace` 按字面落盘 / `find` 按字面匹配 / dry-run 与 apply 同判据） |
 | `rollback-manifests.test.ts` | **清单漂移守卫**（零成本）：每份清单的 schema / `mechanism`↔文件名 / `adr` 存在 / `verify` 非空 / `planDrill` 可执行 |
 | `rollback-registry.test.ts` | **机制登记表**一致性守卫（M1–M9 / V1–V16）：ADR 全集双向相等、清单集合与 `active`∪`proving` 双向、指针闭集、豁免闭集、债指针逐机制 + 全状态卫生、清单形态防空壳、`last_drill` 时效（内容哈希） |

@@ -10,6 +10,44 @@
 
 ---
 
+> **v2.74 ADR D11「收敛判据」+ D5 落点表修订（每会话一文件）（2026-11-25）**：
+> **D11（converged）**：父根会话今天要答「这个 topic 干完了吗」必须自己组合四个条件（终态 / 在飞 / 违规 / 可派），而 `check --json` 只吐 `{ok, violations}` ⇒ **不可机判**（`tests/plan-topics-dag.test.ts` E1 逐键钉住 payload 里没有 `converged`）。决策：`converged`（纯派生）⇔ **零阻断违规（恒 `final` 口径）∧ 全节点派生 `status` ∈ {done, cancelled} ∧ 无在飞**；形状 = 单一布尔 + `summary` **七桶**（`done` / `cancelled[{id,reason,at}]` / `in_flight` / `input_drift` / `ready` / `blocking` / `needs_review`）+ 派生的 `needs_review` 布尔（**不选多状态枚举** ⇒ converged 与 needs_review 正交，枚举会压扁）。**锁不进判据**（父自己持锁是正常态 ⇒ 进判据就出现「持锁 ⇒ 永不收敛」的顺序悖论）；**相对集 = 全部节点**（不引入目标子集载体 ⇒ 父新增节点即不收敛，在「调度信号」定位下是正确行为）；**不扩退出码**（唯一消费方是 LLM 父会话，看 JSON 即可；扩码要同批改 `prompts/plan.md` + 回滚清单的字节钉死串，且 exit 0 若收窄为「收敛」会破坏**中场健康检查**）；**不并入 `ready`**、**不落盘**。
+> **诚实收窄**：本判据被明确定位为**调度信号**（「还有没有未完成的活」），**不是交付信号**（「这件事做完了吗」—— 后者需对照 `TOPIC.md` 目标段的语义理解 ⇒ 不可机判 ⇒ 登记为不可机判清单行 + 残留 #13）。**可操纵性**：父**能**批量标 `cancelled` 使 converged=true ⇒ 缓解 = `cancelled` 桶逐条列 `{id, reason, at}`（声明与答案同屏）+ D9 两条既有约束（`cancelled_unattributed` 强制编理由、`cancelled_dep_active` 强制连带消解 ⇒ 爆炸半径在 diff 里强制展开）⇒ **不新增防操纵机制**。
+> **D5 落点表修订（第 5 项）**：运行态绑定由 `.rddf/state/plan-sessions.json`（**单文件**）改为 `.rddf/state/plan-sessions/<session_id>.json`（**每会话一文件**）⇒ **天然免并发覆盖**：旧形态下两个根会话（哪怕不同 topic）会互相覆盖，与 D7「不同 topic 天然隔离 ⇒ 零冲突」矛盾（D1 单一写者表亦未登记该例外）⇒ 本修订让 D7 恢复为**真命题**；代价 = `lock` 的 binding 查询改为「按 owner **直接构造路径**」（扫目录仅用于枚举全体绑定）；旧文件是 gitignored 运行态 ⇒ **无需数据迁移**；D10 的「压缩后按 `parent_id` 找回」仍可用（映射逐会话独立，更不易丢条目）。
+> **审查**：oracle `PASS-WITH-NOTES`（F1–F5 全处置，含 F1「`converged` 与 `--phase` 的关系未钉 ⇒ D10 同批落地后同刻两答案」的契约歧义）→ critic `APPROVE_WITH_CONDITIONS`（S1–S3 全落笔，含 S1「刻意的不一致必须写成断言，否则实现批会当 bug 统一掉」）→ 复审 `S1–S3 已闭合`、`mergeable: yes`（复审并逮到一处桶计数漂移 ⇒ 已修）。**D5 修订另走一轮**：oracle `PASS-WITH-NOTES`（6 条，含「标题失真」「表格被我自己的 bullet 截断」「V07 陈旧断言」）→ critic `APPROVE_WITH_CONDITIONS`（S1「`plan-delegate.json` 的 **replace** 串也钉死旧路径」/ S2「roadmap 的 §5 第 1 条被反转但无『已被取代』标记」）→ 复审 `S1/S2 已闭合`、`mergeable: yes`；审稿记录 `…-review-d5-persession.md`。
+> ⚠ **未完成**：D9 / D10 / D11 的**代码实现**均未立项 ⇒ 登记 `backlog: plan-topics-cancelled-semantics`；硬依赖（D11 与 D9 同批、需同批反转 E1 断言、`needs_review` 桶随 D10 填实）已写进 ADR D11「落地顺序」条。
+
+---
+
+> **v2.73 上游语义锚点 P5 假红事故修复（2026-11-25）**：
+> **事故**：`scripts/check-upstream-anchors.sh` 的 P5 锚点未命中 ⇒ `RESULT: DRIFT (1/29)` ⇒ 该脚本是 `.rddf/commit-gate.json` 的 `verify_commands` 之一 ⇒ **全仓进入「不可提交」状态**（与 2026-11-23 的 AC10④ 事故同型）。根因：锚点模式钉的是**上游内部组合子的函数名** `merge\(agent\?\.permissions` —— 函数名与行号同属**易变指针**，而上游已把 `permission.ts` 的权限解析重构为 `PermissionPolicy.fromRules(agent?.permissions ?? …, session.permissions ?? [])` ⇒ **语义未变、模式失效**。
+> **核实（逐行读上游实码，非推断）**：① 权限解析仍是「agent 级配置 + session 级覆盖」的合并 ⇒ 语义不变；② `subagent.ts` 的建会话仍是 `sessions.create({ …, agent: agent.id, … })` ⇒ **不传 permissions** ⇒ ADR「权限是 agent 级静态、不是每会话级」**前提仍成立**；③ 该文件的 `selected.permissions` 是**调用方**权限（算「调用方能否拉起该 agent」），非按会话下发 ⇒ 不构成前提反转。⇒ 判定为**锚点形态过时（假红）**，不是语义漂移。
+> **修法**：P5 改钉**语义 token**（`agent?.permissions`，不再钉函数名）+ 新增 **P5b**（`agent: agent\.id,` —— 建会话绑定 agent id ⇒ 权限随之取 agent 配置）⇒ 锚点基线 **29 → 30**，`RESULT: OK（30/30）`、exit 0。**并如实登记三处结构上不可锚的事实**（不假装覆盖）：①「建会话不传 permissions」是**缺席性** ⇒ 正向 grep 断言不了；② P5 判别力依赖 `agent?.permissions` **单点出现**（已核实）；③ P5b 判别力**全押在尾逗号**上 ⇒ 上游翻转逗号风格 ⇒ 失锚或假红。**判别力未放松**：旧模式对「上游新增 per-session permissions 通道」这个最危险方向**同样不报警**（它钉的从来不是「不传 permissions」这个缺席性质）⇒ 换成「token + 已核实前提 + 如实登记」后**丢失的判别力为零**，消除的假红面是实的。
+> **连带订正**：ADR 前置事实里的 upstream **行号引用全部去掉**（改「文件 + 语义形状」，含 D4 正文漏网的一处）⇒ 全篇 upstream 行号引用 = 0；V15 枚举口径订正（⑥ 是本仓语义、无上游锚点）；P 族注释补「**撰写口径：钉前提面、不钉偶然词汇（函数名 / 行号）**」+ 其**作用域**（自 P 族起适用；A 族历史锚点仍钉名称）。
+> **审查**：oracle（`审查域: 治理面`）`治理面判定: PASS-WITH-NOTES`（F1–F6 全处置，含 F1「P5b 模式原命中 create 与 switchAgent **两处** ⇒ 加尾逗号消歧」、F3「不升级为 `??` 邻接模式 ⇒ 假红阻断提交的风险高于漏检」）→ critic `APPROVE_WITH_CONDITIONS`（S1–S4 全落笔）→ 复审 `治理面判定: PASS`、`mergeable: yes`。
+> **backlog**：① 给 `check` helper 加计数模式（`grep -c == 1`）⇒ 把 P5 的单点前提从「如实登记」升级为**机判 loud fail**；② `docs/guard-authoring.md` 新开一节「指针型判据必漂移」。
+
+---
+
+> **v2.72 ADR D10「在飞与派发台账」+ 判据阶段化/严重度追认（2026-11-25）**：
+> **D10（in-flight + fence）**：动态调整 DAG 时父要「砍掉一个分支」（D9 已定）与「同一节点别被派两次」（本项）。`dispatchableNodes` 从不看 `attempts[]` ⇒ `ready` 幂等 ⇒ 同一节点可被两个 worker 同时推进（`tests/plan-topics-dag.test.ts` D1/D2）；父在 worker 在飞期间改图 ⇒ 产物新旧不可判（`brief_sha256` 只覆盖该节点自己的 BRIEF）。
+> **决策**：① **在飞 = `attempts[]` 末条缺 `finished_at`**（派生自 `graph.json`，落盘 ⇒ 父死后新根可读，不引入运行态第二本账）；统一口径「attempt 未闭合 = 在飞；闭合是离开在飞的唯一方式」（`cancel` = 闭合 + 墓碑、`reap` = 闭合 + 回可派）⇒ `claim`/`close`/`cancel` 共用同一套台账语义与同一把写互斥锁。② **先登记后 spawn**；`claim` 拒已有未闭合 attempt（机械闸门）+ 阻断码 `duplicate_open_attempt`；`attempt_open` / `stale_attempt` **不设违规码**（在飞只在 `ready --json` 的 `in_flight[]` 暴露）。③ **判活 = `TODO.md` mtime 读时 staleness**，**只显示不授权接管**（worker 写没有 `claim_gen` 式围栏 ⇒ TTL 自动接管会造双活体写者）⇒ 接管须显式确认（与 D7 僵尸锁同一 posture）。④ **fence = 节点级输入投影**（`attempt.input` 快照 ⇒ checker 逐成分 diff 出 `stale_inputs`，**仅已闭合 attempt × 仅 `final` 口径**；在飞漂移只进 `ready --json` 的 `input_drift[]`）+ `inputs_reviewed` 豁免写点；**溯源 = 图级结构投影哈希**（`precheck.graph_rev` 要么实装要么删，不留死字段）—— 一字段两用不成立（溯源要全图语境、fence 要节点粒度，混用 ⇒ 兄弟节点一改就全体误报）。⑤ per-topic **短**写锁（不复用 D7 长寿命归属锁；陈旧回收以**硬超时**为上界，不按 mtime 判死）。
+> **阶段化/严重度追认**（第 6 项，纯追认已实现的判据）：D2 增「判据有两维口径」段；V09 改写为 progress/status 正交口径；V10 降级为「单飞口径 + 并行只做 topic 级 union」；新增 **V22**（阶段）/ **V23**（严重度）/ **V24–V29**（在飞排除派发 / claim 互斥 / close 与 reap / `stale_inputs` 指名 / 豁免与迁移 / 溯源哈希）；残留 **#10**（scope-check 按节点归因不可判）/ **#11**（判据不得早于 `claim` 写入点落地）/ **#12**（不做自动接管）。
+> **审查**：oracle `PASS-WITH-NOTES`（O1–O7 全处置，含两处事实修正：cancelled 节点补写取消理由会致 `stale_inputs` 永久红 ⇒ 快照冻结 + 豁免；在飞漂移无暴露面 ⇒ 顶层 `input_drift[]`）→ critic `APPROVE_WITH_CONDITIONS`（S1–S4 全落笔，含「产生矩阵唯一定义」与「`dispatch` 不产生该码」的 phase-gating 澄清）→ 复审 `S1–S4 已闭合`、`mergeable: yes`。
+> ⚠ **未完成**：D9 / D10 的**实现**（`claim`/`close`/`reap`/`cancel` 四个 CLI + per-topic 写锁 + `stale_inputs` + `inputs_reviewed` + `graph_rev` 实装）**均未立项** ⇒ 登记 `backlog: plan-topics-cancelled-semantics`；`prompts/plan.md` 与 `docs/SUBAGENT-ORCHESTRATION.md` 的同步被 `.rddf/rollback/plan-topics.json` **逐字节钉死** ⇒ 须同批改该清单（不在 architect 写集 ⇒ builder 面）。
+
+---
+
+> **v2.71 plan 侧协作判据阶段化 + 取消语义 D9（2026-11-24）**：
+> **判据阶段化**（审稿记录 `.rddf/reviews/plan-topics-criteria-revision.md`）：`check` 原先把「未完成节点的交付物」「未到期节点的 BRIEF」「缓存分叉」一律判红 ⇒ 整图预声明的多级 DAG 第一层就红、并行执行期间恒红 ⇒ `prompts/plan.md` 要求的「派发前 exit 0 才派」不可能成立（`attempts[].precheck.exit` 恒为 1 ⇒ 凭据判别力归零）。改动：`cache_mismatch` 拆为 `cache_ahead`（**违规**：缓存声称完成而磁盘不支持）/ `cache_behind`（**info**：缓存滞后，并行期必然出现）；新增 `--phase dispatch|final`（默认 `final` 保持既有枚举口径；`dispatch` 只对已到期节点要 BRIEF、只对 `progress=complete` 节点要交付物）；退出码只看阻断项（`isBlocking`），`--json` 增 `severity`。
+> **D9 取消语义**（ADR 增补，`docs/adr/ADR-plan-multi-session-collaboration.md`）：动态调整 DAG 时父要「砍掉一个分支」，而 `status` / `progress` 只描述「有没有产物」⇒ 取消无处安放（伪造 done ⇒ `cache_ahead`；永久 blocked；删节点 ⇒ 丢失留痕 + 孤儿/悬空双雷）。决策：`cancelled?: {by,reason,at?}` 作为**声明意图字段**写进 `graph.json`（与 `deps` / `owner` 同族 ⇒ 不破坏 D2「派生而非自述」），`deriveStatus` 派生第四态 `cancelled`（短路优先于 done）；门控 = **block + 强制消解**（新不变量 `cancelled_dep_active`）；级联默认拒绝、显式执行；「完成后取消」禁止（由 `cancel` CLI 硬拒）；三个新阻断违规码 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；前瞻判据 V16–V21。
+> **闸门**：新增 `tests/plan-topics-dag.test.ts`（**39 例** L1 语义 e2e：5 级链 / fan-out / fan-in / 菱形 / 4 层跨层 DAG / 森林 / 120 节点长链 / 800 级深栈、交付物门控、动态改图、调度并发、收敛信号、`--phase` 契约）+ `tests/helpers/plan-topic-fixture.ts`（真文件 / 真 git fixture，不依赖模型与真实运行时）。
+> **验证**：`bun test tests/` = **1205 pass / 1 skip / 1 fail**；唯一 fail 是**预存**环境噪音 —— `model-fallback` 把 `plan` / `front` 模型改写为 `minimax-cn-openai` 而 `docs/MULTI-AGENT-DESIGN.md` 仍写 `minimax-cn`（两文件均不在本次改动内）⇒ 提交前需另行收敛。
+> **审查**：判据阶段化 —— oracle `PASS-WITH-NOTES`（3 条注释已改 / 2 条登记 / 1 条拒绝并写明理由）→ critic `APPROVE`（无 BLOCKER；SF-1 登记不修）。D9 增补 —— oracle `PASS-WITH-NOTES`（N1–N5 全处置，含**两处事实修正**：schema 不拒绝未知键 ⇒ 旧代码静默忽略 `cancelled` 字段；缓存写必须同事务，否则取消后稳态是永久 `cache_behind`）→ critic `APPROVE_WITH_CONDITIONS`（C1–C6 全落笔）→ 复审 `C1/C2 已闭合、C3–C6 无新问题`、`mergeable: yes`。
+> ⚠ **未完成**：D9 的实现（`cancel` CLI + 派生第四态 + 三个新违规码）与 in-flight（`claim` / `close` + per-topic 写互斥）**均未立项** ⇒ 登记 `backlog: plan-topics-cancelled-semantics`；`prompts/plan.md` 的「多会话协作」整节与 `docs/SUBAGENT-ORCHESTRATION.md` §2.3 被 `.rddf/rollback/plan-topics.json` **逐字节钉死** ⇒ 同步它们必须同批改该清单（不在 architect 写集 ⇒ builder 面）。
+
+---
+
 > **v2.70 回滚清单的形态守卫 + 角色写集机读投影（2026-11-24）**：
 > 回滚清单的 `edits[].find` 是「回滚时要被替换掉的原文片段」⇒ 越窄越准。当一个 `find` 覆盖了与机制无关的散文或整张表格时，治理面文档的**正常编辑**会被一个**回滚用**的机制产物挡住，且这个绑定**不可见**（改之前不知道会红），只能靠跑 `bun test` 撞出来。2026-11-23 已发生真实绕路（`prompts/build.md` 角色列表被 2914 字符的整表 `find` 挡住 ⇒ 放弃表内修正改用「表尾投影」，后者又制造了第二份无守卫副本）。
 > **形态守卫**（`tests/rollback-manifests.test.ts`）：三道闸逐清单算形态指标 —— `sep`（含 markdown 表格分隔行的 find 条数）/ `pipe`（`|` 起始的连续行数 > 1 的 find 条数）/ `maxLen`（最长 find 字符数）；与**零增长基线** `FIND_SHAPE_BASELINE` 比对（实际值 ≤ 基线值 ⇒ 存量违规不许增加、收敛一项移除一项）⇒ **不是豁免白名单**（豁免 = 允许继续退化）。`MAX_FIND_LEN = 2894` 取 361 条 find 的 **p95** ⇒ 零假红，同时是新 find 的硬约束。
