@@ -66,7 +66,7 @@
     },
     {
       "path": "prompts/plan.md",
-      "find": "#### 运行态绑定\n\n`.rddf/state/plan-sessions/<session_id>.json`（gitignored，**每会话一文件**）：`{ \"topic\": …, \"node\": …, \"role\": …, \"parent_session_id\": …, \"heartbeat\": … }`。每会话一文件 ⇒ 两个根会话**不会互相覆盖**。写入用**原子替换**（临时文件 + rename）。这是 `lock` 子命令 binding 查询的输入（按 owner 直接构造路径）。\n\n",
+      "find": "#### 运行态绑定\n\n`.rddf/state/plan-sessions/<session_id>.json`（gitignored，**每会话一文件**）：`{ \"topic\": …, \"node\": …, \"role\": …, \"parent_session_id\": … }`。每会话一文件 ⇒ 两个根会话**不会互相覆盖**。写入用**原子替换**（临时文件 + rename）。这是 `lock` 子命令 binding 查询的输入（按 owner 直接构造路径）。\n⚠ **判活不靠这个文件**：D10 的在飞判活 = `TODO.md` 的 mtime 新鲜度（读时提示），**不维护 heartbeat 字段**。\n\n",
       "replace": ""
     },
     {
@@ -169,11 +169,5 @@
   },
   "retire": [
     "plan-topics"
-  ],
-  "last_drill": {
-    "sha": "8c73f7cf0cc411ad30f8a426fae8e70f83c5b108",
-    "at": "2026-11-25",
-    "result": "pass",
-    "content_hash": "24522f10d79d171903acbed90ecce7be5d0b46f96bda4ec0976bb272cbe0e035"
-  }
+  ]
 }

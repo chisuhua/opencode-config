@@ -284,7 +284,8 @@ bun scripts/plan-topic-check.ts cancel .rddf/plan-topics/<topic> <node-id> --rea
 
 #### 运行态绑定
 
-`.rddf/state/plan-sessions/<session_id>.json`（gitignored，**每会话一文件**）：`{ "topic": …, "node": …, "role": …, "parent_session_id": …, "heartbeat": … }`。每会话一文件 ⇒ 两个根会话**不会互相覆盖**。写入用**原子替换**（临时文件 + rename）。这是 `lock` 子命令 binding 查询的输入（按 owner 直接构造路径）。
+`.rddf/state/plan-sessions/<session_id>.json`（gitignored，**每会话一文件**）：`{ "topic": …, "node": …, "role": …, "parent_session_id": … }`。每会话一文件 ⇒ 两个根会话**不会互相覆盖**。写入用**原子替换**（临时文件 + rename）。这是 `lock` 子命令 binding 查询的输入（按 owner 直接构造路径）。
+⚠ **判活不靠这个文件**：D10 的在飞判活 = `TODO.md` 的 mtime 新鲜度（读时提示），**不维护 heartbeat 字段**。
 
 #### 子结果只回指针
 

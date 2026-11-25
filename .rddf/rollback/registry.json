@@ -11,7 +11,7 @@
     {
       "mechanism": "plan-topics",
       "adr_primary": "docs/adr/ADR-plan-multi-session-collaboration.md",
-      "state": "active",
+      "state": "proving",
       "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。",
       "manifest_ref": "plan-topics",
       "watch": [
