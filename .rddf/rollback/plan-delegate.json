@@ -246,11 +246,6 @@
       "path": "prompts/build.md",
       "find": "**派发侧要求见 plan.md 选类表**",
       "replace": "**派发侧要求见 front.md §3.1**"
-    },
-    {
-      "path": ".rddf/rollback/registry.json",
-      "find": "{\n      \"mechanism\": \"plan-delegate\",\n      \"adr_primary\": \"docs/adr/ADR-plan-delegate-engineering-session.md\",\n      \"state\": \"proving\",\n      \"notes\": \"plan 侧工程派发的**能力面**退役（内核保留、惰性）。\",\n      \"manifest_ref\": \"plan-delegate\",\n      \"watch\": [\n        \"opencode.jsonc.opencode-go\",\n        \"docs/adr/ADR-plan-delegate-engineering-session.md\"\n      ]\n    }",
-      "replace": "{\n  \"mechanism\": \"plan-delegate\",\n  \"adr_primary\": \"docs/adr/ADR-plan-delegate-engineering-session.md\",\n  \"state\": \"retired\",\n  \"retired_at\": \"2026-11-25\",\n  \"retired_evidence\": \".rddf/reviews/adr-plan-delegate-engineering-session-review.md\",\n  \"notes\": \"plan 侧工程派发的**能力面**已退役（内核保留、惰性）。\"\n}"
     }
   ],
   "drill_env": {
@@ -269,5 +264,8 @@
         "tests/"
       ]
     ]
-  }
+  },
+  "retire": [
+    "plan-delegate"
+  ]
 }

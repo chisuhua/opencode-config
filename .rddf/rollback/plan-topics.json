@@ -145,11 +145,6 @@
       "replace": ""
     },
     {
-      "path": ".rddf/rollback/registry.json",
-      "find": "{\n      \"mechanism\": \"plan-topics\",\n      \"adr_primary\": \"docs/adr/ADR-plan-multi-session-collaboration.md\",\n      \"state\": \"proving\",\n      \"notes\": \"plan 侧多会话协作（plan-worker + topic checker）的退役脚本。\",\n      \"manifest_ref\": \"plan-topics\",\n      \"watch\": [\n        \"lib/plan-topics.ts\",\n        \"scripts/plan-topic-check.ts\",\n        \"prompts/plan-worker.md\"\n      ]\n    }",
-      "replace": "{\n  \"mechanism\": \"plan-topics\",\n  \"adr_primary\": \"docs/adr/ADR-plan-multi-session-collaboration.md\",\n  \"state\": \"retired\",\n  \"retired_at\": \"2026-11-25\",\n  \"retired_evidence\": \".rddf/reviews/adr-plan-multi-session-collaboration-review.md\",\n  \"notes\": \"plan 侧多会话协作（plan-worker + topic checker）已退役。\"\n}"
-    },
-    {
       "path": "tests/config-guards.test.ts",
       "find": "    ).toEqual([\"context-builder\", \"critic\", \"explore\", \"general\", \"metis\", \"oracle\", \"plan-worker\"])",
       "replace": "    ).toEqual([\"context-builder\", \"critic\", \"explore\", \"general\", \"metis\", \"oracle\"])"
@@ -171,5 +166,8 @@
         "tests/"
       ]
     ]
-  }
+  },
+  "retire": [
+    "plan-topics"
+  ]
 }
