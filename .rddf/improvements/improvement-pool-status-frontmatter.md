@@ -153,3 +153,10 @@ rollback-drill-replace-pattern               -      待讨论          -
 | 16 | 边界 | YAML 半角冒号会炸 | **已改**：What Changes 加「禁半角冒号 + 空格、日期用全角括号」 |
 | 17 | 边界 | 「本仓归档 vs 产品仓归档」措辞未区分 | **已改**：What Changes 表内 `rdd-verifier-state-consolidation` 行注明「**产品侧仓** change …；该归档目录**不在本仓**」 |
 | 18 | 边界 | 演练对象若同名短路项 ⇒ 演练假失败 | **已改**：AC 加对象约束 |
+
+## 8. critic 审查处置记录（第 1 轮，`review_profile: plan`，`APPROVE_WITH_CONDITIONS`，无 BLOCKER）
+
+- **与本文直接相关的 finding 无**（S1/S2/S4 属提案 2；S6/S7 属路线图）。
+- **S5（A6 缺 front-matter × AC20 15 行窗口的联合断言）**：本文 A2 侧的窗口风险已闭合（What Changes 第 3 条 + AC 的窗口断言：10 份文件行位移 == 4 且仍在 15 行内）；**A6 侧（新增文件日后被关闭）** 由 **roadmap A6 判据 ③** 闭合 ⇒ 两侧都有落点，不重复登记（回应 critic NITS-3：注明哪侧已闭、哪侧开放）。
+- **S3（token 无消费载体）**：本文不涉及 token；其订正落在提案 2 §8。
+- **oracle 的 C4 判断**：本文能力边界段已改写（C4 现规格会把 3 个反例自动化 ⇒ 不立项；增量归 A6）。

@@ -37,7 +37,7 @@
 | **安装态 / 外部消费者视角**（`~/.config/opencode` 里的 CLI 被调、默认套件 cadence 下的漂移） | ❌ 不能 | ❌ **不需要模型** ⇒ 无 `E2E_REAL_RUNTIME` 时**不 skip 且全绿** | **零模型 CLI 层** |
 | **宿主接线**（plan agent 的权限 / shell 白名单 / 工具接线在真宿主里允许协议命令被执行） | ❌ **不能**（单测不过权限层） | ✅ **只有真宿主能证明** | **真宿主层**（吃额度） |
 
-⇒ **真正需要花额度的只有最后一格**。本条据此重排：真宿主用例**只留 1 条**，其余全部下沉到零模型层（反而**补上了「本仓改 CLI 契约后无人发现」的洞** —— 零模型用例进默认套件 ⇒ 每次 e2e 仓 CI 都会跑）。
+⇒ **真正需要花额度的只有最后一格**。本条据此重排：真宿主用例**只留 1 条**，其余全部下沉到零模型层（**补上「本仓改 CLI 契约后无人发现」的洞** —— 零模型用例进 e2e 仓默认套件，而该仓 CI 在 push / PR / nightly cron 上跑 `bats tests/integration/ tests/_lib/`，见下方 §「零模型层的 CI 前提」）。
 
 这正是本条的**隐藏意图**：**用最小额度买到「宿主接线漂移能被发现」**，而不是「把 4 条判据都跑一遍真会话」。
 
@@ -74,7 +74,10 @@
    | **PT-3** | 「在飞排除派发」 | `claim` 后该节点**不在** `ready` 里 ∧ `ready --json` 的 `in_flight` 含它 ∧ **`check --phase final` exit 0** ∧ **`converged === false`** | 「在飞不是违规」与「绿着但不收敛」是**两个不同断言**，必须分别写死；phase 不写清会被实现成 dispatch 口径而丢掉 D11 语义 |
    | **PT-4** | 「锁无关」 | 留一个未释放的 topic 锁 ⇒ `converged === true` ∧ `check` 前后 `graph.json` **逐字节不变** | 锁是磁盘目录、checker 不读锁 ⇒ **不需要真会话**；并入零模型层（不单列真宿主用例） |
 
-   ⚠ **零模型层的额外价值**：它们进 e2e 仓**默认套件**（`bats -r tests/`，零模型 67 条那一组）⇒ **本仓改 CLI 输出契约后，e2e 仓 CI 会红** ⇒ 补上审计发现的「契约漂移无 CI 发现」的洞。⇒ 对应的**跨仓漂移纪律**（本仓侧）：凡动 `scripts/plan-topic-check.ts` 输出契约的 change，其 AC 必须含「同步 e2e 期望」一步 —— 登记为**本仓 builder 的 AC 纪律**（不在本条范围，本条只提供被同步的对象）。
+   ⚠ **零模型层的额外价值与它的 CI 前提（critic S2 修订）**：它们进 e2e 仓**默认套件**（`bats -r tests/`，零模型 67 条那一组）⇒ **本仓改 CLI 输出契约后，e2e 仓会报「新增失败」**。
+   - **实况核对**（取代此前「无 CI」的假设）：e2e 仓**有** `.github/workflows/test.yml` —— 触发 = `push`（master/main）/ `pull_request` / `workflow_dispatch` / **nightly cron `0 2 * * *`**；跑 `bats tests/integration/ tests/_lib/` ⇒ 新增的 `test_plan_topics_cli.bats` **必须落在 `tests/integration/`**（落在 `tests/` 根下 CI 不会跑它）。
+   - ⚠ **信号强度前提（必须写进 B1 拍板文本）**：漂移信号的载体是 `report_regression.sh` 的「新增失败 ⇒ exit 1」，而它**只对基线干净时可靠** —— 当前基线带着 8 条已知失败（上游退役 guide skill），且 bats 步骤本身没有 `continue-on-error` ⇒ **CI 今天是否绿未核实**（可能已被这 8 条染色）。因此：**C1（迁移那 8 条）是零模型层漂移信号的先决条件**；C1 未做时，本条只宣称「用例存在且能跑」，**不宣称「漂移会被 CI 自动抓到」**。
+   - **跨仓漂移纪律**（本仓侧）：凡动 `scripts/plan-topic-check.ts` 输出契约的 change，其 AC 必须含「同步 e2e 期望」一步 —— 登记为**本仓 builder 的 AC 纪律**（不在本条范围，本条只提供被同步的对象）。
 
 3. **真宿主层（e2e 仓 `tests/integration/test_plan_topics_runtime.bats`；**走 `E2E_REAL_RUNTIME=1` 门控 ⇒ 默认 skip**）** —— **只留 1 条**：
 
@@ -88,13 +91,21 @@
 4. **push-gate 的运行时用例（e2e 仓 `tests/integration/test_push_gate_runtime.bats`；**默认 skip**，因为它要真发一条 push 命令）** —— **重设计**（按 metis 的 P0-2）：
 
    - **形状必须选 config 8 条 `deny` glob 表达不了的超集形态**：`lib/push-gate.ts` 头注自承工具层是 config 的**严格超集**（S1 前缀 / S2 短选项簇 / S3 `+refspec` / S4 quoted / S5 跳带值）⇒ 朴素 `git push --force` **会先撞 config deny**，插件根本摸不到。
-     ⚠ **oracle 的形状修正（实测前的推断，须由探针逐一确认）**：**带引号形态大概率无效** —— `git push "origin" "+main:main"` 的原始串里含 ` +` ⇒ 仍命中 config 的 `git push * +*` glob（`opencode.jsonc.opencode-go:66-67`）⇒ **可靠的超集形状是短簇 `-uf`**（串中无 ` -f` 子串 ⇒ config 的 8 条 glob `:62-69` 全部落空）。
+     ⚠ **形状的实测核对（critic S1 修订，取代 oracle 的推断）**：逐条对 config 的 8 条 `deny` glob（`opencode.jsonc.opencode-go:63-70`）做匹配核验（fnmatch 语义）——
+
+     | 形状 | 是否撞 deny glob | 判定 |
+     |---|---|---|
+     | `git push -uf origin main` | ❌ 不撞 | **唯一候选**：无 ` -f` / `--force` / ` +\` 子串 |
+     | `git push -fu origin main` | ⚠ **撞 `git push -f*`** | **f 不得居首** ——「短簇」二字不足以钉死簇序 |
+     | `git push "origin" "+main:main"` | ❌ 不撞（fnmatch 语义） | ⚠ oracle 与 critic **均判它会撞** `git push * +*`，**实测为误**：该 glob 要求「空格 + `+`」，引号形态是 `"` 紧跟 `+` ⇒ 不匹配。但宿主 glob 引擎语义**未实测** ⇒ 仍不作为候选（`-uf` 已足够） |
+
+     ⇒ **AC 只收 `-uf`**（带引号形态从选项删除，避免实施者按 AC 字面选到一个未经宿主验证的形状）。
    - **断言必须匹配精确文案**（不是「有 Tool.Error」）：插件抛的是 `push-gate: 检测到 **force push**（\`git push … <token>\`）⇒ 拒绝（…）`（`lib/push-gate.ts:68`）⇒ 断言须含 `push-gate:` 前缀 ⇒ **否则权限层的拒绝会冒充插件**（CG-1 已踩过「只匹配 `commit-gate:` 被别的判据冒充」的坑）。
    - **必须有正向对照**：非 force push（如 `git push origin main`）⇒ **不得**含 `push-gate:` 文案（否则「一律拒绝」式实现也全绿 —— CG-1/CG-2 成对教训）。
    - **安全硬要求**：fixture 必须用**本地 bare 远端**（`file://`）⇒ 断言「即便门禁失效，push 也只打到一次性本地远端」；**变红演练（临时摘插件）必须在零网络副作用下完成**。当前提案对「测失败时会不会真把 force push 打出去」零着墨 ⇒ 这是**硬要求**，不是可选项。
    - ⚠ **前置探针 AC（必做，否则这条用例大概率空转）**：**两分支处置已预承诺**（oracle）——
-     - **结论 = 钩子先**（`tool.execute.before` 先于 permission）⇒ 写用例，目标如实**降级**为「证明插件挂在 push 路径上」；
-     - **结论 = permission 先 / 结构性不可达** ⇒ **不写用例**；登记 `PUSH-GATE-E2E-UNREACHABLE` token（与 B1 同一套机械登记纪律）+ **探针证据进 backlog**；force-push 验证移交**人工验收层**（交互会话 + 已持久化 Allow-always + 本地 bare 远端）。
+     - **结论 = 钩子先**（`tool.execute.before` 先于 permission）⇒ 写用例，目标如实**降级**为「证明插件**在 fresh 非交互会话里**挂在 push 路径上」。⚠ **critic S4：这个结论只对 fresh 世界成立** —— 而 push-gate 的存在理由（`lib/push-gate.ts:4-6`）是**持久化 Allow-always 覆盖 config deny 的交互世界** ⇒ 两者不是同一个世界 ⇒ 必须另登记第三个 token **`PUSH-GATE-ALLOW-ALWAYS-WORLD-UNVERIFIED`**，否则下一批会把「fresh 世界绿」读成「force-push 兜底已验证」；
+     - **结论 = permission 先 / 结构性不可达 / 候选形状（含 `-uf`）全部到不了插件**（三种出口同归此类）⇒ **不写用例**；登记 `PUSH-GATE-E2E-UNREACHABLE` token（与 B1 同一套机械登记纪律）+ **探针证据进 backlog**；force-push 验证移交**人工验收层**（交互会话 + 已持久化 Allow-always + 本地 bare 远端）。
      ⇒ oracle 判词：「**没探针就干脆不做**是错的；**探针 documented 不可达后不做**是对的」⇒ backlog 条目**必须带探针证据**，防下一批重新吵一遍。
      ⇒ 探针本身**便宜且有独立价值**：1–2 条极简真会话（让模型原样执行一条指定 shell 命令，**不需要真 push 成功**）⇒ 闭合的正是 `lib/push-gate.ts:4-6` 登记的「Allow always 与 config deny 的优先级未知」⇒ 结论无论朝向都回写一份 review 记录。
    - ⚠ **探针 AC 展开**：① 宿主 **permission 评估**与 `tool.execute.before` **钩子的先后顺序**未探明 ⇒ 若 permission 先，插件永远摸不到 push；② push-gate 的存在理由（ADR D9⑧）是「宿主持久化的 Allow-always 覆盖了 config deny」⇒ **fresh 非交互会话没有持久化授权** ⇒ 「config 失效、只剩插件兜底」这个前提在非交互 e2e 里**结构上不存在** ⇒ 须**注入持久化授权**或如实把用例目标**降级**为「证明插件挂在 push 路径上」。⇒ **探针结论是「非交互下插件结构性不可达」时**，本条按降级目标写，**不许按现在的写法立项**（必产出空转或必红用例）。
@@ -108,7 +119,11 @@
 
    **重开触发器**（让缺口有 owner-event，不只是一个标签）：「e2e 仓 harness-p1（capability 集，ADR-0003 P1）立项时，**模型行为面评估移交该处**」。
 
-   固定 token：**`PLAN-TOPICS-MODEL-BEHAVIOR-NOT-COVERED`** ⇒ ① e2e 仓的 bats 头注 + `known-gaps-and-ownership.md` 登记行**都**带该 token；② 本仓的审计模板（`.rddf/reviews/test-completeness-debt-e2e-audit-*.md` §3.2 覆盖映射）增一行「`grep -c PLAN-TOPICS-MODEL-BEHAVIOR-NOT-COVERED` ⇒ 计数」⇒ 下次审计**可机判**。
+   固定 token 的**落点（只列真实存在的载体）**：① e2e 仓的 bats 文件头注；② e2e 仓 `docs/known-gaps-and-ownership.md` 的缺口登记行；③ **本提案的 AC 段**（可 grep）。
+   ⚠ **critic S3 订正（原方案有一处前提为假）**：原稿称「本仓的审计模板（`.rddf/reviews/test-completeness-debt-e2e-audit-*.md` §3.2）增一行 grep 计数 ⇒ 下次审计可机判」—— 但 `.rddf/reviews/` 下**不存在任何审计模板文件**（审计报告是按日期的一次性产物）⇒ 该机制前提无载体，正是本提案自己批判过的「把新边界登记进一张已知会腐烂的表」。改为：
+   - **机械载体**：token 只出现在上面三处（都可 grep；e2e 仓侧随代码演进、本提案侧随立项）；**不宣称**「下次审计自动机判」。
+   - **消费方式（诚实口径）**：token 的**消费是流程动作** —— 下次审计/评审的执行者（verifier 或主会话）必须回答「token 存在 ⇒ 对应面是否仍开放」。让这条从散文变契约需改 `prompts/build.md` 的 verifier 产出契约（治理面，**planner 不写**）⇒ 登记为 **architect/builder 的治理面提案项**（不在本条范围）。
+   - **防「用例名被误读」**：光有 token 不够 —— PT-2/3/4 的用例名（「取消事务」「在飞排除派发」「锁无关」）单看无法看出层级 ⇒ **用例名加 `CLI:` 前缀**（`CLI: cancel --cascade …`），让只 grep 用例名的人也能看出它不在宿主层。
    ⚠ **为什么不登记进散文表就完事**：那张表恰是审计发现的「17 天未复核、已闭合未标」的腐烂面 ⇒ 把新的诚实边界登记进一张已知会腐烂的表 ≈ **没有信号**。
 
 6. **「不做」清单（显式，防范围蔓延 + 防读者按 Why 表期待全覆盖）**：
@@ -134,13 +149,13 @@
   - [ ] **push-gate 探针**：宿主 permission 评估与 `tool.execute.before` 钩子的**先后顺序** + 「config 失效前提」如何构造（注入持久化授权 / 或如实降级用例目标）
 - [ ] **零模型层**：新增 `test_plan_topics_cli.bats`；**无 `E2E_REAL_RUNTIME` 时不 skip 且全绿**（3 条：PT-2 `--cascade` / PT-3 `phase=final ∧ converged=false` / PT-4 锁无关）⇒ 与真宿主用例的 skip 断言**方向相反**，两条都要验
 - [ ] **真宿主层**：新增 `test_plan_topics_runtime.bats`；默认 skip（`bats <file>` 输出 skip 且退出码 0），`E2E_REAL_RUNTIME=1` 下 PT-1 通过（**无 spawn**；名字与文档一致，不得声称覆盖 fork-join 编排）
-- [ ] **push-gate 层**：新增 `test_push_gate_runtime.bats`；① 形状为 config glob 覆盖不了的超集形态（带引号 / 短簇）；② 断言含精确文案 `push-gate:`（**不只断言「有 Tool.Error」**）；③ **正向对照**：非 force push ⇒ 错误**不含** `push-gate:`；④ fixture 为**本地 bare 远端**（`file://`），变红演练零网络副作用
+- [ ] **push-gate 层**：新增 `test_push_gate_runtime.bats`；① 形状为 **`-uf` 短簇**（**f 不得居首**；带引号形态已排除 —— `-fu` 会撞 `git push -f*`）；② 断言含精确文案 `push-gate:`（**不只断言「有 Tool.Error」**）；③ **正向对照**：非 force push ⇒ 错误**不含** `push-gate:`；④ fixture 为**本地 bare 远端**（`file://`），变红演练零网络副作用
 - [ ] **额度纪律**：真宿主用例复用 `ib_skip_if_out_of_quota` / `ib_skip_if_timeout` ⇒ 额度耗尽/超时判 **skip（未判定）** 而非 fail
 - [ ] **每 trial 干净环境**：用例显式断言无跨 run 共享状态（`HOME` / opencode session 目录 / git 历史 / `TMPDIR` / 工作区 / **`.rddf/state/plan-topics/<slug>.lock` 与 `.graph.lock`**）
 - [ ] **替代正确解也必须通过**（ADR-0003）：PT-1 的 oracle 在「不同写法的合法 TODO/RESULT」下同样通过（至少 1 个变体）
 - [ ] 每条用例有**变红演练记录**（三条纪律齐备：断言只认事实 / 可证伪 / 变红演练）
 - [ ] 每条用例有 **oracle 审计记录**（`auditor ≠ author`；字段齐备：case_id / oracle_sha / defects / verdict / date）
-- [ ] **未覆盖面用机械 token 登记**：`PLAN-TOPICS-MODEL-BEHAVIOR-NOT-COVERED` 出现在 e2e 仓 bats 头注 **和** 缺口登记行；**本仓**审计模板的覆盖映射增「grep 该 token ⇒ 计数」一行 ⇒ 下次审计可机判
+- [ ] **未覆盖面用机械 token 登记**：两个 token（`PLAN-TOPICS-MODEL-BEHAVIOR-NOT-COVERED` / `PLAN-TOPICS-FORK-JOIN-NOT-COVERED`）出现在 e2e 仓 bats 头注 **和** `known-gaps-and-ownership.md` 缺口登记行；**用例名带 `CLI:` / `RUNTIME:` 层标识**；不宣称「下次审计自动机判」（`.rddf/reviews/` 无模板载体 ⇒ 消费是流程动作，见 What Changes 第 5 条）
 - [ ] **本仓侧零回归**：`bun test tests/` 全绿 + `bash scripts/check-upstream-anchors.sh` 全绿（本条不改本仓代码 ⇒ 只作基线）
 - [ ] 实跑证据落 `.rddf/reviews/runtime-e2e-coverage-new-mechanisms-e2e.md`，含 **HEAD sha** + **`git status` 干净度** + 真实输出片段
 - [ ] 若真跑中出现「plan 的 shell 白名单不允许 `claim`/`close`/`cancel`」⇒ **记为「协议面缺口」并路由**（不判用例失败、不在本条顺手改 prompt）
@@ -148,13 +163,13 @@
 ## Capabilities
 
 - **补上「宿主接线」这一层的证明力**：本仓第一次有**机制类**（不是治理面）进入运行时 e2e ⇒ 后续新机制有可抄的形态（真宿主 + 真 CLI + 假 worker 的成本远低于真子会话；且**零模型层不进额度池**）。
-- **顺带补上「契约漂移无人发现」的洞**：PT-2/3/4 进 e2e 默认套件 ⇒ 本仓改 CLI 输出契约后，e2e 仓 CI 会红 ⇒ 这一层的价值**不依赖**模型额度。
+- **顺带补上「契约漂移无人发现」的洞（带前提）**：PT-2/3/4 进 e2e 默认套件 ⇒ 本仓改 CLI 输出契约后，e2e 仓报「新增失败」⇒ 这一层的价值**不依赖**模型额度。⚠ **前提 = 基线干净**（C1 迁移那 8 条已知失败；否则「新增失败」淹没在既有噪声里）⇒ C1 未做前本条只宣称「用例能跑」，不宣称「漂移会被自动抓到」。
 - **与本仓既有的「四层分工」纪律对齐**：`docs/test-authoring.md` §1 说「两层不能互替，缺哪层就缺哪层的证明力」⇒ 本条补的是 L2 那一层，且**明确不覆盖 L2 之上的模型行为面**（用机械 token 登记 ⇒ 不会被误读）。
 - ⚠ **不宣称「范式可迁移到 model-fallback」**（形态完全不同：前者拦命令，后者要真模型失败才触发链推进 ⇒ flaky 最高）⇒ 待路线图 **B2 后半**落地后再评估。
 
 ## Impact
 
-- 改动面：**e2e 仓**（新增 3 个 bats 文件 —— 零模型 1 个 / 真宿主 2 个；**不改**既有文件的行为；缺口登记行加 token）+ **本仓**（零代码改动；一条 review 记录；审计模板加一行 grep 计数）。
+- 改动面：**e2e 仓**（新增 3 个 bats 文件 —— 零模型 1 个 / 真宿主 2 个；**不改**既有文件的行为；缺口登记行加 token）+ **本仓**（零代码改动；一条 review 记录）。⚠ 零模型用例须落在 `tests/integration/` 才被 CI 跑到；且**漂移信号的前提 = C1 迁移 8 条已知失败**（基线干净）。
 - ⚠ **跨仓协调**：e2e 仓的 bats 需用 `~/.config/opencode` 作为被测仓（`OC_ROOT` / `TARGET_REPO` 默认值已是）⇒ 本仓**当前 HEAD** 即被测对象 ⇒ 本仓后续改动会让这些用例的期望漂移 ⇒ 期望值必须写成**结构化断言**（退出码 / 字段 / 计数），**不得**写死易漂的散文文本；且本仓动 CLI 契约的 change 必须同步 e2e 期望（登记为本仓 builder 的 AC 纪律）。
 - 风险 ①：**额度与 flaky** ⇒ 缓解：默认 skip + 不进 CI + 复用额度/超时 skip 纪律 + 一次真会话（不是 4 次）；实跑失败先判「环境 vs 缺陷」。
 - 风险 ②：**路径 ③ 的证明力被高估**（有人把「协议跑通」读成「机制正确」）⇒ 缓解：AC 明确要求机械 token 登记 + PT-1 改名去 spawn + 「唯一理由」那句话写死。
@@ -175,7 +190,7 @@
 | 1 | P0 | **拆解 PT-1 编排**：谁写假产物 + 几次会话 + 是否续接未钉；「续接可用性」本身是前置 AC | **已改**：What Changes 第 3 条写明三形态 + **前置探针 AC**（`opencode run --session <existing>` 续接可用性，e2e 仓零先例）+ 探针失败时的退路与**偏差登记** |
 | 2 | P0 | **push-gate 用例重设计**：形状须超集 / 断言须精确文案 / fixture 须本地 bare / 须前置探针（permission vs 钩子顺序 + config 失效前提）；不可达时降级目标 | **已改**：What Changes 第 4 条全部落地（四小点 + 探针 AC + 降级条款） |
 | 3 | P0 | **PT-2/3/4 应拆出真宿主**（纯 CLI、零模型、进默认套件）；真宿主只留 PT-1 并写明其唯一理由 | **已改**：新设「零模型层」（第 2 条，3 条用例，不门控）+ 真宿主层只留 PT-1（第 3 条）+ 「唯一理由」那句话写死 ⇒ **额度成本从 4 次真会话降到 1 次** |
-| 4 | P0 | **「模型行为面未覆盖」改机械信号**（固定 token + 本仓审计模板加 grep 计数） | **已改**：What Changes 第 5 条 + AC 的 token 登记条（e2e bats 头注 + 缺口登记行 + 本仓审计模板 grep 计数） |
+| 4 | P0 | **「模型行为面未覆盖」改机械信号**（固定 token） | **已改**：What Changes 第 5 条 + AC 的 token 登记条（**双 token** + e2e bats 头注 + 缺口登记行 + 用例名层标识）。⚠ critic S3 已订正：「本仓审计模板 grep 计数」**前提为假**（`.rddf/reviews/` 无模板）⇒ 改为「只列真实载体 + 消费是流程动作」 |
 | 5 | P1 | PT-1 改名去「spawn」；诚实边界补「fork-join 编排只有 ② 能覆盖」 | **已改**：PT-1 改名为「登记 → 交付 → 关闭主链（**无 spawn**）」+ What Changes 第 1 条 ③ 的边界两条 |
 | 6 | P1 | PT-2 钉死 `--cascade`；PT-3 写明 phase + `converged=false` | **已改**：零模型层表内逐条钉死（PT-2 断言下游 `reason == "级联自 a1"`；PT-3 `phase=final ∧ converged===false`） |
 | 7 | P1 | AC 补 ADR-0003 漏引两条（替代正确解 / 每 trial 干净环境） | **已改**：What Changes 第 7 条「转正规则**全引**」+ AC 两条对应项（含**锁目录**点名） |
@@ -193,3 +208,22 @@
 | 19 | 边界 | plan 的 shell 白名单对 claim/close/cancel 覆盖未实测 | **已改**：What Changes 第 8 条 + AC 末条（权限拒 ⇒ 记为「协议面缺口」并路由，不判用例失败） |
 | 20 | 边界 | e2e 测的是活仓工作区 ⇒ 证据须记 sha | **已改**：What Changes 第 9 条 + AC 对应项 |
 | 21 | 边界 | push-gate 变红演练的环境依赖（config 改 allow 即成真强推） | **已改**：What Changes 第 4 条把「本地 bare 远端」写成**硬要求**（非可选）+ AC 相应条目 |
+
+## 8. critic 审查处置记录（第 1 轮，`review_profile: plan`，`APPROVE_WITH_CONDITIONS`，无 BLOCKER）
+
+> 审查对象 = 并入 oracle 推荐后的版本。按预算规则：**无 BLOCKER ⇒ 不触发返工轮**；SHOULD_FIX 逐条处置如下。
+
+| # | 级别 | finding（摘要） | 处置 |
+|---|---|---|---|
+| S1 | SHOULD_FIX | push-gate 形状判据三处自相矛盾：AC 仍并列「带引号 / 短簇」，且「短簇」未钉簇序（`-fu` 会撞 `git push -f*`） | **已改**：三处统一为唯一候选 `-uf` + 逐形状对照表。⚠ 另**推翻 oracle 与 critic 的共识**：`git push "origin" "+main:main"` 在 fnmatch 下**不撞**任何 8 条 glob（`git push * +*` 要求「空格 + `+`」，引号形态是 `"` 紧跟 `+`）⇒ 但仍不列（宿主 glob 语义未实测） |
+| S2 | SHOULD_FIX | 「零模型层进默认套件 ⇒ CI 会红」的收益叙事超层（critic 依据其权限被拒未核到 CI，判「今天无定期运行者」） | **部分改、部分驳回**：实况核对 **e2e 仓有 CI**（`.github/workflows/test.yml`：push / PR / `workflow_dispatch` / nightly cron，跑 `bats tests/integration/ tests/_lib/`）⇒ critic 的事实前提**不成立**。但采用了它指向的**真前提**：基线带 8 条已知失败 ⇒ 新增失败信号被稀释 ⇒ **C1 成为先决条件**，并写进三处叙事 + B1 拍板文本 |
+| S3 | SHOULD_FIX | 双 token「机械信号」无消费载体（`.rddf/reviews/` 无审计模板文件）；grep 计数不证真值 | **已改**：删掉「本仓审计模板」假前提 ⇒ 只列 3 处真实载体；明确「消费是流程动作」；补用例名 `CLI:`/`RUNTIME:` 层标识；治理面契约化登记为 architect/builder 的提案项（planner 不写 `prompts/**`） |
+| S4 | SHOULD_FIX | B2「钩子先」分支的结论只对 fresh 世界成立，而 push-gate 防的是 Allow-always 世界 ⇒ 外推风险 | **已改**：降级目标加「**在 fresh 非交互会话里**」限定 + 第三个 token `PUSH-GATE-ALLOW-ALWAYS-WORLD-UNVERIFIED`；「形状全部失效」并入不可达出口 |
+| NITS-1 | NITS | PT-2/3/4 用例名无层标识 | **已改**（并入 S3 处置）：名内加 `CLI:` 前缀 |
+
+**未在本文件落地的两条**（属其他文件 / 其他角色，已在对应处处置）：
+
+- **S5**（A6 缺 front-matter × AC20 15 行窗口的联合断言）⇒ 落 **roadmap A6 判据 ③**。
+- **S6**（Q5 横幅列行号 ⇒ 插入后即失真）⇒ 落 **roadmap §7 第 5 条**。
+- **S7**（roadmap §2 顺序行残留 A5）⇒ 落 **roadmap §2**。
+
