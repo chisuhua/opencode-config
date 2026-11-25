@@ -11,7 +11,7 @@
 | 问题 | 结论 | 一句话依据 |
 |---|---|---|
 | **测试是否完备** | **单测层完备且全绿；运行时层有 3 个开口** | `bun test tests/` = 1230 例（1229 pass / 1 skip / 0 fail，34 文件）；每个 `lib/*` / `plugins/*` 模块都有本地用例；**缺口**：`plan-topics`（本批 D9/D10/D11）、`model-fallback`、`push-gate` 三个运行面**无任何运行时 e2e**；另 `arch-docs-scope` 一族（64 条断言）**判别力依赖外部 fixture 床**，床不在即静默 skip |
-| **是否有债务清理** | **未清**（但**本仓可自行止血**，已验证） | 实测 `rddf status`：**pending 10 条，STATUS 全「待讨论」、PRI 全 `-`，其中 6 条其实已完成**（真正待办只有 4 条）；根因定位到产品侧 `collect_pending()` 只认「同名归档目录」+「front-matter `状态`」两条通路，而本仓 **0/32** 提供该字段、名字又常与 change 名不同 ⇒ **补 front-matter 即可让 pending 10 → 4（已用产品侧 `collect_pending` 在临时副本上实测通过）**；另有本批验收遗留 **1 项未闭合**（F-1）+ **5 项观察项**（SF-1…SF-5）、ADR 残留 #9/#11 已完成却未标闭合、e2e 仓 **8 条 KNOWN_FAILURES** 与 **1 份自 2026-11-08 起未更新的跨仓缺口表**（其中 ≥2 条已在本仓闭合、3 条仍开放且无人认领） |
+| **是否有债务清理** | **未清**（但**本仓可自行止血**，已验证） | 实测 `rddf status`：**pending 10 条，STATUS 全「待讨论」、PRI 全 `-`**；逐条核 Acceptance 后：**3 条其实已完成**（虚报待办）、**7 条是真待办**（但标签全是兜底 ⇒ 不可读）；根因定位到产品侧 `collect_pending()` 只认「同名归档目录」+「front-matter `状态`」两条通路，而本仓 **0/32** 提供该字段 ⇒ **补 front-matter 即可让 pending 10 → 7（已用产品侧 `collect_pending` 在临时副本上实测通过）**；⚠ **本报告曾把「指向已归档 change ⇒ 已完成」当判据 ⇒ 已抓到 3 个反例并订正**（见 §2.1 的方法论警告） |
 | **rdd-workflow-e2e 端到端是否完备** | **契约层完备；能力层 / 对抗层缺位（按设计分期到 P1，未立项）** | 22 个 bats 文件 / **143 例**（实跑）；**零模型 67 例默认跑全绿**，**68 例真实运行时默认 skip**，**8 条失败 = 已登记的已知失败**；e2e 仓自己的 ADR-0003 自陈「现有 e2e 几乎全是**契约测试**」；ADR-0005 的 **CI gate 属 P1 且未立项** ⇒ 今天只有「防回归」，没有「能力变好/变坏」的判据；本仓 5 个运行面 **0 例** |
 
 ---
@@ -107,7 +107,14 @@ role-matrix-allow-deny-guard-design          -      待讨论          -
 role-write-set-machine-block                 -      待讨论          -
 rollback-drill-replace-pattern               -      待讨论          -
 ```
-⇒ **10 条待办里 6 条其实已完成**（4 条 = 名字不匹配的已归档项；2 条 = `role-write-set-machine-block` / `rollback-drill-replace-pattern` 实现已完成但未登记）⇒ 真正待办只有 **4 条**。
+⇒ **10 条 pending 的实际构成（逐条核 Acceptance / 核产物在盘上，2026-11-25 复核）**：
+
+| 分类 | 条数 | 条目 |
+|---|---|---|
+| **已完成 ⇒ 虚报待办** | **3** | `rdd-verifier-state-consolidation`（`prompts/build.md:373` 「2026-11-14 起已收拢」）· `role-write-set-machine-block`（六个机读块在位 + commit `5b5ec86`）· `rollback-drill-replace-pattern`（自陈已实施 + `lib/rollback-drill.ts:450`） |
+| **真待办（但标签是兜底 ⇒ 不可读）** | **7** | `adr-front-knowledge-librarian-whitelist-annotation`（❌ 未完成：ADR 无 2026-11-23 增补记录、`:69` 仍写 `librarian.subagent: deny`）· `cross-repo-check-trigger-in-agent-checklist`（❌ 未完成：`prompts/build.md` 无该纪律行）· `delegate-base-resolved-return`（❌ 待 planner 审查）· `delegation-matrix-fill-semantics` · `front-agent-redesign`（3 条未实测判据）· `rddf-status-improvement-status-mismatch` · `role-matrix-allow-deny-guard-design`（设计草案） |
+
+⚠ **方法论警告（本报告自己踩过的坑）**：「improvement 指向已归档 change ⇒ 已完成」**不成立** —— 上表左列 3 条是逐条核 Acceptance 才判定的；右侧前 3 条是**表面已完成、实际未完成**的反例 ⇒ 任何「按指针批量标完成」的清账做法都会**把真待办误标成已完成 ⇒ 债从视野里消失**。
 
 **止血验证（只读实验，不改仓库）**：把 `.rddf/improvements/` 复制到临时目录，给那 6 条已完成的加 YAML front-matter（`status: 已归档（YYYY-MM-DD）` + `priority: P2`），再用产品侧 `collect_pending()` 读：
 ```
@@ -115,6 +122,8 @@ rollback-drill-replace-pattern               -      待讨论          -
 补 front-matter 后：pending=26  errors=0   （6 条已完成项被移出 pending）
 ```
 ⇒ **补 front-matter 就能让「已完成的事」离开待办池**，**不需要改产品仓**（产品侧的分类器与别名已就位，缺的是本仓的数据）。
+⇒ 真实仓口径：pending **10 → 7**（3 条已完成项移出；7 条真待办仍在池但 STATUS/PRI 恢复可读）。
+⚠ **该实验与上面的订正不一致，须按订正读**：实验里标了 **6 条**「已完成」，但逐条核 Acceptance 后只有 **3 条**成立 —— `adr-front-knowledge-librarian-whitelist-annotation` / `cross-repo-check-trigger-in-agent-checklist` / `delegate-base-resolved-return` **表面已完成、实际未完成**（见上表）。实验结论只证明「机制可行（补字段能移出 pending）」，**不作为待办数量的判据**；真实落地 = 3 条（pending 10 → 7）。
 ⚠ 前提：本仓的 5 段散文形态与 frontmatter 并存时，**`status` 前导标记必须命中 terminal 词表**（`已归档`/`已完成`/`已实施`/`archived`/`implemented`…）否则会被兜底成「待讨论」。
 
 ### 2.2 本批（D9/D10/D11 + D5）验收遗留
@@ -226,7 +235,7 @@ exit=1
 | 档 | # | 建议 | 成本 |
 |---|---|---|---|
 | **本仓可独立做** | S-1 | **补 F-1**（回滚清单 `notes` 的旧路径，一行）⇒ 本批从 `needs-revision` 转 `pass` | 1 行 + 一次 `bun test tests/` |
-| | S-2 | **改进池清账（本仓可独立做，已验证可行）**：给那 6 条「已完成却仍挂在待办池」的 improvement 补 YAML front-matter（`status: 已归档（YYYY-MM-DD）` + `priority: P2`）⇒ `rddf status` 的 pending **10 → 4**（只剩真待办的 `delegation-matrix-fill-semantics` / `front-agent-redesign` / `rddf-status-improvement-status-mismatch` / `role-matrix-allow-deny-guard-design`）；顺带修 `rollback-manifest-find-narrowing` 的失效指针（正文写「尚未立项」但 change 已归档 2026-11-24）⇒ 债立刻可见 | 6 个文件的 front-matter（各 3 行）+ 1 处指针 |
+| | S-2 | **改进池清账（本仓可独立做，已验证可行）**：**逐条核 Acceptance / 核产物在盘上**后，给 3 条已完成项补 terminal front-matter（`status: 已归档（YYYY-MM-DD）`）、7 条真待办补非 terminal front-matter + `priority:` ⇒ `rddf status` 的 pending **10 → 7** 且 STATUS/PRI 列恢复可读；顺带修 `rollback-manifest-find-narrowing` 的失效指针（正文写「尚未立项」但 change 已归档 2026-11-24）⚠ **禁止按 change 指针批量标完成**（会误标 3 条真待办） | 10 个文件的 front-matter（各 3 行）+ 1 处指针 |
 | | S-3 | **SF-1**：把 V25 的并发子句按 ADR 要求做成**确定性编排**用例进 CI（编排层预置锁 + 一次性放行，避免裸并发 flaky） | 1 个用例 + 1 个 fixture 助手 |
 | | S-4 | **SF-3 / ADR 残留 #9 / #11**：在 ADR 残留章标「已由 D9/D10/D11 批闭合」⇒ 残留清单不骗人 | ADR 2 行（architect 面） |
 | | S-5 | **G-1**：`arch-docs-scope` 一族的「床不在 ⇒ 静默 skip」改成**可见信号**（至少在 `bun test` 输出里打一行「床缺失 ⇒ 本族零判别力」，或让 commit gate 的 `verify_commands` 显式检查床） | 小（测试文件 + commit-gate 声明） |
