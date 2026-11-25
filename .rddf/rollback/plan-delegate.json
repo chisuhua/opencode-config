@@ -267,5 +267,11 @@
   },
   "retire": [
     "plan-delegate"
-  ]
+  ],
+  "last_drill": {
+    "sha": "8c73f7cf0cc411ad30f8a426fae8e70f83c5b108",
+    "at": "2026-11-25",
+    "result": "pass",
+    "content_hash": "6d58a10f5f315b34ba9bd5b7d8211232829405304f6af86a9fb33135f6dab8ce"
+  }
 }

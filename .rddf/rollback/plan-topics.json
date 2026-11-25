@@ -169,5 +169,11 @@
   },
   "retire": [
     "plan-topics"
-  ]
+  ],
+  "last_drill": {
+    "sha": "8c73f7cf0cc411ad30f8a426fae8e70f83c5b108",
+    "at": "2026-11-25",
+    "result": "pass",
+    "content_hash": "24522f10d79d171903acbed90ecce7be5d0b46f96bda4ec0976bb272cbe0e035"
+  }
 }
