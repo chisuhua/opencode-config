@@ -212,6 +212,26 @@ describe("D10 在飞与 fence（V22–V29）", () => {
     expect(Array.isArray(att.input?.deps)).toBe(true)
   })
 
+  test("V25 并发子句：两子进程并发 claim 同一节点 ⇒ 恰好一个 exit 0（barrier 编排，非裸并发）", async () => {
+    const d = fixtureTopic()
+    const fixture = path.join(import.meta.dir, "fixtures", "plan-claim-child.ts")
+    const repoRoot = path.dirname(d)
+    const readyA = path.join(repoRoot, "readyA")
+    const readyB = path.join(repoRoot, "readyB")
+    const spawn = (myReady: string, peer: string) =>
+      Bun.spawn(["bun", fixture, d, "a1", myReady, peer], { stdout: "pipe", stderr: "pipe" })
+    const a = spawn(readyA, readyB)
+    const b = spawn(readyB, readyA)
+    const [ca, cb] = await Promise.all([a.exited, b.exited])
+    const codes = [ca, cb].sort((x, y) => x - y)
+    // 2 = 夹具的 barrier 超时 ⇒ 必须显式排除，否则夹具故障会冒充「被拒」
+    expect(codes, `退出码不得含 2（barrier 故障）：[${ca}, ${cb}]`).not.toContain(2)
+    expect(codes[0], "并发 claim 必须恰好一个成功").toBe(0)
+    expect(codes[1], "另一方必须被拒（exit ≠ 0）").not.toBe(0)
+    const attempts = loadGraph(d).nodes.find((n) => n.id === "a1")!.attempts
+    expect(attempts.length, "只允许一条 attempt 落盘").toBe(1)
+  })
+
   test("V26 close 与 reap：close 后重回可派；无 open attempt 时 close 无写；reap 需 --confirm", () => {
     const d = fixtureTopic()
     expect(cli(["claim", d, "a1"]).status).toBe(0)

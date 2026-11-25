@@ -24,9 +24,8 @@ bun test tests/delegate-tool.test.ts   # 假 ctx 端到端
 | `delegate-tool.test.ts` | 工具契约（权限 action / 输入 schema）、端到端主链路（建 session → 权限定型 → 简报投递 → 结果回传 → pair/role 登记）、**agent 白名单（含 resume 绕过）**、**知识 session 只读语义**、**ledger 行产生时机（正常 / busy / 校验失败）**、**静默失败检测（outcome=unverified / host_outcome / 时间窗 / 仍在跑不判定 / 知识 session 与 shell 写盘不误报）**、grants preflight、非法 grants 在建 session 前被拒、续接不新建、未登记 id 被拒、busy 不排队、blocked_reason 回传、越界文件可见、remove |
 | `subagent-contract-core.test.ts` | **subagent 输入契约规则引擎**（40 例）：小节识别 5 种实测写法（编号标题/纯标题/标题+尾部说明/加粗独立行/行内赋值）、长度上下限、关键词豁免的结构前置（缺失 ≥ceil(n/2)）+ **任务陈述区窗口**（关键词只认开头 400 字符）、状态继承（继承"复审模式"且**本轮需引用上一轮**，续接轮不清零）、三个钩子处理函数（L3 注入幂等 / L1 门 warn-vs-enforce / L2 只检测）、配置解析 |
 | `arch-docs-scope.test.ts` | **arch 文档范围守卫**（shell 版）：把 `tests/verify_arch_docs_scope.sh` 纳入规范命令
-| ⚠ **环境依赖**：它复用 `rdd-workflow-e2e` 的 fixture 床（`E2E_BED_DIR`）⇒ **床不在时 64 条断言静默 skip**
-| （skip 态不假装通过，但**判别力依赖床存在** ⇒ 无该仓的检出上这一族等价于零判别力）
-| `bun test tests/`（此前它是「入库但无人执行」的第四态）；fixture 床（`E2E_BED_DIR`）不在时**明确 skip** |
+| ⚠ **环境依赖**：优先复用 `rdd-workflow-e2e` 的 fixture 床（`E2E_BED_DIR`）；**床不在时走脚本自带的本地兜底，仍全量执行 64 条断言**（不再静默 skip）
+| 降级**可见**：输出含 `项目形状：e2e-bed` / `项目形状：local-fallback`；用例同时断言两条路径都 `FAIL=0` 且 `PASS=64` |
 | `model-fallback-core.test.ts` | 模型降级链内核（链推进 / 冷却 / 换链） |
 | `plan-topics.test.ts` | 协作 topic 判据库 + CLI 契约：schema / node id / 成环 / 悬空 / progress·status 派生 / 缓存双向（`cache_ahead` 违规 vs `cache_behind` info）/ brief 完整性 / 孤儿 / 退出码四值 / `ready` / `scope-check` / `lock` |
 | `plan-topics-dag.test.ts` | **L1 语义 e2e**（真文件 + 真 git fixture）：5 级链·fan-out·fan-in·菱形·4 层跨层 DAG·森林·120 节点长链·800 级深栈 / 交付物门控 / 动态改图（增删节点、改 deps、改 BRIEF）/ 调度并发（重复派发·锁·scope-check 并行假阳性·baseline 漂移）/ 收敛信号 / `--phase dispatch\|final` 契约。带「钉住」字样的用例断言的是**已登记缺陷**的现状 |

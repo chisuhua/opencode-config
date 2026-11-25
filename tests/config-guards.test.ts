@@ -4939,3 +4939,103 @@ describe("治理面清单配置化（ADR-governance-paths-ownership V1–V7）",
     }
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A6（2026-11-25）：改进池 front-matter 增量守卫
+//
+// 背景：A2 给 10 份存量 improvement 补了 `状态:` / `优先级:`（`rddf status` 的 pending
+// 由 12 降到 8）。但**增量侧**没有约束 —— 新提案不写字段 ⇒ 池子重新变脏，且没有任何
+// 机械信号（这正是 commit 81131e8「清得掉但不可重复」的根因）。
+//
+// 本守卫做两件事：
+//   ① 祖父名单（A2 落地后仍无 `状态:` 的 22 份存量，**冻结**）之外的 .md 必须带字段；
+//   ② front-matter 行数 + 散文状态行必须仍落在 AC20 的 15 行关闭判定窗口内
+//      （否则该文件日后被关闭时 AC20 判它「未关闭」而扫正文旧 token ⇒ A6 绿、AC20 红）。
+//
+// 变红演练（手工，一次性）：在 `.rddf/improvements/` 新建一份不含 `状态:` 的 .md
+// ⇒ ① 红并指名该文件；删掉即复绿。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("A6：改进池 front-matter 增量守卫", () => {
+  const IMPROVEMENTS_DIR = path.join(import.meta.dir, "..", ".rddf", "improvements")
+
+  /** 祖父名单 = A2（2026-11-25）落地后 `grep -L '^状态:'` 的实测清单。只减不增。 */
+  const GRANDFATHERED: readonly string[] = [
+    "adr-d5-async-completion-wording",
+    "backend-handoff-role-class",
+    "canonical-root-normalization",
+    "commit-gate-d9-three-place-registration",
+    "commit-gate-force-push-heredoc",
+    "config-guards-ac10-timeout-flake",
+    "cross-repo-workspace-check",
+    "delegated-verifier-evidence-gap",
+    "front-async-resume-guard",
+    "front-cancel-release",
+    "front-knowledge-capability",
+    "front-multi-backend",
+    "front-stop-confirmation",
+    "front-stop-ownership",
+    "governance-paths-config-migration",
+    "librarian-delegate-contradiction",
+    "plan-multi-session-collaboration",
+    "real-repo-git-budget-guard",
+    "resume-precheck-guidance",
+    "role-exemptions-guard-archive-resilience",
+    "rollback-manifest-find-narrowing",
+    "subagent-contract-critic-enforce",
+  ]
+
+  const allFiles = (): string[] =>
+    readdirSync(IMPROVEMENTS_DIR)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => f.slice(0, -3))
+      .sort()
+
+  /** 只解析**第一个** `---` 块的 key（与产品侧 `_parse_improvement_meta` 同口径）。 */
+  const frontmatterKeys = (file: string): Set<string> => {
+    const text = readFileSync(path.join(IMPROVEMENTS_DIR, `${file}.md`), "utf8")
+    if (!text.startsWith("---\n")) return new Set()
+    const end = text.indexOf("\n---", 4)
+    if (end < 0) return new Set()
+    const keys = new Set<string>()
+    for (const line of text.slice(4, end).split("\n")) {
+      const m = /^([A-Za-z_\u4e00-\u9fff][\w\u4e00-\u9fff-]*):/.exec(line)
+      if (m) keys.add(m[1] as string)
+    }
+    return keys
+  }
+
+  test("名单外的 improvement 必须带 `状态:` 与 `优先级:`（祖父名单冻结，只减不增）", () => {
+    const files = allFiles()
+    const frozen = new Set(GRANDFATHERED)
+
+    const absent = GRANDFATHERED.filter((f) => !files.includes(f))
+    expect(absent.join(", "), "祖父名单里的文件不存在（改名/删除 ⇒ 请同步名单）").toBe("")
+
+    const newOffenders = files
+      .filter((f) => !frozen.has(f))
+      .filter((f) => {
+        const keys = frontmatterKeys(f)
+        return !keys.has("状态") || !keys.has("优先级")
+      })
+    expect(
+      newOffenders.join(", "),
+      "名单外的 improvement 必须带 `状态:` 与 `优先级:` front-matter（缺则补 4 行块）",
+    ).toBe("")
+
+    const stale = GRANDFATHERED.filter((f) => frontmatterKeys(f).has("状态"))
+    expect(stale.join(", "), "这些文件已补 `状态:` ⇒ 请从祖父名单移除（名单只减不增）").toBe("")
+  })
+
+  test("散文状态行必须落在前 15 行（AC20 的关闭判定窗口）", () => {
+    const offenders: string[] = []
+    for (const f of allFiles()) {
+      const lines = readFileSync(path.join(IMPROVEMENTS_DIR, `${f}.md`), "utf8").split("\n")
+      const idx = lines.findIndex((l) => /^\s*>\s*\*\*(实施状态|状态)\*\*/.test(l))
+      if (idx >= 15) offenders.push(`${f}:${idx + 1}`)
+    }
+    expect(
+      offenders.join(", "),
+      "散文状态行超出前 15 行 ⇒ AC20 的 isClosedImprovement() 读不到 ⇒ 关闭后会被当「未关闭」扫正文",
+    ).toBe("")
+  })
+})
