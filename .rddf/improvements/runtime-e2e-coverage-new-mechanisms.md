@@ -76,7 +76,7 @@
 
    ⚠ **零模型层的额外价值与它的 CI 前提（critic S2 修订）**：它们进 e2e 仓**默认套件**（`bats -r tests/`，零模型 67 条那一组）⇒ **本仓改 CLI 输出契约后，e2e 仓会报「新增失败」**。
    - **实况核对**（取代此前「无 CI」的假设）：e2e 仓**有** `.github/workflows/test.yml` —— 触发 = `push`（master/main）/ `pull_request` / `workflow_dispatch` / **nightly cron `0 2 * * *`**；跑 `bats tests/integration/ tests/_lib/` ⇒ 新增的 `test_plan_topics_cli.bats` **必须落在 `tests/integration/`**（落在 `tests/` 根下 CI 不会跑它）。
-   - ⚠ **信号强度前提（必须写进 B1 拍板文本）**：漂移信号的载体是 `report_regression.sh` 的「新增失败 ⇒ exit 1」，而它**只对基线干净时可靠** —— 当前基线带着 8 条已知失败（上游退役 guide skill），且 bats 步骤本身没有 `continue-on-error` ⇒ **CI 今天是否绿未核实**（可能已被这 8 条染色）。因此：**C1（迁移那 8 条）是零模型层漂移信号的先决条件**；C1 未做时，本条只宣称「用例存在且能跑」，**不宣称「漂移会被 CI 自动抓到」**。
+   - ⚠ **收益三层化（critic SF-1，已用 CI 实况核准）**：**L0 用例存在**（今天兑现）；**L1 本地可跑 + 可作 builder 的 CLI 契约检查**（今天兑现、成本≈0 ⇒ 足以支撑「现在批」）；**L2「CI 自动抓漂移」= 跟踪项**，前置 = **e2e 仓 CI 红清零**。实况（2026-11-25）：`gh run list` 近 5 次 nightly **全部 failure**；日志 `已知失败: 0 / 新增失败: 17`；根因 A = `origin/master` 的 `KNOWN_FAILURES.txt` **0 条有效条目**（8 条在**未推送**的本地 commit `073421b`）；根因 B = 另 **9 条真新增**（C1–C7、AC7-①/①b，性质未查明）⇒ **L2 今天不成立**，且 **C1 单靠迁移 8 条不足以修好**（还要推送基线 + 处置 9 条）。**L2 不进 B1 验收门**。
    - **跨仓漂移纪律**（本仓侧）：凡动 `scripts/plan-topic-check.ts` 输出契约的 change，其 AC 必须含「同步 e2e 期望」一步 —— 登记为**本仓 builder 的 AC 纪律**（不在本条范围，本条只提供被同步的对象）。
 
 3. **真宿主层（e2e 仓 `tests/integration/test_plan_topics_runtime.bats`；**走 `E2E_REAL_RUNTIME=1` 门控 ⇒ 默认 skip**）** —— **只留 1 条**：
@@ -91,7 +91,7 @@
 4. **push-gate 的运行时用例（e2e 仓 `tests/integration/test_push_gate_runtime.bats`；**默认 skip**，因为它要真发一条 push 命令）** —— **重设计**（按 metis 的 P0-2）：
 
    - **形状必须选 config 8 条 `deny` glob 表达不了的超集形态**：`lib/push-gate.ts` 头注自承工具层是 config 的**严格超集**（S1 前缀 / S2 短选项簇 / S3 `+refspec` / S4 quoted / S5 跳带值）⇒ 朴素 `git push --force` **会先撞 config deny**，插件根本摸不到。
-     ⚠ **形状的实测核对（critic S1 修订，取代 oracle 的推断）**：逐条对 config 的 8 条 `deny` glob（`opencode.jsonc.opencode-go:63-70`）做匹配核验（fnmatch 语义）——
+     ⚠ **形状的实测核对（critic S1 修订，取代 oracle 的推断）**：逐条对 config 的 8 条 `deny` glob（`opencode.jsonc.opencode-go:62-69`；`:70` 已是 `git commit *: allow`）做匹配核验（fnmatch 语义）——
 
      | 形状 | 是否撞 deny glob | 判定 |
      |---|---|---|
@@ -226,4 +226,19 @@
 - **S5**（A6 缺 front-matter × AC20 15 行窗口的联合断言）⇒ 落 **roadmap A6 判据 ③**。
 - **S6**（Q5 横幅列行号 ⇒ 插入后即失真）⇒ 落 **roadmap §7 第 5 条**。
 - **S7**（roadmap §2 顺序行残留 A5）⇒ 落 **roadmap §2**。
+
+## 9. 第 2 轮（oracle 复核 + metis 决策界面 gap 分析 → critic）的追加处置
+
+> metis 第 2 轮为**用户显式授权**（超既定 1 轮预算）。本轮审查对象是「待拍板清单」而非本文正文；与本文直接相关的处置如下。
+
+| # | 级别 | finding（摘要） | 处置 |
+|---|---|---|---|
+| SF-1 | SHOULD_FIX | B1 的「C1 是先决条件」仍乐观：推送 8 条后仍剩 9 条真新增 ⇒ CI 仍红 | **已改**（What Changes 第 2 条）：收益三层化 —— L0/L1 今天兑现，**L2「CI 自动抓漂移」降为跟踪项**，前置 = CI 红清零，**不进 B1 验收门** |
+| SF-2 | SHOULD_FIX | oracle 的「源码先行」只能补充、不能替代探针；探针与用例必须分离 | **已改**（第 4 条探针 AC + roadmap §7.2）：固定链条 源码 → 窄探针/全量探针 → 三出口；补「无结论」第四态与 `PUSH-GATE-PROBE-INCONCLUSIVE` |
+| SF-5 | SHOULD_FIX | A6 工件归属缺 §4 矩阵行与 §6 change 落点；A2 与 builder 面同 change 违反 §6 自定原则 | **已改**：采纳方案 B —— **A2 移出 change**（planner 自办）、A 批 change = A1/A3/A4/A6（全 builder 面）；本提案实施形态不变，仅立项落点变 |
+| SF-6 | SHOULD_FIX | §3.2 `pending = 4` 与 A2 判据 `= 7` 矛盾 | **已改**（roadmap §3.2）：订正为 7 |
+| — | 事实订正 | 行号 `opencode.jsonc.opencode-go:63-70` 偏一行 | **已改**：`62-69`（`:70` 已是 `git commit *: allow`） |
+
+**未在本文件落地的**：SF-3（决策面压缩）、SF-4（A1 补验记录）、SF-7（CI 实况段）⇒ 均落 roadmap §2/§7。
+
 

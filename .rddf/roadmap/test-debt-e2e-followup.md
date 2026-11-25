@@ -5,6 +5,7 @@
 > - `.rddf/reviews/plan-topics-d9-d10-d11-verify.md`（D9/D10/D11 + D5 实现批验收，verdict=`needs-revision`，1 项未闭合）
 > 关联 change：**尚未立项**（本路线图 = 立项前的分批计划；每批的落点是 §2 的任务表，**由 builder 按 openspec change 流程实施**）
 > ⚠ **本路径未启用 `rdd-planner` / `add-improve`**：`rdd-planner` 前置（`.rddf/state/.arch-handoff.json`）不存在；`add-improve` 的 HARD-GATE（YAML frontmatter + 7 段 + `.rddf/roadmap.md` 的 Phase Skeleton Theme 列）与本仓形态（32 个 improvement 全 5 段散文、**无** `状态` 字段（7 份有 YAML frontmatter 但只含 `feedback_status`）、且**无** `.rddf/roadmap.md`）**不可兼容** ⇒ 走**内置流程**，本文件按 `.rddf/roadmap/plan-multi-session-collaboration.md` 的既有体例写。
+> 修订记录：**第 5 版**（并入第 2 轮：oracle 复核 + metis 决策界面 gap 分析（**用户显式授权的超预算轮**）→ critic 第 2 轮，`APPROVE_WITH_CONDITIONS`，7 条 SHOULD_FIX、无 BLOCKER）—— ① B1 收益**三层化**（L0/L1 今天兑现、**L2「CI 自动抓漂移」降为跟踪项**，前置 = e2e 仓 CI 红清零）；② B2 改**源码先行 → 窄探针**（源码只补充不替代；探针与用例分离；补「无结论」第四态 + 三 token）；③ 决策面压为 **2 决策位 + 3 确认位 + 2 登记项**；④ **A1 判据加「补验记录落盘」**（F-1 闭合需新证据，原 verify 报告不回改）；⑤ **归属重排（SF-5 方案 B）**：A2 移出 change（planner 自办）、A 批 change = A1/A3/A4/A6，§4 补 A6 行、§6 同步；⑥ §3.2 `pending 4 → 7` 订正；⑦ §7 前插 **e2e 仓 CI 实况**（连红 5 天 / `已知失败0·新增17` / 8 条未推送 / 9 条真新增）。
 > 修订记录：**第 4 版**（并入 critic 审查第 1 轮，`APPROVE_WITH_CONDITIONS`，7 条 SHOULD_FIX + 3 条 NITS，**无 BLOCKER**）—— ⓐ **B2 形状收窄为唯一候选 `-uf`**（critic 指出「短簇」没钉簇序 ⇒ `-fu` 会撞 `git push -f*`；我另行核出**带引号形态在 fnmatch 下并不撞 glob**，推翻了 oracle 与 critic 的共识，但宿主语义未实测 ⇒ 仍不列）；ⓑ **A6 补联合断言**（front-matter 行数 × AC20 的 15 行窗口）；ⓒ **token 登记删掉「本仓审计模板」这一假前提**（`.rddf/reviews/` 无模板文件）；ⓓ **B2「钩子先」分支补世界限定** + 第三个 token `PUSH-GATE-ALLOW-ALWAYS-WORLD-UNVERIFIED`；ⓔ **Q5 横幅不得列行号**（插入后行号即失真）；ⓕ **§2 顺序行去掉 A5**、改为 A1 → A2 → A6 → A3 → A4；ⓖ **零模型层漂移信号的 CI 前提**（e2e 仓 CI 实况已核：push/PR/nightly 跑 `bats tests/integration/ tests/_lib/`；但基线带 8 条已知失败 ⇒ **C1 是信号先决条件**）。
 > 修订记录：**第 3 版**（并入 oracle 顾问分析）—— ⑤ **A 批顺序改为 A1 → A2 → A3 → A4**（oracle：A1 是唯一闭合**已开口环路**的项 —— verify 仍判 `needs-revision` 就开新工，正是债的形成方式）；⑥ 新增 **A6**（本地守卫「新增 improvement 必带 `状态`/`优先级` front-matter」⇒ 增量侧在本仓自闭环 ⇒ 让 C4 变得不必要）；⑦ **B1 拆成两个子决策**（零模型层不吃额度 ⇒ **无论哪条都批**；「只做零模型层」是第 4 个自洽选项）；⑧ B2 改为「**先探针 + 两分支处置预承诺**」；⑨ C4 **不按现规格立项**（现规格会把审计抓到的 3 个反例自动化 ⇒ re-scope 为「模板侧默认字段」）；⑩ Q5 采纳 oracle 形态（**只加顶部 dated 横幅，零行内改写**）；⑪ §7 每项标注 oracle 推荐 + 新增 SF-5 / feedback 残留 / 本地守卫三项。
 > 修订记录：**第 2 版** —— ① 本路线图本身无独立 metis 轮次（metis 固定审查配对落在**两份改进提案**上，各 1 轮 ⇒ 处置记录见各自文末 §7）；② 本版按 metis 的两条 P0 改写了 **A2**（统一中文键 + frontmatter 写入形态 + 名单资格口径 + AC 时序自引用）与 **B1/B2**（把「4 条真会话」拆成「真宿主 1 条 + 零模型 3 条」⇒ 额度成本从 4 次真会话降到 1 次）；③ **A5③ 被删**（metis：回改已关闭 improvement 的历史判据 = 篡改判据真值 ⇒ 违反本仓「历史不回改」惯例 ⇒ 外化为 §7 的独立裁决项）；④ A 批由 5 项收敛为 **4 项**（A5①② 走 architect 另案）。
@@ -19,7 +20,7 @@
 
 | 批 | 内容 | 是否需要用户裁决 | 是否需要跨仓 | 归属 |
 |---|---|---|---|---|
-| **A** | 本仓自闭环的 5 项（判据补强 + 债可见性 + 增量守卫）：**A1 → A2 → A3 → A4** + **A6** | ❌ 否 | ❌ 否 | planner / builder（逐项见 §2）｜**A5（ADR 措辞与闭合标注）走 architect ⇒ 另案**（见 §6 末条） |
+| **A** | 本仓自闭环的 5 项（判据补强 + 债可见性 + 增量守卫）：**A1 → A2 → A6 → A3 → A4**（A2 在 change 外由 planner 自办；A 批 change = A1/A3/A4/A6） | ❌ 否 | ❌ 否 | planner / builder（逐项见 §2）｜**A5（ADR 措辞与闭合标注）走 architect ⇒ 另案**（见 §6 末条） |
 | **B** | 需要**花钱（模型额度）或改变覆盖策略**的 2 项：B1 = plan-topics 的 e2e（**真宿主 1 条 + 零模型 3 条**）；B2 = push-gate（前半）与 model-fallback（后半，另立 improvement） | ✅ **是**（B1 的真宿主部分） | ✅ 是（e2e 仓） | 待裁决后立项 |
 | **C** | 跨仓维护项（e2e 仓的已知失败迁移 / 缺口表刷新 / 计数漂移；产品侧债可见性增强） | ❌ 否 | ✅ 是 | 跨仓，各自仓内立项 |
 
@@ -38,7 +39,7 @@
 ## 2. 任务分解（每项含归属 / 依赖 / 判据）
 
 > 纪律：**每项先写判据（红）→ 再改（绿）→ 跑该批判据**。
-> **实施顺序**：**A1 → A2 → A6 → A3 → A4**（A6 的祖父名单基线 = A2 之后的实际状态 ⇒ 必须排在 A2 之后；A5 不在此列，走 architect 另案）；**B / C 批在 A 批完成后启动**（先清债面，再动需要花钱与跨仓的件）。
+> **实施顺序**：**A1 → A2 → A6 → A3 → A4**（A6 的祖父名单基线 = A2 之后的实际状态 ⇒ 必须排在 A2 之后；A5 不在此列，走 architect 另案）。⚠ **A2 由 planner 在 change 外自办**（`.rddf/improvements/**` 在其写集内）⇒ **A 批 change = A1 / A3 / A4 / A6（全 builder 面）**，A2 的完成态是 A6 的 change 外前置（critic SF-5 方案 B）；**B / C 批在 A 批完成后启动**（先清债面，再动需要花钱与跨仓的件）。
 
 ### A1 ｜ 补 F-1：回滚清单 `notes` 的旧路径（一行）
 
@@ -47,7 +48,7 @@
 | **问题** | ADR D5 落地硬约束 ⑥ 要求 `.rddf/rollback/plan-topics.json` 的 `notes` 散文刷新旧单文件路径；README 侧已刷、**notes 未刷** ⇒ 本批验收判定 `needs-revision`（`implementation_gap`，文档级、零机械影响） |
 | **改什么** | `.rddf/rollback/plan-topics.json` 的 `notes` 里 `.rddf/state/plan-sessions.json` ⇒ `.rddf/state/plan-sessions/`（与 `.rddf/rollback/README.md:141` 同措辞） |
 | **归属** | **builder**（`.rddf/rollback/**` 不在 planner 写集；也不是架构文档 ⇒ builder 面） |
-| **判据** | ① `python3 -c "import json;print('plan-sessions.json' in json.load(open('.rddf/rollback/plan-topics.json'))['notes'])"` ⇒ `False`；② `bun test tests/` 仍全绿；③ `bun scripts/rollback-drill.ts` 的清单自检（该清单的 `planDrill` 仍可执行） |
+| **判据** | ① `python3 -c "import json;print('plan-sessions.json' in json.load(open('.rddf/rollback/plan-topics.json'))['notes'])"` ⇒ `False`；② `bun test tests/` 仍全绿；③ `bun scripts/rollback-drill.ts` 的清单自检（该清单的 `planDrill` 仍可执行）；④ **补验记录落盘（critic SF-4）**：新出一份 `.rddf/reviews/plan-topics-d9-d10-d11-verify-f1-closure.md`（**原报告不回改**，本仓惯例）⇒ 引原 verify 报告编号 + 复跑命令 + 输出 ⇒ 「闭合 needs-revision」有**新的**可见证据（`.rddf/reviews/**` 属 builder 面，A1 归属本就 builder） |
 | **依赖 / 风险** | 无依赖；风险 = 改散文时误改 `edits[]`（⇒ 逐字节 diff 复核 `edits[]` 未变） |
 
 ### A2 ｜ 改进池状态机读化 + 失效指针修正
@@ -56,7 +57,7 @@
 |---|---|
 | **问题** | 实测 `rddf status`：**pending 10 条，STATUS 列全「待讨论」、PRI 列全 `-`**。逐条核 Acceptance 后：**3 条其实已完成**（`rdd-verifier-state-consolidation` / `role-write-set-machine-block` / `rollback-drill-replace-pattern` ⇒ 虚报待办），**7 条是真待办**（但标签全是兜底 ⇒ 不可读）。根因：产品侧 `collect_pending()` 只有两条「已归档 ⇒ 不是待办」的通路（① improvement 文件名命中 `openspec/changes/archive/<date>-<name>/` 的 `<name>`；② **front-matter `状态` 字段**），而本仓 **0/32** 提供该字段 |
 | **改什么** | ① **逐条核 Acceptance / 核产物在盘上**（**不是**看 change 指针 ⇒ 已抓到 3 个反例），给 3 条已完成项补 terminal front-matter、7 条真待办补非 terminal front-matter（`未立项`/`待审查`/`部分闭合`/`规划输入`）+ `priority:`；② 修 `rollback-manifest-find-narrowing` 的失效指针（正文写「尚未立项」但 change 已归档 2026-11-24） |
-| **归属** | **planner**（`.rddf/improvements/**` 在 planner 写集内 ⇒ **planner 可自办**，不需 builder） |
+| **归属** | **planner**（`.rddf/improvements/**` 在 planner 写集内 ⇒ **planner 可自办**，不需 builder）。⚠ **critic SF-5 方案 B：本项在 openspec change 之外执行**（不进 A 批 change）⇒ 它的完成态是 A6 的 **change 外前置**；A 批 change 只含 builder 面的 A1/A3/A4/A6 |
 | **判据** | ① `rddf status` 的 `Total pending` = **7**（= 真待办那 7 条）；② 7 条的 STATUS 列**不是**「待讨论」（分别是未立项/待审查/部分闭合/规划输入）；③ PRI 列**无 `-`**；④ **键语言统一为中文键**（`状态:` / `优先级:`）⇒ grep 判据用 `grep -lE "^(status|状态):"`；⑤ **frontmatter 形态**：已有块**合并键**、不新建第二块（产品侧只读第一个 `---` 块）⇒ `role-write-set-machine-block.md` 的 `feedback_status` 仍在；⑥ **词表硬断言**（用本机产品侧 lib 逐一断言 `(terminal, label)`）；⑦ **散文状态行不动**（AC20 的 15 行窗口）；⑧ **变红演练带名字断言**（新增条目名 == 被删项）；⑨ `bun test tests/` 全绿（`tests/rollback-registry.test.ts` / `record-discipline.test.ts` 不因 front-matter 变更而红） |
 | **详情** | 完整实施形态、10 条的逐条核对结论与 metis 处置记录 ⇒ `.rddf/improvements/improvement-pool-status-frontmatter.md` |
 | **已验证** | 产品侧 `collect_pending()` 在**临时副本**上实测：补 front-matter 前 pending 32 → 补后 26（合成目录口径，terminal 词命中项被移出）⇒ 真实仓口径 10 → **7**。**本项不需要改产品仓** |
@@ -119,10 +120,10 @@
 | 项 | 内容 |
 |---|---|
 | **问题** | A2 只给 10/32 补了 `状态` 字段 ⇒ **存量里仍剩 22 份无字段**；而**增量侧**（新提案落盘时带不带字段）本仓完全没有约束 ⇒ 池子会**重新变脏**，且没有任何机械信号会告诉你（这正是 commit `81131e8`「清得掉但不可重复」的根因） |
-| **改什么** | 新增一条守卫断言：**本目录内不在「祖父名单」里的 improvement 文件，必须带 `状态:` 与 `优先级:` front-matter**。祖父名单 = A2 之后仍无字段的那 22 份（逐条列名，**冻结** ⇒ 只减不增）⇒ 新增文件漏字段 ⇒ 守卫红 |
+| **改什么** | 新增一条守卫断言：**本目录内不在「祖父名单」里的 improvement 文件，必须带 `状态:` 与 `优先级:` front-matter**。祖父名单 = **A2 完成判据通过后** `grep -L '^状态:' .rddf/improvements/*.md` 的**实测清单**（当前预估 22 份；**以实测为准，不以 22 这个数字为准**），逐条列名后**冻结**（只减不增）⇒ 新增文件漏字段 ⇒ 守卫红 |
 | **归属** | **builder**（`tests/**`；守卫落点建议 `tests/config-guards.test.ts` 的 plan-topics 块**之外**的新用例。⚠ **真实交互不是同文件冲突，而是「front-matter 行数 × AC20 的 15 行窗口」** —— 见判据 ③） |
-| **判据** | ① 祖父名单 22 份**逐条列名**且被断言冻结（改动名单 ⇒ 守卫红 ⇒ 只能通过给该文件补字段来减）；② 名单外的任一文件缺 `状态:` ⇒ 守卫红（**变红演练**：临时新建一份无字段的 improvement ⇒ 红 ⇒ 删掉复绿）；③ **联合断言（critic S5）**：新增文件的 `> **实施状态**` / `> **状态**` 引用行必须落在文件**前 15 行内**（= AC20 `isClosedImprovement()` 的窗口，`tests/config-guards.test.ts:3141`）⇒ 否则该文件日后被关闭时 AC20 判它「未关闭」而扫正文旧 token ⇒ **A6 绿、AC20 红**（两条判据无边界）；④ `bun test tests/` 全绿 + `bun test tests/config-guards.test.ts` 专项确认 AC20 未翻转 |
-| **依赖 / 风险** | 依赖 A2（祖父名单的基线 = A2 之后的实际状态）⇒ **必须排在 A2 之后**；风险 = 守卫太紧 ⇒ 新人写 improvement 忘了字段就被红 ⇒ 缓解：守卫的失败信息直接给出「补这两行」的提示；风险 = 与产品侧 C4 重复 ⇒ **互补不冲突**（本条管本仓纪律，产品侧管模板产出） |
+| **判据** | ① 祖父名单 22 份**逐条列名**且被断言冻结（改动名单 ⇒ 守卫红 ⇒ 只能通过给该文件补字段来减）；② 名单外的任一文件缺 `状态:` ⇒ 守卫红（**变红演练**：临时新建一份无字段的 improvement ⇒ 红 ⇒ 删掉复绿）；③ **联合断言（critic S5）**：新增文件的 `> **实施状态**` / `> **状态**` 引用行必须落在文件**前 15 行内**（= AC20 `isClosedImprovement()` 的窗口，`tests/config-guards.test.ts:3141`）⇒ 否则该文件日后被关闭时 AC20 判它「未关闭」而扫正文旧 token ⇒ **A6 绿、AC20 红**（两条判据无边界）；④ `bun test tests/` 全绿 + `bun test tests/config-guards.test.ts` 专项确认 AC20 未翻转；⑤ **落地时点断言（oracle Q4）**：A2→A6 窗口期内新增的 improvement 已带字段（防换人起草时守卫落地即红） |
+| **依赖 / 风险** | 依赖 A2（祖父名单的基线 = A2 之后的实际状态）⇒ **必须排在 A2 之后**；**change 落点 = A 批 change（`test-debt-cleanup-local`）**，A2 是其 change 外前置；风险 = 守卫太紧 ⇒ 新人写 improvement 忘了字段就被红 ⇒ 缓解：守卫的失败信息直接给出「补这两行」的提示；风险 = 与产品侧 C4 重复 ⇒ **互补不冲突**（本条管本仓纪律，产品侧管模板产出） |
 
 ### C1–C4 ｜ 跨仓维护项（不阻塞本仓）
 
@@ -148,7 +149,7 @@
 
 | 组 | 判据形态 | 载体 | 归属 |
 |---|---|---|---|
-| **静态 / 派生** | 「`rddf status` 的 pending = 4」「脚本输出含 `local-fallback`」「并发 claim 恰好一个 exit 0」 | `bun test tests/`（本地规范命令） | builder / planner |
+| **静态 / 派生** | 「`rddf status` 的 pending = **7**（critic SF-6 订正：4 是旧口径残留）」「脚本输出含 `local-fallback`」「并发 claim 恰好一个 exit 0」 | `bun test tests/`（本地规范命令） | builder / planner |
 | **行为（真宿主）** | L2 运行时层用例 | e2e 仓 bats（`E2E_REAL_RUNTIME=1`，**默认 skip**） | 跨仓 |
 | **人工** | 「模型是否真按纪律转述」「AI 交叉审」 | 主会话执行 + 用户终裁 | 人工 |
 
@@ -171,9 +172,10 @@
 | 任务 | 写集 / 面 | 归属 | 本仓写集能否自办 |
 |---|---|---|---|
 | A1 | `.rddf/rollback/plan-topics.json` | **builder** | ❌（planner 写集不含 `.rddf/rollback/**`） |
-| A2 | `.rddf/improvements/**` | **planner** | ✅（但「新增 improvement 默认带 front-matter」这条约定需在实施时写进本仓的 improvement 写法说明） |
+| A2 | `.rddf/improvements/**` | **planner**（**change 外自办**，不进 A 批 change） | ✅（但「新增 improvement 默认带 front-matter」这条约定需在实施时写进本仓的 improvement 写法说明） |
 | A3 | `tests/arch-docs-scope.test.ts` + `tests/README.md` | **builder** | ❌（planner 写集不含 `tests/**`） |
 | A4 | `tests/fixtures/**` + `tests/plan-topics-lifecycle.test.ts` | **builder** | ❌ |
+| A6 | `tests/config-guards.test.ts`（新增守卫用例） | **builder**（落点 = A 批 change；A2 为 change 外前置） | ❌ |
 | A5 | `docs/adr/**` | **architect**（oracle → critic；**只改措辞/闭合标注 ⇒ 只 oracle**） | ❌ |
 | B1 / B2 前半 | e2e 仓新文件 + 本仓 builder 面配合 | **跨仓 + builder** | ❌ |
 | B2 后半（model-fallback） | 另立 improvement | **planner**（起草）+ 跨仓 builder | ❌（跨仓） |
@@ -207,7 +209,7 @@
 
 | 批 | change 名（建议） | `proposal.md` | `design.md` / `tasks.md` | TDD 计划 | 执行 | 验收报告落点 |
 |---|---|---|---|---|---|---|
-| **A** | `test-debt-cleanup-local`（A1–A4 合一：4 项都是低风险本仓改动，共一次回归；**A5 走 architect 另案**） | planner（起草，AC = §2 的判据栏） | builder | `.rddf/plans/test-debt-cleanup-local.md` | builder | `.rddf/reviews/test-debt-cleanup-local-verify.md` |
+| **A** | `test-debt-cleanup-local`（**A1 / A3 / A4 / A6 合一**：全 builder 面（critic SF-5 方案 B）；**A2 由 planner 在 change 外自办** ⇒ 其完成态是本 change 的前置；**A5 走 architect 另案**） | planner（起草，AC = §2 的判据栏） | builder | `.rddf/plans/test-debt-cleanup-local.md` | builder | `.rddf/reviews/test-debt-cleanup-local-verify.md` |
 | **A5** | architect 另案（**不进 A 批 change**） | architect | architect | — | architect | `.rddf/reviews/adr-plan-multi-session-collaboration-review-<n>.md` |
 | **B1** | `runtime-e2e-plan-topics`（**真宿主 1 条 + 零模型 3 条** ⇒ 额度成本 1 次真会话） | planner | builder（**跨仓**：e2e 仓新文件 + 本仓配合） | 同上 | builder（**跨仓仓内各自立项**） | `.rddf/reviews/runtime-e2e-plan-topics-verify.md` |
 | **B2 前半** | `runtime-e2e-push-gate`（**须先过前置探针**） | planner | builder | 同上 | builder | `.rddf/reviews/runtime-e2e-push-gate-verify.md` |
@@ -223,23 +225,41 @@
 ## 7. 待用户裁决（**不猜**）
 
 > **oracle 顾问分析（2026-11-25）已并入下列各项**（推荐已标 ⭐）；oracle 的原始分析见本报告附录。oracle 明确指出**唯一一处站不住**的地方：「把零模型层捆进路径③、让『① 不补』连带丢弃它」⇒ 已按此改写 B1。
+>
+> **第 2 轮（oracle 复核 + metis 决策界面 gap 分析 → critic）后的最终形态**：**2 个真决策位**（B1 运维承诺 / B2 探针链启动）+ **3 个一行确认位**（C4 跨仓登记 / Q5 横幅形态 / A 批开工）+ **2 个登记项**（SF-5 CHANGELOG、feedback `resolution` 残留）。metis 第 2 轮为**用户显式授权**（超既定 1 轮预算）。
+>
+> ### ⚠ e2e 仓 CI 实况（2026-11-25 核，拍板前必读）
+>
+> | 事实 | 值 |
+> |---|---|
+> | 最近运行 | `gh run list` 近 5 次 nightly（11-21 ~ 11-25）**全部 failure** |
+> | 失败日志 | `已知失败: 0` / `新增失败: 17`（`report_regression.sh` 按测试名 `comm` 比对基线） |
+> | 根因 A | `origin/master:tests/KNOWN_FAILURES.txt` **0 条有效条目**（13 行全注释）；8 条写在**未推送**的本地 commit `073421b` |
+> | 根因 B | 另 **9 条真新增**（C1–C7 真实仓纪律、AC7-①/①b），性质**未查明**，且不在基线内 |
+> | 机制本身 | `report_regression.sh:103-123` 正确（按名 diff + 新增 ⇒ exit 1）⇒ 坏的是**数据**，不是代码 |
+>
+> ⇒ **「零模型层会被 CI 自动抓到漂移」今天不成立**；该收益降为 **L2 跟踪项**（见 §7.1）。
 
 1. **B1：plan-topics D9/D10/D11 要不要补运行时 e2e？** ⭐ **oracle 推荐：③，但拆成两个子决策** ——
-   - **子决策 A（零模型 CLI 层 PT-2/3/4）**：**无论 ①/②/③ 都该批** —— 它**不吃额度、不需要覆盖策略拍板**，进 e2e 默认套件 ⇒ CI 每次都跑 ⇒ 补上「本仓改 CLI 契约无人发现」的洞。oracle 判：把它放在「① 不补」的丢弃面里是**范畴错误** ⇒ 「**只做零模型层**」是现有三条之外**自洽的第 4 选项**。
+   - **子决策 A（零模型 CLI 层 PT-2/3/4）**：**无论 ①/②/③ 都该批** —— 它**不吃额度、不需要覆盖策略拍板**，进 e2e 默认套件 ⇒ **本地可跑、可作 builder 的 CLI 契约检查**（⚠ 「CI 自动抓漂移」另属 L2，见下；今天不成立）。oracle 判：把它放在「① 不补」的丢弃面里是**范畴错误** ⇒ 「**只做零模型层**」是现有三条之外**自洽的第 4 选项**。
    - **子决策 B（真宿主 PT-1）**：⭐ 推荐 **③**（真宿主 1 条，只覆盖「宿主接线」这一格）；**但 oracle 附了一个硬条件**：③ 只有在**有运维承诺定期跑 `E2E_REAL_RUNTIME=1`** 时才严格优于 ①（默认 skip ⇒ 没人跑 ⇒ 与无覆盖同构）⇒ 建议**绑定批次收尾**：「凡动 plan-topics 的批，收尾必须跑一次 PT-1 并按提案 §9 模板记录 HEAD sha + git status 干净度」；**没有这个运行节奏承诺 ⇒ 诚实选 ①**。
    - **缺口登记**：oracle 要求**两个 token**（不是一个）：`PLAN-TOPICS-MODEL-BEHAVIOR-NOT-COVERED`（模型行为面）+ **`PLAN-TOPICS-FORK-JOIN-NOT-COVERED`**（fork-join 编排：spawn → 宿主合成消息唤醒 → join）—— 一个 token 会把两个面揉成糊涂账 ⇒ 下一批照样误读。另加**重开触发器**：「e2e 仓 harness-p1（capability 集，ADR-0003 P1）立项时，模型行为面评估移交该处」⇒ 让缺口有 owner-event，不只是标签。
    - **第一动作**（两子决策都适用）：**先跑 PT-1 编排探针**（`opencode run --session <existing>` 续接可用性，e2e 仓零先例）⇒ **探针结论写进提案头部之前不写任何用例**；探针失败时的退路形态（模型自写产物 / 两会话）**偏差必须登记**。
-   - ⚠ **子决策 A 的收益有前提（critic S2 实况核对）**：e2e 仓**有** CI（`.github/workflows/test.yml`，push / PR / `workflow_dispatch` / nightly cron），跑 `bats tests/integration/ tests/_lib/` ⇒ 零模型用例**必须落 `tests/integration/`**。但**基线带着 8 条已知失败** ⇒ 「新增失败」信号被噪声稀释 ⇒ **C1（迁移那 8 条）是「漂移会被 CI 抓到」的先决条件**；C1 未做时，子决策 A 只宣称「用例存在且能跑」。这条前提须写进 B1 的拍板文本，否则用户批的是一份含未兑现收益的承诺。
-2. **B2：`push-gate` 要不要补 L2？** ⭐ **oracle 推荐：现在就做探针**（探针便宜：1–2 条极简真会话，让模型原样执行一条指定 shell 命令即可，**不需要真 push 成功**；且**有独立价值** —— 它闭合的正是 `lib/push-gate.ts:4-6` 登记的「Allow always 与 config deny 的优先级未知」）⇒ 结论无论朝向都回写一份 review 记录。**两分支处置已预承诺**：
-   - **钩子先**（`tool.execute.before` 先于 permission）⇒ 写用例，目标如实**降级**为「证明插件挂在 push 路径上」；形状必须实测 —— oracle 指出**带引号形态大概率无效**（`git push "origin" "+main:main"` 串里含 ` +` ⇒ 仍命中 config 的 `git push * +*` glob）⇒ **可靠超集形状是短簇 `-uf`**（串中无 ` -f` 子串 ⇒ config 8 条 glob 全部落空）。
+   - ⚠ **子决策 A 的收益必须三层化（critic SF-1，取代「C1 是先决条件」口径）**：e2e 仓**有** CI（`.github/workflows/test.yml`，push / PR / `workflow_dispatch` / nightly cron），跑 `bats tests/integration/ tests/_lib/` ⇒ 零模型用例**必须落 `tests/integration/`**。收益分三层 —— **L0 用例存在**（今天兑现）；**L1 本地可跑 + 可作 builder 的 CLI 契约检查**（今天兑现、成本≈0 ⇒ **这足以支撑「现在批」**）；**L2「CI 自动抓漂移」= 跟踪项**，前置 = **e2e 仓 CI 红清零**（8 条基线 + 9 条真新增的归属处理），归 C 批、**不进 B1 验收门** ⇒ **B1 不会因此无限期挂起**，挂起的只是 L2。拍板文本**不得把 L2 写成已兑现收益**。
+2. **B2：`push-gate` 要不要补 L2？** ⭐ **本轮最终推荐：源码先行 → 窄探针**（**原「现在就做探针」已被 oracle 撤回**）—— 源码先行 = 读 opencode 对应版本 tag 的源码，回答「permission 评估 vs `tool.execute.before` 顺序」与「Allow-always 持久化 vs config deny 合并语义」，**0 额度**，并**先钉版本锚**（`opencode --version` ↔ 源码 commit sha）。⚠ **源码只补充、不替代探针（critic SF-2）**：源码答的是「该版本设计行为」，答不了运行时三件事（安装版本是否对齐 / 注入持久化授权是否成功 / 插件在该配置下是否真被挂上）⇒ 源码不确定或版本不对齐 ⇒ **全量探针**；确定且对齐 ⇒ 探针收窄为「运行时确认」。**探针与用例必须分离**（合并成一次 ⇒ 红了无法区分「编排形态错」与「断言错」）。**各出口处置已预承诺**：
+   - **钩子先**（`tool.execute.before` 先于 permission）⇒ 写用例，目标如实**降级**为「证明插件挂在 push 路径上」；形状必须实测 —— oracle 指出**带引号形态大概率无效**（`git push "origin" "+main:main"` 串里含 ` +` ⇒ 仍命中 config 的 `git push * +*` glob）⇒ **可靠超集形状是短簇 `-uf`**（串中无 ` -f` 子串 ⇒ config 8 条 glob 全部落空）。⚠ **形状钉死（critic S1）**：**f 不得居首**（`-fu` 撞 `git push -f*`）；带引号形态按 fnmatch 实测**不撞**任何 8 条 glob（oracle 与 critic 的「会撞」判定为误 —— `git push * +*` 要求「空格 + `+`」），但宿主语义未实测 ⇒ 仍不列。
    - **permission 先 / 结构性不可达** ⇒ **不写用例**；登记 `PUSH-GATE-E2E-UNREACHABLE` token（与 B1 同一套机械登记纪律）+ 探针证据进 backlog；force-push 验证移交**人工验收层**（交互会话 + 已持久化 Allow-always + 本地 bare 远端）。
    - oracle 的判词：「**没探针就干脆不做**是错的；**探针 documented 不可达后不做**是对的」⇒ backlog 条目必须带探针证据，防下一批重新吵一遍。
+   - ⚠ **最终形态（critic SF-2 / SF-7）** —— 固定链条：**① 源码先行（0 额度 + 版本锚）→ ② 源码确定且对齐 ⇒ 窄探针（运行时确认）；否则全量探针 → ③ 探针三出口**：钩子先 ⇒ 降级用例「**fresh 非交互会话**里插件挂在 push 路径上」；permission 先 / 不可达 / **候选形状全失效** ⇒ 不写 + `PUSH-GATE-E2E-UNREACHABLE`；**探针无结论**（额度/超时/拒执行）⇒ `PUSH-GATE-PROBE-INCONCLUSIVE` + 至多重试 1 轮，仍无结论按不可达处置但 token 区分。
+   - ⚠ **世界限定（critic S4）**：即使「钩子先」，也只证明 fresh 世界；门禁真正防的 **Allow-always 世界**只能用人工验收 ⇒ 登记 `PUSH-GATE-ALLOW-ALWAYS-WORLD-UNVERIFIED`。
    - `model-fallback` 另立 improvement：**oracle 认可**（形态本质不同：需真模型失败才触发链推进，flaky 最高）⇒ 本批只登记。
 3. **C4（产品侧 `collect_pending` 增强）做不做？** ⭐ **oracle 推荐：不按现规格立项** —— 现规格（「正文 change 指针已归档 ⇒ 视为 terminal」）会把审计**亲手抓到的 3 个反例自动化、规模化**（让所有仓的真待办在**无人核 Acceptance** 的情况下被移出视野）⇒ 比「不做」更差。front-matter 约定恰恰把「人核一遍」留在环路里 ⇒ **这是特性不是成本**。
    - **值得跨仓做的是 re-scope 后的版本**：① **模板侧默认字段**（`add-improve` / proposal 模板产出即带 `状态`+`优先级`）—— 这才是增量的持久解；② 可选：产品侧对「正文指针已归档但无 front-matter」给 **WARN（永不 auto-terminal）**。
    - 本仓侧**不等它**：A2（存量止血）+ **A6**（增量守卫）已在本仓自闭环。
+   - ⇒ **最终形态（critic SF-3）：确认位，非决策位** —— 你只需一行确认：**「不按现规格立项 + 把 re-scope 版（模板侧默认字段）登记为产品侧 backlog」**；跨仓登记由你/planner 走产品侧通道，本仓不代劳、也不承诺时点。
 4. **A 批是否现在就开工？** ⭐ **oracle 推荐顺序：A1 → A2 → A6 → A3 → A4** —— 理由：**A1 最先**（它是唯一闭合**已开口环路**的项：verify 仍判 `needs-revision` ⇒ 带着一个已知 needs-revision 开新工，正是当前债的形成方式；它一行、builder 面）；**A2 次之**（planner 自办、核对表已预填、执行是机械 + 演练）；**A3 先于 A4**（A3 消除的是「静默 skip 的死判别力」= 测试套件自身的正确性，A4 是新增覆盖且带 flaky 风险 ⇒ 放在 A1–A3 全绿之后）；**A6 紧随 A2**（它的祖父名单基线 = A2 之后的实际状态 ⇒ 必须排在 A2 之后）。
    - oracle 点出**该列却没列**的三项，已补进本路线图：**A6**（增量守卫，见 §2）、**SF-5**（CHANGELOG v2.75 用户自办 ⇒ 列进路线图防丢）、以及 **条件项**「若 B1 获批 ⇒ 登记 builder AC 纪律：动 `scripts/plan-topic-check.ts` 输出契约的 change，AC 必含『同步 e2e 期望』一步」（零模型层的漂移捕捉价值**只在同步步存在时成立**）。
+   - ⇒ **最终形态（critic SF-3 / SF-5）：确认位** —— 顺序本身由 planner 依理由链自决；**你只需确认「A 批在 §6 归属重排（A2 移出 change）后开工」**。
 5. **`plan-multi-session-collaboration.md` 里那 6 处旧单文件路径要不要清？** ⭐ **oracle 推荐：(ii) 的精神，但只用「顶部 dated 横幅」这一种形态，零行内改写** ——
    - **形态**：文件顶部加一条带日期的横幅（仿本仓自己的先例 —— roadmap 在 `:8/:25/:277/:303/:309` 加了 5 处「2026-11-25 D5 修订已取代」标注，**是加注不是改写**）：「**2026-11-25（D5 修订）之后**，plan 会话状态为 `.rddf/state/plan-sessions/` **目录**形态；本文其余处按当时路径记述，其中 **AC7 / AC9 / AC13 为历史验收判据**（不回改）」。
    - ⚠ **critic S6：横幅本身不得列行号** —— 横幅插在文件顶部 ⇒ 全文行号 +1 ⇒ 横幅里的 `:37/:58/…` 落盘那一刻即失真（照 `:37` 会读到原 `:36`）。要么不列行号（本方案已改为不列），要么写明「行号为 D5 修订前编号」。
@@ -248,6 +268,7 @@
    - **为什么不是 (iii) 整份清**：AC9 的反转正是「历史必须原样保留」的理由 —— 改写它 = 篡改「当时 V07 验了什么」的记录。
    - **oracle 已核安全面**：该文件无 front-matter、无 `> **实施状态**` 行 ⇒ 顶部加一行把状态行从 `:4` 挤到 `:5` ⇒ **仍在 AC20 的 15 行窗口内**。
    - ⚠ **oracle 修正了我写漏的一处**：**AC9 也是历史判据**（我只点名了 AC7 / AC13）⇒ 横幅须含 AC7 / **AC9** / AC13 三条。
-   - **归属**：planner（`.rddf/improvements/**`）；**不进 A 批**（A 批只做 A1–A4 + A6）⇒ 单开一项或并入 A2 的后续。
+   - ⇒ **最终形态（critic SF-3）：知会 + 否决口** —— 默认按上述形态执行；**你有异议即停**。不占决策位是因为「加注 ≠ 回改」有本仓先例，但这是该先例的**首次适用** ⇒ 给你否决权，而非 planner 默认自决。
+   - **归属（critic/oracle 订正）**：目标文件在 `.rddf/roadmap/**`（**不在 `improvements/`**）⇒ planner 写集覆盖；**不进 A 批**（A 批 = A1/A3/A4/A6）⇒ 与 A2 同批执行（同写集、同 planner 自办）。
 6. **SF-5（`docs/CHANGELOG.md` v2.75）** —— 用户自办，但**当前只活在 verify 报告里** ⇒ oracle 建议**列进路线图防丢** ⇒ 登记在此（§2 无独立任务项，随 A1 收尾一并提醒）。
 7. **`rddf feedback` 的 `resolution` 永久残留**（`feedback-20261113-001`；`rddf feedback` CLI **无 resolve 子命令** ⇒ 无 single-writer 途径）—— oracle 判为**次要**但建议登记进 backlog ⇒ 防下一批重新发现。
