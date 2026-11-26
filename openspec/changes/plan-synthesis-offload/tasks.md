@@ -34,6 +34,13 @@
 - [x] registry：`declared` → `proving`（`manifest_ref` = `plan-synthesis-offload`）
 - [x] drill PASS 后回填 `last_drill` 并转 `active`（首次：`caa17cb`）
 
+## 审查（治理面双审）
+
+- [x] oracle 第 1 轮：**BLOCK**（F1/F2 BLOCK + F3–F11）⇒ 已修 F1/F2/F4/F5/F6/F10/F11
+- [x] oracle 第 2 轮（复审）：**PASS-WITH-NOTES**（无新 BLOCKER）⇒ 已修 note
+- [x] critic 第 1 轮：**APPROVE_WITH_CONDITIONS / mergeable: yes / 无 BLOCKER**（SF①–④ + 2 NIT）⇒ 已全部闭合
+- [x] 审稿报告：`.rddf/reviews/plan-synthesis-offload-b1-governance-review.md`
+
 ## 未做 / 遗留
 
 - [ ] **AC14 / V11b**（provider 实际服务模型，响应级 `session_message.model`）**判据未实现** —— 语义已在 ADR 实施记录确认（2026-11-26），但本批只落了 V4/V5 载体 ⇒ **转交后续批**；ADR 的 V11b 行现仍写「待 B1 实现」⇒ 需 architect 回填为「待后续批」以免指针悬空（critic SF②）
