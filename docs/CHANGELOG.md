@@ -10,6 +10,18 @@
 
 ---
 
+> **v2.75 plan-topics D9「取消语义」/ D10「在飞与 fence」/ D11「收敛判据」+ D5「每会话一文件」的代码实现批（2026-11-26）**：
+> **D9（cancel）**：`plan-topic-check cancel <topic> <node> --reason <text> [--cascade|--detach <id>…]` 落地；schema 增 `cancelled{by,reason,at}`；派生 **`cancelled` 短路**（优先于 `done`）；三个新违规码 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；**禁止「完成后取消」**由 CLI 硬拒。
+> **D10（在飞与 fence）**：`claim` / `close` / `reap --confirm` 三个 CLI + **per-topic 写锁**（`mkdir` 原子 + 硬超时，不按 mtime 判死）+ `stale_inputs`（输入漂移，仅 `final` 口径）+ `inputs_reviewed` 豁免 + `precheck.graph_rev`（图结构溯源哈希）；`ready --json` 增 `in_flight[{node,started_at,liveness_stale}]`。
+> **D11（收敛）**：`check --json` 增 `converged` 与 `summary` 七桶（done / cancelled / in_flight / input_drift / ready / blocking / needs_review）⇒ 父根会话能机判「还有没有未完成的活」。**诚实收窄**：它是**调度信号**，不是交付信号。
+> **D5（第 5 项）**：运行态绑定由单文件 `.rddf/state/plan-sessions.json` 改为**每会话一文件**目录形态 ⇒ 天然免并发覆盖（与 v2.74 的 ADR 修订对应）。
+> **验收**：ADR **V16–V36 共 21 条全过**；本批 AC 21 项中 **F-1**（回滚清单 `notes` 散文仍写旧单文件路径）当时未闭合 ⇒ `needs-revision`；**F-1 已于同日闭合**（`cb91be2` + 补验记录 `.rddf/reviews/plan-topics-d9-d10-d11-verify-f1-closure.md`，原报告不回改）⇒ 本批可转 `pass`。验收证据规则见 `.rddf/reviews/plan-topics-d9-d10-d11-verify.md`（verifier，`ec28138` + `43c1c55`）。
+> **闸门**：`bun test tests/` 验收时 **1229 pass / 1 skip / 0 fail**；`scripts/check-upstream-anchors.sh` **30/30**；`agent-guard-gen.ts --check` 无漂移。后续批次（同日晚）新增 A6 增量守卫与 V25 并发子句 ⇒ 现为 **1233 例 / 1 skip**。
+> **ADR 登记同步**：残留 **#9**（prompt 与回滚清单同步）与 **#11**（D10 落地顺序约束）已标闭合；Verification 章导语与 AC 映射行的判据编号范围补至 V36（`9e57463`，oracle `APPROVE`）。
+> ⚠ **仍未做**：ADR V11 / V12 标注「人工」的真 host e2e（需两个真实 plan 会话）；真宿主 `PT-1`（宿主接线格）待用户拍板后实施。
+
+---
+
 > **v2.74 ADR D11「收敛判据」+ D5 落点表修订（每会话一文件）（2026-11-25）**：
 > **D11（converged）**：父根会话今天要答「这个 topic 干完了吗」必须自己组合四个条件（终态 / 在飞 / 违规 / 可派），而 `check --json` 只吐 `{ok, violations}` ⇒ **不可机判**（`tests/plan-topics-dag.test.ts` E1 逐键钉住 payload 里没有 `converged`）。决策：`converged`（纯派生）⇔ **零阻断违规（恒 `final` 口径）∧ 全节点派生 `status` ∈ {done, cancelled} ∧ 无在飞**；形状 = 单一布尔 + `summary` **七桶**（`done` / `cancelled[{id,reason,at}]` / `in_flight` / `input_drift` / `ready` / `blocking` / `needs_review`）+ 派生的 `needs_review` 布尔（**不选多状态枚举** ⇒ converged 与 needs_review 正交，枚举会压扁）。**锁不进判据**（父自己持锁是正常态 ⇒ 进判据就出现「持锁 ⇒ 永不收敛」的顺序悖论）；**相对集 = 全部节点**（不引入目标子集载体 ⇒ 父新增节点即不收敛，在「调度信号」定位下是正确行为）；**不扩退出码**（唯一消费方是 LLM 父会话，看 JSON 即可；扩码要同批改 `prompts/plan.md` + 回滚清单的字节钉死串，且 exit 0 若收窄为「收敛」会破坏**中场健康检查**）；**不并入 `ready`**、**不落盘**。
 > **诚实收窄**：本判据被明确定位为**调度信号**（「还有没有未完成的活」），**不是交付信号**（「这件事做完了吗」—— 后者需对照 `TOPIC.md` 目标段的语义理解 ⇒ 不可机判 ⇒ 登记为不可机判清单行 + 残留 #13）。**可操纵性**：父**能**批量标 `cancelled` 使 converged=true ⇒ 缓解 = `cancelled` 桶逐条列 `{id, reason, at}`（声明与答案同屏）+ D9 两条既有约束（`cancelled_unattributed` 强制编理由、`cancelled_dep_active` 强制连带消解 ⇒ 爆炸半径在 diff 里强制展开）⇒ **不新增防操纵机制**。

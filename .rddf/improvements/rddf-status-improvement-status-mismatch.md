@@ -72,3 +72,19 @@
 | 本仓 `.rddf/improvements/**` | 仅在选「加 frontmatter」时受影响（已终结项 ~10 个 + PRI 字段）⇒ 形态变更需裁决 |
 | 本仓 `tests/config-guards.test.ts` | **零改动**（`isClosedImprovement` 不动）⇒ 负向验证只需证明窗口口径一致 |
 | `rddf status` 的用户 | 待办池变准 ⇒ 「下一步做什么」的依据变准 |
+
+---
+
+## §9 裁决记录（2026-11-26）：**不按现规格立项**，re-scope 为「模板侧默认字段」，**登记但承诺时点**
+
+> 来源：路线图 `.rddf/roadmap/test-debt-e2e-followup.md` 任务 **C4**；用户决定 = **B（登记不承诺时点）**。
+
+**为什么不按现规格立项**：原规格「improvement 正文里的 change 指针已归档 ⇒ 视为 terminal」会把审计**亲手抓到的 3 个反例自动化**（`adr-front-knowledge-librarian-whitelist-annotation` / `cross-repo-check-trigger-in-agent-checklist` / `delegate-base-resolved-return` —— 表面已完成、实际未完成）⇒ 真待办在**无人核 Acceptance** 的情况下被移出视野 ⇒ **比不做更差**。front-matter 约定恰恰把「人核一遍」留在环路里 ⇒ 这是**特性不是成本**。
+
+**re-scope 后的目标（产品侧 `rdd-workflow` 仓）**：只做「**模板侧默认字段**」—— `add-improve` / proposal 模板产出即带 `状态` + `优先级`（增量侧的持久解）。**不做**「按正文指针自动判 terminal」。
+
+**本仓侧已自闭环（不等产品侧）**：
+- 存量止血 = `improvement-pool-status-frontmatter`（2026-11-25 已完成，pending 10 → 7）；
+- 增量守卫 = `tests/config-guards.test.ts` 的 A6（22 份祖父名单冻结 + 名单外缺字段即红）。
+
+**登记状态**：**已决、未承诺时点**（用户 2026-11-26 决定）。触发重估 = **产品侧下一次模板修订批**。本条因此保持 `状态: 未立项`，但**不再是「待讨论」**——它是一个已定方向的跨仓 backlog，不是等裁的提案。
