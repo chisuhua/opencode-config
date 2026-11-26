@@ -132,7 +132,7 @@ summary   = { done[], cancelled[{id,reason,at}], in_flight[{node,started_at,live
 - **`owner` 字段不被消费**：`owner: "parent" | "child"` 只做枚举校验（`lib/plan-topics.ts:197-199`），判据库与 CLI **零消费** ⇒ `owner: "parent"` 的节点**仍会出现在 `ready` 且可被 `claim` 派发**（ADR D2 的承诺「父自己做」未生效）⇒ 处置见 ADR 残留 #14。
 - **topic 独占锁无机械强制**：`lock` 子命令是**纯只读报告**（`scripts/plan-topic-check.ts:286-320`），写命令只取 graph 短锁 ⇒「同 topic 独占」是**协议约定**而非机械保证；且文档写的释放步骤（`rmdir` 该锁目录）对含 `owner` 文件的目录**必然失败** ⇒ 锁泄漏已在盘上发生（`e2e-probe.lock` 自 2026-11-20 未释放）。⇒ 处置见 ADR 残留 #15。
 - **两个字段不被消费**：`attempts[].baseline`（死字段，全仓无写入点）与 `precheck`（`claim` 写、checker 从不读 ⇒「派发前 check 必须 exit 0 才派」无机械强制）⇒ 处置见 ADR 残留 #16 / #17。
-- **topic 树内没有留给「父的合成产物」的位置**：单一写者表（§1）只给了父 `TOPIC.md` / `graph.json` / `BRIEF.md` ⇒ 父若把 N 个节点的合并产物放出来，唯一去处是 `.rddf/plans/<slug>.md` ⇒ **改变其语义**（从「离线讨论产物」变成「正式件」⇒ 进 `PLAN_REF_ROOTS` ⇒ 可被派工程），与本机制「讨论稿 ≠ 可执行计划」的定位冲突 ⇒ 建议在 topic 树内增设父写的 `SYNTHESIS.md`（`build-worker-design` 场景已按此落盘，为第一个实例）。
+- **topic 树内没有留给「父的合成产物」的位置**：单一写者表（§1）只给了父 `TOPIC.md` / `graph.json` / `BRIEF.md` ⇒ 父若把 N 个节点的合并产物放出来，唯一去处是 `.rddf/plans/<slug>.md` ⇒ **改变其语义**（从「离线讨论产物」变成「正式件」⇒ 进 `PLAN_REF_ROOTS` ⇒ 可被派工程），与本机制「讨论稿 ≠ 可执行计划」的定位冲突（`build-worker-design` 场景已在 topic 树内用父写的 `SYNTHESIS.md` 实例化，但该位置**未入** §1 表）⇒ 处置（是否正式入表）见 ADR 残留 #19。
 
 ## 11. 代码地图
 

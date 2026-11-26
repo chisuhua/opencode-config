@@ -288,7 +288,7 @@ delegate 通道与其单槽 / 归属门控 / 停机证据 / `plan_ref` accepted 
 |---|---|---|
 | 子会话**上下文压缩后**的 todo 丢失 | 无任何机械信号 | 压缩后先读盘（D6 重建路径）；`TODO.md` 是唯一真源 |
 | 子会话中途死亡 | 无 session 存储读取面可判活 | `git status` 无该节点增量 + `graph.json` 该节点仍非 `done` ⇒ 父重派该 node |
-| 父上下文被子结果撑爆 | 上下文长度不可机械测 | 约定：子最终消息只回指针 + 摘要；父不重读全文 |
+| 父上下文被子结果撑爆 | 上下文长度不可机械测 | 约定：子最终消息只回指针 + 摘要；父不重读全文。⚠ **2026-11-26 实测**（`097ce4b`，7 节点 / 4 波 / 真实宿主）：根会话全 topic 增量 ≈ **114,842 tokens**，其中**合成读入占 69%**；单位合成成本 **0.265 tokens/byte**（每节点 ≈ 9,277 tokens）⇒ 断裂点 **N\* ≈ 16–32**（视根会话剩余预算）。⚠ 该数只把「**读 RESULT.md 全文**」计入，**未**含合成稿的写作成本；且基于本 topic 的产出密度（≈ 34,957 bytes/节点），换题型须重测。证据见 `.rddf/reviews/build-worker-design-scenario-verify.md` §4 |
 | 僵尸 topic 锁（持有者已死） | 存活判定在本篇不可靠 | 人确认；不自动抢占 |
 | 派发前「deps 未完成」 | 本期**不建**事前闸门（技术上可行：事实 ⑩ 的 `tool.execute.before` 先例）⇒ 只有事后复核 | 事后由 checker 复核 + `attempt[]` 留痕 |
 | 节点内越界写 | 权限只到 topic 树粒度（事实 ⑦）；`shell` 写已由三段式堵住，但 `edit` 白名单仍宽 | V10 路径核对（事后） |
@@ -313,10 +313,10 @@ delegate 通道与其单槽 / 归属门控 / 停机证据 / `plan_ref` accepted 
 2. **派发事前闸门**（deps 未完成即拒绝派发）：**技术上可行**（事实 ⑩ —— `plugins/subagent-contract.ts` 的 L1 门已挂在同一钩子上；只需给 plan 的 subagent prompt 加结构化序言 + 钩子内读 `graph.json` 判派生状态与锁归属）。本期为范围决定不做 ⇒ 落 backlog，触发条件 = 误派发/误 join 实际发生。
     **2026-11-26 补充（可行路径已具体化）**：`plugins/subagent-contract.ts` 的 L1 门挂在
     `tool.hook("execute.before")` 上，能读到 `event.input.{agent,prompt,sessionID,background}`；
-    但它交给 `gate()` 的只有 `{agent, prompt, isResume}`，判定函数 `evaluatePrompt(...)`
-    （`lib/subagent-contract-core.ts:535-559`）**完全不读台账 / `graph.json`** ⇒ 本条所需的
+    但它交给 `gate()` 的只有 `{agent, prompt, isResume, parentSessionID}`，判定函数 `evaluatePrompt`
+    （定义于 `lib/subagent-contract-core.ts:276`；`gate()` 调用点 `:553-559`）**完全不读台账 / `graph.json`** ⇒ 本条所需的
     「读派生状态与锁归属」在实现里**一条都没判**。
-    ⇒ 可行路径 = 把 `gate()` 输入扩为 `{agent, prompt, parentSessionID, topicDir?}` + 新增**可选**判定器
+    ⇒ 可行路径 = 给 `gate()` 输入**追加 `topicDir?`** + 新增**可选**判定器
     `evaluateDispatchState()`（默认 `warn`、`enforce` 由 `~/.config/opencode/subagent-contract.json` 开）：
     `owner=parent` / 未 `claim` / deps 未 done ⇒ 拒。钩子已存在、配置已支持 ⇒ 成本极低。
     ⚠ 触发条件不变（误派发/误 join 实际发生）；本条**仍**是「本期范围决定不做」，不因补充而改状态。
@@ -331,11 +331,11 @@ delegate 通道与其单槽 / 归属门控 / 停机证据 / `plan_ref` accepted 
     ⚠ **2026-11-26 更正**：原句「现行口径 = **单飞时节点级、并行时 topic 级 union**（见 V10）」中
     「**并行时 topic 级 union**」这一口径**在 CLI 中并不存在** —— `cmdScopeCheck` 强制要求 `<node-id>`，
     `allowedPrefix` 恒为 `nodes/<nodeId>`，全仓无 union 模式（`scripts/plan-topic-check.ts:201-240`）。
-    ⇒ **文档承诺了一个不存在的口径**：`docs/architecture/plan-topics-topic-model.md:78,130` 与本篇 V10（`:255`）
-    三处均写「并行只做 topic 级 union」⇒ 并行时按文档跑 `scope-check` 会把**兄弟节点的产物算成自己的越界**
+    ⇒ **文档承诺了一个不存在的口径**：`docs/architecture/plan-topics-topic-model.md:78` 与本篇 V10（`:255`）
+    两处仍写「并行只做 topic 级 union」（原 `:130` 已在本批改写为如实口径）⇒ 并行时按文档跑 `scope-check` 会把**兄弟节点的产物算成自己的越界**
     （`build-worker-design` 场景实测：单节点口径下报出 15+ 条假阳性）⇒ 后果不是「无法归因」而是
     **alert fatigue ⇒ 父学会忽略 scope-check 输出 ⇒ 连真越界也被一并忽略**。
-    ⇒ 处置见新增残留 #15（与 #10 合并处理）。**原句保留不改**（历史不回改惯例）。
+    ⇒ 处置：文档口径已在本批改写（`docs/architecture/plan-topics-topic-model.md` §10 scope-check 条 = 并行时暂不做）；长期二选一（CLI 加 `--union` / 删 `:78` 表行与 V10 union 表述）归 builder 面。留 backlog。**原句保留不改**（历史不回改惯例）。
 11. ✅ **已闭合（D9/D10/D11 批；2026-11-26 复核）** —— `input` 快照由 `claim` 亲自产出（`scripts/plan-topic-check.ts:462` 的 `currentInputProjection`），`stale_inputs` 只在 check 侧产出（`lib/plan-topics.ts:691`）⇒ 结构上不可能早于 claim 写入点；判据 V25 / V27 / V28 已通过（V25 的并发子句已由本仓 A4 补进测试套件 `bun test tests/`）；证据见 `.rddf/reviews/adr-plan-multi-session-collaboration-residue-closure.md`。**原登记**：`D10 的落地顺序约束`：`input` 快照与 `stale_inputs` 判据**不得早于** `claim` 写入点落地 ⇒ 否则 `input` 退化为「父手写的纪律型字段」（无机械强制 ⇒ 忘写即静默失效）⇒ 与 `claim` / `close` / `cancel` CLI 同批实现。
 12. **自动接管（TTL 到期即重派）不做**：worker 对 `nodes/<id>/` 的写**没有** `claim_gen` 式围栏 ⇒ 误接管制造双活体写者（比现状更糟）⇒ 与 D7 僵尸 topic 锁同一 posture（人确认）。要改这条需要先有「写围栏」机制（残留 #1 的 per-node 写域）。
     **2026-11-26 补充**：本条的写围栏缺失**不只影响 TTL 自动接管** —— `reap` 本身**不吊销**旧 worker
@@ -355,8 +355,9 @@ delegate 通道与其单槽 / 归属门控 / 停机证据 / `plan_ref` accepted 
     ⇒ 与本篇 D10「**要么实装要么删除，不留死字段**」同一纪律 ⇒ 实装（`claim` 追加 `baseline: git rev-parse HEAD`，存**全 SHA 不存 ref**）或删除（字段 + 文档示例）。留 backlog。
 17. **`precheck` 是自述式凭据，判据侧从不读**：`claim` 写 `precheck: {at, exit, graph_rev}`（`scripts/plan-topic-check.ts:456-461`），但 checker **从不读 `precheck`**；且 `claim` 自注「结果留痕；**不因此拒绝**」（`:455`）⇒「派发前 check 必须 exit 0 才派」这条纪律**无机械强制**。本篇 `:61` 已记过它「曾恒为 1 ⇒ 凭据判别力归零」的事故。
     ⇒ 处置：并入 `summary` 当历史快照并标明「**不参与判定**」，**或**删除字段。（「保留 + 不消费 + 名字像闸门」是三件坏事同时发生。）留 backlog。
-18. **`claim` → `spawn` 是两步、无补偿动作**：claim 成功（写 attempt、节点变「在飞」）后，`subagent` 调用可能因权限/深度/agent 名错而失败 ⇒ attempt 仍开着 ⇒ 节点**永久不可派**，只能人工 `reap --confirm`。本篇 `:142` 的处方「spawn 失败**同回合** `close`」是**纯散文**，无 CLI 支持也无钩子校验 ⇒ 属「纪律型字段」类（与本篇 `:156`「纪律型字段会静默失效」同型）。
+18. **`claim` → `spawn` 是两步、无补偿动作**：claim 成功（写 attempt、节点变「在飞」）后，`subagent` 调用可能因权限/深度/agent 名错而失败 ⇒ attempt 仍开着 ⇒ 节点**永久不可派**，只能人工 `reap --confirm`。本篇 `:142` 的处方「spawn 失败**同回合** `close`」是**纯散文**，无 CLI 支持也无钩子校验 ⇒ 属「纪律型字段」类（同本篇 `:156`「退化为纪律型字段」之风险型）。
     ⇒ 处置二选一：**(a)** `claim` 增加 `spawn_pending` 语义（父在同一命令里 `claim --spawn …`）；**(b)** 新增 `abandon-spawn <topic> <node>`（= 闭合 attempt + 写 `reason: "spawn_failed"`），并用**独立字段**消掉「`finished_at` 读作正常完工」这条歧义（本篇「已知不可机判清单」已登记）。**不要只改 prompt。** 留 backlog。
+19. **父的合成产物在 topic 树内无登记位置**：本篇 D1 的单一写者表（`:42-48`）只给了父 `TOPIC.md` / `graph.json` / `nodes/<id>/BRIEF.md`，**未给父的「N 个节点的合并产物」留槽** ⇒ 父若要把合并产物放出来，唯一去处是 `.rddf/plans/<slug>.md` ⇒ 而该根**在** `PLAN_REF_ROOTS` 内 ⇒ 语义从「离线讨论产物」变成「正式件」（可被派工程），与本篇「讨论稿 ≠ 可执行计划」的定位冲突。`build-worker-design` 场景已按「topic 树内增设父写的 `SYNTHESIS.md`」实例化（该文件不入 `PLAN_REF_ROOTS`）。⇒ 是否**正式入 D1 表**（写者 = 父、语义 = 讨论稿、**不进** `PLAN_REF_ROOTS`）待定 ⇒ 留 backlog。
 
 ---
 
@@ -365,6 +366,8 @@ delegate 通道与其单槽 / 归属门控 / 停机证据 / `plan_ref` accepted 
 > 初版（2026-11-20）的 V01–V15 逐项验收证据见 `.rddf/reviews/plan-multi-session-collaboration-verify.md`（verifier，第 2 轮 `pass`）与 `.rddf/reviews/plan-multi-session-collaboration-e2e.md`（人工 e2e，含未执行项与被证伪项的如实登记）；**逐条实测数据不在本文件维护**（过程日志不进 ADR 正文）。D9 增补的审稿记录见 `.rddf/reviews/adr-plan-multi-session-collaboration-review-d9-cancel.md`，D10 增补见 `.rddf/reviews/adr-plan-multi-session-collaboration-review-d10-inflight.md`，D11 增补见 `…-review-d11-converged.md`，D5 修订见 `…-review-d5-persession.md`。
 >
 > **D9 / D10 / D11 / D5 的实现批（2026-11-25）**：判据实现 = `lib/plan-topics.ts` + `scripts/plan-topic-check.ts`（新增 `claim` / `close` / `reap` / `cancel` + 两口径 + `converged` / `summary`）；**验收**见 `.rddf/reviews/plan-topics-d9-d10-d11-verify.md`（原判 `needs-revision`，唯一未闭合 = F-1）与 `…-f1-closure.md`（追加复核即闭合；原报告按「历史不回改」保持原样）⇒ 本批可判 `pass`；真宿主**单会话**用例见 `.rddf/reviews/plan-topics-pt1-runtime.md`；版本史 `docs/CHANGELOG.md` v2.75；**当前态快照**见 `docs/architecture/plan-topics-topic-model.md`。⚠ **V11 / V12 标注「人工」的双会话场景（同一轮并行派发 / 续接 / 父死重建）仍未执行**。
+>
+> **2026-11-26 更新（`097ce4b`，真宿主 7 节点场景）**：`build-worker-design` 场景在**真实宿主 + 真实 `plan-worker`** 下跑通了 fork/join 主体 ⇒ V12 子项 **①**（同轮并行派发）、**②**（两子会话 `parent_id` == 根会话 id —— 7/7 经 `session_v2.parent_id` 机械取证）、**④**（两条完成合成消息都到达父）已覆盖；另实测跨 node 污染 **0 例**、topic 树外写入 **0 例**、`converged=true` 七桶全清、`final check` exit 0（仅 info 级 `cache_behind`）⇒ fork/join **主体已验证**。⚠ **仍未覆盖**：V12 **③**（子内 `$OPENCODE_SESSION_ID` == 自身 id —— 环境变量断言不可回溯核验）、**⑤**（同父 `subagent(sessionID=)` 续接）、**⑥**（父死后新根**不能**续接旧子 ⇒ 重建路径），以及 V11 的**双根会话独占锁**人工场景 ⇒ 「父死重建」这条承重路径**仍未在真宿主跑过**。证据见 `.rddf/reviews/build-worker-design-scenario-verify.md`。
 >
 > **初版实施期确认的补充裁决**（完整 14 条见 `.rddf/roadmap/plan-multi-session-collaboration.md` §5 —— ⚠ **该节是初版实施期的历史记录**，其中**第 1 条**（「`plan-sessions.json` 精确单文件，不扩 `.rddf/state/` 整目录」）**已被 2026-11-25 的 D5 修订取代**（改为每会话一文件，见 D5 落地硬约束 ⑧）；引用该节时以此为准）：`edit` 白名单用带前导 `*` 的形态（相对 / 绝对两种匹配口径下都成立）；`plan-worker` 的 shell 白名单**无** `bun` / `node` ⇒ checker 只能由父 `plan` 会话跑；锁补了**释放**协议（全节点 done ⇒ `rmdir`，不写释放 = 默认死锁）。
 >
