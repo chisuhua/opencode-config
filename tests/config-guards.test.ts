@@ -5057,6 +5057,8 @@ describe("治理面文案补丁（OC-2/3/4/5 合并 series）的机械判据", (
   const build = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
 
   const anchors: Array<[string, string]> = [
+    ["OC-2 立项路由：增强层前提", "判**增强层路径是否可用**"],
+    ["OC-2 立项路由：内置流程分支", "**不可用** ⇒ 走**内置流程**"],
     ["OC-2 立项路由：直接切 builder", "**不要先切 planner 再停下询问**"],
     ["OC-2 立项路由：切 builder 的命令", 'scripts/role-switch.sh builder --by user --session "$OPENCODE_SESSION_ID"'],
     ["OC-2 立项路由：从零立项分支", "**不在场**（从零立项）⇒ **planner 有动作**"],
@@ -5072,7 +5074,10 @@ describe("治理面文案补丁（OC-2/3/4/5 合并 series）的机械判据", (
     ["OC-4 调研委派：不触发/无权限的出口", "停下**交回主会话**"],
     ["OC-5① metis 结论的落盘载体（默认路径）", "**默认路径 = 写进 improvement 头部的「metis 结论」段**"],
     ["OC-5① 无载体即未审", "**无载体 = 未审**"],
-    ["OC-5② 立项产物归机械守卫", "其**形态判据归生成器侧的机械守卫**"],
+    ["OC-5② 立项产物：P0 不拒生成（事实）", "P0 **不做形态自检、不拒生成**"],
+    ["OC-5② 立项产物：形态错目前只能事后发现", "**形态错目前只能事后发现**"],
+    ["OC-5② 立项产物：不新增审稿配对", "本表**不**为它新增审稿配对"],
+    ["OC-5② 立项产物：根治路径未实施（不得写成已决）", "**未实施** ⇒ 不得在此写成已决"],
   ]
   for (const [label, needle] of anchors) {
     expect(build, `治理面文案补丁未落地：${label}（缺「${needle}」）`).toContain(needle)
