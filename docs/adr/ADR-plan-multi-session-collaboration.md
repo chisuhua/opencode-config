@@ -306,7 +306,20 @@ delegate 通道与其单槽 / 归属门控 / 停机证据 / `plan_ref` accepted 
 ## 残留（登记，不在本篇处理）
 
 1. **每节点精确写域**（子只能写自己的 `nodes/<id>/`）需 per-session 权限；宿主 `subagent` 不传 permissions（事实 ⑤）⇒ 只能自建派发通道（本期否决）⇒ 留 backlog。
+    **2026-11-26 实测补充**：`build-worker-design` 场景（7 节点 / 4 波 / 真实宿主 + 真实 worker，
+    提交 `097ce4b`）下跨 node 污染 **0 例**、topic 树外写入 **0 例** —— 每个 node 目录只有
+    BRIEF/TODO/RESULT（`find` 实测）。⇒ 「写域只到 topic 树粒度」的风险在 **BRIEF 明确写域 + 单一写者协议**
+    时未兑现 ⇒ 本条的**感知风险可下调一档**；但**不可归零**（机制层仍无 per-node 强制，判据层仍无归因手段，见 #10）。
 2. **派发事前闸门**（deps 未完成即拒绝派发）：**技术上可行**（事实 ⑩ —— `plugins/subagent-contract.ts` 的 L1 门已挂在同一钩子上；只需给 plan 的 subagent prompt 加结构化序言 + 钩子内读 `graph.json` 判派生状态与锁归属）。本期为范围决定不做 ⇒ 落 backlog，触发条件 = 误派发/误 join 实际发生。
+    **2026-11-26 补充（可行路径已具体化）**：`plugins/subagent-contract.ts` 的 L1 门挂在
+    `tool.hook("execute.before")` 上，能读到 `event.input.{agent,prompt,sessionID,background}`；
+    但它交给 `gate()` 的只有 `{agent, prompt, isResume}`，判定函数 `evaluatePrompt(...)`
+    （`lib/subagent-contract-core.ts:535-559`）**完全不读台账 / `graph.json`** ⇒ 本条所需的
+    「读派生状态与锁归属」在实现里**一条都没判**。
+    ⇒ 可行路径 = 把 `gate()` 输入扩为 `{agent, prompt, parentSessionID, topicDir?}` + 新增**可选**判定器
+    `evaluateDispatchState()`（默认 `warn`、`enforce` 由 `~/.config/opencode/subagent-contract.json` 开）：
+    `owner=parent` / 未 `claim` / deps 未 done ⇒ 拒。钩子已存在、配置已支持 ⇒ 成本极低。
+    ⚠ 触发条件不变（误派发/误 join 实际发生）；本条**仍**是「本期范围决定不做」，不因补充而改状态。
 3. `plan` 与 `plan-worker` 的 **prompt 重复**（`prompts/plan.md` 与 `prompts/plan-worker.md` 的职责段）会随演进漂移 ⇒ 靠守卫断言两者「共同纪律段」一致（本期只登记，不实现）。
 4. `plan-topics/**` 目录形态与 rdd-workflow 产品侧 `.rddf/` 约定（`improvements/` / `plans/` / `roadmap/`）的边界需产品侧确认（跨仓，见 `docs/rdd-workflow-product-issues.md` 体例）。
 5. **`docs/adr/` 落在「新增文件闸门」的平铺盲区**（`tests/config-guards.test.ts:1491-1494` 自述 `readdirSync` 平铺、子目录整树被过滤）⇒ 本篇及后续 ADR 文件的归属**必须显式做一次决定**：要么在 `docs/adr/` 自建清单守卫，要么接受「靠 review 流程兜底」。本篇选择后者（登记），因为 ADR 文件由 architect 单写 + 双审流程覆盖。
@@ -315,9 +328,35 @@ delegate 通道与其单槽 / 归属门控 / 停机证据 / `plan_ref` accepted 
 8. **逐边策略**（`on_dep_cancel`）：本篇用「取消时逐下游显式消解」零 schema 替代 ⇒ 真需要边级策略时再叠加 `deps_meta`（**defer**，非永久否决）。
 9. ✅ **已闭合（D9/D10/D11 批；2026-11-26 复核）** —— 回滚清单 `.rddf/rollback/plan-topics.json` 的 `edits[]` 已逐字节钉死 `prompts/plan.md`（9 处）与 `docs/SUBAGENT-ORCHESTRATION.md`（2 处）⇒ drill 复跑全绿（1127 例 / 0 fail），且 `last_drill.content_hash` 已按回滚登记表（`ADR-rollback-manifest-enforcement`）的 V8 判据回填；证据见 `.rddf/reviews/adr-plan-multi-session-collaboration-residue-closure.md`。**原登记**：`prompt 与回滚清单的同步`：`prompts/plan.md` 的「多会话协作」整节与 `docs/SUBAGENT-ORCHESTRATION.md` §2.3 被 `.rddf/rollback/plan-topics.json` **逐字节钉死**（`find` 字符串）⇒ 同步它们**必须**同时改该清单，而该清单不在 architect 写集 ⇒ 归实现批（builder 面，同批一并处理）；D9 的 schema 在代码落地前**不得**先写进 prompt（否则 prompt 先于代码承诺）。
 10. **`scope-check` 的按节点归因**：git 不记录写入者 ⇒ 并行多 worker 时无法判定「哪个文件是哪个 worker 写的」⇒ 节点级核对在并行下必然假阳性 ⇒ 现行口径 = **单飞时节点级、并行时 topic 级 union**（见 V10）；真正的归因需要写入者自证（不可行）或 per-node 写域（不可行，见残留 #1）⇒ 留 backlog。
+    ⚠ **2026-11-26 更正**：原句「现行口径 = **单飞时节点级、并行时 topic 级 union**（见 V10）」中
+    「**并行时 topic 级 union**」这一口径**在 CLI 中并不存在** —— `cmdScopeCheck` 强制要求 `<node-id>`，
+    `allowedPrefix` 恒为 `nodes/<nodeId>`，全仓无 union 模式（`scripts/plan-topic-check.ts:201-240`）。
+    ⇒ **文档承诺了一个不存在的口径**：`docs/architecture/plan-topics-topic-model.md:78,130` 与本篇 V10（`:255`）
+    三处均写「并行只做 topic 级 union」⇒ 并行时按文档跑 `scope-check` 会把**兄弟节点的产物算成自己的越界**
+    （`build-worker-design` 场景实测：单节点口径下报出 15+ 条假阳性）⇒ 后果不是「无法归因」而是
+    **alert fatigue ⇒ 父学会忽略 scope-check 输出 ⇒ 连真越界也被一并忽略**。
+    ⇒ 处置见新增残留 #15（与 #10 合并处理）。**原句保留不改**（历史不回改惯例）。
 11. ✅ **已闭合（D9/D10/D11 批；2026-11-26 复核）** —— `input` 快照由 `claim` 亲自产出（`scripts/plan-topic-check.ts:462` 的 `currentInputProjection`），`stale_inputs` 只在 check 侧产出（`lib/plan-topics.ts:691`）⇒ 结构上不可能早于 claim 写入点；判据 V25 / V27 / V28 已通过（V25 的并发子句已由本仓 A4 补进测试套件 `bun test tests/`）；证据见 `.rddf/reviews/adr-plan-multi-session-collaboration-residue-closure.md`。**原登记**：`D10 的落地顺序约束`：`input` 快照与 `stale_inputs` 判据**不得早于** `claim` 写入点落地 ⇒ 否则 `input` 退化为「父手写的纪律型字段」（无机械强制 ⇒ 忘写即静默失效）⇒ 与 `claim` / `close` / `cancel` CLI 同批实现。
 12. **自动接管（TTL 到期即重派）不做**：worker 对 `nodes/<id>/` 的写**没有** `claim_gen` 式围栏 ⇒ 误接管制造双活体写者（比现状更糟）⇒ 与 D7 僵尸 topic 锁同一 posture（人确认）。要改这条需要先有「写围栏」机制（残留 #1 的 per-node 写域）。
+    **2026-11-26 补充**：本条的写围栏缺失**不只影响 TTL 自动接管** —— `reap` 本身**不吊销**旧 worker
+    （`scripts/plan-topic-check.ts:499-511` 只写 `finished_at` + `inputs_reviewed`，无任何吊销动作；
+    本篇 `:145` 已自述「同父仍可复活它」）⇒ **人工接管同样留复活窗口** ⇒ 「误接管制造双活体写者」在
+    `reap` 路径上**同样成立**，不限于 TTL 路径。
+    ⇒ 唯一能把它变成可机判的手段 = attempt 加 `generation`（`claim` 递增）+ worker 产物必须带 `gen`
+    + 判据比对 `gen`；在此之前**至少**应让 `reap` 的输出带上「旧 worker 未被吊销」告警，使危险出现在父的上下文里。
 13. **交付信号（「这件事做完了吗」）暂不提供**：D11 的 `converged` 只回答「还有没有未完成的活」（调度信号）⇒ 「本轮目标是什么」仍靠 `TOPIC.md` 目标段的语义理解（不可机判）⇒ 若将来要机判，需要一个**目标集合载体**，但那会给父一条免审计的收敛退路（与 D9 的取消通道构成双退路）⇒ 触发条件 = 真实出现「需要机判交付完成」的需求。
+14. **`owner` 字段被声明但从不消费**（**声明即承诺，字段在场而无人读**）：本篇 D2 承诺「`owner: "parent"` 的节点 = 父自己做 ⇒ 「子会话与父会话之间的依赖」由此统一表达，不需要第二套机制」，但 `owner` 在 `lib/plan-topics.ts` 全文件仅 3 处命中（`:61` 字段声明、`:197-199` 枚举校验）⇒ **判据库与 CLI 零消费**：`dispatchableNodes` 不过滤 owner、`cmdClaim` 不检查 owner、`deriveStatus` 不看 owner、`checkTopic` 无 owner 相关违规码。
+    ⇒ **活体复现**：`build-worker-design` 场景把探针节点 n5 声明为 `"owner": "parent"` ⇒ `ready` 照样列出、`claim` 照样放行 ⇒ 该节点**被派给了 worker**（`graph.json` 中同一节点 attempt 记 `"agent": "plan-worker"`，`check` 全绿不报警）。
+    ⇒ 处置二选一：**(a)** `dispatchableNodes` 输出 `executor: "parent"` + `claim` 拒非父会话对 parent 节点 claim（新增阻断码 `owner_mismatch`）；**(b)** 从 schema 与 D2 同时删除 `owner`。**不可维持现状**（声明即承诺 ⇒ 读者必然误信）。留 backlog。
+15. **topic 独占锁零机械强制 + 释放步骤不可执行**：本篇 D7 承诺「同 topic 并发 = 须独占：`.rddf/state/plan-topics/<slug>.lock`；**仅 owner 可写 / 可派**」，但 ① **写命令从不看它** —— `cmdLock` 是**纯只读报告**（`scripts/plan-topic-check.ts:286-320`），`claim`/`close`/`reap`/`cancel` 只取 `acquireGraphLock`（**短**写锁，`:336-372`），全仓**无任何命令 `mkdir` 该锁**（唯一写入方是 `prompts/plan.md:280` 的人工指令）⇒「仅 owner 可派」**无任何代码路径执行**（对应本篇 V11 判据标「人工」且至今未执行）；② **释放步骤不可执行** —— `prompts/plan.md:281` 写「所有节点 done/cancelled 后 `rmdir` 该锁目录」，但锁目录内含 `owner` 文件 ⇒ `rmdir` 对非空目录**必然失败**（实测 `Directory not empty`）。
+    ⇒ **活体证据**：本机制**唯一一次**真实使用（2026-11-20 `e2e-probe`）留下的锁**至今仍在**（`.rddf/state/plan-topics/e2e-probe.lock/owner`，6 天未释放）⇒「锁泄漏」不是理论风险。
+    ⇒ 处置：把「拿锁 + 校验归属」合并成**一个原子命令**（`claim` 内先校验 owner，不等即拒 `owner_mismatch`）+ 释放步骤改为先删 `owner` 再 `rmdir`（或 `rm -rf`）+ `lock` 子命令改名 `lock-status`（**命名即承诺**：只读命令不叫 `lock`）。若本期不动 ⇒ **必须**把 D7 与 `prompts/plan.md:276-283` 的「独占」降级为「协议约定（无机械强制）」并删掉「必须是」类暗示。留 backlog。
+16. **`attempts[].baseline` 是死字段**：类型里有（`lib/plan-topics.ts:50`）、schema 文档示例里有（`docs/architecture/plan-topics-topic-model.md:35` 写作 `"baseline": "<sha>"`），但 `claim` 只写 `agent`/`started_at`/`precheck`/`input`（`scripts/plan-topic-check.ts:458-463`）⇒ **全仓无写入点**；`--baseline` flag 只服务 `scope-check`（`:124-129`、`:203`）。
+    ⇒ 与本篇 D10「**要么实装要么删除，不留死字段**」同一纪律 ⇒ 实装（`claim` 追加 `baseline: git rev-parse HEAD`，存**全 SHA 不存 ref**）或删除（字段 + 文档示例）。留 backlog。
+17. **`precheck` 是自述式凭据，判据侧从不读**：`claim` 写 `precheck: {at, exit, graph_rev}`（`scripts/plan-topic-check.ts:456-461`），但 checker **从不读 `precheck`**；且 `claim` 自注「结果留痕；**不因此拒绝**」（`:455`）⇒「派发前 check 必须 exit 0 才派」这条纪律**无机械强制**。本篇 `:61` 已记过它「曾恒为 1 ⇒ 凭据判别力归零」的事故。
+    ⇒ 处置：并入 `summary` 当历史快照并标明「**不参与判定**」，**或**删除字段。（「保留 + 不消费 + 名字像闸门」是三件坏事同时发生。）留 backlog。
+18. **`claim` → `spawn` 是两步、无补偿动作**：claim 成功（写 attempt、节点变「在飞」）后，`subagent` 调用可能因权限/深度/agent 名错而失败 ⇒ attempt 仍开着 ⇒ 节点**永久不可派**，只能人工 `reap --confirm`。本篇 `:142` 的处方「spawn 失败**同回合** `close`」是**纯散文**，无 CLI 支持也无钩子校验 ⇒ 属「纪律型字段」类（与本篇 `:156`「纪律型字段会静默失效」同型）。
+    ⇒ 处置二选一：**(a)** `claim` 增加 `spawn_pending` 语义（父在同一命令里 `claim --spawn …`）；**(b)** 新增 `abandon-spawn <topic> <node>`（= 闭合 attempt + 写 `reason: "spawn_failed"`），并用**独立字段**消掉「`finished_at` 读作正常完工」这条歧义（本篇「已知不可机判清单」已登记）。**不要只改 prompt。** 留 backlog。
 
 ---
 

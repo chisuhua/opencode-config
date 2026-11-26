@@ -211,6 +211,9 @@
 1. 后端 session 写 `.rddf/state/role.json` 与主会话 role 镜像的冲突面（plan 派发会更频繁触发）。
 2. `sessions` 改为 owner 过滤后，跨 owner 的运维视图（"这台机器上还有哪些后端在跑"）失去单一入口 —— 候选增强：给 `sessions` 加 `scope: owner|all` 参数（默认 `owner`）。v1 不加；`sessions` 只读且归属门控已挡住误 `suspend`/`cancel`（owner 存活 ⇒ 拒绝），两 owner 阶段风险可控。
 3. plan session 位于非项目仓时的 `stateRoot` 解析（沿用 `ADR-canonical-root-normalization`，本篇不新增语义）。
+4. **归属枚举 `owner_agent` 是二值**：`ownerAgentOf(agent)` 实现为 `agent === "plan" ? "plan" : "front"`（`lib/delegate-core.ts:1413-1415`）⇒ 任何新派发主体（如 `build`）在台账 / `sessions` / 跨 owner-kind 的 resume·cancel 判据三处**一律塌成 front** ⇒ front 可 resume/cancel 该主体的后端（跨会话同 kind 放行）。本篇 D5 的「旧数据缺失按 front」兼容读规则在**新增第三值**后需复核语义。留 backlog。
+5. **agent 级 `delegate: allow` 会泄漏到被派发后端**：`classPermissions` 只产出 `CONSTANT_DENY` + edit 规则 + grants + subagent 白名单 + arch deny，**无任何 delegate 规则**（`lib/delegate-core.ts:1266-1288`）；而 session 规则**排在 agent 规则之后、last-match-wins**（`:2460-2462` 注释）⇒ 未列出的动作**沿用 agent 级值** ⇒ 给某 agent 开 `delegate: allow` 后，**以该 agent 为后端的后端会话也拿到 delegate 工具** ⇒ 后端可再派后端，击穿「一次派发一个角色类、写集创建时定型」（`prompts/build.md:690`）。⇒ 开权限必须与 `classPermissions` 显式 deny **同批**。留 backlog。
+6. **`general` 的 shell 写旁路与本篇「subagent 只读」口径不一致**：`general` 的 `shell` 首键是 `"*": "allow"`（`opencode.jsonc:1006`）且**不在** `GUARDED_AGENTS`（`scripts/agent-guard-rules.ts:84`）⇒ `>` / `tee` / `sort -o` 这类写盘在 general 块内无通用守卫 ⇒ 存在一条**无登记 / 无台账 / 无槽位 / 无 scope 差集**的写旁路。本篇 `:29` 的「用 subagent 拉一个可写 agent 比没有更危险」在该行上被**配置自身**印证。⇒ 只登记，不评价。留 backlog。
 
 ---
 

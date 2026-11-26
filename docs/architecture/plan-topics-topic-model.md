@@ -127,8 +127,12 @@ summary   = { done[], cancelled[{id,reason,at}], in_flight[{node,started_at,live
 - **取消中断不了在飞 worker**：`cancel` 只改派生态（闭合 attempt + 置 `cancelled` + 消解下游），**没有** in-flight 中断面 ⇒ 已取消节点的在飞 worker 可能继续写产物（作为审计痕迹保留；派生态短路优先于 `done` ⇒ 不影响门控）。
 - **无自动接管**：`liveness_stale`（`TODO.md` mtime 新鲜度）只是显示提示；worker 写没有围栏 ⇒ TTL 自动重派会造双活体写者。**僵尸 attempt**（`claim` 与 spawn 之间父崩溃）同理 —— 只能人工 `reap --confirm`。
 - **交付信号不可机判**（见 §6 定位）；不存在「本轮目标集合」载体 —— 「本轮要什么」的解释权留在父的上下文。
-- **`scope-check` 并行下无法按节点归因**（git 不记录写入者）⇒ 并行只做 topic 级 union。
+- **`scope-check` 并行下无法按节点归因**（git 不记录写入者）⇒ 节点级核对在并行下**必然假阳性**（把兄弟节点的产物算成自己的越界）。⚠ **当前实现只有单节点口径**（`allowedPrefix` 恒为 `nodes/<nodeId>`，`scripts/plan-topic-check.ts:233-240`）⇒ §5 表中「并行只做 topic 级 union」与 ADR V10 所述的 union 口径**在 CLI 中尚未实现** ⇒ 并行时应**暂不做** `scope-check`（或仅做人工 `git status` 核对），否则告警会被噪声淹没。
 - **父可批量标 `cancelled` 使 `converged=true`** ⇒ 该判据定位为调度信号；缓解 = `cancelled` 桶逐条列 `{id,reason,at}` + D9 两条既有约束（`cancelled_unattributed` 强制编理由、`cancelled_dep_active` 强制连带消解）。
+- **`owner` 字段不被消费**：`owner: "parent" | "child"` 只做枚举校验（`lib/plan-topics.ts:197-199`），判据库与 CLI **零消费** ⇒ `owner: "parent"` 的节点**仍会出现在 `ready` 且可被 `claim` 派发**（ADR D2 的承诺「父自己做」未生效）⇒ 处置见 ADR 残留 #14。
+- **topic 独占锁无机械强制**：`lock` 子命令是**纯只读报告**（`scripts/plan-topic-check.ts:286-320`），写命令只取 graph 短锁 ⇒「同 topic 独占」是**协议约定**而非机械保证；且文档写的释放步骤（`rmdir` 该锁目录）对含 `owner` 文件的目录**必然失败** ⇒ 锁泄漏已在盘上发生（`e2e-probe.lock` 自 2026-11-20 未释放）。⇒ 处置见 ADR 残留 #15。
+- **两个字段不被消费**：`attempts[].baseline`（死字段，全仓无写入点）与 `precheck`（`claim` 写、checker 从不读 ⇒「派发前 check 必须 exit 0 才派」无机械强制）⇒ 处置见 ADR 残留 #16 / #17。
+- **topic 树内没有留给「父的合成产物」的位置**：单一写者表（§1）只给了父 `TOPIC.md` / `graph.json` / `BRIEF.md` ⇒ 父若把 N 个节点的合并产物放出来，唯一去处是 `.rddf/plans/<slug>.md` ⇒ **改变其语义**（从「离线讨论产物」变成「正式件」⇒ 进 `PLAN_REF_ROOTS` ⇒ 可被派工程），与本机制「讨论稿 ≠ 可执行计划」的定位冲突 ⇒ 建议在 topic 树内增设父写的 `SYNTHESIS.md`（`build-worker-design` 场景已按此落盘，为第一个实例）。
 
 ## 11. 代码地图
 
