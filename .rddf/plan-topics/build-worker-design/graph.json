@@ -283,6 +283,52 @@
       "deliverables": [
         "nodes/m1/RESULT.md"
       ]
+    },
+    {
+      "id": "m2",
+      "title": "合成稿（A 档复测）",
+      "deps": [
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T12:57:46.488Z",
+          "precheck": {
+            "at": "2026-11-26T12:57:46.488Z",
+            "exit": 0,
+            "graph_rev": "3fe31577cd740007c612de723c4a2476dace1761c532b9adfe7ac5f222dafee2"
+          },
+          "input": {
+            "brief_sha256": "77586872ddeac1f0ba24a33cc370ac14c4c288b974aa9996dd79a74f5eebe549",
+            "deps": [
+              "n1",
+              "n2",
+              "n3",
+              "n4",
+              "n5",
+              "n6",
+              "n7"
+            ],
+            "deliverables": [
+              "nodes/m2/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T13:04:24.519Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/m2/RESULT.md"
+      ]
     }
   ]
 }
