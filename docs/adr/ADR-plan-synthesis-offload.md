@@ -10,7 +10,7 @@
 | Parent | `docs/adr/ADR-plan-multi-session-collaboration.md`（本篇是其「合成环节」的增补；不改其任何写隔离不变式）、`docs/adr/ADR-plan-delegate-engineering-session.md`（delegate 通道，本篇不涉及其改造）、`docs/adr/ADR-role-aware-permissions.md`（角色写门） |
 | 关联 change | **尚未立项** ⇒ 登记为 `backlog: plan-synthesis-offload`（立项后回填 AC 映射与本篇指针） |
 | AC 映射 | 暂缺 —— 本篇的判据见「Verification」章 V1–V11（**前瞻方法**）；change 立项后须把 V 编号映射到该 change 的 AC 序号 |
-| 审稿报告 | oracle 审查结论见本篇「实施记录」节（11 条修改点已落）；critic 复审报告待落 `.rddf/reviews/adr-plan-synthesis-offload-review.md` |
+| 审稿报告 | `.rddf/reviews/adr-plan-synthesis-offload-review.md`（oracle 第 1 轮 + critic 第 1 轮原文誊写 + 逐条处置 + 第 2 轮复审闭合证据） |
 | 前置事实 | ① 宿主 `subagent` 的**新建**路径是 `const model = override ?? agent.model ?? parent.model`（**语义稳定、行号随版本漂移** ⇒ 见 D3 与「上游语义」条）⇒ **每次派发可覆盖模型**；② `subagent` 建会话**不传 per-session permissions**（`ADR-plan-multi-session-collaboration.md:14` 前置事实⑤）⇒ 子会话权限 = 该 agent 的静态配置；③ `.rddf/plan-topics/**` **不在** `PLAN_REF_ROOTS`（`lib/delegate-core.ts:1321-1326`）⇒ 协作区产物不可直接派工程；④ `owner` 字段**被声明但从不消费**（残留 #14；`tests/plan-topics-dag.test.ts:235` 的 B7 用例名「钉住缺陷」把该行为钉死）⇒ **本篇不依赖 `owner`**；⑤ 本篇所依据的实测：`build-worker-design` 场景（7 内容节点 / 4 波 / 真实宿主 + 真实 worker，`converged=true`、`done=8`、闸门 1232 pass / 锚点 30/30），合成节点 `m1` 由弱模型 `plan-worker` 产出 27,112 B 合成稿 |
 
 ---
@@ -108,7 +108,7 @@
 | 批 | 内容 | 约束 |
 |---|---|---|
 | **B0（本篇）** | ① 本 ADR；② 父篇 `ADR-plan-multi-session-collaboration` 的**残留 #19 标注闭合** + **残留 #20 补登（R9）** + **上游验证基线版本刷新**；③ `docs/architecture/plan-topics-topic-model.md` 的 **§10 末条改写** + **§1 补「两类节点」惯例** + **§11 代码地图补本篇**；④ **回滚登记表条目**（`.rddf/rollback/registry.json` 增 `plan-synthesis-offload`，`state: "declared"`、`watch[]` = D5 钉死的两个未来载体路径 ⇒ 该两条路径当前**不得存在**） | 仅 `docs/adr/**` + `docs/architecture/**` + `.rddf/rollback/registry.json`（登记表归 builder 面，见 A1 批的先例）；**不动** `prompts/**` / `scripts/plan-topic-check.ts` / `lib/**` / `opencode.jsonc*` / `tests/rollback-registry.test.ts` |
-| **B1（实现批）** | **步骤 0（先设计）**：V4/V5 的判据规格 —— 稳定 token 约定、结论层定位、结构发现规则（已由本篇钉死载体路径）；**步骤 ①**：`scripts/check-upstream-anchors.sh` 补 P7 语义锚点（**批内最先**；假红即停）；**步骤 ①′**：**A 档 A/B 复测**（V8 收口）—— **✅ 已完成**（2026-11-26 实测 PASS，证据 `.rddf/reviews/plan-synthesis-offload-ab-verdict-a-tier.md`）；**步骤 ②**：`prompts/plan.md` 加「合成节点」一节 + 落 D4 的结论层硬判据 + 落 D3 的模型覆盖说明；**步骤 ③**：载体落地（`scripts/plan-synthesis-check.ts` + `tests/plan-synthesis.test.ts`，V4/V5） | **①②③ 必须同批** —— 判据不得早于写入点落地（父篇 `:156`）；① 须先于 ②（语义漂移先于 prompt 写入）；`prompts/**` 与 `scripts/**` 属**治理面** ⇒ 本批须走治理面 **oracle → critic** 双审；**载体两个新文件须过一次显式的新增文件闸门决定** |
+| **B1（实现批）** | **步骤 0（先设计）**：V4/V5 的判据规格 —— 稳定 token 约定、结论层定位、结构发现规则（已由本篇钉死载体路径）；**步骤 ①**：`scripts/check-upstream-anchors.sh` 补 P7 语义锚点（**批内最先**；假红即停）；**步骤 ①′**：**A 档 A/B 复测**（V8 收口）—— **✅ 已完成**（2026-11-26 实测 PASS，证据 `.rddf/reviews/plan-synthesis-offload-ab-verdict-a-tier.md`）；**步骤 ②**：`prompts/plan.md` 加「合成节点」一节 + 落 D4 的结论层硬判据 + 落 D3 的模型覆盖说明；**步骤 ③**：载体落地（`scripts/plan-synthesis-check.ts` + `tests/plan-synthesis.test.ts`，V4/V5）；**步骤 ④（回滚迁移）**：写 `.rddf/rollback/plan-synthesis-offload.json` 清单 ⇒ 登记表条目 `plan-synthesis-offload` 由 `declared` 转 `proving` ⇒ drill PASS 后转 `active`（**步骤 ④ 必做** —— `declared` 的 `watch[]` 路径一旦存在，M4 会机械变红：「watch 路径已存在 ⇒ 必须转 active 或合法 exempt」） | **①②③④ 必须同批** —— 判据不得早于写入点落地（父篇 `:156`）；① 须先于 ②（语义漂移先于 prompt 写入）；`prompts/**` 与 `scripts/**` 属**治理面** ⇒ 本批须走治理面 **oracle → critic** 双审；**载体两个新文件须过一次显式的新增文件闸门决定** |
 | **B2（条件）** | 若 A 档复测**仍丢最重项** ⇒ 启用 B 档（新增 `plan-merger` agent），并在 ② 追加防降级措辞 | 独立决策 |
 
 ---
@@ -130,10 +130,10 @@
 ## 后果 / 代价
 
 **正面**
-- 根的**材料吸收量**从 244,703 B 降到 **27,112 B（-89%）**；合成工作整体移入一个**隔离会话**（实测最终上下文 **132,909 tokens**）⇒ 根会话保持清醒。
+- 根的**材料吸收量**从 244,703 B 降到 **35,265 B（-86%）**（按 D2 的答案惯例取**当前答案节点** = 最新非 cancelled 合成节点 = A 档的 `m2`）；C 档 `m1` 的对应数字是 27,112 B（-89%）。合成工作整体移入一个**隔离会话**（实测最终上下文 **132,909 tokens**）⇒ 根会话保持清醒。
 - 合成**从自述变成留痕产物** ⇒ 换根会话可重建「父当时合了什么」。
 - 合成质量**可判定**（A/B 对照 + V4 的机械判据）⇒ 「合并得好不好」不再靠散文。
-- **零机制面改动** ⇒ `lib/` 与 `scripts/plan-topic-check.ts` 不动；治理面改动仅限 `prompts/plan.md` 一节 + 一条锚点；**无需新增 `.rddf/rollback/` 条目**（数据面非机制面）。
+- **零机制面改动** ⇒ `lib/` 与 `scripts/plan-topic-check.ts` 不动；治理面改动仅限 `prompts/plan.md` 一节 + 一条锚点；**回滚面 = 回滚登记表的 `plan-synthesis-offload` 条目**（`state: declared`，**B0 已增** —— 新建 ADR 触发登记表 M1「ADR 未被覆盖 = 沉默即违规」）；**机制面零改动 ⇒ 无字节钉死清单**；B1 落地后须写 `.rddf/rollback/plan-synthesis-offload.json` 清单并转 `proving` ⇒ drill PASS 后转 `active`（见 D6 B1）。
 
 **负面 / 代价**
 - **断裂点不变**：合成会话自身仍要装下全部子产出 ⇒ 「单个合成装不下超大 topic」**未解决**（**不可缓解**）⇒ 本机制**不得**被宣传为「让规模无上限」。
@@ -160,10 +160,10 @@
 | V2 | **机制面**判据零改动：`lib/plan-topics.ts` 与 `scripts/plan-topic-check.ts` **零改动**（质量判据 V4/V5 落**独立载体**，不在这两个文件里） | `git diff --name-only` 不含 `lib/**`、`scripts/plan-topic-check.ts` | ✅ 实测（限 B0/场景口径） |
 | V3 | 合成产物落在 `nodes/<m-id>/RESULT.md`；父的写面不变（单一写者表无需新增行）；不进 `PLAN_REF_ROOTS` | 路径断言 + `lib/delegate-core.ts:1321-1326` 复核 | ✅ 实测 |
 | V4 | **「最重项必须进结论层」有机械判据**：合成稿中，被上游标为「最重/必须上报/薄弱点」的项若只出现在依据层而未进结论层 ⇒ 报违规。**前提**（缺任一则判据不成立）：① 上游标注携带稳定 token；② 合成 BRIEF 的五节固定结构使结论层可定位 | 独立载体上的断言（B1 步骤 0 + ③） | ⬜ **未实测**（B1） |
-| **V5a** | **完整性（并集口径）**：**全部**合成节点的 `deps` 之**并集** == 全部内容节点（内容节点 := 全部非 cancelled 且非 `m*` 的节点）⇒ 父漏登记某节点 ⇒ 违规 | 独立载体上的集合断言（B1） | ⬜ **未实测**（B1） |
-| **V5b** | **无冒充**：任一 `m*` 节点的 `deps` 未覆盖全部内容节点 ⇒ 报违规（它冒充合成节点） | 同上 | ⬜ **未实测**（B1） |
+| **V5a** | **完整性（并集口径）**：**全部**合成节点的 `deps` 之**并集** == 全部内容节点（内容节点 := 全部非 cancelled 且非 `m*` 的节点）⇒ 父漏登记某节点 ⇒ 违规。**与合成节点个数无关** ⇒ 容忍追加式多合成节点共存 | 独立载体上的集合断言（B1） | ⬜ **未实测**（B1） |
+| **V5b** | **无冒充（作用域 = 当前答案节点）**：**当前答案节点**（= 最新一个非 cancelled 的合成节点）的 `deps` 必须覆盖全部内容节点 ⇒ 否则它冒充合成节点。⚠ **已被取代的历史合成节点**（同 topic 内更早、已 `done` 的 `m*` 节点）**豁免本条** —— 它们的 `deps` 反映的是**当时**的内容集，后续内容集增长会使其过期；父篇 D9 **禁止「完成后取消」** ⇒ 无消解手段 ⇒ 判据必须容忍（否则永久误报）。历史合成节点的登记完整性由 **V5a 的并集口径**兜 | 独立载体上的断言（B1） | ⬜ **未实测**（B1） |
 | **V5c** | **合成节点不互依**：任一合成节点的 `deps` **不含**其它合成节点 ⇒ 报违规（避免合成节点之间成环） | 同上 | ⬜ **未实测**（B1） |
-| V6 | 根的**材料吸收量** = 合成稿体积（非全部子产出体积）：实测 244,703 B → **27,112 B（-89%）** | `wc -c` 对照 | ✅ 实测 |
+| V6 | 根的**材料吸收量** = 合成稿体积（非全部子产出体积）：实测 244,703 B → **35,265 B（-86%）**（**按 D2 答案惯例取当前答案节点 = A 档 `m2`**；C 档 `m1` 对照 27,112 B / -89%） | `wc -c` 对照 | ✅ 实测 |
 | V7 | 根 per-topic 上下文降幅：根 `tokens_input` 增量 **≤ 60,000**（对照：自己做 = 114,842）；且根的 tool 调用中**无** `nodes/n[1-7]/RESULT.md` 的 read | **须在新根会话跑**（本会话根已吸收全部材料 ⇒ 增量不可归因）⇒ 探针规格见 `.rddf/reviews/plan-synthesis-offload-ab-verdict.md` §5.3 | ⬜ **未实测**（新根会话） |
 | V8 | 合成质量 A/B（vs 父手写 golden）：① 结论一致性 ② 缺陷清单覆盖 ③ 裁决项覆盖；**且**「上游标为最重的发现必须进结论层」 | A/B 脚本 + 人工逐条比对 | ✅ **A 档 PASS**（2026-11-26 实测：文件级 **31/31**、行号级 28/31（缺口全是**引用口径差异**：`opencode.jsonc` vs `.opencode-go` 副本）、裁决 **33** 条、**三条「最重/关键」发现 3/3 进结论层**）；C 档对照：文件级 29/31、三条 0/3 ⇒ **阶梯停在 A 档 ⇒ B2 不触发** |
 | V9 | 上游语义锚点 P7 存在且绿：`scripts/check-upstream-anchors.sh` 报 `RESULT: OK`（含 P7，语义 token 锚点） | `bash scripts/check-upstream-anchors.sh` | ⬜ **未实测**（B1 步骤 ①） |
@@ -191,7 +191,14 @@
 
 - **oracle 审查**（2026-11-26）：判定 **APPROVE**，附 7 个实质问题 / 11 条可直接落地的修改点（1–5 为 B0 阻断项、6–8 为 B1 设计阻断项）⇒ **已全部落入本篇正文**（对照：D1 的发现规则与口径边界条、D2 的作者/背书条与追加式返工条、D3 的 provider 层条与批内次序、D4 的可实现性前提两条、D5 的独立承载条、D6 的三个落点与批内次序、V4/V5/V9–V11、「已知不可机判清单」的 provider 层条）。
 - **本篇对 oracle 建议的一处修正**：oracle 建议的 V5 定义（「deps ⊇（全部非 cancelled 节点 − 自身）」）在**追加式多合成节点**（oracle 自己在 D2 要求的返工路径）共存时，**两个合成节点都不满足该条件** ⇒ 判据会静默失效 ⇒ 本篇改为**并集口径的 V5a/V5b/V5c**（V5a 并集完整性 / V5b 无冒充 / V5c 合成节点不互依），既 owner-free、又自排除、又容忍多合成节点。
-- **critic 复审**：待落 `.rddf/reviews/adr-plan-synthesis-offload-review.md`。
+- **critic 复审（第 1 轮，2026-11-26）**：**REJECT / `mergeable: no`** —— 1 BLOCKER + 3 SHOULD_FIX + 2 NITS。**已全部处置**：
+  - **BLOCKER**（`:136` 自相矛盾：「无需新增 `.rddf/rollback/` 条目」vs D6 B0④ 与实施记录都说已新增）⇒ 已改为如实陈述「回滚面 = 登记表条目（`declared`，B0 已增）+ B1 落地后写清单转 `proving`；机制面零改动 ⇒ 无字节钉死清单」；
+  - **SHOULD_FIX ①**（**V5b 在内容集增长路径下会永久误报** —— 被取代的历史合成节点 `m1` 的 `deps` 反映的是当时的内容集，后续增长使命名过期；父篇 D9 禁止「完成后取消」⇒ 无消解手段 ⇒ 同一类问题在 V5b 上重现）⇒ **已修**：V5b 作用域限定为「**当前答案节点**（最新非 cancelled 的合成节点）」，历史合成节点**明确豁免**，其登记完整性由 V5a 的并集口径兜；
+  - **SHOULD_FIX ②**（V6 证据数字与决策惯例不自洽：27,112 B 是 `m1`（C 档）的数字，而按 D2 答案惯例当前答案是 `m2` = 35,265 B）⇒ **已修**：V6 与「后果」章改用 `m2` 数字（**-86%**），`m1` 的 27,112 B / -89% 降为 C 档对照；
+  - **SHOULD_FIX ③**（D6 B1 缺回滚迁移步骤 ⇒ B1 后 M4 会机械变红）⇒ **已修**：B1 增**步骤 ④（回滚迁移）**：写清单 ⇒ `declared`→`proving` ⇒ drill ⇒ `active`；
+  - **NIT ①**（父篇残留 #20 的行号清单有误：裸形式「（钉住缺陷）」实际在 `:235`/`:385`/`:395`/`:406`，`:374` 是带后缀形式，`:235`（B7）被漏列）⇒ **已修**（并补上带后缀形式的 3 处 `:217`/`:229`/`:374`）；
+  - **NIT ②**（`SYNTHESIS.md` 旧实例仍在盘上，与 `m1`/`m2` 三份合成产物并存可能误读）⇒ **已处置**（数据面加头注，见 `.rddf/reviews/build-worker-design-scenario-verify.md`）。
+  ⇒ 审稿报告：`.rddf/reviews/adr-plan-synthesis-offload-review.md`（第 1 轮原文誊写 + 处置记录）。
 - **A 档复测（2026-11-26）**：**V8 收口 = PASS**（文件级 31/31、行号级 28/31、裁决 33 条、三条「最重/关键」发现 3/3 进结论层；C 档对照 29/31 与 0/3）⇒ **阶梯停在 A 档 ⇒ B2 不触发** ⇒ D3「默认 A 档」被实测支撑。**V11 收口 = PASS**（`session_v2.model` 确实暴露模型字段 ⇒ provider 层风险由「不可机判」降为「可机判」）。证据：`.rddf/reviews/plan-synthesis-offload-ab-verdict-a-tier.md`。
 - **V5 改写的实测验证（2026-11-26）**：追加式两个合成节点（`m1` + `m2`）共存时，oracle 建议的**逐节点** V5 定义（「deps ⊇ 全部非 cancelled 节点 − 自身」）会把**两个**合成节点都判不通过 ⇒ **判据静默失效**；本篇采用的**并集口径**（V5a 并集完整 / V5b 无冒充 / V5c 不互依）**全通过** ⇒ 改写是必要的，且已被实测证明。
 - **本篇对既有机制的三处修正**（均为实测/门禁暴露，非设计偏好）：① V5 改并集口径（理由见上）；② D1 的「零新增判据」改口径为「既有机制面判据零改动 + 质量判据另立载体」（否则四个承诺互相矛盾）；③ **D6 的 B0 落点补「回滚登记表条目」** —— 新建 ADR 会触发回滚登记表的 **M1**（`ADR 未被 registry 覆盖（沉默 = 违规）`）⇒ 登记表条目的 `declared` 态又要求 `watch[]` 列出**未来路径**且**当前不得存在** ⇒ **载体路径必须在本篇钉死**（D5 已钉）。
