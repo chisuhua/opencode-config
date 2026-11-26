@@ -5039,3 +5039,36 @@ describe("A6：改进池 front-matter 增量守卫", () => {
     ).toBe("")
   })
 })
+
+/**
+ * **治理面文案补丁的机械判据**（2026-11-27 · OC-2 / OC-3 / OC-4 / OC-5 合并 series）。
+ *
+ * ⚠ 为什么要有：治理面措辞若只存在于散文，下一次改写就会**无声回退** ⇒ 把新增条款的
+ * **内容锚点**钉成断言（断言即「什么算漂移」的判据本身 ⇒ 本文件的改动属治理面 ⇒ 须同规格审查）。
+ *
+ * ⚠ **刻意不覆盖哪一条**：`prompts/build.md` §输出 的「未声明 ⇒ 三判据全不设门禁 ⇒ 放行」
+ * **不配断言** —— 机制回滚（`.rddf/rollback/commit-gate.json` 的 step-2 edit）会把该行还原成
+ * 「不要主动 commit」⇒ 任何钉住新措辞的断言都会让 rollback drill 假红。
+ * 它的机械判据是**清单锚点本身**：`tests/rollback-manifests.test.ts` 断言该 `find`
+ * 在当前内容里恰好出现 1 次（措辞漂移即红）。
+ */
+describe("治理面文案补丁（OC-2/3/4/5 合并 series）的机械判据", () => {
+  const ROOT = path.join(import.meta.dir, "..")
+  const build = readFileSync(path.join(ROOT, "prompts", "build.md"), "utf8")
+
+  const anchors: Array<[string, string]> = [
+    ["OC-2 立项路由：直接切 builder", "**不要先切 planner 再停下询问**"],
+    ["OC-2 立项路由：切 builder 的命令", 'scripts/role-switch.sh builder --by user --session "$OPENCODE_SESSION_ID"'],
+    ["OC-3 role-switch：授权窗口子命令", "--grant-window <roles-csv> <max>"],
+    ["OC-3 role-switch：--session 必带", "⚠ **`--session` 必带**"],
+    ["OC-3 role-switch：落点由 cwd 决定", "**落点由调用时的 cwd 决定**"],
+    ["OC-4 调研委派：可点数触发", "**连续 ≥3 次**读**第三方**库 / CLI 的**已安装产物源码**"],
+    ["OC-4 调研委派：触发后的动作", "**停手改派 `librarian`**"],
+    ["OC-5① metis 结论的落盘载体", ".rddf/reviews/<improvement>-metis.md"],
+    ["OC-5① 无载体即未审", "**无载体 = 未审**"],
+    ["OC-5② 立项产物归机械守卫", "其**形态判据归生成器侧的机械守卫**"],
+  ]
+  for (const [label, needle] of anchors) {
+    expect(build, `治理面文案补丁未落地：${label}（缺「${needle}」）`).toContain(needle)
+  }
+})
