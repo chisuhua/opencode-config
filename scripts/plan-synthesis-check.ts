@@ -107,7 +107,9 @@ export function extractRulings(text: string | null): Set<string> {
   return out
 }
 
-/** `## 根裁决集` 是否显式声明「无裁决」—— 必须**整段去列表前缀后恰为「无」/「暂无」**
+/** `## 根裁决集` 是否显式声明「无裁决」—— 整段去列表前缀后，须恰为「无」/「暂无」
+ *  （**容忍包裹括号与句末标点**：`无。` / `（无）` / `暂无，` 都算；但不容忍附加注记，如 `无（本次无裁决）`
+ *   —— 附加文本会让「无」重新变成可绕过 F4b 的挡箭牌）
  *  ⚠ 不能用 `/无/.test(body)`（审查 F4 实测：`- 不要纳入多租户（无写通道）` 会被误判为「无裁决」⇒ V4c 整段跳过 ⇒ 假绿） */
 export function declaresNoRuling(body: string | null): boolean {
   if (!body) return false
@@ -116,7 +118,7 @@ export function declaresNoRuling(body: string | null): boolean {
     .map((l) => l.replace(/^\s*[-*]\s*/, "").trim())
     .filter((l) => l.length > 0)
     .join("\n")
-  return /^(无|暂无)$/.test(normalized)
+  return /^[（(【[]?(无|暂无)[）)】\]]?[。．.，,]?$/.test(normalized)
 }
 
 function readIfExists(p: string): string | null {

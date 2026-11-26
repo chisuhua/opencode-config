@@ -323,6 +323,22 @@ describe("§5 V4c：根裁决集 slug 包含", () => {
     })
     expect(BLOCKING(d)).toContain("synth_brief_no_ruling_set")
   })
+
+  // 审查复审 note：容忍包裹括号与句末标点（自然中文高频写法）
+  test("F4b'：`无。` / `（无）` / `暂无，` 都算「无裁决」；附加注记不算", () => {
+    const mk = (body: string) =>
+      makeTopic({
+        nodes: [{ id: "a1" }, { id: "m1", deps: ["a1"] }],
+        brief: { m1: `# BRIEF\n\n## 根裁决集\n\n${body}\n` },
+        result: { a1: "无标记\n", m1: synthResult({ rulings: [] }) },
+      })
+    for (const ok of ["无", "无。", "（无）", "暂无，", "- 无"]) {
+      expect(BLOCKING(mk(ok)), ok).toEqual([])
+    }
+    for (const bad of ["无（本次无裁决）", "无 补充说明"]) {
+      expect(BLOCKING(mk(bad)), bad).toContain("synth_brief_no_ruling_set")
+    }
+  })
 })
 
 // ── §7 无合成节点 ────────────────────────────────────────────────────────────
