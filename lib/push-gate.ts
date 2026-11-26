@@ -37,6 +37,8 @@ export interface ForcePushInvocation {
  * ⚠ **heredoc 正文是数据**：先剥离（复用 `stripHeredocs` ⇒ 与 commit 门禁同一份前处理）
  *   ⇒ 正文里提到强推字面量**不**会被误判成强推（ADR 的实施对齐项）。
  */
+// 运行时证据（2026-11-26）：`tool.execute.before` 先于 `permission.assert`（源码 `packages/core/src/tool.ts:390`
+// → `packages/core/src/tool/plugin/shell.ts:356`；运行时证据见 `.rddf/reviews/runtime-e2e-push-gate-verify.md`）
 export function detectForcePush(command: string): ForcePushInvocation {
   if (typeof command !== "string" || command.trim() === "") return { isForcePush: false }
   // ⚠ 与 commit 门禁**同一份** heredoc 前处理（正文是数据 ⇒ 不参与判定）
