@@ -28,7 +28,7 @@
     {
       "mechanism": "plan-synthesis-offload",
       "adr_primary": "docs/adr/ADR-plan-synthesis-offload.md",
-      "state": "proving",
+      "state": "active",
       "manifest_ref": "plan-synthesis-offload",
       "watch": [
         "scripts/plan-synthesis-check.ts",
