@@ -12,6 +12,33 @@
 
 ---
 
+## 0. 完成度总表（2026-11-26 回写）
+
+> 证据链：本仓 `cb91be2`（A1/A3/A4/A6）· `6550a00`（A2 + Q5）· `9e57463`（A5）· `3bb6f1c`（model-fallback 立项）· `e5f03f5`（本机触发机制）；e2e 仓 `28669e6`（零模型 3 例）· `30b4d44`（push-gate 2 例）· `0ec0084`（CI 两步 + 缺口表）· `b58ff6b`（计数底账）。
+
+| 项 | 状态 | 落点 / 备注 |
+|---|---|---|
+| **A1** 补 F-1 | ✅ 完成 | `cb91be2`；补验记录 `.rddf/reviews/plan-topics-d9-d10-d11-verify-f1-closure.md` ⇒ 本批验收可转 `pass` |
+| **A2** 改进池机读化 | ✅ 完成 | `6550a00`；pending **12 → 8**（7 真待办 + 1 部分闭合） |
+| **A3** 去 `skipIf` | ✅ 完成 | `cb91be2`；两条取材路径都断言 `FAIL=0` + 兜底 `PASS=64` |
+| **A4** V25 并发子句 | ✅ 完成 | `cb91be2`；barrier 编排，连跑 10 次全绿 |
+| **A6** 增量守卫 | ✅ 完成 | `cb91be2`；22 份祖父名单冻结 + 双向变红演练 |
+| **A5** ADR 闭合标注 | ✅ 完成 | `9e57463`；oracle 判 APPROVE，审查记录 `.rddf/reviews/adr-plan-multi-session-collaboration-review-residue-closure.md` |
+| **Q5** 历史加注横幅 | ✅ 完成 | `6550a00`；目标文件实测在 `improvements/`（oracle 判错已订正 `acaac11`） |
+| **B1 零模型层（3 例）** | ✅ 已落（L1） | e2e `28669e6`；**CI 已能真跑**（`0ec0084` 加了完整克隆 + bun） |
+| **B1 真宿主 PT-1** | ⏳ 待拍板 | 需「谁 + 什么节奏跑 `E2E_REAL_RUNTIME=1`」的具名承诺；无承诺 ⇒ 诚实选 ① |
+| **B2 前半 push-gate** | ✅ 完成 | 源码探针 `.rddf/reviews/runtime-e2e-push-gate-source-probe.md` + 运行时 2 例（e2e `30b4d44`，真跑记录 `.rddf/reviews/runtime-e2e-push-gate-verify.md`） |
+| **B2 后半 model-fallback** | 📋 已立项、未实施 | `.rddf/improvements/model-fallback-runtime-e2e.md`（`3bb6f1c`，metis 12 条已处置） |
+| **本机触发机制** | ✅ 已实施 | `e5f03f5`；`scripts/e2e-runtime.sh` + `.githooks/post-commit`（opt-in，advisory）；偏差与未实测项见提案 §8 |
+| **C1** 基线未进 CI | 🟡 根因 A 已闭合 | 8 条基线随 push 进 `origin/master`；**剩**上游真删 `guide` hook 的 8 条用例迁移 |
+| **C2** 缺口表刷新 | ✅ 完成 | e2e `0ec0084`；#5 标闭合（证据 `delegate-tool.test.ts:519`）、#1 维持开放（复核结论与审计相反，已注明） |
+| **C3** README 计数漂移 | ✅ 完成 | e2e `b58ff6b`；改为实跑口径 **148 / 70 / 8 / 70** |
+| **C4** 产品侧增强 | ⏳ 待拍板 | 结论 = 不按现规格立项，re-scope 为「模板侧默认字段」⇒ 需产品侧有人接 |
+| **SF-5** CHANGELOG v2.75 | ⏳ 用户自办 | 未做 |
+| **feedback `resolution` 残留** | 📋 已登记 | `rddf feedback` 无 resolve 子命令 ⇒ backlog |
+
+---
+
 ## 1. 范围与依据
 
 ### 1.1 做什么（3 批 + 1 张归属表）
