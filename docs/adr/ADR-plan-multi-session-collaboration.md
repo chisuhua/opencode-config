@@ -323,7 +323,9 @@ delegate 通道与其单槽 / 归属门控 / 停机证据 / `plan_ref` accepted 
 
 ## 实施记录
 
-> 初版（2026-11-20）的 V01–V15 逐项验收证据见 `.rddf/reviews/plan-multi-session-collaboration-verify.md`（verifier，第 2 轮 `pass`）与 `.rddf/reviews/plan-multi-session-collaboration-e2e.md`（人工 e2e，含未执行项与被证伪项的如实登记）；**逐条实测数据不在本文件维护**（过程日志不进 ADR 正文）。D9 增补的审稿记录见 `.rddf/reviews/adr-plan-multi-session-collaboration-review-d9-cancel.md`，D10 增补见 `.rddf/reviews/adr-plan-multi-session-collaboration-review-d10-inflight.md`；实现证据随实现批的验收报告落 `.rddf/reviews/`。
+> 初版（2026-11-20）的 V01–V15 逐项验收证据见 `.rddf/reviews/plan-multi-session-collaboration-verify.md`（verifier，第 2 轮 `pass`）与 `.rddf/reviews/plan-multi-session-collaboration-e2e.md`（人工 e2e，含未执行项与被证伪项的如实登记）；**逐条实测数据不在本文件维护**（过程日志不进 ADR 正文）。D9 增补的审稿记录见 `.rddf/reviews/adr-plan-multi-session-collaboration-review-d9-cancel.md`，D10 增补见 `.rddf/reviews/adr-plan-multi-session-collaboration-review-d10-inflight.md`，D11 增补见 `…-review-d11-converged.md`，D5 修订见 `…-review-d5-persession.md`。
+>
+> **D9 / D10 / D11 / D5 的实现批（2026-11-25）**：判据实现 = `lib/plan-topics.ts` + `scripts/plan-topic-check.ts`（新增 `claim` / `close` / `reap` / `cancel` + 两口径 + `converged` / `summary`）；**验收**见 `.rddf/reviews/plan-topics-d9-d10-d11-verify.md`（原判 `needs-revision`，唯一未闭合 = F-1）与 `…-f1-closure.md`（追加复核即闭合；原报告按「历史不回改」保持原样）⇒ 本批可判 `pass`；真宿主**单会话**用例见 `.rddf/reviews/plan-topics-pt1-runtime.md`；版本史 `docs/CHANGELOG.md` v2.75；**当前态快照**见 `docs/architecture/plan-topics-topic-model.md`。⚠ **V11 / V12 标注「人工」的双会话场景（同一轮并行派发 / 续接 / 父死重建）仍未执行**。
 >
 > **初版实施期确认的补充裁决**（完整 14 条见 `.rddf/roadmap/plan-multi-session-collaboration.md` §5 —— ⚠ **该节是初版实施期的历史记录**，其中**第 1 条**（「`plan-sessions.json` 精确单文件，不扩 `.rddf/state/` 整目录」）**已被 2026-11-25 的 D5 修订取代**（改为每会话一文件，见 D5 落地硬约束 ⑧）；引用该节时以此为准）：`edit` 白名单用带前导 `*` 的形态（相对 / 绝对两种匹配口径下都成立）；`plan-worker` 的 shell 白名单**无** `bun` / `node` ⇒ checker 只能由父 `plan` 会话跑；锁补了**释放**协议（全节点 done ⇒ `rmdir`，不写释放 = 默认死锁）。
 >
