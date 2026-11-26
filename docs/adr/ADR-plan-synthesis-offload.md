@@ -4,13 +4,13 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | **Draft**（oracle 已判 APPROVE 附 11 条修改点，已落；**待 critic 复审**后方可转 Proposed） |
+| Status | **Proposed**（oracle 第 1 轮 APPROVE + 11 条修改点已落；critic 第 1 轮 REJECT（1 BLOCKER + 3 SHOULD_FIX + 2 NITS）**已全部处置**；critic 第 2 轮复审 **APPROVE_WITH_CONDITIONS / `mergeable: yes`（无 BLOCKER）**）⇒ 达「ADR 完成的标志」五条：四要素齐 / 双审完成且 BLOCKER 全闭并经 1 次复审确认 / Status 转已决 / 关联 change 已登记为 `backlog: plan-synthesis-offload` / 审稿报告已落 `.rddf/reviews/adr-plan-synthesis-offload-review.md`） |
 | Date | 2026-11-26（初版）｜2026-11-26（据 oracle 审查意见修订） |
 | Author | architect |
 | Parent | `docs/adr/ADR-plan-multi-session-collaboration.md`（本篇是其「合成环节」的增补；不改其任何写隔离不变式）、`docs/adr/ADR-plan-delegate-engineering-session.md`（delegate 通道，本篇不涉及其改造）、`docs/adr/ADR-role-aware-permissions.md`（角色写门） |
 | 关联 change | **尚未立项** ⇒ 登记为 `backlog: plan-synthesis-offload`（立项后回填 AC 映射与本篇指针） |
 | AC 映射 | 暂缺 —— 本篇的判据见「Verification」章 V1–V11（**前瞻方法**）；change 立项后须把 V 编号映射到该 change 的 AC 序号 |
-| 审稿报告 | `.rddf/reviews/adr-plan-synthesis-offload-review.md`（oracle 第 1 轮 + critic 第 1 轮原文誊写 + 逐条处置 + 第 2 轮复审闭合证据） |
+| 审稿报告 | `.rddf/reviews/adr-plan-synthesis-offload-review.md`（oracle 第 1 轮 + critic 第 1 轮原文誊写 + 逐条处置 + **critic 第 2 轮实际结论：APPROVE_WITH_CONDITIONS / `mergeable: yes`（无 BLOCKER）**） |
 | 前置事实 | ① 宿主 `subagent` 的**新建**路径是 `const model = override ?? agent.model ?? parent.model`（**语义稳定、行号随版本漂移** ⇒ 见 D3 与「上游语义」条）⇒ **每次派发可覆盖模型**；② `subagent` 建会话**不传 per-session permissions**（`ADR-plan-multi-session-collaboration.md:14` 前置事实⑤）⇒ 子会话权限 = 该 agent 的静态配置；③ `.rddf/plan-topics/**` **不在** `PLAN_REF_ROOTS`（`lib/delegate-core.ts:1321-1326`）⇒ 协作区产物不可直接派工程；④ `owner` 字段**被声明但从不消费**（残留 #14；`tests/plan-topics-dag.test.ts:235` 的 B7 用例名「钉住缺陷」把该行为钉死）⇒ **本篇不依赖 `owner`**；⑤ 本篇所依据的实测：`build-worker-design` 场景（7 内容节点 / 4 波 / 真实宿主 + 真实 worker，`converged=true`、`done=8`、闸门 1232 pass / 锚点 30/30），合成节点 `m1` 由弱模型 `plan-worker` 产出 27,112 B 合成稿 |
 
 ---
@@ -199,6 +199,7 @@
   - **NIT ①**（父篇残留 #20 的行号清单有误：裸形式「（钉住缺陷）」实际在 `:235`/`:385`/`:395`/`:406`，`:374` 是带后缀形式，`:235`（B7）被漏列）⇒ **已修**（并补上带后缀形式的 3 处 `:217`/`:229`/`:374`）；
   - **NIT ②**（`SYNTHESIS.md` 旧实例仍在盘上，与 `m1`/`m2` 三份合成产物并存可能误读）⇒ **已处置**（数据面加头注，见 `.rddf/reviews/build-worker-design-scenario-verify.md`）。
   ⇒ 审稿报告：`.rddf/reviews/adr-plan-synthesis-offload-review.md`（第 1 轮原文誊写 + 处置记录）。
+- **critic 复审（第 2 轮，2026-11-26，只验第 1 轮 BLOCKER 闭合）**：**APPROVE_WITH_CONDITIONS / `mergeable: yes`** —— **无 BLOCKER**；逐项核对：BLOCKER 闭合（四处口径一致 + watch 路径当前不存在 ⇒ M4 合法 + 旧表述无残留）、SHOULD_FIX ① V5b 收窄闭合且**可机判性成立**（`nodes[]` 恒有序 + attempt `started_at` 必填 ⇒ 两条确定性排序键，不依赖时间戳）、② V6 口径闭合、③ B1 步骤④与六态机一致、NIT ① 行号逐字吻合、NIT ② 头注闭合、审稿报告誊写未失真。⇒ 1 条**程序性 SHOULD_FIX**：「审稿报告在第 2 轮输出产出前预写了该轮结论」⇒ **已处置**（结论按实际输出回填 + 程序性披露 + 教训登记：**审稿报告的结论字段只能在审查输出到手之后回填，不得预填**）⇒ 本篇 Status 转 **Proposed**。
 - **A 档复测（2026-11-26）**：**V8 收口 = PASS**（文件级 31/31、行号级 28/31、裁决 33 条、三条「最重/关键」发现 3/3 进结论层；C 档对照 29/31 与 0/3）⇒ **阶梯停在 A 档 ⇒ B2 不触发** ⇒ D3「默认 A 档」被实测支撑。**V11 收口 = PASS**（`session_v2.model` 确实暴露模型字段 ⇒ provider 层风险由「不可机判」降为「可机判」）。证据：`.rddf/reviews/plan-synthesis-offload-ab-verdict-a-tier.md`。
 - **V5 改写的实测验证（2026-11-26）**：追加式两个合成节点（`m1` + `m2`）共存时，oracle 建议的**逐节点** V5 定义（「deps ⊇ 全部非 cancelled 节点 − 自身」）会把**两个**合成节点都判不通过 ⇒ **判据静默失效**；本篇采用的**并集口径**（V5a 并集完整 / V5b 无冒充 / V5c 不互依）**全通过** ⇒ 改写是必要的，且已被实测证明。
 - **本篇对既有机制的三处修正**（均为实测/门禁暴露，非设计偏好）：① V5 改并集口径（理由见上）；② D1 的「零新增判据」改口径为「既有机制面判据零改动 + 质量判据另立载体」（否则四个承诺互相矛盾）；③ **D6 的 B0 落点补「回滚登记表条目」** —— 新建 ADR 会触发回滚登记表的 **M1**（`ADR 未被 registry 覆盖（沉默 = 违规）`）⇒ 登记表条目的 `declared` 态又要求 `watch[]` 列出**未来路径**且**当前不得存在** ⇒ **载体路径必须在本篇钉死**（D5 已钉）。
