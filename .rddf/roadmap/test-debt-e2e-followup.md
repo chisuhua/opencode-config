@@ -26,7 +26,7 @@
 | **A5** ADR 闭合标注 | ✅ 完成 | `9e57463`；oracle 判 APPROVE，审查记录 `.rddf/reviews/adr-plan-multi-session-collaboration-review-residue-closure.md` |
 | **Q5** 历史加注横幅 | ✅ 完成 | `6550a00`；目标文件实测在 `improvements/`（oracle 判错已订正 `acaac11`） |
 | **B1 零模型层（3 例）** | ✅ 已落（L1） | e2e `28669e6`；**CI 已能真跑**（`0ec0084` 加了完整克隆 + bun） |
-| **B1 真宿主 PT-1** | ⏳ 待拍板 | 需「谁 + 什么节奏跑 `E2E_REAL_RUNTIME=1`」的具名承诺；无承诺 ⇒ 诚实选 ① |
+| **B1 真宿主 PT-1** | ✅ 完成（一次性 + 变更触发） | e2e 仓新增 `test_plan_topics_runtime.bats`，**首次真跑即通过**（1 次会话）；证据 `.rddf/reviews/plan-topics-pt1-runtime.md`；重跑触发 = plan agent 权限/白名单/接线变更（已写进 `scripts/e2e-runtime.sh` 触发表，`prompts/plan*` 映射到该文件） |
 | **B2 前半 push-gate** | ✅ 完成 | 源码探针 `.rddf/reviews/runtime-e2e-push-gate-source-probe.md` + 运行时 2 例（e2e `30b4d44`，真跑记录 `.rddf/reviews/runtime-e2e-push-gate-verify.md`） |
 | **B2 后半 model-fallback** | 📋 已立项、未实施 | `.rddf/improvements/model-fallback-runtime-e2e.md`（`3bb6f1c`，metis 12 条已处置） |
 | **本机触发机制** | ✅ 已实施 | `e5f03f5`；`scripts/e2e-runtime.sh` + `.githooks/post-commit`（opt-in，advisory）；偏差与未实测项见提案 §8 |
