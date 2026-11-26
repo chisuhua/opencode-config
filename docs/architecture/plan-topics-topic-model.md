@@ -20,6 +20,11 @@
 
 `node id` 合法集：`^[a-z0-9][a-z0-9._-]{0,63}$`，且不得以 `.lock` / `.env` / `.bak` 结尾或以 `backup` 开头（避开既有 `.gitignore` 规则）。
 
+**两类节点（结构同形，判据层靠结构特征区分）**：
+- **内容节点**：产出该 topic 的分项结论。
+- **合成节点**（惯例 id 前缀 `m*`）：`deps` = 全部内容节点 ⇒ 由子会话产出**一份**跨节点的收敛稿到它自己的 `nodes/<id>/RESULT.md`（父的写面不变 ⇒ §1 表无需新增一行）⇒ 见 `ADR-plan-synthesis-offload` D1/D2。
+  - 内容节点的集合 = **全部非 cancelled 且非 `m*` 的节点**（**不依赖 `owner` 字段** —— 该字段当前被声明但从不消费，见 `ADR-plan-multi-session-collaboration` 残留 #14）。
+
 运行态（**不入 git**）：`.rddf/state/plan-topics/<slug>.lock`（topic 长锁，D7）· `<slug>.graph.lock`（写互斥短锁，D10）· `.rddf/state/plan-sessions/<session_id>.json`（**每会话一文件**，D5 修订）。
 
 ## 2. `graph.json` 当前 schema
@@ -132,7 +137,7 @@ summary   = { done[], cancelled[{id,reason,at}], in_flight[{node,started_at,live
 - **`owner` 字段不被消费**：`owner: "parent" | "child"` 只做枚举校验（`lib/plan-topics.ts:197-199`），判据库与 CLI **零消费** ⇒ `owner: "parent"` 的节点**仍会出现在 `ready` 且可被 `claim` 派发**（ADR D2 的承诺「父自己做」未生效）⇒ 处置见 ADR 残留 #14。
 - **topic 独占锁无机械强制**：`lock` 子命令是**纯只读报告**（`scripts/plan-topic-check.ts:286-320`），写命令只取 graph 短锁 ⇒「同 topic 独占」是**协议约定**而非机械保证；且文档写的释放步骤（`rmdir` 该锁目录）对含 `owner` 文件的目录**必然失败** ⇒ 锁泄漏已在盘上发生（`e2e-probe.lock` 自 2026-11-20 未释放）。⇒ 处置见 ADR 残留 #15。
 - **两个字段不被消费**：`attempts[].baseline`（死字段，全仓无写入点）与 `precheck`（`claim` 写、checker 从不读 ⇒「派发前 check 必须 exit 0 才派」无机械强制）⇒ 处置见 ADR 残留 #16 / #17。
-- **topic 树内没有留给「父的合成产物」的位置**：单一写者表（§1）只给了父 `TOPIC.md` / `graph.json` / `BRIEF.md` ⇒ 父若把 N 个节点的合并产物放出来，唯一去处是 `.rddf/plans/<slug>.md` ⇒ **改变其语义**（从「离线讨论产物」变成「正式件」⇒ 进 `PLAN_REF_ROOTS` ⇒ 可被派工程），与本机制「讨论稿 ≠ 可执行计划」的定位冲突（`build-worker-design` 场景已在 topic 树内用父写的 `SYNTHESIS.md` 实例化，但该位置**未入** §1 表）⇒ 处置（是否正式入表）见 ADR 残留 #19。
+- **合成产物的位置 = 合成节点自己的 `RESULT.md`**（`ADR-plan-synthesis-offload` D2）：当 topic 需要一份跨节点的合并产物时，**在 `graph.json` 里加一个「合成节点」**（惯例 id 前缀 `m*`，`deps` = 全部内容节点），由子会话产出 `nodes/<m-id>/RESULT.md` ⇒ 父的写面**不变**（§1 表无需新增一行）⇒ 合成稿**仍在 topic 树内** ⇒ **仍不进** `PLAN_REF_ROOTS` ⇒ 「讨论稿 ≠ 可执行计划」的性质保持。父可读该文件作为 topic 级答案（成本 = 合成稿体积，非全部子产出体积）。⚠ **作者 = 合成节点，背书 = 父的采纳判断**（后者不可机判，与 §6 的「调度信号非交付信号」一致）。⚠ **父不修订合成稿**（修订 ⇒ 双写者）；合成质量不达标时走**追加式**（新增 `m2`，`m1` 留作审计痕迹；惯例取最新非 cancelled 的合成节点为答案）。⇒ 处置见 `ADR-plan-multi-session-collaboration` 残留 #19（**已闭合**）。
 
 ## 11. 代码地图
 
@@ -142,12 +147,14 @@ summary   = { done[], cancelled[{id,reason,at}], in_flight[{node,started_at,live
 | CLI | `scripts/plan-topic-check.ts` |
 | L1 语义测试 | `tests/plan-topics.test.ts`（判据库 + CLI 契约）· `tests/plan-topics-dag.test.ts`（拓扑/门控/动态改图/并发/收敛）· `tests/plan-topics-lifecycle.test.ts`（V16–V36） |
 | 父/子会话纪律 | `prompts/plan.md` §多会话协作 · `prompts/plan-worker.md` |
-| 回滚可达性 | `.rddf/rollback/plan-topics.json`（含 `retire[]` 结构化退役） |
+| 回滚可达性 | `.rddf/rollback/plan-topics.json`（含 `retire[]` 结构化退役）· `.rddf/rollback/registry.json` 的 `plan-topics` 条目 |
 | 上游语义锚点 | `scripts/check-upstream-anchors.sh` 的 P1–P6（含 P5b） |
+| **合成节点（外置）** | 决策：`docs/adr/ADR-plan-synthesis-offload.md`（合成节点 = 普通 node；产物落其自身 RESULT.md）｜载体（B1 待落地）：`scripts/plan-synthesis-check.ts` + `tests/plan-synthesis.test.ts`｜验收：`.rddf/reviews/plan-synthesis-offload-ab-verdict*.md`（C 档 / A 档） |
 
 ## 12. 指针
 
 - 决策：ADR D1–D11（D9 取消 / D10 在飞与 fence / D11 收敛 / D5 修订）
+- **合成外置**：ADR `ADR-plan-synthesis-offload`（D1 合成进 DAG / D2 产物位置 / D3 模型阶梯 / D4 结论层硬判据 / D6 落地顺序）—— 合成节点惯例见 §1
 - 审稿：`.rddf/reviews/adr-plan-multi-session-collaboration-review-*.md`（含 D9/D10/D11/D5/锚点事故）
 - 验收：`.rddf/reviews/plan-topics-d9-d10-d11-verify.md`（+ `…-f1-closure.md`）· `.rddf/reviews/plan-topics-pt1-runtime.md`（真宿主）
 - 版本史：`docs/CHANGELOG.md` v2.71–v2.75
