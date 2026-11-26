@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "topic": "v12-probe",
+  "nodes": [
+    {
+      "id": "a1",
+      "title": "并行探针 A + 负向探针（worker 内调 subagent）",
+      "deps": [],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T16:23:05.466Z",
+          "precheck": {
+            "at": "2026-11-26T16:23:05.466Z",
+            "exit": 0,
+            "graph_rev": "ea9418ac810229ce69a3e3b2d135147f08ba0ecfd2aade1c5c0b4dde52fbc880"
+          },
+          "input": {
+            "brief_sha256": "4eeac240723e53b177ce0fcf8641a58d3d7783cc90e0678918aa27715bbbe5e6",
+            "deps": [],
+            "deliverables": [
+              "nodes/a1/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T16:24:45.926Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/a1/RESULT.md"
+      ]
+    },
+    {
+      "id": "a2",
+      "title": "并行探针 B",
+      "deps": [],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T16:23:05.523Z",
+          "precheck": {
+            "at": "2026-11-26T16:23:05.523Z",
+            "exit": 0,
+            "graph_rev": "ea9418ac810229ce69a3e3b2d135147f08ba0ecfd2aade1c5c0b4dde52fbc880"
+          },
+          "input": {
+            "brief_sha256": "f5d99f0f228be34f3bb26c51525baabdb948a73ad6b9ae916b9a7ebbe3006433",
+            "deps": [],
+            "deliverables": [
+              "nodes/a2/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T16:23:59.829Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/a2/RESULT.md"
+      ]
+    }
+  ]
+}

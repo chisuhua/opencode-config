@@ -1,0 +1,6 @@
+- [x] probe-1
+  - [x] 读 `BRIEF.md` + `TOPIC.md`（均成功，无阻塞）
+  - [x] 真的调用 `subagent`（3 种入参形态）并逐字记录拒绝原文
+  - [x] 写 `RESULT.md`（结论 / path:line 引用 / ## 负向探针 / 待父裁决 / STATUS: COMPLETE）
+- [x] probe-2（附加，非 BRIEF 要求）：核对拒绝形态来源 —— `opencode.jsonc:1500` `"subagent": "deny"`；catalog 中 `subagent`/`delegate`/`spawn` 均 0 命中 ⇒ 拒绝形态为「工具未暴露」，与 `shell` 的 `permission.rejected` 形态不同（已写入 RESULT.md「拒绝的形态说明」）
+- [x] probe-3（附加）：确认边界 —— 仅写 `nodes/a1/TODO.md` / `nodes/a1/RESULT.md`；未碰其它 node、`TOPIC.md`、`graph.json`、`BRIEF.md`；未跑 `bun`/`node`
