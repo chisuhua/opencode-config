@@ -1,5 +1,14 @@
 # SYNTHESIS — build-worker-design 合成稿
 
+> ⚠ **本文件是「父手写基线（golden standard）」，不是本机制认可的落点。**
+> 按 `ADR-plan-synthesis-offload` D2，合成产物的**正式位置 = 合成节点自己的 `RESULT.md`**
+> （本目录下 `nodes/m1/RESULT.md` = C 档实测、`nodes/m2/RESULT.md` = A 档实测）。
+> ⇒ 本文件与 `m1`/`m2` **三份合成产物并存**，仅因各有用途：
+> **本文件** = 父手写基线（A/B 判据的对照物）｜**`m1`** = 弱模型（C 档）实测｜**`m2`** = 强模型（A 档）实测。
+> ⇒ 按 D2 的答案惯例（取**最新非 cancelled 的合成节点**），**当前答案是 `nodes/m2/RESULT.md`**。
+> ⚠ 本文件**不作为**正式落点，**不进**单一写者表（父篇 D1 无需新增一行）——
+>   父篇 `ADR-plan-multi-session-collaboration` 残留 #19 已按此口径闭合。
+
 > **写者：父会话（build 主会话，session `ses_de8f57a3cffezCAvlmyBDCFShr`）**
 > 合成时间：2026-11-26｜topic：`build-worker-design`｜节点：n1–n7 全部 `done`（`converged=true`）
 > 输入：各 node 的 `RESULT.md`（7 份，共 244,703 bytes）｜本文是**父的合并产物**，不是子节点的产出
