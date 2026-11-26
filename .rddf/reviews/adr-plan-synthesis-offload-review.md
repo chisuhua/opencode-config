@@ -227,3 +227,25 @@
 ### 7.4 轮次与预算
 
 critic 合计 **3 轮**（第 1 轮 REJECT、第 2 轮 APPROVE_WITH_CONDITIONS、第 3 轮 APPROVE_WITH_CONDITIONS）；第 3 轮经**用户明确批准**（超出 2 轮预算）。无 BLOCKER ⇒ 不触发额外复审。
+
+### 7.5 B1 步骤 0 的一项已完成：**V11b 语义确认**（2026-11-26）
+
+critic 第 3 轮判 V11b「待语义确认」；此项按 ADR 的 B1 步骤 0 执行完毕。
+
+**问题**：`session_message.data.model` 是「provider 实际服务模型」还是「请求回显」？若是后者，V11b 就是同义反复（配置里有配置）。
+
+**判别方法**：`model-fallback.log` 记录了 429 触发的静默换模型 ⇒ 找到切换时点，再看**同一 `session_id`** 的 assistant 消息是否**跨模型**。若跨 ⇒ 该字段随实际服务变化，是实际值。
+
+**实测结果**：
+
+| session | 模型 | 消息数 | 起 | 止 |
+|---|---|---|---|---|
+| `ses_de7dcca7fffeOvO830nfolajk4` | `minimax-cn/MiniMax-M3.1-Flash` | 133 | `13:54:50Z` | `15:15:23Z` |
+| 同上 | `commandcode/deepseek/deepseek-v4.1-flash` | 82 | `15:15:32Z` | `16:08:15Z` |
+| `ses_de81cd7caffepU7XK4wDqZFbbS` | `deepseek-v4.1-flash` 136 / `MiniMax-M3.1-Flash` 76 | — | — | — |
+
+切换边界明细（同会话逐条）：`15:15:23Z` → minimax，`15:15:32Z` → deepseek。
+
+**结论**：**该字段反映实际服务模型** ⇒ provider 层由「不可机判」降为「可机判」，判据 = V11b（待 B1 实现载体）。已回填 ADR 的 V11b 状态、「已知不可机判清单」provider 行与实施记录。
+
+**仍未做**：V4/V5 的判据规格 —— 属 openspec change 的 `design.md` 内容，**须待立项后落**，不塞进 ADR 正文（避免违反「正文 ≤ 250 行 / 决策不自长」）。
