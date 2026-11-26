@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# .githooks/post-commit — 真运行时 e2e 的「提交后采集」（opt-in，永远 advisory）
+#
+# 由 `scripts/install-git-hooks.sh` 通过 `core.hooksPath` 启用（本机 opt-in，不影响他人 clone）。
+#
+# 两条铁律：
+#   ① **永不阻塞**：真运行时一轮可达数十分钟 ⇒ 必须后台跑（git 会等 hook 结束）。
+#   ② **先把上次结果摆在眼前**：自动跑如果没人看，等于没跑 ⇒ 每次提交先打印上一次的
+#      verdict 与「未测提交数」，让欠账可见。
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT="$ROOT/scripts/e2e-runtime.sh"
+LOG="$ROOT/.rddf/state/e2e-runtime.log"
+
+[[ -x "$SCRIPT" ]] || exit 0
+
+mkdir -p "$ROOT/.rddf/state"
+
+# ① 呈现上一次结果 + 未测提交数（快：只读 JSON + git rev-list）
+"$SCRIPT" --summary 2>/dev/null || true
+
+# ② 判并发后后台启动（立即返回）
+if "$SCRIPT" --lock-status >/dev/null 2>&1; then
+  nohup "$SCRIPT" >>"$LOG" 2>&1 &
+  echo "e2e-runtime: 已在后台启动（日志 $LOG）"
+else
+  echo "e2e-runtime: 上一次尚未结束 ⇒ 本次跳过（结束后下次提交会补跑未测改动）"
+fi
+
+exit 0

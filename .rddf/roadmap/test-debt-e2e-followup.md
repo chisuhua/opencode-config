@@ -31,7 +31,8 @@
 - ❌ **不回改已关闭 improvement 的历史判据** —— 本仓惯例（`tests/config-guards.test.ts` AC20 注释）：已关闭的 improvement 是**历史记录**（记的是当时的路径）⇒ 不参与现行判据 ⇒ **不回改**（`plan-multi-session-collaboration.md` 的 AC7 / AC13 是历史验收判据 ⇒ 回改 = 篡改当时判据的真值）⇒ 那 6 处旧路径只作 §7 第 5 条的**独立裁决项**（只允许动非判据位置）。
 - ❌ **不把 e2e 仓的债搬进本仓** —— `rdd-workflow-e2e` / `rdd-workflow` 的债在各自仓清（Batch C），本仓只做**指向与依赖登记**。
 - ❌ **不改 `prompts/**` / `lib/**` / `plugins/**` 的行为** —— A 批只加**测试/登记**；治理面若要改（SF-2 的 ADR 导语、SF-4 的 ADR 残留标注）走 architect 流程（oracle → critic）。
-- ❌ **不承诺 CI 接线** —— 本仓无 CI、无生效 git hook（ADR V01 / `docs/test-authoring.md` §5）；A 批的所有判据都落在**本地规范命令**（`bun test tests/` + 上游锚点）里。
+- ❌ **不承诺 CI 接线** —— 本仓**默认无 CI、无生效 git hook**（ADR V01 / `docs/test-authoring.md` §5）；A 批的所有判据都落在**本地规范命令**（`bun test tests/` + 上游锚点）里。
+  ⚠ **事实修正（2026-11-26）**：本仓新增了**本机 opt-in** 的 `post-commit` hook（`scripts/install-git-hooks.sh` ⇒ `core.hooksPath=.githooks`），它只做**真运行时的 advisory 采集**（后台跑、永不阻断、按路径过滤、失败不记闸门）⇒ **不改变「唯一硬闸门 = `bun test tests/`」**，但「无生效 git hook」这句话在**已 opt-in 的机器上**不再字面为真。设计与本机行为见 `.rddf/improvements/local-e2e-runtime-trigger.md`。
 - ❌ **不在本路线图里实施任何代码** —— planner 只出计划与改进提案；实施属 builder（按 openspec change 流程）。
 
 ---

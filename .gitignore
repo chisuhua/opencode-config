@@ -45,3 +45,8 @@ skills.disable/
 # rddf CLI 运行时状态（计数器 / 目录锁），不入库
 .rddf/improvements/.feedback-counters.json
 .rddf/**/*.lock
+
+# 真运行时 e2e 的本地状态（本机触发机制的记账，不入库）
+.rddf/state/e2e-runtime.json
+.rddf/state/e2e-runtime.log
+.rddf/state/e2e-runtime.lock/
