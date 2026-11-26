@@ -119,7 +119,7 @@ for each contentNode:
 
 见上：标记行无 stable id ⇒ `synth_token_missing`，默认 `severity=info`，**不进退出码**（避免历史节点成批变红）。
 
-⚠ **可绕过性（诚实登记）**：默认 info 意味着上游只要**不写 token** 就能避开 V4a 的阻断 ⇒ 纪律变成可选项。缓解 = `--strict-token` 把该码升为 blocking（**新 topic 建议开**；存量 topic 留在 info 以免成批变红）。该开关**不改判据语义**，只改严重度。
+⚠ **可绕过性（诚实登记）**：默认 info 意味着上游只要**不写 token** 就能避开 V4a 的阻断 ⇒ 纪律变成可选项。缓解 = `--strict-token` 把该码升为 blocking（**新 topic 必开**；存量 topic 留在 info 以免成批变红）。该开关**不改判据语义**，只改严重度。
 
 ---
 
@@ -197,7 +197,7 @@ if (!(briefRulings ⊆ synthRulings)) → synth_ruling_not_propagated (blocking)
 | `<topic-dir>` | 位置参数，topic 目录 |
 | `--json` | 机器可读输出 |
 | `--require-synthesis` | 无合成节点时报 `synth_answer_missing`（exit 1）；默认「无合成节点 = 正常」 |
-| `--strict-token` | `synth_token_missing` 由 info 升为 blocking（新 topic 建议开） |
+| `--strict-token` | `synth_token_missing` 由 info 升为 blocking（**新 topic 必开**） |
 
 **四值，与既有 CLI 同构**（但**不共享实现**）：
 
@@ -266,7 +266,7 @@ synthNodes.length === 0 &&  --require-synthesis  ⇒ exit 1，synth_answer_missi
 3. **`缺陷` 不作触发标记**（§3.1 的收窄）—— 若未来证明需要，须回到 ADR 改 D4，不在实现里偷加。
 4. **新载体自行解析 graph.json** ⇒ 与 `lib/plan-topics.ts` 存在双解析漂移风险（§1 的交叉断言是唯一防线）。
 5. **答案节点靠 id 整数序** ⇒ 父若把 `m3` 的 BRIEF 写错（指摘 `m1` 而非 `m2`），V4a/V5b 仍按 `m3` 判 ⇒ 语义正确性不在本判据射程内。
-6. **一行多个标记只抽第一个**（用 `exec` 而非 `matchAll`）⇒ 第二个静默漏检（审查 F7；如 ``（最重）`a`；另（最重）`b` `` 只核 `a`）。
+6. **围栏代码块内的标记不计**（扫描前 `stripFenced`，critic SF④）—— 但**结论层**里的 token 匹配仍按原文 `includes`（示例块中的 token 也会算命中）；该不对称已知，`path:line` 形态可弱化其影响。
 7. **slug 真实性不校验** ⇒ 「为凑 token 编造 slug」可过判据（审查 F2 的残留盲区）⇒ 追溯性靠 `path:line` 形态与人工抽检，不靠判据。
 8. **单段文件名是弱 token**（复审 note）：`x.md` 含 `.` ⇒ 过「像 slug」约束，但结论层 `includes("x.md")` 易恒真。**不进一步收紧**（收紧会误伤 `commit_gate` / `a-b` 等合法 slug，且假绿恒真度远低于原 F1）⇒ 登记为已知弱面。
-9. **一行多标记时，若首标记后无合法 token，整行被判无 token** ⇒ 行内靠后的合法 slug 也不被采纳（与 §10.6 同源；纪律上「标记后必须紧跟 token」判得对）⇒ 由 prompt 教正确写法，不改判据。
+9. **一行多标记 = 逐标记各自判**（`scanMarkers`，critic SF①/原 F7 已闭合）⇒ 首标记无 token **不再遮蔽**后续标记的合法 slug。单标记行等价于 `extractStableId()`（兼容 helper，只看首个）。

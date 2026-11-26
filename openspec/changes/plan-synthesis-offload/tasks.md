@@ -36,6 +36,7 @@
 
 ## 未做 / 遗留
 
+- [ ] **AC14 / V11b**（provider 实际服务模型，响应级 `session_message.model`）**判据未实现** —— 语义已在 ADR 实施记录确认（2026-11-26），但本批只落了 V4/V5 载体 ⇒ **转交后续批**；ADR 的 V11b 行现仍写「待 B1 实现」⇒ 需 architect 回填为「待后续批」以免指针悬空（critic SF②）
 - [ ] **V7**（根上下文降幅 ≤ 60,000 tokens）需**新根会话**实测（本会话根已吸收全部材料 ⇒ 不可归因）
 - [ ] **V9**（P7 锚点）已绿 —— 与 ADR 的「B1 步骤 ①」对应，可视为 AC11 达成
 - [ ] 父篇前置事实补「subagent 会话侧 = catalog 未暴露（与 `permission.rejected` 是两条拒绝路径）」（architect 面）

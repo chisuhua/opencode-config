@@ -35,9 +35,47 @@ interface Violation {
 // ── 常量（design §2 / §3 / §5） ───────────────────────────────────────────────
 export const SYNTH_ID = /^m[1-9][0-9]*$/
 export const AMBIGUOUS_ID_RE = /^m[0-9._-]/
-export const TRIGGER_RE = /最重|必须上报|薄弱点/
-export const STABLE_ID_RE =
-  /(?:【(?:最重|必须上报|薄弱点)】|（(?:最重|必须上报|薄弱点)）)\s*[:：]?\s*(?:`([A-Za-z0-9._/-]+(?::[0-9]+)?)`|([A-Za-z0-9._/-]+(?::[0-9]+)?))/
+/** 单行的**全部**标记位（每个标记各自尝试抽 token —— 修 F7「只试首个」与 §10.9 的双态描述） */
+export const MARKER_SCAN = /【(?:最重|必须上报|薄弱点)】|（(?:最重|必须上报|薄弱点)）/g
+const TOKEN_AFTER = /^[\s:：]*?(?:`([A-Za-z0-9._/-]+(?::[0-9]+)?)`|([A-Za-z0-9._/-]+(?::[0-9]+)?))/
+
+export interface MarkerHit {
+  marker: string
+  token: string | null
+}
+
+/** 逐标记位抽 token（确定性：每个标记各自判，互不遮蔽） */
+export function scanMarkers(line: string): MarkerHit[] {
+  const hits: MarkerHit[] = []
+  MARKER_SCAN.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = MARKER_SCAN.exec(line)) !== null) {
+    const rest = line.slice(m.index + m[0].length)
+    const t = TOKEN_AFTER.exec(rest)
+    let token: string | null = null
+    if (t) {
+      if (t[1]) token = t[1]
+      else if (t[2]) {
+        const bare = t[2]
+        // 裸 token 必须「像 slug/path」：含分隔符且含字母数字（排除 git/session/worker）
+        if (/[/:._-]/.test(bare) && /[A-Za-z0-9]/.test(bare)) token = bare
+      }
+    }
+    hits.push({ marker: m[0], token })
+  }
+  return hits
+}
+
+/** 兼容 helper：**首个**标记位的 token（单标记行等价于 scanMarkers()[0].token） */
+export function extractStableId(line: string): string | null {
+  const hits = scanMarkers(line)
+  return hits.length > 0 ? hits[0].token : null
+}
+
+/** 剥离围栏代码块 —— 内容节点 RESULT 里的**示例代码**不得被当成真实标记（critic SF④） */
+export function stripFenced(text: string): string {
+  return text.replace(/^```[\s\S]*?^```$/gm, "")
+}
 
 export function isSynthId(id: string): boolean {
   return SYNTH_ID.test(id)
@@ -59,20 +97,6 @@ export function answerNodeId(nodes: Node[]): string | null {
     if (parseInt(n.id.slice(1), 10) > parseInt(best.id.slice(1), 10)) best = n
   }
   return best.id
-}
-
-/** design §3.1：抽取一行的稳定 token（整 token 匹配，禁部分匹配） */
-export function extractStableId(line: string): string | null {
-  const m = STABLE_ID_RE.exec(line)
-  if (!m) return null
-  // ① 反引号整体包裹的单 token（正则已保证内部无空格）
-  if (m[1]) return m[1]
-  // ② 裸 token —— **必须像 slug/path**：含分隔符（/ : . _ -）且含字母数字
-  //    ⇒ 排除 `git` / `session` / `worker` 这类普通英文词（它们会让 V4a 的 includes 恒真 ⇒ 假绿）
-  const bare = m[2]
-  if (!bare) return null
-  if (!/[/:._-]/.test(bare) || !/[A-Za-z0-9]/.test(bare)) return null
-  return bare
 }
 
 /** 取 `## <headingRe>` 小节的正文（到下一个同级或更高级标题为止） */
@@ -248,21 +272,23 @@ export function checkSynthesis(topicDir: string, opts: CheckOptions = {}): {
   const conclusion = ansResult === null ? null : sectionBody(ansResult, /反哺清单/)
   const heavy: Array<{ node: string; token: string }> = []
   for (const cid of contents) {
-    const res = readIfExists(path.join(topicDir, "nodes", cid, "RESULT.md"))
-    if (res === null) continue
+    const rawRes = readIfExists(path.join(topicDir, "nodes", cid, "RESULT.md"))
+    if (rawRes === null) continue
+    // 示例代码块里的标记不算（critic SF④）
+    const res = stripFenced(rawRes)
     for (const line of res.split(/\r?\n/)) {
-      if (!TRIGGER_RE.test(line)) continue
-      const token = extractStableId(line)
-      if (token === null) {
-        violations.push({
-          code: "synth_token_missing",
-          node: cid,
-          detail: `标记行无稳定 token（应为「标记 + 单 token slug / path:line」）：${line.trim().slice(0, 120)}`,
-          severity: opts.strictToken ? "blocking" : "info",
-        })
-        continue
+      for (const hit of scanMarkers(line)) {
+        if (hit.token === null) {
+          violations.push({
+            code: "synth_token_missing",
+            node: cid,
+            detail: `标记 ${hit.marker} 后无稳定 token（应为「标记 + 单 token slug / path:line」）：${line.trim().slice(0, 120)}`,
+            severity: opts.strictToken ? "blocking" : "info",
+          })
+        } else {
+          heavy.push({ node: cid, token: hit.token })
+        }
       }
-      heavy.push({ node: cid, token })
     }
   }
   // 结论层缺失 ⇒ **聚合为一条**（审查 F10：逐项报会让 N 个标记各刷一条 blocking）

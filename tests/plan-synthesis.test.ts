@@ -9,6 +9,7 @@ import {
   extractStableId,
   isAmbiguousId,
   isSynthId,
+  scanMarkers,
 } from "../scripts/plan-synthesis-check.ts"
 import { parseGraph } from "../lib/plan-topics.ts"
 
@@ -214,6 +215,26 @@ describe("§3 V4a/V4b：结论层硬判据", () => {
     expect(codes).toContain("synth_conclusion_layer_missing")
     expect(codes).not.toContain("synth_heavy_item_not_in_conclusion")
     expect(codes.filter((c) => c === "synth_conclusion_layer_missing").length).toBe(1)
+  })
+
+  // critic SF①/F7：一行多标记 ⇒ **每个标记各自判**（不再只试首个）
+  test("SF①：一行两个标记，各自抽 token（首标记无 token 不遮蔽第二个）", () => {
+    expect(scanMarkers("- （最重）见；另（最重）`b`").map((h) => h.token)).toEqual([null, "b"])
+    expect(scanMarkers("- （最重）`a`；另（最重）`b`").map((h) => h.token)).toEqual(["a", "b"])
+    expect(extractStableId("- （最重）见；另（最重）`b`")).toBeNull() // 兼容 helper 只看首个
+  })
+
+  // critic SF④：围栏代码块里的示例标记不得被当真实标记
+  test("SF④：围栏示例块里的标记不计入 V4a", () => {
+    const d = makeTopic({
+      nodes: [{ id: "a1" }, { id: "m1", deps: ["a1"] }],
+      brief: { m1: BRIEF_OK },
+      result: {
+        a1: "## 说明\n\n```\n- （最重）`commit-gate`\n```\n\n## 真实结论\n\n无标记\n",
+        m1: synthResult({ rulings: ["R1", "R2"] }),
+      },
+    })
+    expect(BLOCKING(d)).toEqual([])
   })
 })
 
@@ -422,5 +443,23 @@ describe("§1 漂移防护", () => {
     const libIds = parseGraph(raw).nodes.map((n: { id: string }) => n.id).sort()
     const mine = JSON.parse(raw).nodes.map((n: { id: string }) => n.id).sort()
     expect(mine).toEqual(libIds)
+  })
+
+  // critic SF③：双解析真正会漂移的是 cancelled 短路与 deps 口径 —— 必须钉住这两轴
+  test("SF③：含 cancelled 节点时，内容节点集与 lib 的自解析口径一致", () => {
+    const d = makeTopic({
+      nodes: [{ id: "a1" }, { id: "a2", cancelled: true }, { id: "m1", deps: ["a1"] }],
+      brief: { m1: BRIEF_OK },
+      result: { a1: A1_OK, m1: synthResult({ rulings: ["R1", "R2"] }) },
+    })
+    const raw = require("node:fs").readFileSync(path.join(d, "graph.json"), "utf8") as string
+    const libNodes = parseGraph(raw).nodes as Array<{ id: string; deps: string[]; cancelled?: unknown }>
+    // lib 侧：非 cancelled 且非合成 id
+    const libContents = libNodes
+      .filter((n) => !n.cancelled && !/^m[1-9][0-9]*$/.test(n.id))
+      .map((n) => n.id)
+    expect(contentNodeIds(libNodes).sort()).toEqual(libContents.sort())
+    // cancelled 的 a2 不得进内容集 ⇒ 也不得被 V5a 要求进 deps
+    expect(checkSynthesis(d).violations.map((v) => v.code)).not.toContain("synth_dep_union_incomplete")
   })
 })
