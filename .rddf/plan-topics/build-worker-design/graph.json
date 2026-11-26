@@ -1,0 +1,242 @@
+{
+  "version": 1,
+  "topic": "build-worker-design",
+  "nodes": [
+    {
+      "id": "n1",
+      "title": "现有派发通道盘点",
+      "deps": [],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T09:57:18.420Z",
+          "precheck": {
+            "at": "2026-11-26T09:57:18.420Z",
+            "exit": 0,
+            "graph_rev": "3367e5486ec4ccbb4d5cbd97c02fe4d460916fc6ebfd0ca88c04acc585634f16"
+          },
+          "input": {
+            "brief_sha256": "eb841da3582ec927cd932559eb1b146c57ea59cb3b754d02d8b5f996869ae7ce",
+            "deps": [],
+            "deliverables": [
+              "nodes/n1/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T10:02:50.953Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/n1/RESULT.md"
+      ]
+    },
+    {
+      "id": "n2",
+      "title": "写隔离方案选型",
+      "deps": [],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T09:57:18.706Z",
+          "precheck": {
+            "at": "2026-11-26T09:57:18.706Z",
+            "exit": 0,
+            "graph_rev": "3367e5486ec4ccbb4d5cbd97c02fe4d460916fc6ebfd0ca88c04acc585634f16"
+          },
+          "input": {
+            "brief_sha256": "1a1d402a449f8e56874f3c1985ca418f00bf4a5068a4c11cb525dd47fb05d440",
+            "deps": [],
+            "deliverables": [
+              "nodes/n2/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T10:02:19.514Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/n2/RESULT.md"
+      ]
+    },
+    {
+      "id": "n3",
+      "title": "合并与冲突语义",
+      "deps": [
+        "n2"
+      ],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T10:02:51.034Z",
+          "precheck": {
+            "at": "2026-11-26T10:02:51.034Z",
+            "exit": 0,
+            "graph_rev": "3367e5486ec4ccbb4d5cbd97c02fe4d460916fc6ebfd0ca88c04acc585634f16"
+          },
+          "input": {
+            "brief_sha256": "7168285d2dcc45a22686d24e71e57933e0521876f1aede44824f79d221f11797",
+            "deps": [
+              "n2"
+            ],
+            "deliverables": [
+              "nodes/n3/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T10:08:42.546Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/n3/RESULT.md"
+      ]
+    },
+    {
+      "id": "n4",
+      "title": "判据面设计",
+      "deps": [
+        "n2",
+        "n3"
+      ],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T10:08:58.883Z",
+          "precheck": {
+            "at": "2026-11-26T10:08:58.883Z",
+            "exit": 0,
+            "graph_rev": "3367e5486ec4ccbb4d5cbd97c02fe4d460916fc6ebfd0ca88c04acc585634f16"
+          },
+          "input": {
+            "brief_sha256": "934d4186a46f61592c93e436c7c16582f05b49bb6ef834152bb962cb552d422d",
+            "deps": [
+              "n2",
+              "n3"
+            ],
+            "deliverables": [
+              "nodes/n4/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T10:16:39.411Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/n4/RESULT.md"
+      ]
+    },
+    {
+      "id": "n5",
+      "title": "与 delegate 全局单槽的关系",
+      "deps": [
+        "n1",
+        "n2"
+      ],
+      "owner": "parent",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T10:02:51.130Z",
+          "precheck": {
+            "at": "2026-11-26T10:02:51.130Z",
+            "exit": 0,
+            "graph_rev": "3367e5486ec4ccbb4d5cbd97c02fe4d460916fc6ebfd0ca88c04acc585634f16"
+          },
+          "input": {
+            "brief_sha256": "aaef27ad92116630e7eae2349cf339b7ea5047d95bd3dd6e25d1a8cc479c16cb",
+            "deps": [
+              "n1",
+              "n2"
+            ],
+            "deliverables": [
+              "nodes/n5/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T10:09:24.032Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/n5/RESULT.md"
+      ]
+    },
+    {
+      "id": "n6",
+      "title": "与 rdd-builder P2 worktree 模式的关系",
+      "deps": [
+        "n1"
+      ],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T10:02:51.273Z",
+          "precheck": {
+            "at": "2026-11-26T10:02:51.273Z",
+            "exit": 0,
+            "graph_rev": "3367e5486ec4ccbb4d5cbd97c02fe4d460916fc6ebfd0ca88c04acc585634f16"
+          },
+          "input": {
+            "brief_sha256": "3c8505922626a8f85d3faaad1569fff030c068aed23e269373250a44b95887d5",
+            "deps": [
+              "n1"
+            ],
+            "deliverables": [
+              "nodes/n6/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T10:07:56.296Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/n6/RESULT.md"
+      ]
+    },
+    {
+      "id": "n7",
+      "title": "失败模式与回滚可达性",
+      "deps": [
+        "n3",
+        "n4"
+      ],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T10:16:39.512Z",
+          "precheck": {
+            "at": "2026-11-26T10:16:39.512Z",
+            "exit": 0,
+            "graph_rev": "3367e5486ec4ccbb4d5cbd97c02fe4d460916fc6ebfd0ca88c04acc585634f16"
+          },
+          "input": {
+            "brief_sha256": "0edf1a5fb50ca072da8b29c3ed4654b51582f39dc0eaed33637bff9a159a1fea",
+            "deps": [
+              "n3",
+              "n4"
+            ],
+            "deliverables": [
+              "nodes/n7/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T10:22:55.594Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/n7/RESULT.md"
+      ]
+    }
+  ]
+}
