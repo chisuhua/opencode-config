@@ -201,3 +201,18 @@
 | 18 | P2 | `runs` 滚动会滚掉 `last_ok_sha` 引用的 run | **已改**：滚动时保留该条 |
 | 19 | P2 | 路径解析未处理空格 / 重命名 | **已改**：`git diff/status -z` 解析 |
 | 20 | P2 | 未声明 post-commit 覆盖的提交路径 | **已改**：明写只保证 `git commit`，其余靠下次 diff 自愈 |
+
+## §8 实施记录（2026-11-26，builder）
+
+已落地：`scripts/e2e-runtime.sh` · `scripts/install-git-hooks.sh` · `.githooks/post-commit` · `.gitignore`（两项状态文件）。
+
+**已实测的判据**（真实运行，0 模型额度）：`--dry-run` 用假 bats + sentinel 证明确实不调模型（sentinel 不存在）· 改 `lib/push-gate.ts` ⇒ 命中 `test_push_gate_runtime.bats` · 改 `docs/**`/`.rddf/**` ⇒ 命中 0 · 命中 0 ⇒ `noop` 且推进 `last_ok_sha` · 陈旧锁（死 pid）回收 / 活锁 `held` · 并发 3 次 noop 串行无丢失更新 · 用例未落地 ⇒ `not_run` 且不推进 · 脏树 ⇒ `undetermined` 不推进 · `post-commit` 实测 **<0.1s** 返回并后台启动 · 提交后 hook 打印上次摘要与未测提交数（实例见提交 `e5f03f5` 的输出）。
+
+**实施中发现并修掉的两个 bug**（规格没写到的）：
+1. **noop / 脏树分支原本在取锁之前写状态** ⇒ 并发提交会丢更新 ⇒ 已把取锁前移到**任何状态写之前**（实测并发 3 次不再丢）。
+2. **`--allow-dirty` 强制跑时聚合只看用例结果** ⇒ 脏树上全绿会被记成 `ok` 并推进（正是 metis 警告的假绿）⇒ 已在聚合后强制 `undetermined`。
+
+**未按规格实现的一处（登记，不静默省略）**：
+- **`--all` 的 resume cursor 未实现**：当前 `--all` 每次枚举全部含 `E2E_REAL_RUNTIME` 的文件并逐例跑；额度中断后重跑会从头再来。⇒ 已登记为后续项（token `E2E-ALL-NO-RESUME-CURSOR`）。理由：`--all` 是人工显式触发的少量场景，先交付主路径（提交后按路径触发）。
+
+**未实测的路径**（需真模型额度，本次未跑）：真正的「命中并执行」主路径（如改 `lib/push-gate.ts` 后不 dry-run）· 额度冷却窗口 · `--filter` 优先级 · 检测到额度耗尽后写 `quota_cooldown_until`。
