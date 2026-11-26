@@ -106,6 +106,7 @@
    - **安全硬要求**：fixture 必须用**本地 bare 远端**（`file://`）⇒ 断言「即便门禁失效，push 也只打到一次性本地远端」；**变红演练（临时摘插件）必须在零网络副作用下完成**。当前提案对「测失败时会不会真把 force push 打出去」零着墨 ⇒ 这是**硬要求**，不是可选项。
    - ⚠ **前置探针 AC（必做，否则这条用例大概率空转）**：**两分支处置已预承诺**（oracle）——
      - **结论 = 钩子先**（`tool.execute.before` 先于 permission）⇒ 写用例，目标如实**降级**为「证明插件**在 fresh 非交互会话里**挂在 push 路径上」。⚠ **critic S4：这个结论只对 fresh 世界成立** —— 而 push-gate 的存在理由（`lib/push-gate.ts:4-6`）是**持久化 Allow-always 覆盖 config deny 的交互世界** ⇒ 两者不是同一个世界 ⇒ 必须另登记第三个 token **`PUSH-GATE-ALLOW-ALWAYS-WORLD-UNVERIFIED`**，否则下一批会把「fresh 世界绿」读成「force-push 兜底已验证」；
+       ✅ **2026-11-26 状态：源码先行 + 运行时确认已完成** —— 源码（`runtime-e2e-push-gate-source-probe.md`）表明钩子**无条件在上游**（Allow-always 只影响下游 `permission.assert`）；运行时（`runtime-e2e-push-gate-verify.md`，2 次真会话）PG-1 force 得到 `push-gate:` 错误、PG-2 非 force 得到 permission 的非交互拒绝（不含 `push-gate:`）⇒ 两种错误来源把「钩子先于 permission」钉死。**token 保留**（Allow-always 世界在非交互 e2e 里不可复现），但**不再需要真会话**去追它。
      - **结论 = permission 先 / 结构性不可达 / 候选形状（含 `-uf`）全部到不了插件**（三种出口同归此类）⇒ **不写用例**；登记 `PUSH-GATE-E2E-UNREACHABLE` token（与 B1 同一套机械登记纪律）+ **探针证据进 backlog**；force-push 验证移交**人工验收层**（交互会话 + 已持久化 Allow-always + 本地 bare 远端）。
      ⇒ oracle 判词：「**没探针就干脆不做**是错的；**探针 documented 不可达后不做**是对的」⇒ backlog 条目**必须带探针证据**，防下一批重新吵一遍。
      ⇒ 探针本身**便宜且有独立价值**：1–2 条极简真会话（让模型原样执行一条指定 shell 命令，**不需要真 push 成功**）⇒ 闭合的正是 `lib/push-gate.ts:4-6` 登记的「Allow always 与 config deny 的优先级未知」⇒ 结论无论朝向都回写一份 review 记录。

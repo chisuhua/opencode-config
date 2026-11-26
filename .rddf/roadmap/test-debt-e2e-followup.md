@@ -256,6 +256,7 @@
    - oracle 的判词：「**没探针就干脆不做**是错的；**探针 documented 不可达后不做**是对的」⇒ backlog 条目必须带探针证据，防下一批重新吵一遍。
    - ⚠ **最终形态（critic SF-2 / SF-7）** —— 固定链条：**① 源码先行（0 额度 + 版本锚）→ ② 源码确定且对齐 ⇒ 窄探针（运行时确认）；否则全量探针 → ③ 探针三出口**：钩子先 ⇒ 降级用例「**fresh 非交互会话**里插件挂在 push 路径上」；permission 先 / 不可达 / **候选形状全失效** ⇒ 不写 + `PUSH-GATE-E2E-UNREACHABLE`；**探针无结论**（额度/超时/拒执行）⇒ `PUSH-GATE-PROBE-INCONCLUSIVE` + 至多重试 1 轮，仍无结论按不可达处置但 token 区分。
    - ⚠ **世界限定（critic S4）**：即使「钩子先」，也只证明 fresh 世界；门禁真正防的 **Allow-always 世界**只能用人工验收 ⇒ 登记 `PUSH-GATE-ALLOW-ALWAYS-WORLD-UNVERIFIED`。
+   - ✅ **2026-11-26 已完成（B2 前半）**：源码探针（`.rddf/reviews/runtime-e2e-push-gate-source-probe.md`）证明钩子在上游；运行时 e2e（e2e 仓 `30b4d44`，`test_push_gate_runtime.bats` 2 例，实跑记录 `.rddf/reviews/runtime-e2e-push-gate-verify.md`）PG-1 force 被 `push-gate:` 拒绝且远端未变、PG-2 非 force 不产生该文案 ⇒ 插件接线与判别力均实测。`model-fallback` 仍为另立 improvement（B2 后半，未启动）。
    - `model-fallback` 另立 improvement：**oracle 认可**（形态本质不同：需真模型失败才触发链推进，flaky 最高）⇒ 本批只登记。
 3. **C4（产品侧 `collect_pending` 增强）做不做？** ⭐ **oracle 推荐：不按现规格立项** —— 现规格（「正文 change 指针已归档 ⇒ 视为 terminal」）会把审计**亲手抓到的 3 个反例自动化、规模化**（让所有仓的真待办在**无人核 Acceptance** 的情况下被移出视野）⇒ 比「不做」更差。front-matter 约定恰恰把「人核一遍」留在环路里 ⇒ **这是特性不是成本**。
    - **值得跨仓做的是 re-scope 后的版本**：① **模板侧默认字段**（`add-improve` / proposal 模板产出即带 `状态`+`优先级`）—— 这才是增量的持久解；② 可选：产品侧对「正文指针已归档但无 front-matter」给 **WARN（永不 auto-terminal）**。
