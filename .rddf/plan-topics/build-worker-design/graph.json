@@ -237,6 +237,52 @@
       "deliverables": [
         "nodes/n7/RESULT.md"
       ]
+    },
+    {
+      "id": "m1",
+      "title": "合成稿",
+      "deps": [
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "owner": "child",
+      "status": "pending",
+      "progress": "todo",
+      "attempts": [
+        {
+          "agent": "plan-worker",
+          "started_at": "2026-11-26T11:34:54.643Z",
+          "precheck": {
+            "at": "2026-11-26T11:34:54.643Z",
+            "exit": 0,
+            "graph_rev": "cd2a63f638157ef452fcd24fe799be1b00550f9e94590cec0ee30f681ca836f7"
+          },
+          "input": {
+            "brief_sha256": "60a1bde3dc6a68e532a3d8ca7f1c49162fa23b1e43469fb3180e1c826008dded",
+            "deps": [
+              "n1",
+              "n2",
+              "n3",
+              "n4",
+              "n5",
+              "n6",
+              "n7"
+            ],
+            "deliverables": [
+              "nodes/m1/RESULT.md"
+            ]
+          },
+          "finished_at": "2026-11-26T11:39:52.974Z"
+        }
+      ],
+      "deliverables": [
+        "nodes/m1/RESULT.md"
+      ]
     }
   ]
 }
