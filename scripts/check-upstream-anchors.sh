@@ -197,6 +197,20 @@ check "P6 Wildcard 的 * 跨斜杠" "packages/core/src/util/wildcard.ts" \
   'replace\(/\\\*/g, "\.\*"\)' \
   "edit 白名单是前缀语义 ⇒ .rddf/plan-topics/* 覆盖 nodes/<id>/（ADR D4 / 残留 #1）"
 
+# ── P7：每次派发可覆盖模型（ADR-plan-synthesis-offload D3 的 A 档前提）──────────
+# 依据：D3 的 A 档 = `subagent(agent="plan-worker", model="<强模型>")` ⇒ 依赖「显式 model 入参
+#       优先于 agent 配置的模型」。只钉**优先级语义**（不钉函数名、不钉行号、不钉 `parent.model` 尾巴
+#       —— 后者是继承兜底，与本档无关；钉上只会增加一次格式化假红）。
+# ⚠ 判别力边界（如实登记）：本锚点只钉「源码里 override 优先于 agent.model」；
+#   **provider 是否真按该模型服务**钉不住（模型白名单/静默降级）⇒ 由 V11b（响应级
+#   `session_message.model`）覆盖，不靠本锚点。
+# ⚠ 单点前提：当前 `override ?? agent.model` 在 subagent.ts **恰好 1 处**（create 路径）；
+#   resume/switch 路径是 `override ?? (switched ? agent.model : undefined)`（形态不同、不被命中）
+#   ⇒ 若上游把两条路径统一（或引入第二处），须人工复核本锚点的判别力。
+check "P7 每次派发可覆盖模型（override 优先于 agent 配置）" "packages/core/src/tool/plugin/subagent.ts" \
+  'override \?\? agent\.model' \
+  "ADR-plan-synthesis-offload D3 的 A 档：显式 model 入参优先于 agent 配置"
+
 echo "----"
 if [ "$FAIL" -gt 0 ]; then
   echo "RESULT: DRIFT（$FAIL/$N 个锚点不成立）⇒ 重新核对 ADR 的技术前提，勿只改行号"

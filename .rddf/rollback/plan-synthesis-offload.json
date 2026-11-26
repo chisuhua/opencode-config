@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "mechanism": "plan-synthesis-offload",
+  "adr": "docs/adr/ADR-plan-synthesis-offload.md",
+  "notes": "plan 侧多节点协作的「合成」步骤外置（ADR-plan-synthesis-offload D1–D7）的回滚清单。回滚 = 删两个载体 + 撤三处文本增补（prompts/plan.md 的「合成节点」节、prompts/plan-worker.md 的稳定 token 纪律、check-upstream-anchors.sh 的 P7 锚点）；机制面（lib/plan-topics.ts / scripts/plan-topic-check.ts）本轮零改动 ⇒ 不在 delete/edits 内。",
+  "retire": [
+    "plan-synthesis-offload"
+  ],
+  "delete": [
+    "scripts/plan-synthesis-check.ts",
+    "tests/plan-synthesis.test.ts",
+    ".rddf/rollback/plan-synthesis-offload.json"
+  ],
+  "edits": [
+    {
+      "path": "prompts/plan.md",
+      "find": "#### 合成节点（可选 —— 只在 topic 够大时起）\n\n当 topic 需要一份**跨节点的合并产物**时，不要自己通读全部 `RESULT.md` 再写 —— 把「合成」也做成 DAG 里的一个普通 node。决策见 `docs/adr/ADR-plan-synthesis-offload.md`；判据与解析规格见 `openspec/changes/plan-synthesis-offload/design.md`。\n\n**起用阈值（粗口径，不是硬闸门）**：子产出合计 **≳ 50 KB 为主判据**（`wc -c` 量级），内容节点 ≥ 4 为辅助；**总量优先**（2 × 60 KB 也建议起）。更小 ⇒ 你自己读完再写更便宜。\n\n**怎么起**：\n\n- 在 `graph.json` 加一个**合成节点**，id 形状 `^m[1-9][0-9]*$`（`m1` / `m2` …；**禁前导零**，`m01` 非法）。⚠ 不要用 `m1-extra` / `m_1` 这类形似而不合规的 id（会判违规）；`metrics` 这类普通名字是内容节点，不受影响。\n- 它的 `deps` = **该 topic 的全部内容节点**（内容节点 = 全部非 cancelled 且非 `^m[1-9][0-9]*$` 的节点）。\n- 产物落它自己的 `nodes/<m-id>/RESULT.md` —— **你仍然只写 BRIEF**，不写合成稿。\n- 派发时用强模型：`subagent(agent=\"plan-worker\", model=\"<providerID/modelID>\", background=true)`。⚠ **这是机制的一部分**（本机制要求设置 `model`），不是「随手设模型」—— 实测弱模型会丢掉上游标为「最重」的项。\n- 合成质量不达标 ⇒ **追加**一个 `m2`（`m1` 留作审计痕迹），**不要修订** `m1` 的稿（那会破单一写者）。**答案惯例 = 非 cancelled 合成节点里 id 整数后缀最大的那个**。\n- 复核：`bun scripts/plan-synthesis-check.ts .rddf/plan-topics/<topic>`（V4/V5 判据；**无合成节点时默认 exit 0**）。\n\n**合成 BRIEF 必须包含**（缺则判据无从判定）：\n\n1. **五节固定结构**：`## 结论` / `## 各节点结论的合并` / `## 父的裁决汇总` / `## 反哺清单` / `## 不声称的东西` —— **结论层 = `## 反哺清单`**。\n2. **`## 根裁决集`**：把你在协作期间做出的**全部裁决 / 用户澄清 / 约束**逐条写进去，每条带 slug `R1`、`R2`…；**没有裁决就显式写「无」**（空小节不算）。⚠ 合成节点只读得到 `nodes/*/RESULT.md` —— **你脑子里的裁决不写进 BRIEF，就永远进不了合成稿**。\n3. 明确要求：凡上游 RESULT 里标了「最重 / 必须上报 / 薄弱点」**且带稳定 token** 的发现，**必须进 `## 反哺清单`**，不得只作依据引用。\n4. 要求它在 `## 父的裁决汇总` 里**逐条回指** BRIEF 的 slug（`R1`…）。\n\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/plan-worker.md",
+      "find": "   - ⚠ **严重度标注必须带稳定 token**（合成判据会机判）：标「最重 / 必须上报 / 薄弱点」时，**标记后必须紧跟稳定标识** —— 单 token 反引号 slug，或 `path:line`：\n\n     ```\n     - （最重）`commit-gate`                ✅ 单 token slug\n     - 【必须上报】docs/adr/x.md:42          ✅ path:line\n     - （最重）：`git merge` 绕开 …          ❌ 多词反引号 ⇒ 判「无 token」，该发现不进合成结论层\n     ```\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/check-upstream-anchors.sh",
+      "find": "# ── P7：每次派发可覆盖模型（ADR-plan-synthesis-offload D3 的 A 档前提）──────────\n# 依据：D3 的 A 档 = `subagent(agent=\"plan-worker\", model=\"<强模型>\")` ⇒ 依赖「显式 model 入参\n#       优先于 agent 配置的模型」。只钉**优先级语义**（不钉函数名、不钉行号、不钉 `parent.model` 尾巴\n#       —— 后者是继承兜底，与本档无关；钉上只会增加一次格式化假红）。\n# ⚠ 判别力边界（如实登记）：本锚点只钉「源码里 override 优先于 agent.model」；\n#   **provider 是否真按该模型服务**钉不住（模型白名单/静默降级）⇒ 由 V11b（响应级\n#   `session_message.model`）覆盖，不靠本锚点。\n# ⚠ 单点前提：当前 `override ?? agent.model` 在 subagent.ts **恰好 1 处**（create 路径）；\n#   resume/switch 路径是 `override ?? (switched ? agent.model : undefined)`（形态不同、不被命中）\n#   ⇒ 若上游把两条路径统一（或引入第二处），须人工复核本锚点的判别力。\ncheck \"P7 每次派发可覆盖模型（override 优先于 agent 配置）\" \"packages/core/src/tool/plugin/subagent.ts\" \\\n  'override \\?\\? agent\\.model' \\\n  \"ADR-plan-synthesis-offload D3 的 A 档：显式 model 入参优先于 agent 配置\"\n\n",
+      "replace": ""
+    }
+  ],
+  "drill_env": {
+    "seed_files": [
+      {
+        "path": ".rddf/state/role.json",
+        "content": "{\n  \"current_role\": \"general\",\n  \"updated_at\": \"2026-11-20T00:00:00Z\"\n}\n"
+      }
+    ]
+  },
+  "verify": {
+    "commands": [
+      [
+        "bun",
+        "test",
+        "tests/"
+      ]
+    ]
+  }
+}

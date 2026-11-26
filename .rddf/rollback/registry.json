@@ -28,12 +28,13 @@
     {
       "mechanism": "plan-synthesis-offload",
       "adr_primary": "docs/adr/ADR-plan-synthesis-offload.md",
-      "state": "declared",
+      "state": "proving",
+      "manifest_ref": "plan-synthesis-offload",
       "watch": [
         "scripts/plan-synthesis-check.ts",
         "tests/plan-synthesis.test.ts"
       ],
-      "notes": "plan 侧多节点协作的「合成」步骤外置（合成节点 = `graph.json` 里的一个普通 node，`deps` = 全部内容节点；合成产物落在合成节点自己的 `nodes/<m-id>/RESULT.md` ⇒ 父的写面不变）。**已签未落地** ⇒ `declared`：无清单（机制面零改动 ⇒ 退役 = 删数据面产物 + 撤 ADR + 撤本条目）、`watch[]` = B1 的两个未来载体路径（**当前不存在** ⇒ M4 合法）、无债指针。落地批 B1 = `prompts/plan.md` 合成节点节 + D4 结论层硬判据 + P7 上游语义锚点 + V4/V5 质量判据载体⇒ 落地后须写 `.rddf/rollback/plan-synthesis-offload.json` 清单并转 `proving` ⇒ drill PASS 后转 `active`。实测（2026-11-26，`build-worker-design` 场景）：机制面 checker 零改动、deps 门控/converged/fence 全自动、`converged=true`；A 档 A/B 复测 PASS ⇒ 阶梯停在 A 档。"
+      "notes": "plan 侧多节点协作的「合成」步骤外置（合成节点 = `graph.json` 里的一个普通 node，`deps` = 全部内容节点；合成产物落在合成节点自己的 `nodes/<m-id>/RESULT.md` ⇒ 父的写面不变）。**B1 已落地（2026-11-27）** ⇒ `proving`：清单已写（`.rddf/rollback/plan-synthesis-offload.json`），`watch[]` = 两个已存在的载体路径；载体 = `scripts/plan-synthesis-check.ts`（V4/V5/V4c/V5d 判据，自包含）+ `tests/plan-synthesis.test.ts`；治理面增补 = `prompts/plan.md` 合成节点节 + `prompts/plan-worker.md:28` 稳定 token 纪律 + `scripts/check-upstream-anchors.sh` P7 锚点；机制面（`lib/plan-topics.ts` / `scripts/plan-topic-check.ts`）零改动。⇒ 演练证据回填后转 `active`。实测（2026-11-26，`build-worker-design` 场景）：机制面 checker 零改动、deps 门控/converged/fence 全自动、`converged=true`；A 档 A/B 复测 PASS ⇒ 阶梯停在 A 档。"
     },
     {
       "mechanism": "plan-delegate",
