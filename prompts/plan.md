@@ -304,7 +304,7 @@ bun scripts/plan-topic-check.ts cancel .rddf/plan-topics/<topic> <node-id> --rea
 - 产物落它自己的 `nodes/<m-id>/RESULT.md` —— **你仍然只写 BRIEF**，不写合成稿。
 - 派发时用强模型：`subagent(agent="plan-worker", model="<providerID/modelID>", background=true)`。⚠ **这是机制的一部分**（本机制要求设置 `model`），不是「随手设模型」—— 实测弱模型会丢掉上游标为「最重」的项。
 - 合成质量不达标 ⇒ **追加**一个 `m2`（`m1` 留作审计痕迹），**不要修订** `m1` 的稿（那会破单一写者）。**答案惯例 = 非 cancelled 合成节点里 id 整数后缀最大的那个**。
-- 复核：`bun scripts/plan-synthesis-check.ts .rddf/plan-topics/<topic>`（V4/V5 判据；**无合成节点时默认 exit 0**）。
+- 复核：`bun scripts/plan-synthesis-check.ts .rddf/plan-topics/<topic> --strict-token`（V4/V5 判据；**新 topic 必开 `--strict-token`** —— 否则「标了却没带 token」只报 info、不拦；**无合成节点时默认 exit 0**）。
 
 **合成 BRIEF 必须包含**（缺则判据无从判定）：
 

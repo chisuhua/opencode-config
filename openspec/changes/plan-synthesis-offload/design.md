@@ -88,7 +88,11 @@ STABLE_ID = /(?:【(?:最重|必须上报|薄弱点)】|（(?:最重|必须上�
 | ``**薄弱点 1（最重）：`git merge` 绕开 commit-gate**`` | 无 | **info**（V4b）—— 这正是 ADR 实测里 C 档的原样，说明它当时**没遵守 token 纪律** |
 | `- （最重）\`commit-gate\`` | `commit-gate` | blocking 检查 |
 | `- 【必须上报】docs/adr/x.md:42` | `docs/adr/x.md:42` | blocking 检查 |
+| `- （最重）：git merge 绕开…` | 无（裸词不含分隔符） | **info** |
+| `- （最重）：commit-gate 绕过` | `commit-gate` | blocking 检查 |
 | `**薄弱点 1（最重）**：见 nodes/n3/RESULT.md:302` | 无（标记后是 `**`） | **info**（不做行尾兜底 —— 见下） |
+
+⚠ **裸 token 必须「像 slug/path」**（审查 F1 实测修正）：裸写分支要求 token **含分隔符**（`/` `:` `.` `_` `-`）且含字母数字 ⇒ 排除 `git` / `session` / `worker` 这类普通英文词。否则 `（最重）：git merge 绕开…` 会抽出 `git`，而结论层 `includes("git")` 几乎恒真 ⇒ **V4a 静默假绿**（连 info 都不报）。
 
 ⚠ **不设「行尾兜底」**：若允许「标记之后任意位置的 `path:line`」会被无关引用误导。严格 = 纪律可教；不严格 = 判据可被噪声填满。
 
@@ -174,6 +178,7 @@ if (!(briefRulings ⊆ synthRulings)) → synth_ruling_not_propagated (blocking)
 | `synth_answer_dep_incomplete` | blocking | V5b：答案节点 deps 未覆盖全部内容节点 |
 | `synth_dep_on_synth` | blocking | V5c：合成节点互依 |
 | `synth_heavy_item_not_in_conclusion` | blocking | V4a：标记项未进结论层 |
+| `synth_conclusion_layer_missing` | blocking | V4a：答案节点缺 `## 反哺清单` 小节（**聚合为一条**，不逐项刷 —— 审查 F10） |
 | `synth_brief_no_ruling_set` | blocking | V4c：BRIEF 缺 `## 根裁决集` 或内容非法 |
 | `synth_ruling_not_propagated` | blocking | V4c：BRIEF 的 slug 未全部回指 |
 | `synth_token_missing` | **info** | V4b：标记行无稳定 id |
@@ -261,3 +266,5 @@ synthNodes.length === 0 &&  --require-synthesis  ⇒ exit 1，synth_answer_missi
 3. **`缺陷` 不作触发标记**（§3.1 的收窄）—— 若未来证明需要，须回到 ADR 改 D4，不在实现里偷加。
 4. **新载体自行解析 graph.json** ⇒ 与 `lib/plan-topics.ts` 存在双解析漂移风险（§1 的交叉断言是唯一防线）。
 5. **答案节点靠 id 整数序** ⇒ 父若把 `m3` 的 BRIEF 写错（指摘 `m1` 而非 `m2`），V4a/V5b 仍按 `m3` 判 ⇒ 语义正确性不在本判据射程内。
+6. **一行多个标记只抽第一个**（用 `exec` 而非 `matchAll`）⇒ 第二个静默漏检（审查 F7；如 ``（最重）`a`；另（最重）`b` `` 只核 `a`）。
+7. **slug 真实性不校验** ⇒ 「为凑 token 编造 slug」可过判据（审查 F2 的残留盲区）⇒ 追溯性靠 `path:line` 形态与人工抽检，不靠判据。

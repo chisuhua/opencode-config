@@ -65,7 +65,14 @@ export function answerNodeId(nodes: Node[]): string | null {
 export function extractStableId(line: string): string | null {
   const m = STABLE_ID_RE.exec(line)
   if (!m) return null
-  return m[1] ?? m[2] ?? null
+  // ① 反引号整体包裹的单 token（正则已保证内部无空格）
+  if (m[1]) return m[1]
+  // ② 裸 token —— **必须像 slug/path**：含分隔符（/ : . _ -）且含字母数字
+  //    ⇒ 排除 `git` / `session` / `worker` 这类普通英文词（它们会让 V4a 的 includes 恒真 ⇒ 假绿）
+  const bare = m[2]
+  if (!bare) return null
+  if (!/[/:._-]/.test(bare) || !/[A-Za-z0-9]/.test(bare)) return null
+  return bare
 }
 
 /** 取 `## <headingRe>` 小节的正文（到下一个同级或更高级标题为止） */
@@ -91,12 +98,25 @@ export function sectionBody(text: string, headingRe: RegExp): string | null {
   return body.join("\n")
 }
 
-/** 抽取小节内所有 `R<n>` slug（返回 `R1` 形式的集合） */
+/** 抽取小节内所有 `R<n>` slug（返回 `R1` 形式的集合）
+ *  ⚠ **词边界必须**：`AR2` / `R2A` 不得被抽成 `R2`（审查 F4 实测：无边界会误抽 ⇒ V4c 假红） */
 export function extractRulings(text: string | null): Set<string> {
   const out = new Set<string>()
   if (!text) return out
-  for (const m of text.matchAll(/R(\d+)/g)) out.add(`R${m[1]}`)
+  for (const m of text.matchAll(/\bR(\d+)\b/g)) out.add(`R${m[1]}`)
   return out
+}
+
+/** `## 根裁决集` 是否显式声明「无裁决」—— 必须**整段去列表前缀后恰为「无」/「暂无」**
+ *  ⚠ 不能用 `/无/.test(body)`（审查 F4 实测：`- 不要纳入多租户（无写通道）` 会被误判为「无裁决」⇒ V4c 整段跳过 ⇒ 假绿） */
+export function declaresNoRuling(body: string | null): boolean {
+  if (!body) return false
+  const normalized = body
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[-*]\s*/, "").trim())
+    .filter((l) => l.length > 0)
+    .join("\n")
+  return /^(无|暂无)$/.test(normalized)
 }
 
 function readIfExists(p: string): string | null {
@@ -224,6 +244,7 @@ export function checkSynthesis(topicDir: string, opts: CheckOptions = {}): {
   // V4a / V4b：结论层硬判据
   const ansResult = readIfExists(path.join(topicDir, "nodes", answer, "RESULT.md"))
   const conclusion = ansResult === null ? null : sectionBody(ansResult, /反哺清单/)
+  const heavy: Array<{ node: string; token: string }> = []
   for (const cid of contents) {
     const res = readIfExists(path.join(topicDir, "nodes", cid, "RESULT.md"))
     if (res === null) continue
@@ -239,11 +260,28 @@ export function checkSynthesis(topicDir: string, opts: CheckOptions = {}): {
         })
         continue
       }
-      if (conclusion === null || !conclusion.includes(token)) {
+      heavy.push({ node: cid, token })
+    }
+  }
+  // 结论层缺失 ⇒ **聚合为一条**（审查 F10：逐项报会让 N 个标记各刷一条 blocking）
+  if (conclusion === null) {
+    if (heavy.length > 0) {
+      violations.push({
+        code: "synth_conclusion_layer_missing",
+        node: answer,
+        detail: `答案节点缺「## 反哺清单」小节（${heavy.length} 个标记项待核对：${heavy
+          .map((h) => `${h.node}:${h.token}`)
+          .join(", ")}）`,
+        severity: "blocking",
+      })
+    }
+  } else {
+    for (const h of heavy) {
+      if (!conclusion.includes(h.token)) {
         violations.push({
           code: "synth_heavy_item_not_in_conclusion",
-          node: cid,
-          detail: `标记项 \`${token}\` 未进答案节点 ${answer} 的 §反哺清单`,
+          node: h.node,
+          detail: `标记项 \`${h.token}\` 未进答案节点 ${answer} 的 §反哺清单`,
           severity: "blocking",
         })
       }
@@ -261,11 +299,11 @@ export function checkSynthesis(topicDir: string, opts: CheckOptions = {}): {
       detail: "合成 BRIEF 缺 `## 根裁决集` 小节",
       severity: "blocking",
     })
-  } else if (briefRulings.size === 0 && !/无/.test(briefSection)) {
+  } else if (briefRulings.size === 0 && !declaresNoRuling(briefSection)) {
     violations.push({
       code: "synth_brief_no_ruling_set",
       node: answer,
-      detail: "`## 根裁决集` 内既无 R<n> slug 也未显式写「无」",
+      detail: "`## 根裁决集` 内既无 R<n> slug 也未显式写「无」（整段须恰为「无」/「暂无」）",
       severity: "blocking",
     })
   } else {

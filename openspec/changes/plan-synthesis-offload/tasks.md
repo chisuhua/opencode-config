@@ -32,7 +32,7 @@
 
 - [x] `.rddf/rollback/plan-synthesis-offload.json`：`delete` = 两个载体 + 自身；`edits` = 三处文本增补（plan.md 合成节 / plan-worker.md token 纪律 / anchors P7）；`retire[] = ["plan-synthesis-offload"]`（结构化退役，自动清 `manifest_ref` 并转 `retired`）
 - [x] registry：`declared` → `proving`（`manifest_ref` = `plan-synthesis-offload`）
-- [ ] drill PASS 后回填 `last_drill` 并转 `active`
+- [x] drill PASS 后回填 `last_drill` 并转 `active`（首次：`caa17cb`）
 
 ## 未做 / 遗留
 

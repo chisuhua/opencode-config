@@ -207,6 +207,9 @@ check "P6 Wildcard 的 * 跨斜杠" "packages/core/src/util/wildcard.ts" \
 # ⚠ 单点前提：当前 `override ?? agent.model` 在 subagent.ts **恰好 1 处**（create 路径）；
 #   resume/switch 路径是 `override ?? (switched ? agent.model : undefined)`（形态不同、不被命中）
 #   ⇒ 若上游把两条路径统一（或引入第二处），须人工复核本锚点的判别力。
+# ⚠ **覆盖盲区（审查 F6）**：本锚点是**单行存在性断言** —— 若上游**保留该行**却在别处覆盖解析结果
+#   （如后续 `effective = agent.model`）⇒ 锚点仍命中 ⇒ **漏检**。该形态由 V11b（响应级
+#   `session_message.model`）兜，不靠本锚点。
 check "P7 每次派发可覆盖模型（override 优先于 agent 配置）" "packages/core/src/tool/plugin/subagent.ts" \
   'override \?\? agent\.model' \
   "ADR-plan-synthesis-offload D3 的 A 档：显式 model 入参优先于 agent 配置"

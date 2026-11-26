@@ -25,7 +25,7 @@ interface TopicSpec {
 }
 
 function makeTopic(spec: TopicSpec): string {
-  // ⚠ 必须落在 /tmp/opencode（本机 /tmp 被拒）
+  // ⚠ 用系统临时目录（本机 `tmpdir()` = /tmp，实测可写；`/tmp/opencode` 是 scratch 约定，不强制）
   const base = path.join(tmpdir(), "plan-synth-")
   const dir = mkdtempSync(base)
   const graph = {
@@ -193,6 +193,28 @@ describe("§3 V4a/V4b：结论层硬判据", () => {
     expect(extractStableId("- （最重）：`docs/adr/x.md:42`")).toBe("docs/adr/x.md:42")
     expect(extractStableId("**薄弱点 1（最重）**：见 nodes/n3/RESULT.md:302")).toBeNull()
   })
+
+  // 审查 F1 实测：裸 token 必须「像 slug/path」，否则普通英文词会让 V4a 的 includes 恒真 ⇒ 假绿
+  test("F1：裸英文词不得被抽成 token；裸 slug / path 仍可", () => {
+    expect(extractStableId("（最重）：git merge 绕开 commit-gate")).toBeNull()
+    expect(extractStableId("（最重）：session 模型静默降级")).toBeNull()
+    expect(extractStableId("（最重）：worker 不读盘")).toBeNull()
+    expect(extractStableId("（最重）：commit-gate 绕过")).toBe("commit-gate")
+    expect(extractStableId("（最重）：docs/adr/x.md:42")).toBe("docs/adr/x.md:42")
+  })
+
+  // 审查 F10：结论层缺失时聚合为一条，不逐项刷 blocking
+  test("F10：缺 ## 反哺清单 ⇒ 一条 synth_conclusion_layer_missing", () => {
+    const d = makeTopic({
+      nodes: [{ id: "a1" }, { id: "m1", deps: ["a1"] }],
+      brief: { m1: BRIEF_OK },
+      result: { a1: A1_OK, m1: "# RESULT\n\n## 结论\n\n没有反哺清单节\n" },
+    })
+    const codes = checkSynthesis(d).violations.map((v) => v.code)
+    expect(codes).toContain("synth_conclusion_layer_missing")
+    expect(codes).not.toContain("synth_heavy_item_not_in_conclusion")
+    expect(codes.filter((c) => c === "synth_conclusion_layer_missing").length).toBe(1)
+  })
 })
 
 // ── §4 V5a/V5b/V5c + V5d ─────────────────────────────────────────────────────
@@ -280,6 +302,26 @@ describe("§5 V4c：根裁决集 slug 包含", () => {
       result: { a1: "无标记\n", m1: synthResult({ rulings: [] }) },
     })
     expect(BLOCKING(d)).toEqual([])
+  })
+
+  // 审查 F4a：R slug 必须带词边界（AR2 不得抽成 R2）
+  test("F4a：`AR2` 不得被抽成 `R2`", () => {
+    const d = makeTopic({
+      nodes: [{ id: "a1" }, { id: "m1", deps: ["a1"] }],
+      brief: { m1: "# BRIEF\n\n## 根裁决集\n\n- R1：参照 AR2 的处置\n" },
+      result: { a1: "无标记\n", m1: synthResult({ rulings: ["R1"] }) },
+    })
+    expect(BLOCKING(d)).toEqual([])
+  })
+
+  // 审查 F4b：「无」不得用子串匹配（自然裁决句里的「无」会跳过整段回指检查 ⇒ 假绿）
+  test("F4b：含「无」的自然裁决句不得被当「无裁决」", () => {
+    const d = makeTopic({
+      nodes: [{ id: "a1" }, { id: "m1", deps: ["a1"] }],
+      brief: { m1: "# BRIEF\n\n## 根裁决集\n\n- 不要纳入多租户（无写通道）\n" },
+      result: { a1: "无标记\n", m1: synthResult({ rulings: [] }) },
+    })
+    expect(BLOCKING(d)).toContain("synth_brief_no_ruling_set")
   })
 })
 
