@@ -4,7 +4,7 @@
     {
       "mechanism": "commit-gate",
       "adr_primary": "docs/adr/ADR-commit-verification-gate.md",
-      "state": "active",
+      "state": "proving",
       "notes": "commit 工具层验证门；三步回滚（撤放行 / 撤 sessions 过滤 / 兼容读）已清单化并实测。 2026-11-27：治理面措辞同批改动（prompts/build.md §输出 的「未声明 ⇒ 三判据不设门禁」事实化 + 立项路由 / role-switch 用法 / 调研委派可点数触发 / 审查配对补口）⇒ 回滚清单的 step-2 锚点随实现更新 ⇒ 清单内容实质改动 ⇒ 按 ADR D5 撤 last_drill 并退 proving；演练（隔离副本）PASS（基线 0206fa73）⇒ 已回填 last_drill 并转回 active。",
       "manifest_ref": "commit-gate",
       "watch": [
