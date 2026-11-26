@@ -240,3 +240,75 @@ PATH shim / `bunfig.toml` preload 记录全量轨迹 ⇒ 那要改进程启动�
 > **fixture 仓不受这条规则约束**：`mkdtempSync` 里 1–2 个提交的仓成本可忽略；把规则套上去只会稀释成噪音。
 
 ---
+
+---
+
+## 10. 本机真运行时 e2e：按路径触发、结果可见、verdict 三态
+
+> 背景：真运行时用例（`E2E_REAL_RUNTIME=1` 门控）默认 skip（§5）。**默认 skip 的用例如果没人跑，等于没有这一层** —— 所以需要触发机制。本仓**不建 CI**（§5 的口径），触发全在**本机**。
+
+### 10.1 入口
+
+```bash
+scripts/e2e-runtime.sh --summary        # 上次结果 + 未测提交数（快，不跑用例）
+scripts/e2e-runtime.sh --dry-run        # 只打印将跑什么（**不启动 bats、不调模型**）
+scripts/e2e-runtime.sh                  # 前台跑命中的用例；失败 ⇒ 非零退出
+scripts/e2e-runtime.sh --all --filter 'push|model'   # 显式全跑/筛选（--all 优先于 --filter）
+scripts/install-git-hooks.sh            # opt-in：core.hooksPath=.githooks ⇒ post-commit 自动采集
+```
+
+`post-commit` 是 **advisory**：后台跑、永不阻断、每次提交先打印上次 verdict 与未测提交数（**呈现**比采集更重要 —— 结果无人看等于没跑）。
+
+### 10.2 触发表（**逐文件**，未列路径默认不触发）
+
+| 改动路径 | 映射到 e2e 用例 |
+|---|---|
+| `plugins/commit-gate.ts` | `test_commit_gate_runtime.bats` |
+| `plugins/role-gate.ts` | `test_role_gate_runtime.bats` |
+| `plugins/subagent-contract.ts` | `test_subagent_contract_runtime.bats` |
+| `plugins/push-gate.ts`、`lib/push-gate.ts` | `test_push_gate_runtime.bats` |
+| `plugins/model-fallback.ts`、`lib/model-fallback-core.ts` | `test_model_fallback_runtime.bats`（用例未落地 ⇒ `not_run`） |
+| `lib/delegate-core.ts` | `test_class_scope_runtime.bats` + `test_front_delegate_runtime.bats` |
+| `opencode.jsonc*` | `test_push_gate_runtime` + `test_subagent_contract_runtime` + `test_role_gate_runtime` |
+| `prompts/plan.md`、`prompts/plan-worker.md` | `test_plan_topics_cli.bats`（零模型）+ `test_plan_topics_runtime.bats`（PT-1） |
+
+**不要用 glob 假装全覆盖**：`plugins/**` 会漏掉已落地的 commit-gate / role-gate / subagent-contract / class_scope / front_delegate 五个文件。未被表覆盖的 runtime 文件以 token `E2E-TRIGGER-COVERAGE-GAP` 登记（需人工 `--all`）。
+
+### 10.3 verdict 协议（**解析 TAP，不看退出码**）
+
+`bats` 对 `skip` 也返回 0 ⇒ **只看 rc 会把「额度耗尽」记成 `ok` 并推进 `last_ok_sha`，该改动从此永不重测**。判定走 `bats --formatter tap`：
+
+| TAP 行 | 逐例 verdict |
+|---|---|
+| `ok N` | `ok` |
+| `ok N # skip …` | `undetermined` |
+| `not ok N` | `fail` |
+| 无终态 / 超时 | `undetermined` |
+| 用例文件不存在 | `not_run` |
+
+整批聚合：任一 `fail` ⇒ `fail`；否则任一 `undetermined`/`not_run` ⇒ `undetermined`；否则全 `ok` ⇒ `ok`；无用例 ⇒ `noop`。
+
+### 10.4 三条不变量（都踩过坑）
+
+1. **`skip` 不是 `ok`** —— 见 §10.3。否则额度耗尽 = 静默永久绿。
+2. **脏树不推进**：e2e 测的是**活仓工作区**，不是某个 sha ⇒ 工作树脏时结果无法归因到 `HEAD` ⇒ 整批 `undetermined`、不推进 `last_ok_sha`（`--allow-dirty` 强制跑时**也**强制 `undetermined`，否则脏树全绿会被记成 ok）。
+3. **命中 0 ⇒ `noop` 且推进**：否则 `last_ok_sha` 永远缺失、`HEAD..HEAD = ∅` ⇒ 机制永久空转。
+
+### 10.5 并发与额度
+
+- 锁 = `.rddf/state/e2e-runtime.lock/`（目录原子 `mkdir` + `pid` + `started_epoch`）；`kill -0` 失败或超 6h ⇒ 回收。**任何状态写之前先取锁**（noop / 脏树 / 实跑三条路径都要串行；曾因 noop 在取锁前写状态丢过更新）。
+- 检测到额度耗尽 ⇒ `quota_cooldown_until`（默认 +2h）⇒ 窗口内只打印未测数、不 spawn。
+
+### 10.6 与硬门的关系
+
+`plugins/commit-gate.ts` 的 `bun test tests/` 是**硬门**（零模型、快、可阻断）；本机制是**软证据**（真运行时、慢、吃额度、advisory）。判据不同、**不互相替代**。
+
+---
+
+## 11. 用例计数口径（别按 `@test` 数手算）
+
+同一文件可**混**零模型与真实运行时（例：`test_oracle_intent_gate.bats` 6 例里 4 例门控、2 例默认跑）⇒ 按文件内 `@test` 数相加**必漂**。
+
+**唯一口径**：实跑 `bats -r tests/`，以**skip 原因**分类 —— `ok N # skip … E2E_REAL_RUNTIME` 计入 real-runtime，其余计入 default-run；`not ok` 另计（已知失败须与 `KNOWN_FAILURES.txt` 逐条一致）。
+
+> 2026-11-26 校正：README 曾写「48 in-process / 58 real-runtime」，实跑为 **70 默认跑通过 + 8 已知失败 + 71 真运行时 = 149 例**。教训：**报告数字要么带实跑命令，要么不写**。

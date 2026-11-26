@@ -198,3 +198,40 @@ opencode service restart
 | `model-fallback.json` | 降级链与策略配置 |
 | `tests/model-fallback-core.test.ts` | 单测（`bun test tests/model-fallback-core.test.ts`） |
 | `.rddf/reviews/model-fallback-verify.md` | 验收报告（判据 + 证据 + 已知边界） |
+
+## 8. 运行时证据与重跑触发
+
+> 本节回答「这套兜底在**真会话**里到底有没有生效」，以及「改了它之后谁来重跑」。
+
+### 8.1 今天的状态
+
+| 层 | 覆盖 | 说明 |
+|---|---|---|
+| L1 纯逻辑 | ✅ `tests/model-fallback-core.test.ts`（33 例） | 分类 / 链推进 / 冷却 / 组链 / 配置解析 |
+| L2 运行时 | ❌ **0 例** | 「真失败时链真的推进」**今天无法回答** |
+
+⇒ 已立项：`.rddf/improvements/model-fallback-runtime-e2e.md`（**探针先行**，不硬写用例）。
+
+### 8.2 探针门（实施该提案前的硬前置）
+
+三个问题必须先有答案，否则用例必空转：
+
+1. 用一个**不存在的 model id** 启动会话，宿主是否**走 `retry` 钩子**（而不是直接终止）？
+2. 失败形态与**插件分类**是什么？（分类 ∈ {`model-unavailable`, `transient`} 才算通过；= `client-error` ⇒ 登记 `MODEL-FALLBACK-CLASSIFY-UNREACHABLE` 并终止）
+3. 这次失败**是否消耗额度**（决定探针成本）？
+
+⚠ **`ModelUnavailableError` 发生在 retry 钩子之前**（§6 第 1 条）⇒ 若「无效 model id」被解析层拦下，探针① 直接不成立 ⇒ 登记 `MODEL-FALLBACK-RETRY-UNREACHABLE`，**不产生空转用例**。
+
+### 8.3 重跑触发（与 push-gate 共用同一套机制）
+
+- 用例落 e2e 仓 `tests/integration/test_model_fallback_runtime.bats`（`E2E_REAL_RUNTIME=1`，默认 skip）。
+- 本仓 `scripts/e2e-runtime.sh` 的触发表已把 `plugins/model-fallback.ts` / `lib/model-fallback-core.ts` 映射到它（用例未落地期间记 `not_run`，不算 ok）。
+- 机制说明见 `docs/test-authoring.md` §10。
+
+### 8.4 已知不可测面（登记，不假装覆盖）
+
+| 面 | 原因 |
+|---|---|
+| `prompt` 钩子的「重置降级状态」 | 需「瞬时失败**恰好一次** ⇒ 新用户轮 ⇒ 再失败」的三轮剧本；真实 provider 无法确定性注入 |
+| 负向面：**不该切时会不会乱切** | 误切（context 超长 / 安全策略被误判）比不切更伤用户；需确定性负向用例（context 超限 ⇒ 零 switch 日志行），另立后续项 |
+| 跨 provider 错误形态矩阵 | 每个 provider 对无效 id 的失败形态不同 ⇒ 结论只在「探针锁定的那个组合」上成立 |

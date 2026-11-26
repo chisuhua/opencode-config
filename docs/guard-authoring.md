@@ -280,3 +280,83 @@ diff /tmp/opencode/owns-opencode.txt /tmp/opencode/owns-product.txt && echo "✔
 - [ ] 新文档/注释里**引用判据形态** ⇒ 会被自己扫到 ⇒ 措辞是否触发？
 - [ ] 提交前**单独**校验测试退出码（不用管道串 `&& git commit`）？
 - [ ] 跨仓的那一半 ⇒ 跑过 `scripts/cross-repo-check.sh` 吗？（退出码 `0` 才算一致；`2` = 漂移 / `3` = 环境不满足 ⇒ **都不算通过**）
+
+---
+
+## 8. 兜底类守卫的接线前提：宿主钩子与 permission 的先后
+
+> 适用对象：`push-gate`（force push 兜底）、`model-fallback`（模型降级）这类**「静默兜底」**—— 它们的存在理由就是「在 config 的 `deny` 或用户的 `Allow always` 之间仍然生效」。**这个前提必须被验证，不能假定。**
+
+### 8.1 结论
+
+`tool.execute.before` 插件钩子**先于**工具内部的 `permission.assert`；钩子抛错会让调用**在命令运行前**被拒。⇒ 插件在上游，config `deny` 与 `Allow always` 都在下游 ⇒ **都绕不过插件**。
+
+### 8.2 调用链（语义锚点，不钉行号）
+
+| # | 位置 | 事实 |
+|---|---|---|
+| 1 | `packages/core/src/tool.ts`（工具调用入口） | 先 `beforeExecute(...)` ⇒ `hooks.trigger("tool", "execute.before", …)` |
+| 2 | 同上，其后 | 再 `executeTool(...)` |
+| 3 | `packages/core/src/tool/runtime.ts` 的 `execute` | 解码后 `tool.execute(...)` —— **此处无 permission** |
+| 4 | `packages/core/src/tool/plugin/shell.ts` 的 `execute` → `prepare` | 命令级 `permission.assert(...)` 在这里 |
+| 5 | `packages/core/src/plugin/hooks.ts` 头注 | 「Only **tool execute.before** may fail: a `Tool.Error` rejects the call **before it runs**」 |
+
+### 8.3 怎么验证（顺序固定，两层）
+
+1. **源码先行（0 额度）**：读上表，钉版本锚（`opencode --version` ↔ 源码树 commit）；结论落 `.rddf/reviews/`。
+2. **运行时确认（吃额度）**：e2e 仓的 `test_push_gate_runtime.bats`。**判据设计的关键是「两种情形的错误来源要把顺序钉死」**：
+   - force push（用 config 的 deny glob **匹配不到**的短簇 `-uf`）⇒ 得到 **`push-gate:` 的拒绝** ⇒ 钩子先拒绝，没走到 permission；
+   - 非 force push ⇒ 得到 **permission 的「cannot ask」** ⇒ 钩子放行后才到 permission。
+   - ⚠ **不要只断「有错误」**：permission 的拒绝会冒充插件（这是 CG-1 踩过的「只匹配模糊文案」的同类坑）。
+
+### 8.4 已知边界（诚实登记）
+
+| 面 | 状态 |
+|---|---|
+| 钩子能拦且能阻止执行 | ✅ 源码 + 运行时双确认 |
+| `Allow-always` 不能绕过插件 | ✅ **源码层**成立；运行时世界**无法复现**（非交互会话不能授予并持久化）⇒ 登记 token，不再花额度追 |
+| `retry` 钩子（model-fallback）真失败时推进链 | ⏳ 未验证（探针门见 `.rddf/improvements/model-fallback-runtime-e2e.md`） |
+| 负向面：**不该切时会不会乱切** | ⏳ 未验证（误切比不切更伤用户） |
+
+---
+
+## 9. 改进池 front-matter 守卫（A6）：让「已完成」可判
+
+> 问题：`rddf status` 的待办池混着已完成的事，STATUS 列全是兜底「待讨论」、PRI 列全是 `-`。根因是**状态没有机读入口**（产品侧只认「同名归档目录」与「front-matter `状态`」两条通路）。
+
+### 9.1 字段形态（**4 行块**，不是 3 行）
+
+```
+---
+状态: 已实施（2026-11-26）
+优先级: P2
+---
+```
+
+- **已有 frontmatter 块时必须合并键**，禁止新建第二块（产品侧只读**第一个** `---` 块）。
+- **禁半角冒号 + 空格**（`已实施: 2026-11-26` 会炸 YAML）；日期用**全角括号**。
+- **散文状态行（`> **实施状态**…`）必须留在文件前 15 行内** —— AC20 的关闭判定只读前 15 行的第一处匹配；front-matter 行数会把它下移。
+
+### 9.2 词表（**前导匹配 `startswith`**，不是精确匹配）
+
+| 类 | 命中串（选一） | label |
+|---|---|---|
+| terminal（离开 pending） | `已完成并归档` / `已实施并验收` / `已归档` / `已完成` / `已实施` / `implemented` / `completed` / `已作废` / `superseded` | 已归档 / 已完成 / 已实施 / 已作废 |
+| open（留在 pending） | `未立项` / `待立项` / `已立项` / `draft` / `规划输入` / `backlog` / `待审查` / `待回填` / `已推迟` | 同名 |
+| partial（留在 pending） | 含子串 **`已闭合`** | 部分闭合 |
+| 都不命中 | —— | `marker[:16]` 兜底；**空 ⇒ 「待讨论」** |
+
+⇒ 写「归档于 2026-11-23」**不会**命中 `已归档`（前导不是它）⇒ 会退化成兜底。**逐字照上面的表写。**
+
+### 9.3 守卫（`tests/config-guards.test.ts` 的 A6）
+
+- **祖父名单冻结**：A6 落地时仍无 `状态` 的存量文件逐条列名；**名单外的 `.md` 缺 `状态:` 或 `优先级:` ⇒ 红**；名单内文件补了字段却没从名单移除 ⇒ 红（名单只减不增）。
+- **联合断言**：新增文件的散文状态行必须在**前 15 行**内（否则 A6 绿、AC20 红 —— 两条判据无边界）。
+
+### 9.4 三条反例（**不要按 change 指针推断「已完成」**）
+
+审计逐条核 Acceptance 时抓到过 3 个「表面已完成、实际未完成」的条目（关联 change 已归档，但 ADR 增补记录没写 / checklist 那行没落地 / 还写着「待审查」）⇒ **任何「按指针批量标完成」的清账做法都会把真待办误标成已完成，债从视野里消失**。核法只有两种：**核 Acceptance 的每一条**，或**核产物是否在盘上**。
+
+### 9.5 与产品侧的关系（已决）
+
+「让 `collect_pending` 从正文 change 指针推断 terminal」这条**不立项**（会把上面 3 个反例自动化）。替代 = 产品侧模板默认带字段；本仓侧由 A2（存量）+ 本守卫（增量）自闭环。详见 `.rddf/improvements/rddf-status-improvement-status-mismatch.md` §9。

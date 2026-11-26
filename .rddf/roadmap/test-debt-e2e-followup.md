@@ -1,5 +1,9 @@
 # test-debt-e2e-followup — 测试完备性 / 债务 / e2e 覆盖的后续路线图（planner 产出）
 
+> **状态：已归档（2026-11-26，任务完成）** —— A 批（A1–A6）、B 批（B1 零模型 + 真宿主 PT-1、B2 前半 push-gate）、C 批可自闭环部分（C2 缺口表、C3 计数底账、C4 裁决登记）与 Q5 **全部完成**；逐项证据见 §0 完成度总表。
+> **有意留待（不是欠账）**：① C1 剩余的 8 条「上游真删 `guide` hook」用例迁移；② B2 后半 model-fallback（已另立 `.rddf/improvements/model-fallback-runtime-e2e.md`，探针门就绪）；③ 改进池里 7 条历史真待办（与本路线图无关的独立 backlog）。
+> **沉淀去向**：机制与口径已写进 `docs/test-authoring.md` §10（触发机制）/ §11（计数口径）· `docs/guard-authoring.md` §8（宿主钩子与 permission）/ §9（改进池 front-matter 守卫）。
+
 > 决策依据（**无 ADR** —— 本路线图是**债务治理**，不是架构决策；不引入新机制，只补判据与登记）：
 > - `.rddf/reviews/test-completeness-debt-e2e-audit-2026-11-25.md`（测试完备性 / 债务 / `rdd-workflow-e2e` 审计，verifier）
 > - `.rddf/reviews/plan-topics-d9-d10-d11-verify.md`（D9/D10/D11 + D5 实现批验收，verdict=`needs-revision`，1 项未闭合）
@@ -33,8 +37,8 @@
 | **C1** 基线未进 CI | 🟡 根因 A 已闭合 | 8 条基线随 push 进 `origin/master`；**剩**上游真删 `guide` hook 的 8 条用例迁移 |
 | **C2** 缺口表刷新 | ✅ 完成 | e2e `0ec0084`；#5 标闭合（证据 `delegate-tool.test.ts:519`）、#1 维持开放（复核结论与审计相反，已注明） |
 | **C3** README 计数漂移 | ✅ 完成 | e2e `b58ff6b`；改为实跑口径 **148 / 70 / 8 / 70** |
-| **C4** 产品侧增强 | ⏳ 待拍板 | 结论 = 不按现规格立项，re-scope 为「模板侧默认字段」⇒ 需产品侧有人接 |
-| **SF-5** CHANGELOG v2.75 | ⏳ 用户自办 | 未做 |
+| **C4** 产品侧增强 | ✅ 已决（登记、未承诺时点） | 不按现规格立项；re-scope 为产品侧 `add-improve` 模板默认字段；本仓由 A2 + A6 自闭环；裁决记录在 `rddf-status-improvement-status-mismatch.md` §9 |
+| **SF-5** CHANGELOG v2.75 | ✅ 完成 | `docs/CHANGELOG.md` 已补 v2.75（D9/D10/D11+D5 实现批 + 验收 + F-1 闭合 + 闸门数字 + 仍未做项） |
 | **feedback `resolution` 残留** | 📋 已登记 | `rddf feedback` 无 resolve 子命令 ⇒ backlog |
 
 ---
