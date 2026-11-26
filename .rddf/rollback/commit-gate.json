@@ -177,5 +177,11 @@
         "tests/"
       ]
     ]
+  },
+  "last_drill": {
+    "sha": "46650c06ba4f6236dec4ca8b44862e49a19dd795",
+    "at": "2026-11-27",
+    "result": "pass",
+    "content_hash": "f3d252e072eba0283ab8fc564db52564fd07173ff699239c91a507c52f72ff5c"
   }
 }
