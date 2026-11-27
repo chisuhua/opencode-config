@@ -17,7 +17,7 @@
       "mechanism": "plan-topics",
       "adr_primary": "docs/adr/ADR-plan-multi-session-collaboration.md",
       "state": "proving",
-      "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。",
+      "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。 2026-11-27（plan-collaboration-hardening 落地同批）：`prompts/plan.md` 的两节被改写 ⇒ 清单两条 find 已同步刷新（472→594 / 961→1738 字符）。**演练 FAIL（已知债）**：回滚后 `tests/plan-topics-{add,goal-review,settlement}.test.ts` 与 `tests/plan-synthesis.test.ts` 仍 import 已删的 `lib/plan-topics.ts` / `tests/helpers/plan-topic-fixture.ts` ⇒ 需在清单补 3 条 `delete`（或同批撤新增测试的引用）后才可回填 last_drill。",
       "manifest_ref": "plan-topics",
       "watch": [
         "lib/plan-topics.ts",
@@ -34,7 +34,7 @@
         "scripts/plan-synthesis-check.ts",
         "tests/plan-synthesis.test.ts"
       ],
-      "notes": "plan 侧多节点协作的「合成」步骤外置（合成节点 = `graph.json` 里的一个普通 node，`deps` = 全部内容节点；合成产物落在合成节点自己的 `nodes/<m-id>/RESULT.md` ⇒ 父的写面不变）。**B1 已落地（2026-11-27）** ⇒ `proving`：清单已写（`.rddf/rollback/plan-synthesis-offload.json`），`watch[]` = 两个已存在的载体路径；载体 = `scripts/plan-synthesis-check.ts`（V4/V5/V4c/V5d 判据，自包含）+ `tests/plan-synthesis.test.ts`；治理面增补 = `prompts/plan.md` 合成节点节 + `prompts/plan-worker.md:28` 稳定 token 纪律 + `scripts/check-upstream-anchors.sh` P7 锚点；机制面（`lib/plan-topics.ts` / `scripts/plan-topic-check.ts`）零改动。⇒ 演练证据已回填（基线 `d2244e1a`，drill PASS）⇒ 本条 `active`。实测（2026-11-26，`build-worker-design` 场景）：机制面 checker 零改动、deps 门控/converged/fence 全自动、`converged=true`；A 档 A/B 复测 PASS ⇒ 阶梯停在 A 档。"
+      "notes": "plan 侧多节点协作的「合成」步骤外置（合成节点 = `graph.json` 里的一个普通 node，`deps` = 全部内容节点；合成产物落在合成节点自己的 `nodes/<m-id>/RESULT.md` ⇒ 父的写面不变）。**B1 已落地（2026-11-27）** ⇒ `proving`：清单已写（`.rddf/rollback/plan-synthesis-offload.json`），`watch[]` = 两个已存在的载体路径；载体 = `scripts/plan-synthesis-check.ts`（V4/V5/V4c/V5d 判据，自包含）+ `tests/plan-synthesis.test.ts`；治理面增补 = `prompts/plan.md` 合成节点节 + `prompts/plan-worker.md:28` 稳定 token 纪律 + `scripts/check-upstream-anchors.sh` P7 锚点；机制面（`lib/plan-topics.ts` / `scripts/plan-topic-check.ts`）零改动。⇒ 演练证据已回填（基线 `d2244e1a`，drill PASS）⇒ 本条 `active`。实测（2026-11-26，`build-worker-design` 场景）：机制面 checker 零改动、deps 门控/converged/fence 全自动、`converged=true`；A 档 A/B 复测 PASS ⇒ 阶梯停在 A 档。 2026-11-27（plan-collaboration-hardening 落地同批）：`prompts/plan.md` 的合成节点段被改写 ⇒ 清单的整段 find 拆成 2 条（4268 → 2470 + 1798 字符，避开 `maxLen ≤ 2894` 硬上限）。**演练 FAIL（已知债）**：回滚会删 `scripts/plan-synthesis-check.ts`，而 registry 里 `plan-collaboration-hardening` 的 `watch[]` 含该路径 ⇒ M7「watch 路径不存在」⇒ 需在清单里处置该条目（或收窄其 watch）后才可回填 last_drill。"
     },
     {
       "mechanism": "plan-delegate",
