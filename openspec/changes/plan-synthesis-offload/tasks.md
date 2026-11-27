@@ -24,7 +24,7 @@
 ## B1 步骤 ③ —— 判据载体
 
 - [x] `scripts/plan-synthesis-check.ts`（**自包含**，不 import `lib/plan-topics.ts`）
-- [x] `tests/plan-synthesis.test.ts`（24 例：解析规则 / V4a/V4b / V5a–V5d / V4c / 无合成节点 / graph 异常 / CLI 四值退出码 / 与 `lib/plan-topics.ts` 的交叉断言）
+- [x] `tests/plan-synthesis.test.ts`（32 例：解析规则 / V4a/V4b / V5a–V5d / V4c / 无合成节点 / graph 异常 / CLI 四值退出码 / 与 `lib/plan-topics.ts` 的交叉断言）
 - [x] 新文件闸门：`scripts/` 与 `tests/` 新文件**不在任何既有清单内**（本仓现状）⇒ 本批显式决定：**新增两个，不扩任何清单**（与 `ADR-plan-multi-session-collaboration` 对同类文件的处理一致）
 - [x] 机制面零改动：`lib/plan-topics.ts` 与 `scripts/plan-topic-check.ts` **一行未动**（V2）
 
