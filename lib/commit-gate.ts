@@ -889,11 +889,243 @@ function commitInSegment(tokens: Token[]): CommitInvocation {
 // 门禁声明（仓库自声明 ⇒ 未声明的仓库不设门禁）
 // ════════════════════════════════════════════════════════════════════════
 
+export interface KnownFailure {
+  /** 目标命令（argv）—— 必须与某条 verify_commands 逐字相等 */
+  command: string[]
+  /** 输出中必须出现的子串（stdout+stderr 合并） */
+  match: string
+}
+
+export interface InspectionSpec {
+  /** 巡检守卫的 argv —— 必须作为 verify_commands 的独立条目 */
+  command: string[]
+  /** 巡检载体文件（仓库相对路径）—— 必须 git-tracked 且非 symlink */
+  carrier: string
+}
+
 export interface CommitGateDeclaration {
   /** 验证命令（argv 数组的数组）—— 逐条执行，任一非 0 ⇒ 拒 */
   verify_commands: string[][]
   /** 单条命令超时（毫秒），默认 600000 */
   timeout_ms?: number
+  /**
+   * 已登记的已知失败（ADR D10①）—— 命中 ⇒ 该命令的失败视为「已知」⇒ 放行。
+   * ⚠ 无该字段 ⇒ 行为与 D10 之前**逐字相同**（任一非 0 ⇒ 拒）。
+   */
+  known_failures?: KnownFailure[]
+  /**
+   * 巡检载体（ADR D10②）—— 声明含 known_failures ⇒ **必须存在**且满足三条硬约束，
+   * 否则 known_failures **字段整体无效** ⇒ 退回 D2① 硬门（fail-closed）。
+   */
+  inspection?: InspectionSpec
+}
+
+// ── ADR D10：baseline（known_failures）────────────────────────────────────
+
+/**
+ * 通用词（单独出现，或出现在**末尾 token** ⇒ 模式不具描述性 ⇒ 声明不合法）。
+ * ⚠ 用「末尾 token」而非「子串」：`pre-existing failures in test_llm_cache`
+ * 含 `failures` 但**不是**末尾 ⇒ 合法（子串规则会把它误杀）。
+ */
+const GENERIC_MATCH_WORDS = new Set([
+  "fail",
+  "failed",
+  "failing",
+  "failure",
+  "failures",
+  "error",
+  "errors",
+  "timeout",
+])
+
+/** `match` 是否满足特异性约束（去空白后 ≥ 8、非纯数字/标点、末尾 token 非通用词）。 */
+export function isSpecificMatch(pattern: string): boolean {
+  const trimmed = (pattern ?? "").trim()
+  if (trimmed.length < 8) return false
+  if (/^[0-9\s.,;:_-]+$/.test(trimmed)) return false
+  const tokens = trimmed.split(/\s+/)
+  const last = (tokens[tokens.length - 1] ?? "").toLowerCase()
+  if (GENERIC_MATCH_WORDS.has(last)) return false
+  return true
+}
+
+export interface KnownFailureMatch {
+  matched: boolean
+  /** 命中的模式（供留痕） */
+  pattern?: string
+  /** 未命中的原因（可诊断） */
+  reason?: string
+}
+
+/** 归一化换行（CRLF → LF）⇒ 匹配不受平台换行差异影响。 */
+function normalizeNewlines(text: string): string {
+  return (text ?? "").replace(/\r\n/g, "\n")
+}
+
+/**
+ * 命中判定（ADR D10①）：命令失败且**合并输出**含 `match` ⇒ 视为已知失败。
+ *
+ * ⚠ 粒度 = **命令 + 输出**：条目只对其 `command` 生效。
+ */
+export function matchKnownFailure(
+  decl: CommitGateDeclaration,
+  argv: string[],
+  output: string,
+): KnownFailureMatch {
+  const entries = decl.known_failures ?? []
+  const normalized = normalizeNewlines(output)
+  for (const entry of entries) {
+    if (!sameArgv(entry.command, argv)) continue
+    // ⚠ 绑定巡检守卫命令的条目**无效**（ADR D10② 硬约束②）：
+    //   否则「巡检缺席」会被它自己的登记条目掩盖 ⇒ 单调性失效。
+    if (isBoundToInspection(decl, entry)) {
+      return {
+        matched: false,
+        reason: "known_failures 条目绑定了巡检守卫命令 ⇒ 条目无效 ⇒ 不放行",
+      }
+    }
+    if (!isSpecificMatch(entry.match)) {
+      return {
+        matched: false,
+        reason: `known_failures 的 match 不满足特异性约束（${entry.match}）`,
+      }
+    }
+    if (normalized.includes(entry.match)) {
+      return { matched: true, pattern: entry.match }
+    }
+  }
+  return { matched: false, reason: "输出未命中任何已登记的 known_failures" }
+}
+
+/** argv 逐字相等（顺序与内容都一致）。 */
+export function sameArgv(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false
+  if (a.length !== b.length) return false
+  return a.every((x, i) => x === b[i])
+}
+
+/**
+ * 是否**允许**进入 baseline 匹配（ADR D10① / 后果段风险①）。
+ *
+ * 两条禁止：① 命令**超时** ⇒ 按未命中处理（挂死的套件不得借 baseline 永久过关）；
+ * ② baseline 不可用（巡检缺席 / 声明非法）⇒ 不匹配 ⇒ 退回硬门。
+ */
+export function shouldMatchBaseline(
+  res: { code: number | string },
+  baselineUsable: boolean,
+): { ok: boolean; reason?: string } {
+  if (!baselineUsable) return { ok: false, reason: "baseline 不可用 ⇒ 按未命中处理" }
+  if (res.code === "ETIMEDOUT" || res.code === "TIMEOUT") {
+    return { ok: false, reason: "命令超时 ⇒ 按未命中处理" }
+  }
+  return { ok: true }
+}
+
+export interface DeclarationValidation {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * 声明形状校验（**总兜底**）：任何异常 ⇒ 视作未声明 ⇒ 退回 D2① 硬门。
+ * ⚠ 绝不默认放行（ADR D6 fail-closed）。
+ */
+export function validateDeclaration(parsed: unknown): DeclarationValidation {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, error: "声明不是对象 ⇒ 视作未声明" }
+  }
+  const decl = parsed as Partial<CommitGateDeclaration>
+  if (!Array.isArray(decl.verify_commands) || decl.verify_commands.length === 0) {
+    return { ok: false, error: "verify_commands 为空或缺失 ⇒ 视作未声明" }
+  }
+  const bad = decl.verify_commands.find(
+    (c) => !Array.isArray(c) || c.length === 0 || c.some((x) => typeof x !== "string"),
+  )
+  if (bad) return { ok: false, error: "verify_commands 形状非法 ⇒ 视作未声明" }
+  if (decl.known_failures !== undefined) {
+    if (!Array.isArray(decl.known_failures)) {
+      return { ok: false, error: "known_failures 不是数组 ⇒ 视作未声明" }
+    }
+    for (const entry of decl.known_failures) {
+      if (!entry || typeof entry !== "object") {
+        return { ok: false, error: "known_failures 条目形状非法 ⇒ 视作未声明" }
+      }
+      if (
+        !Array.isArray(entry.command) ||
+        entry.command.length === 0 ||
+        entry.command.some((x) => typeof x !== "string")
+      ) {
+        return { ok: false, error: "known_failures.command 形状非法 ⇒ 视作未声明" }
+      }
+      if (typeof entry.match !== "string" || entry.match.trim() === "") {
+        return { ok: false, error: "known_failures.match 形状非法 ⇒ 视作未声明" }
+      }
+    }
+  }
+  if (decl.inspection !== undefined) {
+    const insp = decl.inspection
+    if (!insp || typeof insp !== "object") {
+      return { ok: false, error: "inspection 形状非法 ⇒ 视作未声明" }
+    }
+    if (
+      !Array.isArray(insp.command) ||
+      insp.command.length === 0 ||
+      insp.command.some((x) => typeof x !== "string")
+    ) {
+      return { ok: false, error: "inspection.command 形状非法 ⇒ 视作未声明" }
+    }
+    if (typeof insp.carrier !== "string" || insp.carrier.trim() === "") {
+      return { ok: false, error: "inspection.carrier 形状非法 ⇒ 视作未声明" }
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * 巡检存在性的**静态**判定（ADR D10② 的三条硬约束）。
+ *
+ * ⚠ `carrierTracked` / `carrierIsSymlink` 由调用方（插件，用 git + fs 查）注入 ⇒
+ * 本模块保持纯逻辑、可单测、**不硬编码治理仓路径**。
+ */
+export function evaluateInspection(
+  decl: CommitGateDeclaration,
+  facts: { carrierTracked: boolean; carrierIsSymlink: boolean },
+): { usable: boolean; reason?: string } {
+  if ((decl.known_failures ?? []).length === 0) return { usable: true }
+  const insp = decl.inspection
+  if (!insp) {
+    return {
+      usable: false,
+      reason: "声明含 known_failures 但缺少 inspection ⇒ 字段整体无效 ⇒ 退回硬门",
+    }
+  }
+  const independent = decl.verify_commands.some((c) => sameArgv(c, insp.command))
+  if (!independent) {
+    return {
+      usable: false,
+      reason:
+        "inspection.command 必须是 verify_commands 的独立条目 ⇒ 字段整体无效 ⇒ 退回硬门",
+    }
+  }
+  if (facts.carrierIsSymlink) {
+    return {
+      usable: false,
+      reason: "inspection.carrier 是 symlink ⇒ 视作缺席 ⇒ 字段整体无效 ⇒ 退回硬门",
+    }
+  }
+  if (!facts.carrierTracked) {
+    return {
+      usable: false,
+      reason: "inspection.carrier 未 git-tracked ⇒ 视作缺席 ⇒ 字段整体无效 ⇒ 退回硬门",
+    }
+  }
+  return { usable: true }
+}
+
+/** known_failures 条目是否绑定了巡检守卫命令（绑定 ⇒ 该条目无效）。 */
+export function isBoundToInspection(decl: CommitGateDeclaration, entry: KnownFailure): boolean {
+  if (!decl.inspection) return false
+  return sameArgv(entry.command, decl.inspection.command)
 }
 
 export const DECLARATION_REL = path.join(".rddf", "commit-gate.json")
@@ -904,12 +1136,9 @@ export function readDeclaration(workRoot: string): { decl: CommitGateDeclaration
   if (!existsSync(file)) return { decl: null }
   try {
     const parsed = JSON.parse(readFileSync(file, "utf8")) as CommitGateDeclaration
-    if (!parsed || !Array.isArray(parsed.verify_commands) || parsed.verify_commands.length === 0) {
-      return { decl: null, error: `${file} 的 verify_commands 为空或缺失 ⇒ 门禁视作未声明` }
-    }
-    const bad = parsed.verify_commands.find((c) => !Array.isArray(c) || c.length === 0 || c.some((x) => typeof x !== "string"))
-    if (bad) {
-      return { decl: null, error: `${file} 的 verify_commands 形状非法（必须是 argv 数组的数组）⇒ 门禁视作未声明` }
+    const validation = validateDeclaration(parsed)
+    if (!validation.ok) {
+      return { decl: null, error: `${file} ${validation.error}` }
     }
     return { decl: parsed }
   } catch (e: any) {
@@ -932,12 +1161,16 @@ export interface GateInput {
   writeSetViolations: Array<{ file: string; reason: string }>
   /** 验证结果（注入执行器） */
   verification: { ok: boolean; failedCommand?: string[]; outputTail?: string }
+  /** 非抛错留痕（ADR D10①：baseline 命中时给出一行可审计提示） */
+  notices?: string[]
 }
 
 export interface GateOutcome {
   allowed: boolean
   /** 拒绝原因（可诊断） */
   reason?: string
+  /** 非抛错留痕（放行时也可能有：baseline 命中） */
+  notices?: string[]
 }
 
 /** 三判据的组合（顺序 = **先便宜后昂贵**：暂存 → 写集 → 验证；语义与 ADR D2 一致）。 */
@@ -961,5 +1194,5 @@ export function evaluateCommitGate(input: GateInput): GateOutcome {
     const tail = input.verification.outputTail ? `\n--- 输出尾部 ---\n${input.verification.outputTail}` : ""
     return { allowed: false, reason: `commit-gate: 验证命令失败 ⇒ 拒绝提交：\n$ ${cmd}${tail}` }
   }
-  return { allowed: true }
+  return { allowed: true, notices: input.notices }
 }

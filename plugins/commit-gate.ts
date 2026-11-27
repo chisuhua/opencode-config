@@ -7,7 +7,8 @@
  * ⚠ **门禁面**：只覆盖 **shell 工具**里的 `git commit` 调用。
  * ⚠ **D5⑥/② 免宣称**：插件缺席 / 未 `service restart` ⇒ 门禁不存在；间接提交（包装脚本 / `eval`）不在门禁内。
  */
-import { execFile } from "node:child_process"
+import { execFile, execFileSync } from "node:child_process"
+import { appendFileSync, lstatSync, mkdirSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -15,7 +16,15 @@ import { promisify } from "node:util"
 import { Plugin } from "@opencode/plugin"
 
 import { canonicalRoot } from "../lib/delegate-core.ts"
-import { detectCommitInvocation, evaluateCommitGate, readDeclaration } from "../lib/commit-gate.ts"
+import {
+  detectCommitInvocation,
+  evaluateCommitGate,
+  evaluateInspection,
+  matchKnownFailure,
+  shouldMatchBaseline,
+  readDeclaration,
+  type CommitGateDeclaration,
+} from "../lib/commit-gate.ts"
 import { detectForcePush } from "../lib/push-gate.ts"
 import { readSessionPartition, resolveRole } from "../lib/role-identity.ts"
 import { decideWrite } from "../lib/role-policy.ts"
@@ -29,6 +38,55 @@ interface ExecResult {
   code: number
   stdout: string
   stderr: string
+}
+
+/** 留痕账本（ADR D10①：运行时可区分「真绿」与「baseline 命中」） */
+const NOTICE_LEDGER = path.join(".rddf", "state", "commit-gate-notices.jsonl")
+
+/** 追加一行留痕（失败不改变判定 —— 留痕不是门禁判据）。 */
+function appendNotice(workRoot: string, line: string): void {
+  try {
+    const file = path.join(workRoot, NOTICE_LEDGER)
+    mkdirSync(path.dirname(file), { recursive: true })
+    appendFileSync(file, line + "\n", "utf8")
+  } catch {
+    // 留痕失败不改变判定
+  }
+}
+
+/** 巡检载体是否 git-tracked（`git ls-files --error-unmatch`）。 */
+function isTracked(workRoot: string, relPath: string): boolean {
+  try {
+    const out = execFileSync("git", ["ls-files", "--error-unmatch", "--", relPath], {
+      cwd: workRoot,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+    return out.toString().trim().length > 0
+  } catch {
+    return false
+  }
+}
+
+/** 巡检载体是否为 symlink（symlink ⇒ 视作缺席）。 */
+function isSymlink(workRoot: string, relPath: string): boolean {
+  try {
+    return lstatSync(path.join(workRoot, relPath)).isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 巡检存在性的静态判定（ADR D10② 的三条硬约束）。
+ * ⚠ 缺席 ⇒ known_failures **字段整体无效** ⇒ 退回 D2① 硬门（fail-closed）。
+ */
+function inspectionUsable(decl: CommitGateDeclaration, workRoot: string): { usable: boolean; reason?: string } {
+  const insp = decl.inspection
+  if (!insp) return evaluateInspection(decl, { carrierTracked: false, carrierIsSymlink: false })
+  return evaluateInspection(decl, {
+    carrierTracked: isTracked(workRoot, insp.carrier),
+    carrierIsSymlink: isSymlink(workRoot, insp.carrier),
+  })
 }
 
 async function run(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<ExecResult> {
@@ -127,14 +185,35 @@ export default Plugin.define({
       // ① 验证命令（昂贵 ⇒ 最后跑）
       const timeoutMs = decl.timeout_ms ?? DEFAULT_TIMEOUT_MS
       let verification = { ok: true as boolean, failedCommand: undefined as string[] | undefined, outputTail: undefined as string | undefined }
+      const notices: string[] = []
+
+      // ⚠ **巡检缺席 ⇒ known_failures 字段整体无效 ⇒ 退回 D2① 硬门**（ADR D10②）。
+      //   缺席的三条硬约束：inspection 必须存在 / 必须是 verify_commands 的独立条目 /
+      //   载体必须 git-tracked 且非 symlink。
+      const inspection = inspectionUsable(decl, workRoot)
+      const baselineUsable = inspection.usable
+      if (!baselineUsable) {
+        notices.push(`commit-gate: ${inspection.reason}`)
+      }
+
       for (const argv of decl.verify_commands) {
         const [cmd, ...args] = argv
         const res = await run(cmd!, args, workRoot, timeoutMs)
         if (res.code !== 0) {
+          const merged = `${res.stdout}${res.stderr}`
+          // ⚠ **超时按未命中处理**（ADR D10① / 后果段风险①）：挂死的命令不因部分输出命中而放行。
+          const gate = shouldMatchBaseline(res, baselineUsable)
+          const match = gate.ok
+            ? matchKnownFailure(decl, argv, merged)
+            : { matched: false, reason: gate.reason }
+          if (match.matched) {
+            notices.push(`baseline 命中: ${argv.join(" ")} / match=${match.pattern}`)
+            continue // 已知失败 ⇒ 不阻断（继续跑下一条命令）
+          }
           verification = {
             ok: false,
             failedCommand: argv,
-            outputTail: `${res.stdout}${res.stderr}`.slice(-OUTPUT_TAIL),
+            outputTail: merged.slice(-OUTPUT_TAIL),
           }
           break
         }
@@ -146,7 +225,11 @@ export default Plugin.define({
         stagedState,
         writeSetViolations: violations,
         verification,
+        notices,
       })
+      for (const notice of outcome.notices ?? []) {
+        appendNotice(workRoot, `${new Date().toISOString()} ${notice}`)
+      }
       if (!outcome.allowed) {
         throw new Error(outcome.reason ?? "commit-gate: 拒绝提交（门禁未通过）")
       }

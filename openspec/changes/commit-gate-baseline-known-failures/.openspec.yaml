@@ -1,0 +1,12 @@
+# 本 change 不产生 openspec 的 spec delta（本仓不使用 spec registry）。
+#
+# 判据真源：docs/adr/ADR-commit-verification-gate.md 的 D10 段（Status Update 2026-11-27，Status Accepted）
+#            + 该 ADR 的 `## Verification` 章 V20–V25
+# 验收标准：openspec/changes/commit-gate-baseline-known-failures/proposal.md 的 `## 验收标准`（AC ↔ V 映射 + 状态）
+# 决策依据：ADR-commit-verification-gate 的 D10（oracle 1 轮 BLOCK 6 条全采纳；critic 2 轮 REJECT 2 BLOCKER
+#            ⇒ 复审 APPROVE_WITH_CONDITIONS / 0 BLOCKER；审稿报告
+#            .rddf/reviews/commit-verification-gate-su-baseline-review.md）
+# 载体：.rddf/improvements/commit-gate-baseline-known-failures.md（5 段草稿 · metis 1 轮已修订）
+schema: spec-driven
+created: 2026-11-27
+skip_specs: true

@@ -24,6 +24,7 @@
  * - **D9⑭** 删除类 push 未纳入强推口径 ⇒ 见 ADR D9 表（判据真源）
  * - **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）
  * - **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）
+ * - **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）
  */
 import { describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -34,8 +35,15 @@ const ROOT = path.resolve(import.meta.dir, "..")
 const SELF = path.join(import.meta.dir, "commit-gate-d9-registration.test.ts")
 const ADR_REL = "docs/adr/ADR-commit-verification-gate.md"
 const MAD_REL = "docs/MULTI-AGENT-DESIGN.md"
-/** AC 面小节的**行首标题**（散文与反引号里的同名串不算 —— 见 AC5）。 */
-const AC_HEADING = "## D9 十六项登记（AC 面）"
+/**
+ * AC 面小节的**行首标题**（散文与反引号里的同名串不算 —— 见 AC5）。
+ *
+ * ⚠ **多标题兼容**（D10③′ 的计数从 16 涨到 17 时发现的陷阱）：若只把标题 bump 成
+ * 「十七项」，`collectAcFaceFiles` 按**单一标题**收集 ⇒ **已归档 proposal 的「十六项」
+ * 小节会全部掉出 AC 面并集** ⇒ D9①–⑯ 的 AC 面登记**静默消失** ⇒ 守卫红，而归档
+ * proposal **不可回改**。⇒ 新标题 + **旧标题保留**，两面并集继续覆盖全部 id。
+ */
+const AC_HEADINGS = ["## D9 免宣称项登记（AC 面）", "## D9 十六项登记（AC 面）"] as const
 /** 主题文档索引段的**行首标题前缀**（MAD 的 §2.8.x 是四级标题）。 */
 const MAD_HEADING_RE = /^####\s+2\.8\.8\b/
 /** 登记行：`- **D9①** <标题…>`（JSDoc 里先剥掉前导 `*`）。 */
@@ -120,7 +128,7 @@ export function collectAcFaceFiles(dir: string): Array<{ path: string; text: str
       const text = readFileSync(p, "utf8")
       const hasHeading = stripNoise(text)
         .split("\n")
-        .some((l) => l.trim() === AC_HEADING)
+        .some((l) => (AC_HEADINGS as readonly string[]).includes(l.trim()))
       if (hasHeading) out.push({ path: p, text })
     }
   }
@@ -147,7 +155,11 @@ function faces(t: Texts): FaceBullets[] {
   const acText: string[] = []
   for (const f of t.acFaces) {
     const lines = stripNoise(f.text).split("\n")
-    const sec = sectionOf(lines, (l) => l.trim() === AC_HEADING, (l) => /^##\s/.test(l))
+    const sec = sectionOf(
+      lines,
+      (l) => (AC_HEADINGS as readonly string[]).includes(l.trim()),
+      (l) => /^##\s/.test(l),
+    )
     if (sec) {
       acText.push(...sec)
       acBullets.push(...registrationLines(sec))
@@ -170,8 +182,8 @@ export function violations(t: Texts): string[] {
   const v: string[] = []
   const expected = parseAdrItems(t.adr)
 
-  // AC3：源侧一致性（恰好 16、id 唯一、标题非空）
-  if (expected.length !== 16) v.push(`ADR D9 表应恰 16 项，实际 ${expected.length} 项`)
+  // AC3：源侧一致性（恰好 17、id 唯一、标题非空）
+  if (expected.length !== 17) v.push(`ADR D9 表应恰 17 项，实际 ${expected.length} 项`)
   const ids = expected.map((e) => e.id)
   if (new Set(ids).size !== ids.length) v.push("ADR D9 表的标识不唯一")
   for (const e of expected) if (norm(e.title) === "") v.push(`ADR 的 ${e.id} 标题为空`)
@@ -180,7 +192,9 @@ export function violations(t: Texts): string[] {
   const f = faces(t)
 
   // C.8：载体缺失给专用文案（不抛裸异常）
-  if (t.acFaces.length === 0) v.push(`缺 AC 面载体：找不到行首标题「${AC_HEADING}」的 proposal`)
+  if (t.acFaces.length === 0) {
+    v.push(`缺 AC 面载体：找不到行首标题「${AC_HEADINGS[0]}」或「${AC_HEADINGS[1]}」的 proposal`)
+  }
   if (f[1]!.bullets.length === 0) v.push("缺测试注释载体：本文件 JSDoc 头没有任何 D9 登记行")
   if (f[2]!.sectionText === "") v.push("缺主题文档载体：找不到行首标题「#### 2.8.8」的索引段")
 
@@ -264,27 +278,29 @@ describe("AC2 行形态 + 标题保真（只写编号 / 标题走样 ⇒ 红）"
 })
 
 describe("AC3 期望集从 ADR 派生（不写死）", () => {
-  test("ADR 恰 16 项、标识唯一、标题非空", () => {
+  test("ADR 恰 17 项、标识唯一、标题非空", () => {
     const items = parseAdrItems(readFileSync(path.join(ROOT, ADR_REL), "utf8"))
-    expect(items.length).toBe(16)
+    expect(items.length).toBe(17)
     expect(new Set(items.map((i) => i.id)).size).toBe(items.length)
     for (const i of items) expect(norm(i.title).length).toBeGreaterThan(0)
   })
 
   test("派生对 ADR 文本的变化敏感（加一行 ⇒ 期望集变大）", () => {
     const adr = readFileSync(path.join(ROOT, ADR_REL), "utf8")
-    const grown = parseAdrItems(`${adr}\n| ⑰ | **新增项标题** | 描述 |\n`)
-    expect(grown.map((i) => i.id)).toContain("D9⑰")
+    // ⚠ 探针用一个**未登记的新 id**（⑰ 已被 D10③′ 登记 ⇒ 用 ⑱）
+    const grown = parseAdrItems(`${adr}\n| ⑱ | **新增项标题** | 描述 |\n`)
+    expect(grown.map((i) => i.id)).toContain("D9⑱")
   })
 })
 
-describe("AC4 加第 ⑰ 行 ⇒ 必红（判别力）", () => {
-  test("ADR 多一行而未登记 ⇒ 报 D9⑰ 缺", () => {
+describe("AC4 加新一行 ⇒ 必红（判别力）", () => {
+  test("ADR 多一行而未登记 ⇒ 报对应 id 缺", () => {
     const base = realTexts()
-    const v = violations(withOverride({ adr: `${base.adr}\n| ⑰ | **新增项标题** | 描述 |\n` }))
+    // ⚠ 探针 id 必须是**未登记**的（⑰ 已登记 ⇒ 用 ⑱）
+    const v = violations(withOverride({ adr: `${base.adr}\n| ⑱ | **新增项标题** | 描述 |\n` }))
     expect(v.length).toBeGreaterThan(0)
     for (const face of ["AC 面", "测试注释", "主题文档"]) {
-      expect(v).toContain(`${face} 缺 D9⑰`)
+      expect(v).toContain(`${face} 缺 D9⑱`)
     }
   })
 })
@@ -310,7 +326,7 @@ describe("AC5 区段作用域（散文里的散落命中不算）", () => {
     try {
       const f = path.join(tmp, "changes", "x", "proposal.md")
       mkdirSync(path.dirname(f), { recursive: true })
-      writeFileSync(f, `# x\n\n本仓约定见 \`${AC_HEADING}\` 那节。\n`)
+      writeFileSync(f, `# x\n\n本仓约定见 \`${AC_HEADINGS[0]}\` 那节。\n`)
       expect(collectAcFaceFiles(path.join(tmp, "changes")).length, "反引号散文不得被当作 AC 面载体").toBe(0)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
@@ -326,8 +342,8 @@ describe("AC6 归档韧性（活跃 + archive/<date>-<n> 两形态都认）", ()
       const archived = path.join(tmp, "changes", "archive", "2026-01-01-y", "proposal.md")
       mkdirSync(path.dirname(active), { recursive: true })
       mkdirSync(path.dirname(archived), { recursive: true })
-      writeFileSync(active, `# x\n\n${AC_HEADING}\n\n- **D9①** t\n\n## 其它\n`)
-      writeFileSync(archived, `# y\n\n${AC_HEADING}\n\n- **D9②** t\n`)
+      writeFileSync(active, `# x\n\n${AC_HEADINGS[0]}\n\n- **D9①** t\n\n## 其它\n`)
+      writeFileSync(archived, `# y\n\n${AC_HEADINGS[0]}\n\n- **D9②** t\n`)
       const found = collectAcFaceFiles(path.join(tmp, "changes")).map((f) => path.relative(tmp, f.path)).sort()
       expect(found).toEqual([path.join("changes", "archive", "2026-01-01-y", "proposal.md"), path.join("changes", "x", "proposal.md")])
     } finally {

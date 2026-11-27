@@ -207,6 +207,36 @@ describe("守卫漂移检测：配置 == 规则真源", () => {
     ])
   })
 
+  /**
+   * **baseline「防增」守卫**（ADR D10③ + V24②）：声明的 `known_failures` 必须与
+   * **独立载体**（`tests/fixtures/commit-gate-known-failures.expected.json`）**逐项相等**。
+   *
+   * ⚠ 「不能增」**不由**巡检层的 ⊆ 断言交付（同一次提交里「制造新失败 + 登记对应条目」
+   * 仍满足 ⊆ ⇒ 巡检仍绿 ⇒ baseline 实增）⇒ 职责在本守卫：改清单 ⇒ 红 ⇒ 增长必须是
+   * 一次**显式、可审**的动作。
+   */
+  test("门禁声明的 known_failures 与期望集逐项相等（防增；改清单 ⇒ 红）", () => {
+    const ROOT = path.join(import.meta.dir, "..")
+    const decl = JSON.parse(
+      readFileSync(path.join(ROOT, ".rddf", "commit-gate.json"), "utf8"),
+    )
+    const expected = JSON.parse(
+      readFileSync(
+        path.join(ROOT, "tests", "fixtures", "commit-gate-known-failures.expected.json"),
+        "utf8",
+      ),
+    )
+    // ⚠ 真仓守卫**确实被接线**：字段被真正读取（空集也要走一遍比较）
+    expect(Array.isArray(decl.known_failures ?? []), "声明的 known_failures 必须是数组").toBe(true)
+    expect(decl.known_failures ?? []).toEqual(expected.known_failures)
+  })
+
+  test("期望集载体缺失 ⇒ 守卫红（不是「当作空集」）", () => {
+    const ROOT = path.join(import.meta.dir, "..")
+    const expectedSetPath = path.join(ROOT, "tests", "fixtures", "commit-gate-known-failures.expected.json")
+    expect(existsSync(expectedSetPath), "缺少期望集载体 ⇒ 无法判定「防增」⇒ 必须红").toBe(true)
+  })
+
   test("每个受管 agent（front + 五个 subagent）的守卫都含 ADR D3.1 的首参数形态（且都是 deny）", () => {
     for (const agent of GUARDED_AGENTS) {
       const shell = config.agent[agent].permission.shell as Record<string, string>

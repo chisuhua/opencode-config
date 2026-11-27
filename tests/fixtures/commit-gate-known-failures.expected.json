@@ -1,0 +1,4 @@
+{
+  "comment": "声明内容守卫的期望集（ADR D10③「防增」）：声明里的 known_failures 必须与本文件**逐项相等**。改声明的 known_failures 而不同批改这里 ⇒ 守卫红 ⇒ baseline 的增长必须是一次**显式、可审**的动作（而 ⊆ 断言交付不了这一点）。",
+  "known_failures": []
+}
