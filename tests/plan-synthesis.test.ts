@@ -463,3 +463,113 @@ describe("§1 漂移防护", () => {
     expect(checkSynthesis(d).violations.map((v) => v.code)).not.toContain("synth_dep_union_incomplete")
   })
 })
+
+// ── V6：结论级证据链 / 推断链（ADR-plan-collaboration-hardening D3）────────────
+describe("V6 结论级证据链 / 推断链", () => {
+  const V6_CODES = new Set(["synth_conclusion_no_chain", "synth_evidence_unresolvable", "synth_reasoning_missing"])
+  const v6 = (dir: string, strict = true) =>
+    checkSynthesis(dir, { strictToken: strict })
+      .violations.filter((v) => V6_CODES.has(v.code))
+      .map((v) => v.code)
+
+  const N1_RESULT = `# RESULT
+
+## 结论
+
+- 见 \`scripts/plan-topic-check.ts:437-465\` 的守卫。
+
+## STATUS: COMPLETE
+`
+
+  function topicWith(conclusion: string): string {
+    return makeTopic({
+      nodes: [{ id: "n1" }, { id: "m1", deps: ["n1"] }],
+      brief: { m1: BRIEF_OK },
+      result: {
+        n1: N1_RESULT,
+        m1: `# RESULT
+
+## 结论
+
+${conclusion}
+
+## 各节点结论的合并
+
+| n1 | 略 |
+|---|---|
+
+## 父的裁决汇总
+
+- R1：略
+- R2：略
+
+## 反哺清单
+
+- 无
+
+## 不声称的东西
+
+- 无
+
+## STATUS: COMPLETE
+`,
+      },
+    })
+  }
+
+  const GOOD = `**C1【判定】** 守卫在 claim 之前。
+- 证据链：C1 ← n1 §结论 ← \`scripts/plan-topic-check.ts:437\`
+- 推断链：F1（守卫先于 attempt 写入）⇒ F2（失败即拒）⇒ C1
+`
+
+  test("正例：C 定义 + 证据链（上游字面存在）+ 推断链带 ⇒ ⇒ 无 V6 码", () => {
+    expect(v6(topicWith(GOOD))).toEqual([])
+  })
+
+  test("零 C 定义 ⇒ synth_conclusion_no_chain（默认 info 不阻断，strict 升 blocking）", () => {
+    const d = topicWith("合成完成，无 C token。")
+    expect(v6(d)).toContain("synth_conclusion_no_chain")
+    expect(BLOCKING(d, { strictToken: true })).toContain("synth_conclusion_no_chain")
+    expect(BLOCKING(d)).not.toContain("synth_conclusion_no_chain")
+  })
+
+  test("`C10a` 不算 C token（词边界两侧都收）", () => {
+    const d = topicWith("**C10a【判定】** 这不是合法 token。\n- 证据链：x\n- 推断链：y ⇒ z\n")
+    expect(v6(d)).toContain("synth_conclusion_no_chain")
+  })
+
+  test("C 定义后 3 行内缺「推断链」⇒ no_chain", () => {
+    const d = topicWith("**C1【判定】** x\n- 证据链：C1 ← n1 §结论 ← `scripts/plan-topic-check.ts:437`\n")
+    expect(v6(d)).toContain("synth_conclusion_no_chain")
+  })
+
+  test("证据 `path:line` 上游不存在 ⇒ synth_evidence_unresolvable", () => {
+    const d = topicWith(
+      "**C1【判定】** x\n- 证据链：C1 ← n1 §结论 ← `scripts/nope.ts:9999`\n- 推断链：F1 ⇒ C1\n",
+    )
+    expect(v6(d)).toContain("synth_evidence_unresolvable")
+  })
+
+  test("推断链不含 ⇒ / → ⇒ synth_reasoning_missing", () => {
+    const d = topicWith(
+      "**C1【判定】** x\n- 证据链：C1 ← n1 §结论 ← `scripts/plan-topic-check.ts:437`\n- 推断链：F1 然后 C1\n",
+    )
+    expect(v6(d)).toContain("synth_reasoning_missing")
+  })
+
+  test("区间写法 `path:437-465` 也能被 `path:437` 对上（比对只取 startline）", () => {
+    const d = topicWith(
+      "**C1【判定】** x\n- 证据链：C1 ← n1 §结论 ← `scripts/plan-topic-check.ts:437-465`\n- 推断链：F1 ⇒ C1\n",
+    )
+    expect(v6(d)).toEqual([])
+  })
+
+  test("缺 `## 结论` 小节 ⇒ no_chain", () => {
+    const d = makeTopic({
+      nodes: [{ id: "n1" }, { id: "m1", deps: ["n1"] }],
+      brief: { m1: BRIEF_OK },
+      result: { n1: N1_RESULT, m1: `# RESULT\n\n## 各节点结论的合并\n\n略\n\n## STATUS: COMPLETE\n` },
+    })
+    expect(v6(d)).toContain("synth_conclusion_no_chain")
+  })
+})

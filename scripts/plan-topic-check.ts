@@ -30,6 +30,8 @@ import {
 import path from "node:path"
 import {
   PlanTopicError,
+  assertAcyclic,
+  assertValidNodeId,
   checkTopic,
   collectInputDrift,
   currentInputProjection,
@@ -60,6 +62,9 @@ interface Options {
   cascade: boolean
   detach: string[]
   confirm: boolean
+  title?: string
+  deps?: string[]
+  owner?: "parent" | "child"
   positional: string[]
 }
 
@@ -75,6 +80,7 @@ function usage(msg: string): never {
       "plan-topic-check close <topic-dir> <node-id>",
       "plan-topic-check reap <topic-dir> <node-id> --confirm",
       "plan-topic-check cancel <topic-dir> <node-id> --reason <text> [--cascade] [--detach <node-id>]",
+      "plan-topic-check add <topic-dir> <node-id> --title <text> [--deps a,b] [--owner parent|child]",
     ].join("\n") + "\n",
   )
   process.exit(2)
@@ -127,6 +133,26 @@ function parseArgs(argv: string[]): Options {
       opts.baseline = v
     } else if (a.startsWith("--baseline=")) {
       opts.baseline = a.slice("--baseline=".length)
+    } else if (a === "--title") {
+      const v = argv[++i]
+      if (!v) usage("--title 缺少值")
+      opts.title = v
+    } else if (a.startsWith("--title=")) opts.title = a.slice("--title=".length)
+    else if (a === "--deps") {
+      const v = argv[++i]
+      if (v === undefined) usage("--deps 缺少值")
+      opts.deps = v === "" ? [] : v.split(",").map((x) => x.trim()).filter(Boolean)
+    } else if (a.startsWith("--deps=")) {
+      const v = a.slice("--deps=".length)
+      opts.deps = v === "" ? [] : v.split(",").map((x) => x.trim()).filter(Boolean)
+    } else if (a === "--owner") {
+      const v = argv[++i]
+      if (v !== "parent" && v !== "child") usage("--owner 只能是 parent|child")
+      opts.owner = v
+    } else if (a.startsWith("--owner=")) {
+      const v = a.slice("--owner=".length)
+      if (v !== "parent" && v !== "child") usage("--owner 只能是 parent|child")
+      opts.owner = v
     } else if (a.startsWith("-")) usage(`未知选项 ${a}`)
     else opts.positional.push(a)
   }
@@ -476,6 +502,87 @@ function cmdClaim(opts: Options): number {
   }
 }
 
+/**
+ * `add` —— 按结论**增量加节点**（ADR-plan-collaboration-hardening D2 / V4）。
+ *
+ * 为什么要有这条（而不是让父手改 `graph.json`）：手写崩溃会留下 torn 文件（全 topic exit 3），
+ * 且绕开短锁（与并发 claim/close 相撞）。本命令取同一个 graph 短锁、原子写、并做 fail-fast 校验：
+ * 已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 —— 一律拒绝。
+ */
+function cmdAdd(opts: Options): number {
+  const [topicDir, nodeId] = opts.positional
+  if (!topicDir) usage("add 需要 <topic-dir>")
+  if (!nodeId) usage("add 需要 <node-id>")
+  if (!opts.title || opts.title.trim().length === 0) usage("add 需要非空 --title")
+
+  const root = repoRootOf(topicDir)
+  const slug = path.basename(path.resolve(topicDir))
+  const release = acquireGraphLock(root, slug)
+  try {
+    const g = loadGraph(topicDir)
+    try {
+      assertValidNodeId(nodeId)
+    } catch (e) {
+      if (e instanceof PlanTopicError) {
+        process.stderr.write(`${e.code}: ${e.message}\n`)
+        return 1
+      }
+      throw e
+    }
+    if (g.nodes.some((n) => n.id === nodeId)) {
+      process.stderr.write(`节点已存在，不得重复添加：${nodeId}\n`)
+      return 1
+    }
+    const deps = opts.deps ?? []
+    if (new Set(deps).size !== deps.length) {
+      process.stderr.write(`deps 有重复：${deps.join(",")}\n`)
+      return 1
+    }
+    for (const d of deps) {
+      const dep = g.nodes.find((n) => n.id === d)
+      if (!dep) {
+        process.stderr.write(`deps 指向不存在的节点：${d}\n`)
+        return 1
+      }
+      if (dep.cancelled) {
+        process.stderr.write(`deps 指向已取消的节点：${d}（cancelled_dep_active 会让图恒红）\n`)
+        return 1
+      }
+    }
+    const node: Node = {
+      id: nodeId,
+      title: opts.title.trim(),
+      deps,
+      owner: opts.owner ?? "child",
+      status: "pending",
+      progress: "todo",
+      attempts: [],
+      deliverables: [`nodes/${nodeId}/RESULT.md`],
+    }
+    const next: Graph = { ...g, nodes: [...g.nodes, node] }
+    try {
+      assertAcyclic(next)
+    } catch (e) {
+      if (e instanceof PlanTopicError) {
+        process.stderr.write(`${e.code}: ${e.message}\n`)
+        return 1
+      }
+      throw e
+    }
+    writeGraphAtomic(topicDir, next)
+    emitJson({ ok: true, node: node.id, deps: node.deps, owner: node.owner, deliverables: node.deliverables })
+    return 0
+  } catch (e) {
+    if (e instanceof PlanTopicError) {
+      process.stderr.write(`${e.code}: ${e.message}\n`)
+      return 3
+    }
+    throw e
+  } finally {
+    release()
+  }
+}
+
 /** `close` —— 闭合节点的未闭合 attempt（离开在飞的唯一方式之一） */
 function cmdClose(opts: Options, reap = false): number {
   const [topicDir, nodeId] = opts.positional
@@ -642,6 +749,8 @@ function main(): number {
       return cmdClose(opts, true)
     case "cancel":
       return cmdCancel(opts)
+    case "add":
+      return cmdAdd(opts)
     default:
       return usage(`未知子命令 ${cmd}`)
   }

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "synthesis": {
+    "model": "opencode-go/kimi-k3.1-pro#high",
+    "fallback": [
+      "opencode-go/gemini-4-argon#high"
+    ]
+  },
+  "content": {
+    "model": null
+  }
+}

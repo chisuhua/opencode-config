@@ -1,0 +1,8 @@
+# 本 change 不产生 openspec 的 spec delta（本仓不使用 spec registry）。
+#
+# 判据真源：docs/adr/ADR-plan-collaboration-hardening.md 的 `## Verification` 章（V1–V13）
+# 验收标准：openspec/changes/plan-collaboration-hardening/proposal.md 的 `## 验收标准`（AC ↔ V 映射 + 状态）
+# 决策依据：ADR-plan-collaboration-hardening（Proposed；oracle 1 轮 + critic 2 轮 APPROVE）
+schema: spec-driven
+created: 2026-11-27
+skip_specs: true

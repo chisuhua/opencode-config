@@ -160,6 +160,118 @@ export interface CheckOptions {
   strictToken?: boolean
 }
 
+
+// ── V6：结论级证据链 / 推断链（ADR-plan-collaboration-hardening D3）────────────
+
+/** C token：`C1` / `C12`；`AC1`、`C10a` 都不算（两侧词边界都收） */
+export const C_TOKEN_RE = /(?<![A-Za-z0-9_])C[1-9][0-9]?(?![0-9A-Za-z])/g
+/** 定义行：行首 `**C<n>【` */
+const C_DEF_LINE_RE = /^\*\*C([1-9][0-9]?)【/
+/** `path:line` / `path:start-end` —— 比对只看 `path:start` */
+const PATH_LINE_RE = /([A-Za-z0-9_][A-Za-z0-9_.\/-]*\.[A-Za-z0-9]+):(\d+)(?:-\d+)?/g
+/** 证据链里的节点回指：`n3 §3` / `n3§` */
+const NODE_REF_RE = /n(\d+)\s*§/g
+/** 「紧跟」容差：C 定义行之后 3 行内必须出现证据链与推断链 */
+const CHAIN_WINDOW = 3
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * V6 三码：`synth_conclusion_no_chain` / `synth_evidence_unresolvable` / `synth_reasoning_missing`。
+ * 与 `synth_token_missing` 同档：默认 `info`，`--strict-token` 下升 `blocking`。
+ * ⚠ 只验**引用完整性与格式**，不验证据是否支持结论（ADR §已知不可机判）。
+ */
+export function checkConclusionChains(
+  topicDir: string,
+  answerId: string,
+  ansResult: string,
+  contentIds: string[],
+  opts: CheckOptions,
+): Violation[] {
+  const severity = opts.strictToken ? "blocking" : "info"
+  const out: Violation[] = []
+  const section = sectionBody(ansResult, /结论/)
+  if (section === null) {
+    out.push({
+      code: "synth_conclusion_no_chain",
+      node: answerId,
+      detail: "答案节点缺 `## 结论` 小节（V6 要求每条结论带 `C<n>` + 证据链 + 推断链）",
+      severity,
+    })
+    return out
+  }
+  const lines = section.split(/\r?\n/)
+  const defs: Array<{ token: string; at: number }> = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = C_DEF_LINE_RE.exec(lines[i].trim())
+    if (m) defs.push({ token: `C${m[1]}`, at: i })
+  }
+  if (defs.length === 0) {
+    out.push({
+      code: "synth_conclusion_no_chain",
+      node: answerId,
+      detail: "`## 结论` 内没有任何 `**C<n>【…】**` 定义（零 C token 不算通过）",
+      severity,
+    })
+    return out
+  }
+  for (const d of defs) {
+    const win = lines.slice(d.at + 1, d.at + 1 + CHAIN_WINDOW)
+    const evLine = win.find((l) => l.includes("证据链"))
+    const rsLine = win.find((l) => l.includes("推断链"))
+    if (!evLine || !rsLine) {
+      out.push({
+        code: "synth_conclusion_no_chain",
+        node: answerId,
+        detail: `${d.token} 定义后 ${CHAIN_WINDOW} 行内缺${!evLine ? "「证据链」" : ""}${!evLine && !rsLine ? "与" : ""}${!rsLine ? "「推断链」" : ""}`,
+        severity,
+      })
+      continue
+    }
+    if (!/[⇒→]/.test(rsLine)) {
+      out.push({
+        code: "synth_reasoning_missing",
+        node: answerId,
+        detail: `${d.token} 的推断链不含 \`⇒\` / \`→\`（无法区分「列出事实」与「作出推理」）`,
+        severity,
+      })
+    }
+    // ⚠ 带 /g 的 String.match 返回**字符串数组**（不是 match 对象）⇒ 必须用 matchAll 取捕获组
+    const tokenRefs = [...evLine.matchAll(PATH_LINE_RE)].map((x) => ({ path: x[1], line: x[2] }))
+    if (tokenRefs.length === 0) {
+      out.push({
+        code: "synth_evidence_unresolvable",
+        node: answerId,
+        detail: `${d.token} 的证据链没有任何 \`path:line\`（不可追溯）`,
+        severity,
+      })
+      continue
+    }
+    const nodeRefs = [...evLine.matchAll(NODE_REF_RE)].map((m) => `n${m[1]}`).filter((id) => contentIds.includes(id))
+    const scope = nodeRefs.length > 0 ? nodeRefs : contentIds
+    const upstream = new Map<string, string>()
+    for (const id of scope) {
+      const t = readIfExists(path.join(topicDir, "nodes", id, "RESULT.md"))
+      if (t !== null) upstream.set(id, t)
+    }
+    for (const t of tokenRefs) {
+      const re = new RegExp(`${escapeRe(t.path)}:${t.line}(?:-\\d+)?`)
+      const hit = [...upstream.values()].some((t) => re.test(t))
+      if (!hit) {
+        out.push({
+          code: "synth_evidence_unresolvable",
+          node: answerId,
+          detail: `${d.token} 的证据 \`${t.path}:${t.line}\` 在${scope.length === 1 ? ` ${scope[0]}` : "上游"}的 RESULT.md 中不存在（字面比对）`,
+          severity,
+        })
+      }
+    }
+  }
+  return out
+}
+
 export function checkSynthesis(topicDir: string, opts: CheckOptions = {}): {
   violations: Violation[]
   summary: { contentNodes: string[]; synthNodes: string[]; answerNode: string | null }
@@ -345,6 +457,11 @@ export function checkSynthesis(topicDir: string, opts: CheckOptions = {}): {
         severity: "blocking",
       })
     }
+  }
+
+  // V6：结论级证据链 / 推断链（ADR-plan-collaboration-hardening D3）
+  if (ansResult !== null) {
+    violations.push(...checkConclusionChains(topicDir, answer, ansResult, contents, opts))
   }
 
   return { violations, summary }

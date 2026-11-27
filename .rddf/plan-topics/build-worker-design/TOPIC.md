@@ -37,3 +37,17 @@
 - 一份可供 architect 消费的**讨论稿合集**（各节点 `RESULT.md`）。
 - 一个**明确结论**：`build-worker` 该不该做、若做取哪种形态、以及在什么条件下应当否决。
 - 一份**对 `plan` / `plan-worker` 既有机制的反哺清单**（在 n4 / n5 / n7 中登记）。
+
+## 结算记录
+
+```yaml
+checked_at: 2026-11-27T09:30:00Z
+synthesis_check_exit: 1
+blocking: [synth_brief_no_ruling_set]
+answer_node: m2
+action: accept-with-gap
+gap_reason: 合成与结算发生在判据生效日（2026-11-27）之前（m2 闭合于 2026-11-26T13:04:24Z）⇒ 按 D4 grandfather 不再重做；synth_brief_no_ruling_set（合成 BRIEF 缺 `## 根裁决集`，该字段在 `ADR-plan-synthesis-offload` D4 审查后补，本 topic 的 BRIEF 写在其之前）为历史产物，未修。
+model_resolution: none
+model_id: unknown（2026-11-26 合成，早于 plan-models.json 与 model 留痕）
+note: --strict-token 口径另报 synth_token_missing（n3/n7）×2 与 synth_conclusion_no_chain（V6 三码，判据生效后新增面）；本记录按默认口径记 exit 与 blocking
+```

@@ -12,7 +12,7 @@
 
 | 文件 | 写者 | 内容 |
 |---|---|---|
-| `TOPIC.md` | 父 | 目标、边界、全局约束 |
+| `TOPIC.md` | 目标、边界、全局约束 + **目标审查三节**（`## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`）+ **`## 结算记录`**（有合成节点且收尾时） |
 | `graph.json` | 父（**唯一**） | 节点表（schema 见 §2） |
 | `nodes/<id>/BRIEF.md` | 父 | 该节点的输入契约与期望交付 |
 | `nodes/<id>/TODO.md` | 该子会话 | 勾选式 todo |
@@ -72,7 +72,12 @@ status    = 门控有效值：progress=complete ∧ deps 全 done ∧ deliverabl
 | 阶段 `--phase` | `dispatch`（默认之外的另一截面）/ `final`（默认） | 只作用于 `violations` 与退出码：`dispatch` 只对**已到期**节点要 BRIEF、只对 `progress=complete` 节点要交付物、**不产生** `stale_inputs` |
 | 严重度 | 阻断 / `info`（`cache_behind`） | `info` 不改变退出码；`--json` 每条违规带 `severity`，`ok` 只看阻断项 |
 
-**违规码闭集**（20 个）：结构 `schema_invalid` / `invalid_node_id` / `duplicate_node_id` / `cycle` / `dangling_dep` / `duplicate_dep` / `orphan_node_dir`；内容 `missing_brief` / `missing_deliverable` / `brief_tampered`；缓存 `cache_ahead` / `cache_behind`；取消 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；在飞与 fence `duplicate_open_attempt` / `stale_inputs`；CLI `out_of_scope` / `empty_topic` / `git_error`。
+**违规码闭集**（23 个）：结构 `schema_invalid` / `invalid_node_id` / `duplicate_node_id` / `cycle` / `dangling_dep` / `duplicate_dep` / `orphan_node_dir`；内容 `missing_brief` / `missing_deliverable` / `brief_tampered`；缓存 `cache_ahead` / `cache_behind`；取消 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；在飞与 fence `duplicate_open_attempt` / `stale_inputs`；**结算门** `settlement_missing` / `settlement_failed_not_superseded`；**目标审查** `topic_goal_unreviewed`（仅 `dispatch` 且有可派节点）；CLI `out_of_scope` / `empty_topic` / `git_error`。
+
+**结算门**（`ADR-plan-collaboration-hardening` D4，**仅 `final` 口径**）：存在**非 cancelled** 合成节点（`^m[1-9][0-9]*$`）∧ 已收尾（全终态 ∧ 无在飞 ∧ **其余**阻断数 = 0，天然排除本门两码自身）⇒ 要求 `TOPIC.md` 的 `## 结算记录`（`yaml` 围栏块 + 7 必填键：`checked_at` / `synthesis_check_exit` / `blocking` / `answer_node` / `action` / `model_resolution` / `model_id`）。
+- `settlement_missing`：记录缺失或字段不全。
+- `settlement_failed_not_superseded`：记录 `answer_node` ≠ 当前答案节点（过期）；或 `exit≠0` 且失败集含**任一可修复码**（`synth_conclusion_layer_missing` / `synth_heavy_item_not_in_conclusion` / `synth_brief_no_ruling_set` / `synth_ruling_not_propagated` / V6 三码）⇒ 必须追加更大的合成节点；全不可修复（含**未分类码**，fail-closed）⇒ 须 `action: accept-with-gap` + `gap_reason`。
+- **grandfather 例外（判据生效前已结算）**：答案节点 `max(finished_at)` 的 UTC 日期**严格早于** `2026-11-27`（`SETTLEMENT_CRITERIA_SINCE`）⇒ 含可修复码也可 `accept-with-gap`，但 `gap_reason` 抽出的码集合（`/synth_[a-z_]+/g`）必须覆盖 `blocking` 里的可修复码与未分类码；**无已闭合 attempt ⇒ 不适用**。
 
 **退出码**（四值）：`0` 无阻断项（violations 可能非空）／`1` 有阻断违规或操作被拒／`2` 用法错／`3` `graph.json` 缺失或不可解析。
 
@@ -86,6 +91,7 @@ status    = 门控有效值：progress=complete ∧ deps 全 done ∧ deliverabl
 | `ready <topic>` | 可派节点 + `in_flight` + `input_drift` | 可派 = deps 全 done ∧ BRIEF 在 ∧ 非 done/cancelled ∧ **不在飞** |
 | `scope-check <topic> <node> --baseline <sha>` | 越界写核对 | git 变更集（单飞节点级；并行只做 topic 级 union） |
 | `lock <topic>` | 独占锁只读报告 + binding（按 owner **直接构造路径**） | — |
+| `add <topic> <node> --title <t> [--deps a,b] [--owner …]` | 按结论**增量加节点**（原子写 + graph 短锁） | 拒：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 |
 | `claim <topic> <node>` | **先登记后 spawn**：追加 attempt（含 `input` 快照与 `precheck.graph_rev`） | 已有未闭合 attempt ⇒ 拒；非可派 ⇒ 拒 |
 | `close <topic> <node>` | 闭合末条 attempt（`finished_at`） | 无未闭合 attempt ⇒ 拒且不写 |
 | `reap <topic> <node> --confirm` | 接手：闭合 + 写 `inputs_reviewed`（接手即复核） | **必须** `--confirm`（非交互；不做 TTL 自动接管） |
@@ -135,7 +141,7 @@ summary   = { done[], cancelled[{id,reason,at}], in_flight[{node,started_at,live
 - **写域**只到 topic 树粒度（宿主 `subagent` 不传 per-session permissions）⇒ 同 topic 内跨 node 写权限上允许。
 - **取消中断不了在飞 worker**：`cancel` 只改派生态（闭合 attempt + 置 `cancelled` + 消解下游），**没有** in-flight 中断面 ⇒ 已取消节点的在飞 worker 可能继续写产物（作为审计痕迹保留；派生态短路优先于 `done` ⇒ 不影响门控）。
 - **无自动接管**：`liveness_stale`（`TODO.md` mtime 新鲜度）只是显示提示；worker 写没有围栏 ⇒ TTL 自动重派会造双活体写者。**僵尸 attempt**（`claim` 与 spawn 之间父崩溃）同理 —— 只能人工 `reap --confirm`。
-- **交付信号不可机判**（见 §6 定位）；不存在「本轮目标集合」载体 —— 「本轮要什么」的解释权留在父的上下文。
+- **交付信号不可机判**（见 §6 定位）；「本轮要什么」的解释权仍留在父的上下文，但**目标审查有三节结构载体**（`ADR-plan-collaboration-hardening` D5）：`TOPIC.md` 的 `## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`，`--phase dispatch` 在**存在可派节点**时要求三节在场且非空（`topic_goal_unreviewed`）⇒ 判的是「写下来了」，**不判**前提真假或目标对错。
 - **`scope-check` 并行下无法按节点归因**（git 不记录写入者）⇒ 节点级核对在并行下**必然假阳性**（把兄弟节点的产物算成自己的越界）。⚠ **当前实现只有单节点口径**（`allowedPrefix` 恒为 `nodes/<nodeId>`，`scripts/plan-topic-check.ts:233-240`）⇒ §5 表中「并行只做 topic 级 union」与 ADR V10 所述的 union 口径**在 CLI 中尚未实现** ⇒ 并行时应**暂不做** `scope-check`（或仅做人工 `git status` 核对），否则告警会被噪声淹没。
 - **父可批量标 `cancelled` 使 `converged=true`** ⇒ 该判据定位为调度信号；缓解 = `cancelled` 桶逐条列 `{id,reason,at}` + D9 两条既有约束（`cancelled_unattributed` 强制编理由、`cancelled_dep_active` 强制连带消解）。
 - **`owner` 字段不被消费**：`owner: "parent" | "child"` 只做枚举校验（`lib/plan-topics.ts:197-199`），判据库与 CLI **零消费** ⇒ `owner: "parent"` 的节点**仍会出现在 `ready` 且可被 `claim` 派发**（ADR D2 的承诺「父自己做」未生效）⇒ 处置见 ADR 残留 #14。

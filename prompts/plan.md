@@ -214,7 +214,7 @@ openspec/changes/*/proposal.md
 
 | 文件 | 写者 | 内容 |
 |---|---|---|
-| `TOPIC.md` | 父（你） | 目标、边界、全局约束 |
+| `TOPIC.md` | 父（你） | 目标、边界、全局约束 + **目标审查三节**（`## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`；**有可派节点时必填**，缺 ⇒ `topic_goal_unreviewed`）+ **`## 结算记录`**（有合成节点且已收尾时必填） |
 | `graph.json` | 父（你，唯一） | 节点表（schema 见下） |
 | `nodes/<id>/BRIEF.md` | 父（你） | 该节点的输入契约与期望交付 |
 | `nodes/<id>/TODO.md` | **该子会话** | 勾选式 todo |
@@ -265,9 +265,11 @@ bun scripts/plan-topic-check.ts cancel .rddf/plan-topics/<topic> <node-id> --rea
 
 #### fork / join / 续接 / 重建 / 取消
 
-- **fork（先登记后 spawn）**：先 `ready` 拿可派节点 → **对每个要派的节点先跑 `claim`**（登记 attempt + 输入投影快照；已有未闭合 attempt ⇒ 拒绝 ⇒ 同一节点不会被派两次）→ 再同一轮内多次 `subagent(agent="plan-worker", background=true)`。**不要**自己猜依赖是否满足，也**不要**绕过 `claim` 手写 `graph.json`。
+- **fork（先登记后 spawn）**：`claim` 返回的 `precheck.exit≠0` ⇒ **先修再 spawn**（`claim` 只留痕不拒，是残留 #17 的协议债）。先 `ready` 拿可派节点 → **对每个要派的节点先跑 `claim`**（登记 attempt + 输入投影快照；已有未闭合 attempt ⇒ 拒绝 ⇒ 同一节点不会被派两次）→ 再同一轮内多次 `subagent(agent="plan-worker", background=true)`。**不要**自己猜依赖是否满足，也**不要**绕过 `claim` 手写 `graph.json`。
 - **join**：子会话完成时宿主会往你的会话投一条 `<subagent sessionID=… state=completed>` 合成消息 ⇒ 你被唤醒 ⇒ 跑 `close` 闭合该 attempt，再跑 `check` 复核。
 - **续接（resume）**：同一父会话内 `subagent(sessionID=…)` ⇒ 子丢弃自己的上下文继续（**不追加 attempt**，不与 `claim` 打架）。**仅限同一父会话**。
+- **按结论加节点（`add`）**：父是唯一写者 —— `bun scripts/plan-topic-check.ts add <topic> <id> --title <t> --deps a,b`（原子写 + graph 短锁 + fail-fast：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 **一律拒**）→ **随后你写 `BRIEF.md`**（`add` 只写图；BRIEF 未写时它不在 `ready` 里）。
+- **追问**：节点**未** done ⇒ 改它的 `BRIEF.md`（追加一节）→ 重新 `claim`（新 attempt；老 attempt 变 `stale_inputs`，你写 `inputs_reviewed` 复核）→ 派发。节点**已** done ⇒ 改 BRIEF **无效**（`claim` 硬拒 done、D9 不支持重开）⇒ 用 `add` 建**新节点**（`deps` 含它），BRIEF 写全新契约并显式引用旧节点的 `RESULT.md`。⚠ 节点**在飞**时 `claim` 会硬拒 ⇒ 先 `close`（或 `reap --confirm`）再改 BRIEF 重新 `claim`。**追问（新一轮）禁止用 `resume` 替代新 `claim`**（`resume` 不追加 attempt ⇒ 台账不可归因；一会话一 node ⇒ 破单一写者 + 上下文污染）；`resume` 只用于**同一 attempt 内**的续接。
 - **重建（rebuild）**：父会话死亡 / 换根会话时宿主**拒绝**续接 ⇒ 只能新派一个子会话，让它读 `BRIEF.md` + `TODO.md` 按 node 重建进度。
 - **接手（reap）**：在飞者疑似已死 ⇒ `reap --confirm`（**显式确认**；不做 TTL 自动接管 —— worker 的写没有围栏，自动接管会造出两个活体写者）。
 - **取消（cancel）**：`cancel <topic> <node> --reason "…"`；**禁止**取消已 `done` 的节点；有活跃下游时必须显式处置（`--cascade` 级联取消，或逐个 `--detach` 摘边）⇒ 默认拒绝（不消解就取消 ⇒ 图停在坏状态）。
@@ -304,10 +306,17 @@ bun scripts/plan-topic-check.ts cancel .rddf/plan-topics/<topic> <node-id> --rea
 - 产物落它自己的 `nodes/<m-id>/RESULT.md` —— **你仍然只写 BRIEF**，不写合成稿。
 - **派发合成节点时**用强模型（⚠ **仅合成节点** —— 普通内容节点的派发保持默认档，别把强模型泛化到所有 worker）：`subagent(agent="plan-worker", model="<providerID/modelID>", background=true)`。
   - ⚠ **关于工具说明里的 `NEVER set this unless the user explicitly asks`**：本机制**就是**那个「用户明确要求」—— 用户经 `ADR-plan-synthesis-offload` **D3**（模型策略三档 / 默认 A 档）授权本机制为合成节点指定模型。⇒ 这里的 `model` 是**机制行为**，不是「随手设模型」。
-  - ⚠ **不要猜模型 ID**：先用 `models` 工具查（筛 chat 类）。当前实测的强模型 = **`minimax-cn/MiniMax-M3.1-Flash`**（即 ADR A/B 对照的 A 档）；该模型不可用时，用同档或更强的 chat 模型。
-  - 依据：弱模型（`plan-worker` 默认档 `opencode-go/deepseek-v4.1-flash`）实测会丢掉上游标为「最重」的项。
+  - ⚠ **不要猜模型 ID，也不要在本文件里写死**：**从全局配置读** `~/.config/opencode/plan-models.json` 的 `synthesis.model`（形如 `<provider>/<model>#<variant>`），**直接**作为 `model=` 入参。⚠ 模型 ID 的单一真源就是那个配置文件 —— 本文件抄一份就会漂移（2026-11-27 实测：这里曾写死过一个具体模型名，与实际派发用的模型不一致 ⇒ 已删）。
+  - **派发前跑一次** `bash scripts/plan-models-check.sh`（schema 校验 + 与 `opencode models` 比对）；**exit≠0 ⇒ 不得派发**。⚠ `exit=0` 还须确认 `--json` 的 `models_checked == "ok"`（`skipped` / 未比对都**不算**通过）；**非离线排障不得带 `--skip-models`**。配置缺失 / 不可读 / 字段非法 ⇒ **停手补配置**（最小模板见 `ADR-plan-collaboration-hardening` D1），**不得**回落成「猜一个模型」—— 那会让单一真源失效。
+  - **spawn 失败**（provider 拒识该模型 / 变体不可用 / 模型下架）⇒ **同回合 `close`** 该 attempt，再按 `synthesis.fallback[]` 顺序换模型**重新 `claim`** 后派发。**不得**留着未闭合 attempt 等下次 —— `claim`→`spawn` 无补偿（`ADR-plan-multi-session-collaboration` 残留 #18）。`fallback[]` **全序失败 ⇒ 停手**：**若有悬挂 attempt（`close` 未执行 / 父崩溃）才** `reap --confirm`，否则直接写 `blocked` 说明需要换哪个模型。
+  - 依据：弱模型（`plan-worker` 的默认档，即 `content.model: null` 时用的那个）实测会丢掉上游标为「最重」的项。
 - 合成质量不达标 ⇒ **追加**一个 `m2`（`m1` 留作审计痕迹），**不要修订** `m1` 的稿（那会破单一写者）。**答案惯例 = 非 cancelled 合成节点里 id 整数后缀最大的那个**。
-- 复核：`bun scripts/plan-synthesis-check.ts .rddf/plan-topics/<topic> --strict-token`（V4/V5 判据；**新 topic 必开 `--strict-token`** —— 否则「标了却没带 token」只报 info、不拦；**无合成节点时默认 exit 0**）。
+- **收工前必须写 `## 结算记录`**（`TOPIC.md`，父写）：该节后紧跟**一个** ```yaml 围栏块，逐行 `key: value`，**7 个必填键** —— `checked_at` / `synthesis_check_exit`（`plan-synthesis-check` 的 exit 码）/ `blocking`（**原样照抄 check 输出的全部 blocking 码**——漏抄可修复码会把失败集洗成「全不可修复」而被 `accept-with-gap` 放行）/ `answer_node` / `action`（`accept` | `accept-with-gap` | `supersede:<m-id>`）/ `model_resolution`（`config` | `none`）/ `model_id`（实际派发的模型）。缺任一 ⇒ `settlement_missing` 阻断。
+  - **失败集含任一可修复码**（`synth_conclusion_layer_missing` / `synth_heavy_item_not_in_conclusion` / `synth_brief_no_ruling_set` / `synth_ruling_not_propagated` / V6 三码（`synth_conclusion_no_chain` / `synth_evidence_unresolvable` / `synth_reasoning_missing`））⇒ **必须追加更大的合成节点并跑通（exit 0）后再写记录**（`action: supersede:m2`）；**不得**用 `accept-with-gap` 绕过。
+  - **只有全为不可修复码**（`synth_token_missing` / `synth_id_ambiguous` / `synth_dep_*` / `synth_answer_dep_incomplete` / `synth_graph_error` / **任何未分类的新码**，fail-closed）才允许 `action: accept-with-gap` + 必填 `gap_reason`。
+  - **例外（判据生效前已结算的 topic）**：答案节点最后一次闭合 attempt 的 `finished_at`（**UTC 日期**，取 `max(finished_at)`）**严格早于** `2026-11-27` ⇒ 含可修复码也可 `accept-with-gap`，但 `gap_reason` 抽出的码集合（`/synth_[a-z_]+/g`）必须覆盖 `blocking` 里的**可修复码与未分类码**（漏列任一 ⇒ 仍阻断）；无已闭合 attempt ⇒ 不适用。
+  - ⚠ **顺序**：先追加合成节点 → 复核通过 → **再**写记录。写完记录再追加 ⇒ `answer_node` 立刻过期 ⇒ `settlement_failed_not_superseded`。
+- 复核：`bun scripts/plan-synthesis-check.ts .rddf/plan-topics/<topic> --strict-token`（**V4/V5/V6** 判据；**新 topic 必开 `--strict-token`** —— 否则「标了却没带 token」（`synth_token_missing`）与 V6 三码都只报 `info`、不拦，`exit=0` 会让结算门放行；**无合成节点时默认 exit 0**）。
 
 **合成 BRIEF 必须包含**（缺则判据无从判定）：
 
@@ -315,6 +324,7 @@ bun scripts/plan-topic-check.ts cancel .rddf/plan-topics/<topic> <node-id> --rea
 2. **`## 根裁决集`**：把你在协作期间做出的**全部裁决 / 用户澄清 / 约束**逐条写进去，每条带 slug `R1`、`R2`…；**没有裁决就显式写「无」**（空小节不算）。⚠ 合成节点只读得到 `nodes/*/RESULT.md` —— **你脑子里的裁决不写进 BRIEF，就永远进不了合成稿**。
 3. 明确要求：凡上游 RESULT 里标了「最重 / 必须上报 / 薄弱点」**且带稳定 token** 的发现，**必须进 `## 反哺清单`**，不得只作依据引用。
 4. 要求它在 `## 父的裁决汇总` 里**逐条回指** BRIEF 的 slug（`R1`…）。
+5. **结论级证据链**：`## 结论` 里每条写成 `**C<n>【判定】** <一句话>` —— **必须在行首**（不加 `- ` 列表符号），`n` 限 **C1–C99**；其后 **3 行内**必须有「证据链」行（`C1 ← n3 §3 ← \`path:startline\``，该路径必须在**证据链回指的那个节点**的 `RESULT.md` 里**字面存在**）与「推断链」行（含 `⇒` / `→`）。零 C token 不算通过。
 
 ## 计划文件输出
 

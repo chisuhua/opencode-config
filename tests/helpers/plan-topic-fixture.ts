@@ -16,9 +16,35 @@ const created: string[] = []
 export function tmpTopic(): string {
   const d = mkdtempSync(path.join(tmpdir(), "plan-dag-"))
   mkdirSync(path.join(d, "nodes"), { recursive: true })
+  writeFileSync(path.join(d, "TOPIC.md"), TOPIC_MD)
   created.push(d)
   return d
 }
+
+/**
+ * 默认 `TOPIC.md` —— 必须含目标审查三节（`ADR-plan-collaboration-hardening` D5：`--phase dispatch`
+ * 在有可派节点时要求三节在场且非空）。要测「缺三节」的负向用例请自行覆盖或删除该文件。
+ */
+export const TOPIC_MD = [
+  "# 主题",
+  "",
+  "## 目标",
+  "",
+  "回答一个真实问题。",
+  "",
+  "## 前提与证伪条件",
+  "",
+  "- 前提：本仓存在该机制。证伪条件：`grep` 零命中。",
+  "",
+  "## 非目标",
+  "",
+  "- 不改实现代码。",
+  "",
+  "## 目标审查结论",
+  "",
+  "- 2026-11-27 / planner：前提已逐条列出，暂未证伪。",
+  "",
+].join("\n")
 
 export function cleanupTmp(): void {
   for (const d of created) {
@@ -95,6 +121,7 @@ export function gitTopic(nodes: Node[] = [node({ id: "a1" })]): { repo: string; 
   run(["config", "user.name", "t"])
   const topic = path.join(repo, ".rddf", "plan-topics", "demo")
   mkdirSync(path.join(topic, "nodes"), { recursive: true })
+  writeFileSync(path.join(topic, "TOPIC.md"), TOPIC_MD)
   for (const n of nodes) writeBrief(topic, n.id)
   writeGraph(topic, nodes)
   run(["add", "-A"])

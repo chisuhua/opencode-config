@@ -96,6 +96,9 @@ export type ViolationCode =
   | "out_of_scope"
   | "empty_topic"
   | "git_error"
+  | "settlement_missing"
+  | "settlement_failed_not_superseded"
+  | "topic_goal_unreviewed"
 
 export interface Violation {
   code: ViolationCode
@@ -732,6 +735,234 @@ export function dispatchableNodes(g: Graph, topicDir: string): string[] {
     .map((n) => n.id)
 }
 
+// ── 结算门（ADR-plan-collaboration-hardening D4 / V7·V8）──────────────────────
+
+/** 合成节点 id 形状（与 `plan-synthesis-check` 的 `isSynthId` 同口径） */
+export const SYNTH_ID_RE = /^m[1-9][0-9]*$/
+
+/** 结算门两码 —— 收尾条件里的「阻断数 = 0」必须**排除它们自身**（否则首跑变红 ⇒ 次跑恒绿） */
+export const SETTLEMENT_CODES: ReadonlySet<ViolationCode> = new Set<ViolationCode>([
+  "settlement_missing",
+  "settlement_failed_not_superseded",
+])
+
+/** 合成侧**可修复**：重做合成（追加更大的 `m<n>`）能修 ⇒ 必须 supersede，不得 accept-with-gap */
+export const REPAIRABLE_SYNTH_CODES: ReadonlySet<string> = new Set([
+  "synth_conclusion_layer_missing",
+  "synth_heavy_item_not_in_conclusion",
+  "synth_brief_no_ruling_set",
+  "synth_ruling_not_propagated",
+  "synth_conclusion_no_chain",
+  "synth_evidence_unresolvable",
+  "synth_reasoning_missing",
+])
+
+/** 结构性**不可修复**（上游属性 / 图形态）⇒ 允许 `accept-with-gap` + `gap_reason` */
+export const UNREPAIRABLE_SYNTH_CODES: ReadonlySet<string> = new Set([
+  "synth_token_missing",
+  "synth_id_ambiguous",
+  "synth_dep_on_synth",
+  "synth_dep_union_incomplete",
+  "synth_dep_union_extra",
+  "synth_answer_dep_incomplete",
+  "synth_graph_error",
+])
+
+/** 结算门**不可达**（门的前提已排除：不存在可用的非 cancelled 合成节点） */
+export const UNREACHABLE_SYNTH_CODES: ReadonlySet<string> = new Set(["synth_answer_missing"])
+
+/** D4 判据生效日（ADR-plan-collaboration-hardening v3 的 grandfather 分界线，UTC 日期） */
+export const SETTLEMENT_CRITERIA_SINCE = "2026-11-27"
+
+/** `## 结算记录` 的必填键（缺任一 ⇒ 视同无记录） */
+export const SETTLEMENT_REQUIRED_KEYS = [
+  "checked_at",
+  "synthesis_check_exit",
+  "blocking",
+  "answer_node",
+  "action",
+  "model_resolution",
+  "model_id",
+] as const
+
+/**
+ * 解析 `TOPIC.md` 的 `## 结算记录`：取该节之后**第一个** `yaml` 围栏块，逐行 `key: value`。
+ * 不吃 YAML 库（本库无依赖）；值里含 `:` / `[]` / `×` 一律原样保留。
+ */
+export function parseSettlementRecord(topicMd: string): Record<string, string> | null {
+  const lines = topicMd.split(/\r?\n/)
+  let i = lines.findIndex((l) => l.trim() === "## 结算记录")
+  if (i < 0) return null
+  let j = i + 1
+  while (j < lines.length) {
+    const t = lines[j].trim()
+    if (/^##\s/.test(t)) return null // 到下一个二级标题仍未见到围栏块 ⇒ 无记录
+    if (/^```ya?ml$/i.test(t)) break
+    j++
+  }
+  if (j >= lines.length) return null
+  const body: string[] = []
+  for (let k = j + 1; k < lines.length; k++) {
+    if (/^```$/.test(lines[k].trim())) break
+    body.push(lines[k])
+  }
+  const rec: Record<string, string> = {}
+  for (const raw of body) {
+    const m = /^([a-z_]+):[ ]?(.*)$/.exec(raw.trim())
+    if (m) rec[m[1]] = m[2].trim()
+  }
+  return Object.keys(rec).length > 0 ? rec : null
+}
+
+/** 当前答案节点 = 非 cancelled 合成节点里整数后缀最大者（与 synthesis-check 的 `answerNodeId` 同口径） */
+export function answerSynthNodeId(nodes: Node[]): string | null {
+  const synth = nodes.filter((n) => !n.cancelled && SYNTH_ID_RE.test(n.id))
+  if (synth.length === 0) return null
+  return synth.reduce((best, n) => (parseInt(n.id.slice(1), 10) > parseInt(best.id.slice(1), 10) ? n : best)).id
+}
+
+/**
+ * 答案节点是否「在判据生效前已结算」—— grandfather 的唯一判据（ADR D4 / V8(f)）。
+ *
+ * 取**最后一次已闭合 attempt** 的 `finished_at`（`max` 时间序，不取数组末条），比 UTC 日期
+ * **严格早于** `SETTLEMENT_CRITERIA_SINCE`。无已闭合 attempt ⇒ `false`（fail-closed：
+ * `deriveStatus` 不看 attempts，父可手写 RESULT 而不 `claim` ⇒ 不存在「已结算」这一事实）。
+ */
+export function isSettledBeforeCriteria(g: Graph, answerId: string): boolean {
+  const node = g.nodes.find((n) => n.id === answerId)
+  if (!node) return false
+  // 只认 ISO 日期前缀：空串 / 畸形值若被当「很早」，会静默放开豁免（fail-closed）
+  const closed = node.attempts
+    .map((a) => a.finished_at)
+    .filter((x): x is string => typeof x === "string" && /^\d{4}-\d{2}-\d{2}/.test(x))
+  if (closed.length === 0) return false
+  const last = closed.reduce((best, cur) => (cur > best ? cur : best))
+  return last.slice(0, 10) < SETTLEMENT_CRITERIA_SINCE
+}
+
+/**
+ * 结算门：有**非 cancelled** 合成节点 ∧ 已收尾（全终态 ∧ 无在飞 ∧ 其余阻断数 = 0）∧ 记录不合规 ⇒ 违规。
+ *
+ * ⚠ `blockingBefore` 由调用方在**推入本门两码之前**计算 ⇒ 天然排除自身（ADR D4 的反自毁要求）。
+ * ⚠ 未分类的 `synth_*` 码按**不可修复**处理（fail-closed：必须写 `gap_reason`）。
+ */
+export function assertSettlement(
+  g: Graph,
+  topicDir: string,
+  derived: Map<string, Status>,
+  blockingBefore: number,
+): Violation[] {
+  const answer = answerSynthNodeId(g.nodes)
+  if (answer === null) return []
+
+  const allTerminal = g.nodes.every((n) => {
+    const s = derived.get(n.id)
+    return s === "done" || s === "cancelled"
+  })
+  const anyInFlight = g.nodes.some((n) => !n.cancelled && isInFlight(n))
+  if (!allTerminal || anyInFlight || blockingBefore > 0) return []
+
+  const rec = parseSettlementRecord(readIfExists(path.join(topicDir, "TOPIC.md")) ?? "")
+  if (rec === null) {
+    return [{ code: "settlement_missing", detail: "缺 `## 结算记录`（含一个 yaml 围栏块）—— 有合成节点且已收尾时必填" }]
+  }
+  const missing = SETTLEMENT_REQUIRED_KEYS.filter((k) => !rec[k])
+  if (missing.length > 0) {
+    return [{ code: "settlement_missing", detail: `结算记录缺必填字段：${missing.join(", ")}` }]
+  }
+  const exit = Number.parseInt(rec.synthesis_check_exit, 10)
+  if (!Number.isFinite(exit)) {
+    return [{ code: "settlement_missing", detail: `synthesis_check_exit 不是整数：${rec.synthesis_check_exit}` }]
+  }
+  if (rec.answer_node !== answer) {
+    return [
+      {
+        code: "settlement_failed_not_superseded",
+        detail: `记录过期：answer_node=${rec.answer_node} ≠ 当前答案节点 ${answer}（追加合成节点后须重写记录）`,
+      },
+    ]
+  }
+  if (exit !== 0) {
+    const codes = (rec.blocking ?? "").match(/synth_[a-z_]+/g) ?? []
+    const repairable = codes.filter((c) => REPAIRABLE_SYNTH_CODES.has(c))
+    // grandfather：判据生效前已结算 ⇒ 可修复码不再强制 supersede，但 gap_reason 须覆盖它们
+    const grandfather = isSettledBeforeCriteria(g, answer)
+    const reasonCodes = new Set((rec.gap_reason ?? "").match(/synth_[a-z_]+/g) ?? [])
+    const repairableCovered = repairable.every((c) => reasonCodes.has(c))
+    const unknown = codes.filter(
+      (c) => !REPAIRABLE_SYNTH_CODES.has(c) && !UNREPAIRABLE_SYNTH_CODES.has(c) && !UNREACHABLE_SYNTH_CODES.has(c),
+    )
+    if (repairable.length > 0 && !(grandfather && repairableCovered)) {
+      return [
+        {
+          code: "settlement_failed_not_superseded",
+          detail: `失败集含可修复码 ${repairable.join(",")} ⇒ 必须追加更大的合成节点并跑通（不得 accept-with-gap${
+            grandfather ? "；grandfather 适用但 gap_reason 未覆盖这些码" : ""
+          }）`,
+        },
+      ]
+    }
+    if (unknown.length > 0) {
+      // fail-closed：未分类码一律按不可修复处理，但必须显式写进 gap_reason
+      // grandfather 下同样要求逐码覆盖（V8(f)：可修复码 ∪ 未分类码 ⊆ gap_reason 的码集合）
+      if (rec.action !== "accept-with-gap" || !rec.gap_reason || (grandfather && !unknown.every((c) => reasonCodes.has(c)))) {
+        return [
+          {
+            code: "settlement_failed_not_superseded",
+            detail: `未分类失败码 ${unknown.join(",")} ⇒ 按不可修复处理：须 action=accept-with-gap + gap_reason`,
+          },
+        ]
+      }
+    } else if (rec.action !== "accept-with-gap" || !rec.gap_reason) {
+      return [
+        {
+          code: "settlement_failed_not_superseded",
+          detail: `exit≠0 但 action=${rec.action}${rec.gap_reason ? "" : " 且未给 gap_reason"}（不可修复失败集须 accept-with-gap + 理由）`,
+        },
+      ]
+    }
+  }
+  return []
+}
+
+/** `TOPIC.md` 的目标审查三节（ADR-plan-collaboration-hardening D5） */
+export const TOPIC_GOAL_SECTIONS = ["前提与证伪条件", "非目标", "目标审查结论"] as const
+
+/** 取 `## <title>` 小节正文（到下一个**任何级别**标题为止），剥围栏代码块；空 ⇒ false */
+export function topicSectionHasBody(topicMd: string, title: string): boolean {
+  const lines = topicMd.split(/\r?\n/)
+  const start = lines.findIndex((l) => l.trim() === `## ${title}`)
+  if (start < 0) return false
+  let inFence = false
+  for (let i = start + 1; i < lines.length; i++) {
+    const t = lines[i].trim()
+    if (/^```/.test(t)) {
+      inFence = !inFence
+      continue
+    }
+    if (!inFence && /^#{1,6}\s/.test(t)) break // 下一个标题
+    if (!inFence && t.length > 0) return true
+  }
+  return false
+}
+
+/**
+ * 目标审查门（ADR-plan-collaboration-hardening D5 / V9）—— **仅 `--phase dispatch` 且存在可派节点**。
+ * 三节任一缺失或为空 ⇒ 阻断；`TOPIC.md` 整体缺失 ⇒ 视同三节全缺。
+ */
+export function assertTopicGoalReviewed(topicDir: string, ready: string[]): Violation[] {
+  if (ready.length === 0) return []
+  const md = readIfExists(path.join(topicDir, "TOPIC.md"))
+  const missing = TOPIC_GOAL_SECTIONS.filter((s) => md === undefined || !topicSectionHasBody(md, s))
+  if (missing.length === 0) return []
+  return [
+    {
+      code: "topic_goal_unreviewed",
+      detail: `TOPIC.md 缺或空：${missing.map((s) => `## ${s}`).join(" / ")}（有可派节点 ⇒ 目标审查必须先落文件）`,
+    },
+  ]
+}
+
 // ── 汇总 ──────────────────────────────────────────────────────────────────────
 
 export function loadGraph(topicDir: string): Graph {
@@ -825,7 +1056,15 @@ export function checkTopic(topicDir: string, opts: CheckOptions = {}): Violation
   // D9 / D10 判据：cancel 完整性、重复派发、输入漂移（stale_inputs 仅 `final` 口径产生）
   out.push(...assertCancelledIntegrity(safeGraph, topicDir, derived))
   out.push(...assertNoDuplicateOpenAttempt(safeGraph))
-  if (phase === "final") out.push(...assertNoStaleInputs(safeGraph, topicDir))
+  if (phase === "final") {
+    out.push(...assertNoStaleInputs(safeGraph, topicDir))
+    // 结算门（ADR-plan-collaboration-hardening D4）：必须**最后**算 —— `blockingBefore` 取
+    // 「其余阻断项」的数量，天然排除本门两码自身（防「首跑变红 ⇒ 次跑前提自毁 ⇒ 恒绿」）。
+    out.push(...assertSettlement(safeGraph, topicDir, derived, out.filter(isBlocking).length))
+  } else {
+    // 目标审查门（D5）：只在**派发前**截面要求（已收尾的 topic 不会被这条打红）
+    out.push(...assertTopicGoalReviewed(topicDir, dispatchableNodes(safeGraph, topicDir)))
+  }
 
   return out
 }
