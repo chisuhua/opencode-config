@@ -302,7 +302,10 @@ bun scripts/plan-topic-check.ts cancel .rddf/plan-topics/<topic> <node-id> --rea
 - 在 `graph.json` 加一个**合成节点**，id 形状 `^m[1-9][0-9]*$`（`m1` / `m2` …；**禁前导零**，`m01` 非法）。⚠ 不要用 `m1-extra` / `m_1` 这类形似而不合规的 id（会判违规）；`metrics` 这类普通名字是内容节点，不受影响。
 - 它的 `deps` = **该 topic 的全部内容节点**（内容节点 = 全部非 cancelled 且非 `^m[1-9][0-9]*$` 的节点）。
 - 产物落它自己的 `nodes/<m-id>/RESULT.md` —— **你仍然只写 BRIEF**，不写合成稿。
-- 派发时用强模型：`subagent(agent="plan-worker", model="<providerID/modelID>", background=true)`。⚠ **这是机制的一部分**（本机制要求设置 `model`），不是「随手设模型」—— 实测弱模型会丢掉上游标为「最重」的项。
+- 派发时用强模型：`subagent(agent="plan-worker", model="<providerID/modelID>", background=true)`。
+  - ⚠ **关于工具说明里的 `NEVER set this unless the user explicitly asks`**：本机制**就是**那个「用户明确要求」—— 用户经 `ADR-plan-synthesis-offload` **D3**（模型策略三档 / 默认 A 档）授权本机制为合成节点指定模型。⇒ 这里的 `model` 是**机制行为**，不是「随手设模型」。
+  - ⚠ **不要猜模型 ID**：先用 `models` 工具查（筛 chat 类）。当前实测的强模型 = **`minimax-cn/MiniMax-M3.1-Flash`**（即 ADR A/B 对照的 A 档）；该模型不可用时，用同档或更强的 chat 模型。
+  - 依据：弱模型（`plan-worker` 默认档 `opencode-go/deepseek-v4.1-flash`）实测会丢掉上游标为「最重」的项。
 - 合成质量不达标 ⇒ **追加**一个 `m2`（`m1` 留作审计痕迹），**不要修订** `m1` 的稿（那会破单一写者）。**答案惯例 = 非 cancelled 合成节点里 id 整数后缀最大的那个**。
 - 复核：`bun scripts/plan-synthesis-check.ts .rddf/plan-topics/<topic> --strict-token`（V4/V5 判据；**新 topic 必开 `--strict-token`** —— 否则「标了却没带 token」只报 info、不拦；**无合成节点时默认 exit 0**）。
 
