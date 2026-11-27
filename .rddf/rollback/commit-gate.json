@@ -111,31 +111,6 @@
       "replace": "  })\n\n  test(\"每个受管 agent（front + 五个 subagent）的守卫都含 ADR D3.1 的首参数形态（且都是 deny）\", () => {\n    for (const agent of GUARDED_AGENTS) {"
     },
     {
-      "path": "docs/adr/ADR-commit-verification-gate.md",
-      "find": "⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。\n\n### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十八项）\n\n> 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。\n> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑱`，由该列**派生**，**不在表里另加列**）。\n> **三处载体**（**真源 = 本文 D9 表**；「三处登记」指的是下面三面，**不含本表** —— 本表是判据来源，不是登记面）：\n> ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 免宣称项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；\n> ② **测试注释面** = `tests/commit-gate-d9-registration.test.ts` 的 **JSDoc 头**（首个 `import` 之前）；\n> ③ **主题文档面** = `docs/MULTI-AGENT-DESIGN.md` **§2.8.8** 索引段。",
-      "replace": "⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。\n\n### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十六项）\n\n> 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。\n> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑯`，由该列**派生**，**不在表里另加列**）。\n> **三处载体**（**真源 = 本文 D9 表**；「三处登记」指的是下面三面，**不含本表** —— 本表是判据来源，不是登记面）：\n> ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 十六项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；\n> ② **测试注释面** = `tests/commit-gate-d9-registration.test.ts` 的 **JSDoc 头**（首个 `import` 之前）；\n> ③ **主题文档面** = `docs/MULTI-AGENT-DESIGN.md` **§2.8.8** 索引段。"
-    },
-    {
-      "path": "docs/adr/ADR-commit-verification-gate.md",
-      "find": "⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。\n\n**SU 2026-11-27（D10）新增后果**\n- **正**：有存量红的仓也能声明门禁 ⇒ 门禁覆盖面扩大；放行是**显式登记**⇒ 审计链完整（谁登记、登记了什么）。\n- **负**：baseline 是**显式放行**的登记 ⇒ 登记不严谨就会放过真回归 ⇒ 单调性守卫（V24）+ 可清理提示是**配套**，不是可选项。\n- **风险 ①（误拒方向）**：命中判定依赖**输出文本**子串匹配 ⇒ 工具输出格式变化可能导致「命中不到」⇒ 退回「照旧拒」（方向安全，但会误拒 ⇒ 需人工更新 `match`）。\n- **风险 ②（误命中方向 · 更危险）**：`match` 过宽 ⇒ **新失败的输出仍含该子串** ⇒ commit 路径**放过真回归**（例：`match: \"3 fail\"`，失败数 3 → 13 后输出 `\"13 fail\"` **仍含** `\"3 fail\"`）⇒ 缓解 = `match` **特异性守卫**（≥8 字、非纯数字/通用词）+ 巡检层按**失败标识/计数**做**集合比对**（不复用子串语义 ⇒ 失败数膨胀会被发现）。\n- **风险 ③（机制在、没人跑）**：**若 fail-closed 未落实** ⇒ 巡检层缺席 ⇒ 「防增」无人执行 ⇒ baseline 只增不减 ⇒ 真回归被放过；⇒ 缓解 = **巡检载体必须存在**（缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门）+ commit 时存在性/绑定检查（D10② 三条硬约束）。⚠ 修复后的口径：**「防增」归声明内容守卫**（非巡检）；巡检缺席时 baseline 根本不适用（字段无效 ⇒ 硬门），故该风险只在「fail-closed 未落地」时成立。\n\n**风险**\n- 门禁依赖插件与声明 ⇒ 任一缺席 ⇒ 静默无门禁（D9①②④）⇒ 层 2 真宿主验 + 守卫 + **在场性体检**（doctor 检出「静默」本身；⚠ **检测 ≠ 拦截**）。",
-      "replace": "⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。\n\n**风险**\n- 门禁依赖插件与声明 ⇒ 任一缺席 ⇒ 静默无门禁（D9①②④）⇒ 层 2 真宿主验 + 守卫 + **在场性体检**（doctor 检出「静默」本身；⚠ **检测 ≠ 拦截**）。"
-    },
-    {
-      "path": "docs/adr/ADR-commit-verification-gate.md",
-      "find": "- [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。\n- [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。\n- [ ] **V10 免宣称十八项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。\n  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。\n- [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。",
-      "replace": "- [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。\n- [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。\n- [ ] **V10 免宣称十六项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。\n  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。\n- [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。⚠ **2026-11-23 订正**：原文写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ 改插件**不再需要重启**；改坏的后果变成「**上一次成功加载的版本继续在跑**」⇒ 门控**不缺席**，但跑的是**旧判定**（依据：`docs/adr/ADR-role-aware-permissions.md` D5⑥）。\n\n> ⚠ **commit-gate 的十八项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。\n\n#### 2.8.8 D9 宣称边界索引（commit-gate，**只索引，不定义语义**）",
-      "replace": "- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。⚠ **2026-11-23 订正**：原文写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ 改插件**不再需要重启**；改坏的后果变成「**上一次成功加载的版本继续在跑**」⇒ 门控**不缺席**，但跑的是**旧判定**（依据：`docs/adr/ADR-role-aware-permissions.md` D5⑥）。\n\n> ⚠ **commit-gate 的十六项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。\n\n#### 2.8.8 D9 宣称边界索引（commit-gate，**只索引，不定义语义**）"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "- **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑱** 未声明仓的留痕是尽力而为 ⇒ 见 ADR D9 表（判据真源）\n\n### 2.9 subagent 输入契约（v2.3.0 新增）",
-      "replace": "- **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n\n### 2.9 subagent 输入契约（v2.3.0 新增）"
-    },
-    {
       "path": "tests/commit-gate-d9-registration.test.ts",
       "find": "/**\n * D9 十七项「三处登记」守卫（⑰ 由 D10 批次补入；①–⑯ 仍由已归档 change 的「十六项」小节承担） —— `ADR-commit-verification-gate` 的 **V10 机械载体**\n *\n * 判据真源：`docs/adr/ADR-commit-verification-gate.md` 的 **D9 表前言**（标识口径 + 三处载体）",
       "replace": "/**\n * D9 十六项「三处登记」守卫 —— `ADR-commit-verification-gate` 的 **V10 机械载体**\n *\n * 判据真源：`docs/adr/ADR-commit-verification-gate.md` 的 **D9 表前言**（标识口径 + 三处载体）"
@@ -189,6 +164,61 @@
       "path": "tests/commit-gate-d9-registration.test.ts",
       "find": "      mkdirSync(path.dirname(active), { recursive: true })\n      mkdirSync(path.dirname(archived), { recursive: true })\n      writeFileSync(active, `# x\\n\\n${AC_HEADINGS[0]}\\n\\n- **D9①** t\\n\\n## 其它\\n`)\n      writeFileSync(archived, `# y\\n\\n${AC_HEADINGS[0]}\\n\\n- **D9②** t\\n`)\n      const found = collectAcFaceFiles(path.join(tmp, \"changes\")).map((f) => path.relative(tmp, f.path)).sort()\n      expect(found).toEqual([path.join(\"changes\", \"archive\", \"2026-01-01-y\", \"proposal.md\"), path.join(\"changes\", \"x\", \"proposal.md\")])",
       "replace": "      mkdirSync(path.dirname(active), { recursive: true })\n      mkdirSync(path.dirname(archived), { recursive: true })\n      writeFileSync(active, `# x\\n\\n${AC_HEADING}\\n\\n- **D9①** t\\n\\n## 其它\\n`)\n      writeFileSync(archived, `# y\\n\\n${AC_HEADING}\\n\\n- **D9②** t\\n`)\n      const found = collectAcFaceFiles(path.join(tmp, \"changes\")).map((f) => path.relative(tmp, f.path)).sort()\n      expect(found).toEqual([path.join(\"changes\", \"archive\", \"2026-01-01-y\", \"proposal.md\"), path.join(\"changes\", \"x\", \"proposal.md\")])"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "| Status | **Accepted**（2026-11-18；oracle 1 轮 + critic 7 轮，末轮 `APPROVE_WITH_CONDITIONS` 无 BLOCKER ⇒ 逐轮处置见审稿报告）。**SU 2026-11-27（D10 baseline）：Accepted**（oracle 1 轮 ⇒ BLOCK，6 条全采纳；critic 2 轮 ⇒ REJECT 2 BLOCKER ⇒ 复审 `APPROVE_WITH_CONDITIONS` 0 BLOCKER）—— 审稿报告 `.rddf/reviews/commit-verification-gate-su-baseline-review.md` |",
+      "replace": "| Status | **Accepted**（2026-11-18；oracle 1 轮 + critic 7 轮，末轮 `APPROVE_WITH_CONDITIONS` 无 BLOCKER ⇒ 逐轮处置见审稿报告） |"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "| ① **验证命令全绿** | 仓库在 `<workRoot>/.rddf/commit-gate.json` 声明 `verify_commands`（argv 数组的数组）；逐条执行（cwd = `workRoot`），任一非 0 或超时 ⇒ **拒**（**SU 2026-11-27 / D10**：失败**且命中** `known_failures` ⇒ 视为通过；未命中仍拒） | 声明文件（须 git-tracked） |",
+      "replace": "| ① **验证命令全绿** | 仓库在 `<workRoot>/.rddf/commit-gate.json` 声明 `verify_commands`（argv 数组的数组）；逐条执行（cwd = `workRoot`），任一非 0 或超时 ⇒ **拒** | 声明文件（须 git-tracked） |"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十八项）",
+      "replace": "### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十六项）"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑱`，由该列**派生**，**不在表里另加列**）。",
+      "replace": "> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑯`，由该列**派生**，**不在表里另加列**）。"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "> ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 免宣称项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；",
+      "replace": "> ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 十六项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "- [ ] **V10 免宣称十八项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。",
+      "replace": "- [ ] **V10 免宣称十六项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "> ⚠ **commit-gate 的十八项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。",
+      "replace": "> ⚠ **commit-gate 的十六项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "| ⑰ | **baseline 命中放行** | 防「未登记的失败提交」；**不防**宽 `match` 误命中（`\"3 fail\"` ⊆ `\"13 fail\"` ⇒ 放过真回归）/ **巡检缺席** ⇒ 单调性失效 / 登记腐坏（条目不再命中却仍在清单）/ 输出措辞漂移 ⇒ 命中不到；**缓解** = `match` **特异性守卫**（去空白后 ≥ 8 字、末尾 token 非通用词）+ **巡检载体必须存在**（缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门）+ 巡检层的**标识集合**比对（数字边界 ⇒ 失败数膨胀必被发现）+ 「可清理」提示 + 运行时留痕（D10①–D10③） |",
+      "replace": ""
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "| ⑱ | **未声明仓的留痕是尽力而为** | 防「门禁静默缺席却无人知道」；**不防**留痕写不进（无 `.rddf/state/` / 磁盘不可写 / 账本是目录 ⇒ 静默无痕）/ 留痕被人工删除 / 账本无轮转；**缓解** = 留痕只在**未声明或声明不可用**时写一行（已声明且合法 ⇒ 不写），写入失败**静默**（绝不影响判定），doctor `commit-gate` 三面与 `commit-gate-baseline-doctor` 提供**另一条**可见通道（检测 ≠ 拦截，D9② 先例） |",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）",
+      "replace": ""
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **D9⑱** 未声明仓的留痕是尽力而为 ⇒ 见 ADR D9 表（判据真源）",
+      "replace": ""
     }
   ],
   "drill_env": {
