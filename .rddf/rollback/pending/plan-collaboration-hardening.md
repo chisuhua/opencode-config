@@ -68,15 +68,13 @@ P1 只改 prompt 面 + 新增配置文件（`plan-models.json` / `plan-models-ch
 刷新配方不变：find = 当前文件里「`#### 合成节点（可选` → `\n## 计划文件输出` 之前」全文（`count == 1`），
 `edits[1].find` = 从「严重度标注必须带稳定 token」那条到「4. **做完就停**」之前的全文。
 
-## 已知回滚债：两条相邻机制的清单被本 change 打破（2026-11-27 实测）
+## 回滚债已闭合：两条相邻机制恢复演练证据（2026-11-27）
 
-本 change 改写了 `prompts/plan.md` 的合成节点段与 fork/join 段、并新增了三个 plan-topics 测试文件 ⇒
-`plan-topics` 与 `plan-synthesis-offload` 两份清单**已同步刷新 find**，但演练仍 FAIL —— 两者都转
-`proving`（`last_drill` 撤除，待回填），失败原因逐条登记如下：
+前述两条债已按「清单补齐 → 演练 → 回填」闭合（提交 `1edc020` 起）：
 
-| 清单 | 演练失败点 | 需要的修法（债） |
+| 清单 | 修法 | 结果 |
 |---|---|---|
-| `plan-topics.json` | 回滚后 `tests/plan-topics-{add,goal-review,settlement}.test.ts` 与 `tests/plan-synthesis.test.ts` 仍 import 已删的 `lib/plan-topics.ts` / `tests/helpers/plan-topic-fixture.ts` ⇒ 模块缺失 6 fail | 清单补 3 条 `delete`（三个新测试文件），并确认 `plan-synthesis.test.ts` 的引入面随清单一起撤 |
-| `plan-synthesis-offload.json` | 回滚删除 `scripts/plan-synthesis-check.ts` ⇒ registry 里 `plan-collaboration-hardening` 的 `watch[]` 含该路径 ⇒ M7「watch 路径不存在」 | 在 offload 清单里处置 `plan-collaboration-hardening` 条目（同时退役/改写其 watch），或收窄本机制的 watch 面 |
+| `plan-topics.json` | 补 4 条 `delete`（本 change 新增的 3 个测试 + `tests/plan-synthesis.test.ts`，回滚后都会 import 已删模块）+ 同批撤「合成节点段」（offload 所有；不撤则孤儿段把 `RESULT`/`BRIEF` token 泄进上一个 `###` 小节 ⇒ config-guards AC7 红） | drill **PASS**（`1edc020`）⇒ `last_drill` 已回填、转 `active` |
+| `plan-synthesis-offload.json` | 支撑「回滚删 `scripts/plan-synthesis-check.ts`」⇒ registry 侧把本机制 `watch[]` 收窄到 `prompts/plan.md`（其余锚点随基础机制回滚消失，登记即触发 M7）；offload 自身 `watch` 去掉它回滚会删的测试文件 | drill **PASS**（`1edc020`）⇒ 回填、转 `active` |
 
-⚠ 两条都属「清单内容变了但演练未通过」⇒ 按 ADR D5 保持 `proving`（不伪造 `last_drill`）。
+**遗留（本机制自己的清单仍缺）**：`plan-collaboration-hardening` 仍是 `unmanifested`（债指针=本文件）；写清单时须把 `watch[]` 补全为 `prompts/plan.md` / `prompts/plan-worker.md` / `scripts/plan-topic-check.ts` / `scripts/plan-synthesis-check.ts` / `lib/plan-topics.ts`，并按本 change 的批序写 `delete` / `edits`。
