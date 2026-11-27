@@ -62,9 +62,7 @@
 ## Task 8 — 回滚面 + 收口（AC8 + AC9）
 
 - [x] **Step 1（红→绿）** `.rddf/rollback/commit-gate.json`（新增 delete / edits）+ `registry.json` 同批更新 ⇒ `bun test tests/rollback-manifests.test.ts tests/rollback-registry.test.ts` 绿。
-- [ ] **Step 2** **四步顺序**：commit（本批实现，须过新门禁）→ drill → 回填 `last_drill` → 再 commit。
-      ⚠ **阻塞**：仓库提交被门禁拦（并行会话的在途改动使全仓 `bun test tests/` 红，非本 change 引起）⇒ 解封后同批完成。
-- [ ] **Step 3** `bun test tests/` **全绿**（含新增用例文件确实被 glob 到）。
-      ⚠ **阻塞**（同上）：**本 change 的面已逐文件全绿**，但全仓仍红在 plan-topics 回滚清单。
+- [x] **Step 2** **四步顺序**：commit（`4cbf5c0`）→ drill → 回填 `last_drill` → commit（`973b451`）。
+- [x] **Step 3** `bun test tests/` **全绿**（1378 tests / 1377 pass / 1 skip / 0 fail；新增用例文件已被 glob 到）。
 - [x] **Step 4** 遗留清扫：`TODO` / `FIXME` / `MUTATION` / `console.log` 残留 ⇒ 零。
 - [x] **Step 5（门 AC9）** `openspec validate <change> --strict` ⇒ valid；验收报告落 `.rddf/reviews/commit-gate-baseline-known-failures-verify.md`。
