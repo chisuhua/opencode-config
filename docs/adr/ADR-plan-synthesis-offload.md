@@ -4,12 +4,12 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | **Proposed**（oracle 第 1 轮 APPROVE + 11 条修改点已落；critic 第 1 轮 REJECT（1 BLOCKER + 3 SHOULD_FIX + 2 NITS）**已全部处置**；critic 第 2 轮复审 **APPROVE_WITH_CONDITIONS / `mergeable: yes`（无 BLOCKER）**）⇒ 达「ADR 完成的标志」五条：四要素齐 / 双审完成且 BLOCKER 全闭并经 1 次复审确认 / Status 转已决 / 关联 change 已登记为 `backlog: plan-synthesis-offload` / 审稿报告已落 `.rddf/reviews/adr-plan-synthesis-offload-review.md`）｜**2026-11-26 审查后修订（第 2 批）**（见「实施记录 · 审查后修订（第 2 批）」）：合成节点 id 定型 `^m[1-9][0-9]*$` + 全序去平局兜底 + 歧义防护 / D4 前提① 单点落点 + checker 前置检查 / D4 根裁决集结构化 + slug 包含判据 / V11 降档 + 新增 V11b / D7 总量优先 + 模态统一 / 已知不可机判清单补 provider 与根裁决完整性两行。⚠ oracle 第 3 轮判 **REJECT**（6 处）⇒ 已逐条处置（第 2 批）；**critic 第 3 轮复审 = APPROVE_WITH_CONDITIONS / `mergeable: yes`（无 BLOCKER）**，6 条 finding 判「闭合（实质）」；SHOULD_FIX ①②③ 与 NIT 已修/已登记、④ `scope_exceeded` 记 backlog ⇒ **达「ADR 完成的标志」五条**（Status 保持 `Proposed` = 已决态；转 `Accepted` 由用户/architect 另行决定，不据此自动转） |
+| Status | **Proposed**（oracle 第 1 轮 APPROVE + 11 条修改点已落；critic 第 1 轮 REJECT（1 BLOCKER + 3 SHOULD_FIX + 2 NITS）**已全部处置**；critic 第 2 轮复审 **APPROVE_WITH_CONDITIONS / `mergeable: yes`（无 BLOCKER）**）⇒ 达「ADR 完成的标志」五条：四要素齐 / 双审完成且 BLOCKER 全闭并经 1 次复审确认 / Status 转已决 / 关联 change 已立项（`openspec/changes/plan-synthesis-offload/`） / 审稿报告已落 `.rddf/reviews/adr-plan-synthesis-offload-review.md`）｜**2026-11-26 审查后修订（第 2 批）**（见「实施记录 · 审查后修订（第 2 批）」）：合成节点 id 定型 `^m[1-9][0-9]*$` + 全序去平局兜底 + 歧义防护 / D4 前提① 单点落点 + checker 前置检查 / D4 根裁决集结构化 + slug 包含判据 / V11 降档 + 新增 V11b / D7 总量优先 + 模态统一 / 已知不可机判清单补 provider 与根裁决完整性两行。⚠ oracle 第 3 轮判 **REJECT**（6 处）⇒ 已逐条处置（第 2 批）；**critic 第 3 轮复审 = APPROVE_WITH_CONDITIONS / `mergeable: yes`（无 BLOCKER）**，6 条 finding 判「闭合（实质）」；SHOULD_FIX ①②③ 与 NIT 已修/已登记、④ `scope_exceeded` 记 backlog ⇒ **达「ADR 完成的标志」五条**（Status 保持 `Proposed` = 已决态；转 `Accepted` 由用户/architect 另行决定，不据此自动转） |
 | Date | 2026-11-26（初版）｜2026-11-26（据 oracle 审查意见修订） |
 | Author | architect |
 | Parent | `docs/adr/ADR-plan-multi-session-collaboration.md`（本篇是其「合成环节」的增补；不改其任何写隔离不变式）、`docs/adr/ADR-plan-delegate-engineering-session.md`（delegate 通道，本篇不涉及其改造）、`docs/adr/ADR-role-aware-permissions.md`（角色写门） |
-| 关联 change | **尚未立项** ⇒ 登记为 `backlog: plan-synthesis-offload`（立项后回填 AC 映射与本篇指针） |
-| AC 映射 | 暂缺 —— 本篇的判据见「Verification」章 V1–V11（**前瞻方法**）；change 立项后须把 V 编号映射到该 change 的 AC 序号 |
+| 关联 change | **`openspec/changes/plan-synthesis-offload/`**（proposal / design / tasks / `.openspec.yaml` 四件套；B1 实现批已落地并转 `active`）｜backlog 名 = `plan-synthesis-offload` |
+| AC 映射 | 该 change 的 proposal `## 验收标准` 表 **AC1–AC18**：AC1–AC15 = 本篇 V1–V11b 逐项映射（含 V4a/V4b/V4c/V5d）；AC16–AC18 = 判据编号/载体补登、`plan-worker.md` token 纪律、`plan.md` 合成节齐备（见 `tasks.md`） |
 | 审稿报告 | `.rddf/reviews/adr-plan-synthesis-offload-review.md`（oracle 第 1 轮 + critic 第 1 轮原文誊写 + 逐条处置 + **critic 第 2 轮实际结论：APPROVE_WITH_CONDITIONS / `mergeable: yes`（无 BLOCKER）**） |
 | 前置事实 | ① 宿主 `subagent` 的**新建**路径是 `const model = override ?? agent.model ?? parent.model`（**语义稳定、行号随版本漂移** ⇒ 见 D3 与「上游语义」条）⇒ **每次派发可覆盖模型**；② `subagent` 建会话**不传 per-session permissions**（`ADR-plan-multi-session-collaboration.md:14` 前置事实⑤）⇒ 子会话权限 = 该 agent 的静态配置；③ `.rddf/plan-topics/**` **不在** `PLAN_REF_ROOTS`（`lib/delegate-core.ts:1321-1326`）⇒ 协作区产物不可直接派工程；④ `owner` 字段**被声明但从不消费**（残留 #14；`tests/plan-topics-dag.test.ts:235` 的 B7 用例名「钉住缺陷」把该行为钉死）⇒ **本篇不依赖 `owner`**；⑤ 本篇所依据的实测：`build-worker-design` 场景（7 内容节点 / 4 波 / 真实宿主 + 真实 worker，`converged=true`、`done=8`、闸门 1232 pass / 锚点 30/30），合成节点 `m1` 由弱模型 `plan-worker` 产出 27,112 B 合成稿 |
 
@@ -76,7 +76,7 @@
 | **B** | 新增 `plan-merger` agent（模型写在 agent 配置里） | 一条 ADR + 双审 + 新 prompt + 守卫 + 文档投影 + 回滚字节钉死 | 兜底（A 档失败才启用） |
 
 - **C 档实测结果**（A/B 对照，vs 父手写 golden standard）：结论一致性 **5/5**（且修正 golden 的 3 处措辞、新增 1 条 golden 没有的过期快照）；裁决项覆盖 **31/31**（优于 golden 的 17 合并口径）；缺陷清单覆盖 **17/18**，但**丢掉了上游明确标为「最重」的一条** ⇒ **S1 判 FAIL** ⇒ 升 A 档。
-- **A 档的纪律裁决（用户已裁）**：`subagent` 的 `model` 入参说明写着「NEVER set this unless the user explicitly asks for a particular model or variant」。⇒ 本篇裁定：**机制性覆盖算「用户明确要求」** —— 理由：本机制会写进 `prompts/plan.md`，父是**被指示**设置；该说明的立法意图是防「随手乱设模型」，不是禁「按机制设定」。⇒ 代价：`prompts/plan.md` 必须**显式写明该覆盖是机制的一部分**。
+- **A 档的纪律裁决（用户已裁）**：`subagent` 的 `model` 入参说明写着「NEVER set this unless the user explicitly asks for a particular model or variant」。⇒ 本篇裁定：**机制性覆盖算「用户明确要求」** —— 理由：本机制会写进 `prompts/plan.md`，父是**被指示**设置；该说明的立法意图是防「随手乱设模型」，不是禁「按机制设定」。⇒ 代价：`prompts/plan.md` 必须**显式写明该覆盖是机制的一部分**。**（2026-11-27 用户复审确认选 A）** ⇒ 落地形态见 `prompts/plan.md` 的合成节点 dispatch 条：**授权链（回指本条）+ 实测强模型候选 + 「不要猜模型 ID，先查 `models` 工具」+「仅合成节点」限定**。
 - ⚠ **上游语义依赖（两级）**：A 档依赖「`subagent` 每次派发可覆盖模型」（前置事实①）。
   - **源码层**：可锚定 ⇒ 采纳即必须在 `scripts/check-upstream-anchors.sh` 补一条**语义 token 锚点**（照 P1–P6 / P5b 体例：**只写语义、不写行号、不钉函数名**）；且**任何文档引用都不得把行号当契约**（同一语义在本仓 canonical 源码根是 `:171`、在 `v2.2.5` tag 上是 `:190` ⇒ 漂移 19 行 ⇒ **P5 锚点假红事故的同型**）。
   - **provider 层**：⚠ **锚点钉不住** —— 锚点只能钉上游源码里「模型覆盖优先级」这条语义，**钉不住 provider 是否真换模型**（模型白名单校验拒识 ⇒ spawn 失败）。⇒ 后果落到父篇残留 #18 的 `claim`→`spawn` 无补偿缺口上（**悬挂 attempt ⇒ 需人工 `reap --confirm`**）⇒ 本篇**不新增**机制，只**登记**（见「已知不可机判清单」）。
@@ -175,24 +175,28 @@
 
 ## Verification（可勾选验收判据，前瞻）
 
-> 判据面向实现完成后的可观察事实。**V1–V8 已在 `build-worker-design` 场景实测**（证据见 `.rddf/reviews/plan-synthesis-offload-ab-verdict.md`）；**V9–V11 未实测**，是实现批（B1）的门槛。
+> 判据面向实现完成后的可观察事实。**按行状态如实概括（2026-11-27 更新）**：V1–V3 / V6 / V8 / V10 **已实测**（`build-worker-design` 场景，证据 `.rddf/reviews/plan-synthesis-offload-ab-verdict.md`）；**V4 / V4a / V4b / V4c / V5a–V5d 载体已落地**（`scripts/plan-synthesis-check.ts` + 32 例单测；**未对真实合成 topic 跑**）；**V7 未实测**（需新根会话）；**V9 已实测**（锚点 31/31，含 P7）；**V11 限会话配置层 PASS**；**V11b 判据待后续批**（语义已确认）。
 
 | # | 判据 | 验证方式 | 状态 |
 |---|---|---|---|
 | V1 | 合成节点在 `graph.json` 中以 `deps` = 全部内容节点存在；内容节点全 done 前 `ready` **不**列出它；全 done 后自动列出 | `ready --json` 前后对照 | ✅ 实测 |
 | V2 | **机制面**判据零改动：`lib/plan-topics.ts` 与 `scripts/plan-topic-check.ts` **零改动**（质量判据 V4/V5 落**独立载体**，不在这两个文件里） | `git diff --name-only` 不含 `lib/**`、`scripts/plan-topic-check.ts` | ✅ 实测（限 B0/场景口径） |
 | V3 | 合成产物落在 `nodes/<m-id>/RESULT.md`；父的写面不变（单一写者表无需新增行）；不进 `PLAN_REF_ROOTS` | 路径断言 + `lib/delegate-core.ts:1321-1326` 复核 | ✅ 实测 |
-| V4 | **「最重项必须进结论层」有机械判据**：合成稿中，被上游标为「最重/必须上报/薄弱点」的项若只出现在依据层而未进结论层 ⇒ 报违规。**前提**（缺任一则判据不成立）：① 上游标注携带稳定 token；② 合成 BRIEF 的五节固定结构使结论层可定位 | 独立载体上的断言（B1 步骤 0 + ③） | ⬜ **未实测**（B1） |
-| **V5a** | **完整性（并集口径）**：**全部**合成节点的 `deps` 之**并集** == 全部内容节点（内容节点 := 全部非 cancelled 且 **id 不匹配 `^m[1-9][0-9]*$`** 的节点）⇒ 父漏登记某节点 ⇒ 违规。**与合成节点个数无关** ⇒ 容忍追加式多合成节点共存 | 独立载体上的集合断言（B1） | ⬜ **未实测**（B1） |
-| **V5b** | **无冒充（作用域 = 当前答案节点）**：**当前答案节点**（= 最新一个非 cancelled 的合成节点，按 D1 形状 + D2 整数序）的 `deps` 必须覆盖全部内容节点 ⇒ 否则它冒充合成节点。⚠ **已被取代的历史合成节点**（同 topic 内更早、已 `done` 且 id 匹配 `^m[1-9][0-9]*$` 的节点）**豁免本条** —— 它们的 `deps` 反映的是**当时**的内容集，后续内容集增长会使其过期；父篇 D9 **禁止「完成后取消」** ⇒ 无消解手段 ⇒ 判据必须容忍（否则永久误报）。历史合成节点的登记完整性由 **V5a 的并集口径**兜 | 独立载体上的断言（B1） | ⬜ **未实测**（B1） |
-| **V5c** | **合成节点不互依**：任一合成节点的 `deps` **不含**其它合成节点 ⇒ 报违规（避免合成节点之间成环） | 同上 | ⬜ **未实测**（B1） |
+| V4 | **伞判据（分解见 V4a / V4b；D4 的根裁决集转写另见 V4c）**：「最重项必须进结论层」—— 合成稿中，被上游标为「最重/必须上报/薄弱点」的项若只出现在依据层而未进结论层 ⇒ 报违规。**前提**（缺任一则判据不成立）：① 上游标注携带稳定 token；② 合成 BRIEF 的五节固定结构使结论层可定位 | 同上 | ✅ **载体已落地**（`scripts/plan-synthesis-check.ts` + 单测覆盖；**未对真实合成 topic 跑**） |
+| **V4a** | **结论层包含**（blocking）：标记项（带稳定 token）必须出现在**当前答案节点**的 `## 反哺清单` 小节；缺节 ⇒ **聚合一条** `synth_conclusion_layer_missing` | 载体断言 + 单测 | ✅ **B1 已实现** |
+| **V4b** | **稳定 token 缺失**：标记项无稳定 token（`path:line` 或**单 token** slug）⇒ `synth_token_missing`，**默认 info**；`--strict-token` 升 blocking（新 topic 必开）。⚠ 裸 token 必须「像 slug/path」（含 `/ : . _ -` 且含字母数字）⇒ 排除 `git`/`session` 等普通英文词（否则 V4a 的 `includes` 恒真 ⇒ 假绿） | 载体断言 + 单测 | ✅ **B1 已实现** |
+| **V4c** | **D4 根裁决集转写**（⚠ 编号属 V4 族，但语义上覆盖 D4 后半的「根裁决集」—— **不是** V4 原文的子项）：合成 BRIEF 的 `## 根裁决集` 中 `R<n>` 集合 ⊆ 合成稿 `## 父的裁决汇总` 的 `R<n>` 集合；缺任一 ⇒ `synth_ruling_not_propagated`。「无裁决」须**整段**为「无」/「暂无」（可带括号与句末标点；不得附加注记）。⚠ 只覆盖**转写保真**，不覆盖「根是否写全裁决」（不可机判） | 载体断言 + 单测 | ✅ **B1 已实现** |
+| **V5a** | **完整性（并集口径）**：**全部**合成节点的 `deps` 之**并集** == 全部内容节点（内容节点 := 全部非 cancelled 且 **id 不匹配 `^m[1-9][0-9]*$`** 的节点）⇒ 父漏登记某节点 ⇒ 违规。**与合成节点个数无关** ⇒ 容忍追加式多合成节点共存 | 独立载体上的集合断言（B1） | ✅ **B1 已实现** |
+| **V5b** | **无冒充（作用域 = 当前答案节点）**：**当前答案节点**（= 最新一个非 cancelled 的合成节点，按 D1 形状 + D2 整数序）的 `deps` 必须覆盖全部内容节点 ⇒ 否则它冒充合成节点。⚠ **已被取代的历史合成节点**（同 topic 内更早、已 `done` 且 id 匹配 `^m[1-9][0-9]*$` 的节点）**豁免本条** —— 它们的 `deps` 反映的是**当时**的内容集，后续内容集增长会使其过期；父篇 D9 **禁止「完成后取消」** ⇒ 无消解手段 ⇒ 判据必须容忍（否则永久误报）。历史合成节点的登记完整性由 **V5a 的并集口径**兜 | 独立载体上的断言（B1） | ✅ **B1 已实现** |
+| **V5c** | **合成节点不互依**：任一合成节点的 `deps` **不含**其它合成节点 ⇒ 报违规（避免合成节点之间成环） | 同上 | ✅ **B1 已实现** |
+| **V5d** | **歧义 id**：id 满足 `^m[0-9._-]` 却不匹配 `^m[1-9][0-9]*$`（如 `m01`/`m1-extra`/`m_1`/`m1a`）⇒ `synth_id_ambiguous`，**强制显式改名**。⚠ `metrics`/`migration` **不触发** ⇒ 正常内容节点 | 载体断言 + 单测 | ✅ **B1 已实现** |
 | V6 | 根的**材料吸收量** = 合成稿体积（非全部子产出体积）：实测 244,703 B → **35,265 B（-86%）**（**按 D2 答案惯例取当前答案节点 = A 档 `m2`**；C 档 `m1` 对照 27,112 B / -89%） | `wc -c` 对照 | ✅ 实测 |
 | V7 | 根 per-topic 上下文降幅：根 `tokens_input` 增量 **≤ 60,000**（对照：自己做 = 114,842）；且根的 tool 调用中**无** `nodes/n[1-7]/RESULT.md` 的 read | **须在新根会话跑**（本会话根已吸收全部材料 ⇒ 增量不可归因）⇒ 探针规格见 `.rddf/reviews/plan-synthesis-offload-ab-verdict.md` §5.3 | ⬜ **未实测**（新根会话） |
 | V8 | 合成质量 A/B（vs 父手写 golden）：① 结论一致性 ② 缺陷清单覆盖 ③ 裁决项覆盖；**且**「上游标为最重的发现必须进结论层」 | A/B 脚本 + 人工逐条比对 | ✅ **A 档 PASS**（2026-11-26 实测：文件级 **31/31**、行号级 28/31（缺口全是**引用口径差异**：`opencode.jsonc` vs `.opencode-go` 副本）、裁决 **33** 条、**三条「最重/关键」发现 3/3 进结论层**）；C 档对照：文件级 29/31、三条 0/3 ⇒ **阶梯停在 A 档 ⇒ B2 不触发** |
-| V9 | 上游语义锚点 P7 存在且绿：`scripts/check-upstream-anchors.sh` 报 `RESULT: OK`（含 P7，语义 token 锚点） | `bash scripts/check-upstream-anchors.sh` | ⬜ **未实测**（B1 步骤 ①） |
+| V9 | 上游语义锚点 P7 存在且绿：`scripts/check-upstream-anchors.sh` 报 `RESULT: OK`（含 P7，语义 token 锚点） | `bash scripts/check-upstream-anchors.sh` | ✅ **实测**（31/31，含 P7） |
 | V10 | 零治理面漂移（除 B1 明列的 `prompts/plan.md` 与 `scripts/check-upstream-anchors.sh` 外，其余治理面文件均不动） | `git diff --name-only`（**按提交限定范围**，不用含他人提交的分支区间） | ✅ 实测（限本篇 B0） |
 | V11 | **模型覆盖是否生效于会话配置层**：合成节点 spawn 后，从 `opencode.db:session_v2` 的 `model` 列复核会话**配置**的模型 | `SELECT id, model FROM session_v2 WHERE id = <子会话 id>` | ✅ **PASS（限会话配置层）**（实测：该表暴露 `model` 字段 ⇒ A 档覆盖到达会话配置：`m2` = `minimax-cn/MiniMax-M3.1-Flash`、C 档对照 `m1` = `opencode-go/deepseek-v4.1-flash`）。⚠ **审查后降档**：`session_v2.model` 是**建会话时写入的配置字段**，不是「provider 实际服务了哪个模型」的观测（provider 静默降级时该列仍显示请求值）⇒ **provider 实际服务层仍未覆盖**；若要机判 provider 层，须用**响应级**信号（响应元数据里的实际模型），不是会话配置列 |
-| **V11b** | **provider 实际服务模型（响应级 —— 审查后新增）**：合成会话**全部** `type='assistant'` 消息的 `$.model.id` + `$.model.providerID` == 覆盖模型 ⇒ PASS；任一不同 ⇒ FAIL（说明 provider 静默换模型） | `SELECT data FROM session_message WHERE session_id=<子会话> AND type='assistant'`｜⚠ **语义已验证（2026-11-26 实测）**：同一会话 `ses_de7dcca7…` 的 assistant 消息在 `15:15:23Z` 为 `minimax-cn/MiniMax-M3.1-Flash`、`15:15:32Z` 起变为 `commandcode/deepseek/deepseek-v4.1-flash`（对应 model-fallback 的 429 切换），`ses_de81cd7ca…` 亦同 ⇒ **该字段反映实际服务模型，不是请求回显** ⇒ 判据可机判 | ✅ **语义已确认** ／ ⬜ **判据待 B1 实现** |
+| **V11b** | **provider 实际服务模型（响应级 —— 审查后新增）**：合成会话**全部** `type='assistant'` 消息的 `$.model.id` + `$.model.providerID` == 覆盖模型 ⇒ PASS；任一不同 ⇒ FAIL（说明 provider 静默换模型） | `SELECT data FROM session_message WHERE session_id=<子会话> AND type='assistant'`｜⚠ **语义已验证（2026-11-26 实测）**：同一会话 `ses_de7dcca7…` 的 assistant 消息在 `15:15:23Z` 为 `minimax-cn/MiniMax-M3.1-Flash`、`15:15:32Z` 起变为 `commandcode/deepseek/deepseek-v4.1-flash`（对应 model-fallback 的 429 切换），`ses_de81cd7ca…` 亦同 ⇒ **该字段反映实际服务模型，不是请求回显** ⇒ 判据可机判 | ✅ **语义已确认** ／ ⬜ **判据待后续批**（B1 未含；见 `tasks.md` 遗留） |
 
 ---
 
@@ -205,8 +209,8 @@
 | 合成节点是否**漏了**某个内容节点 | 「deps = 全部内容节点」是父的登记约定；无独立真值可对照 | **V5a（并集口径）** + 父事后补 dep 时已闭合 attempt 触发 `stale_inputs`（D10 白送）⇒ 只有「父从不改图」才逮不住 |
 | 父**修订**合成稿后的正确性 | 父修订会破单一写者（见「后果/代价」） | 本篇**不支持**父修订 ⇒ 走**追加式**（新增 `m2`，`m1` 保留为审计痕迹；惯例取最新非 cancelled 合成节点为答案）；**仅当**合成节点尚未 done 时方可 `cancel` 后重建 |
 | 合成会话能否装下超大 topic | 内容体量决定 | **不可缓解** ⇒ 断裂点须在机制文档明写 |
-| **对「可变文件」做 `path:line` 引用会随内容漂移** | `graph.json` 等文件在 topic 演进中**行号会移**（A 档实测：加一个合成节点后，`n5` 的活体实例从 `:141`/`:146` 漂到 `:142`/`:147`，**+1**）⇒ 行号不是稳定标识 | 引用**可变文件**须给**内容锚**（如「`graph.json` 中 `owner: "parent"` 那一行」）而非行号；与 D3 的「行号不是契约」同型，但**对象不同**（D3 说的是上游源码，本条说的是**本仓内会演进的文件**） |
-| **provider 实际服务模型**（审查后补 —— 修 D3 `:80` 的悬空指针） | 会话配置层（V11）能判「覆盖到达会话」，但「provider 是否真按该模型服务」取决于 provider 侧（白名单拒绝 / 静默降级 / 429 回落）；`model-fallback.log` 已实证**静默换模型是已发生事件**（2026-11-26 多条 429 换模型记录） | **语义已验证（2026-11-26 实测）**：同一会话 `ses_de7dcca7…` 的 assistant 消息在 `15:15:23Z`=minimax、`15:15:32Z` 起=deepseek ⇒ `session_message.data.model` **反映实际服务模型** ⇒ **本项从「不可机判」降为「可机判」（判据 = V11b，待 B1 实现）** |
+| **对「可变文件」做 `path:line` 引用会随内容漂移** | `graph.json` 等文件在 topic 演进中**行号会移**（A 档实测：加一个合成节点后，`n5` 的活体实例从 `:141`/`:146` 漂到 `:142`/`:147`，**+1**）⇒ 行号不是稳定标识 | 引用**可变文件**须给**内容锚**（如「`graph.json` 中 `owner: "parent"` 那一行」）而非行号；与 D3 的「行号不是契约」同型，但**对象不同**（D3 说的是上游源码，本条说的是**本仓内会演进的文件**）。⚠ **同型的第二条（2026-11-27 添加）**：`prompts/plan.md` 也承载 A/B 实测的强模型 ID（`minimax-cn/MiniMax-M3.1-Flash`）⇒ **A/B 换档时须同批改 `prompts/plan.md`**（否则 prompt 指向旧档）。⚠ **历史行不回改**：V11 / V11b / 实施记录里的模型 ID 是 **dated 证据**（记录当时实测值），换档时**不回改**。 |
+| **provider 实际服务模型**（审查后补 —— 修 D3 `:80` 的悬空指针） | 会话配置层（V11）能判「覆盖到达会话」，但「provider 是否真按该模型服务」取决于 provider 侧（白名单拒绝 / 静默降级 / 429 回落）；`model-fallback.log` 已实证**静默换模型是已发生事件**（2026-11-26 多条 429 换模型记录） | **语义已验证（2026-11-26 实测）**：同一会话 `ses_de7dcca7…` 的 assistant 消息在 `15:15:23Z`=minimax、`15:15:32Z` 起=deepseek ⇒ `session_message.data.model` **反映实际服务模型** ⇒ **本项从「不可机判」降为「可机判」（判据 = V11b，待后续批实现）** |
 | **根是否把「全部」持有裁决写进了 BRIEF**（审查后补 —— 修 D4 的过度声称） | 真值只在根上下文；且合成链路是**循环**（BRIEF 由根写 → 合成稿按 BRIEF 写 → check 比对两者）⇒ 根漏写的裁决**两侧一致地缺席**、check 照过 ⇒ 机器只能判「转写保真」，判不了「输入完整性」 | 机判覆盖 = **BRIEF → 合成稿的 slug 转写保真**（D4 前提的 slug 集合包含）；输入完整性靠根自律 + 父抽检 |
 
 ---
@@ -243,5 +247,5 @@
   5. **修订 5（V11 降档）成立 → 已补两点**：(a)「已知不可机判清单」补 **provider 行**（修 D3 `:80` 悬空指针）；(b) 新增 **V11b**（响应级 `session_message.model`，已抽样证实该字段存在；语义须 B1 步骤 0 先确认）。
   6. **修订 6（D7）部分成立 → 已修**：主判据改**总量 ≳ 50 KB**、节点数 ≥ 4 为辅助（堵「2 × 60 KB 被节点数否掉」的合取漏洞）；「必须外置」改「**建议**外置」（修模态矛盾）；补「小 topic 灰区」的 harm-随体量论证。
 - **B1 步骤 0 部分完成（2026-11-26）**：**V11b 的语义确认**已做 —— 判别方法：用 `model-fallback.log` 的 429 换模型记录定位切换时点，再查同一 `session_id` 的 assistant 消息是否跨模型。结果：`ses_de7dcca7…` 在 `2026-11-26T15:15:23Z` 为 `minimax-cn/MiniMax-M3.1-Flash`、`15:15:32Z` 起为 `commandcode/deepseek/deepseek-v4.1-flash`（`ses_de81cd7ca…` 同样）⇒ **`session_message.data.model` 反映实际服务模型，不是请求回显** ⇒ provider 层由「不可机判」降为「可机判」。⚠ **仍未做**：V4/V5 的判据规格（须待立项后落 openspec change 的 `design.md`，不塞进本 ADR 正文）。
-- **未闭合项**：V4 / V5 / V7 / V9 未实测 ⇒ 见「Verification」章；**V11b 语义已确认（2026-11-26 实测）、判据待 B1 实现**。**另有两条新增机判检查尚无 V 编号与载体指派**（D4 的 slug 集合包含判据、D4 前提① 的无 token「最重」标注 info 级前置检查）⇒ **B1 步骤 0 补登 V 编号 + 载体**（critic 第 3 轮 SF③；不阻断，但追踪断档须闭合）。
+- **未闭合项**：**V7** 未实测（需新根会话）｜**V11b** 语义已确认（2026-11-26）、判据待**后续批**。~~两条新增机判检查无 V 编号~~ ⇒ **已闭合（2026-11-27）**：slug 集合包含判据 = **V4c**、无 token 标注前置检查 = **V4b**，载体 = `scripts/plan-synthesis-check.ts`（critic SF③ 的追踪断档已消除）。
 - **critic 第 3 轮（2026-11-26，复审 oracle 第 3 轮 REJECT 的 6 条处置）**：**APPROVE_WITH_CONDITIONS / `mergeable: yes` / 无 BLOCKER** —— 6 条 finding **逐条判闭合（实质，非换措辞）**；未发现新 BLOCKER（已核对父篇 D9/D10/D11 与 delegate 篇 D1/D4 无冲突、`lib/plan-topics.ts` 两处行号引用、盘上节点 id `m1`/`m2` 均合新形状无迁移冲突、registry 条目一致）。SHOULD_FIX ①（B1 约束列引用了已删的「内容节点 BRIEF 标注约定」）⇒ **已修**（改「`plan-worker.md:28` 单点」）；②（D7 反向情形二义）⇒ **已修**（补「节点数 ≥4 但总量 <50 KB ⇒ 建议不起」）；③（两条新机判检查无 V 编号）⇒ **已登记进未闭合项，B1 步骤 0 补登**；④（父篇残留 #19 措辞「惯例 `m*`」与本篇形状规则不一致）⇒ **`scope_exceeded`，记 backlog，不进返工**（父篇不在本轮声明范围）；NIT（「应」→「建议」色差）⇒ 已统一。**⚠ 因此 Status 仍为 `Proposed`（已决态）；转 `Accepted` 由用户/architect 另行决定**。
