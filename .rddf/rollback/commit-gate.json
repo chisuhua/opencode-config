@@ -243,6 +243,11 @@
       "path": "docs/MULTI-AGENT-DESIGN.md",
       "find": "- **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）\n\n### 2.9 subagent 输入契约（v2.3.0 新增）",
       "replace": "- **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n\n### 2.9 subagent 输入契约（v2.3.0 新增）"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "| ⑰ | **baseline 命中放行** | 防「未登记的失败提交」；**不防**宽 `match` 误命中（`\"3 fail\"` ⊆ `\"13 fail\"` ⇒ 放过真回归）/ **巡检缺席** ⇒ 单调性失效 / 登记腐坏（条目不再命中却仍在清单）/ 输出措辞漂移 ⇒ 命中不到；**缓解** = `match` **特异性守卫**（去空白后 ≥ 8 字、末尾 token 非通用词）+ **巡检载体必须存在**（缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门）+ 巡检层的**标识集合**比对（数字边界 ⇒ 失败数膨胀必被发现）+ 「可清理」提示 + 运行时留痕（D10①–D10③） |\n",
+      "replace": ""
     }
   ],
   "drill_env": {
@@ -261,5 +266,11 @@
         "tests/"
       ]
     ]
+  },
+  "last_drill": {
+    "sha": "61ae526f6a61c2cbc1d595e940fcfc7d643ee6fe",
+    "at": "2026-11-27",
+    "result": "pass",
+    "content_hash": "e136730f1081a9610a532cd807d12041b145a289a403ac4c0add66b6ea7cdf31"
   }
 }
