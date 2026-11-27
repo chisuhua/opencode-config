@@ -81,7 +81,7 @@ critic 对 focus 三问的结论（摘）：
 - **note 已闭合**：`:305` 加「**仅合成节点**」限定，封死强模型向普通派发的泛化（唯一有实质后果的一条）。
 - 其余 note（ADR `:79` 补日期 / `:208` 登记 A/B 换档同批改 prompt）为 architect 面的可选追溯项，记入 backlog。
 
-## 7. 登记批（2026-11-27，architect）：4 条登记项 + oracle 审查
+## 6. 登记批（2026-11-27，architect）：4 条登记项 + oracle 审查
 
 B1 收口后的**登记债务**一次性做完（`e9771f8` + `fb845e9`）：
 
@@ -115,7 +115,7 @@ B1 收口后的**登记债务**一次性做完（`e9771f8` + `fb845e9`）：
 
 `openspec/changes/*/tasks.md` 的订正被 **role-gate 拦下**（architect 写集 = arch_paths + 治理面 + `.rddf/reviews/**`）⇒ 切 builder 提交（`fb845e9`）后切回 architect。**边界按设计生效**，未绕过。
 
-## 8. 未闭合（如实登记）
+## 7. 未闭合（如实登记）
 
 | 项 | 状态 | 归属 |
 |---|---|---|
