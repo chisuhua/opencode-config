@@ -25,6 +25,7 @@
  * - **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）
  * - **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）
  * - **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）
+ * - **D9⑱** 未声明仓的留痕是尽力而为 ⇒ 见 ADR D9 表（判据真源）
  */
 import { describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -183,7 +184,7 @@ export function violations(t: Texts): string[] {
   const expected = parseAdrItems(t.adr)
 
   // AC3：源侧一致性（恰好 17、id 唯一、标题非空）
-  if (expected.length !== 17) v.push(`ADR D9 表应恰 17 项，实际 ${expected.length} 项`)
+  if (expected.length !== 18) v.push(`ADR D9 表应恰 18 项，实际 ${expected.length} 项`)
   const ids = expected.map((e) => e.id)
   if (new Set(ids).size !== ids.length) v.push("ADR D9 表的标识不唯一")
   for (const e of expected) if (norm(e.title) === "") v.push(`ADR 的 ${e.id} 标题为空`)
@@ -278,9 +279,9 @@ describe("AC2 行形态 + 标题保真（只写编号 / 标题走样 ⇒ 红）"
 })
 
 describe("AC3 期望集从 ADR 派生（不写死）", () => {
-  test("ADR 恰 17 项、标识唯一、标题非空", () => {
+  test("ADR 恰 18 项、标识唯一、标题非空", () => {
     const items = parseAdrItems(readFileSync(path.join(ROOT, ADR_REL), "utf8"))
-    expect(items.length).toBe(17)
+    expect(items.length).toBe(18)
     expect(new Set(items.map((i) => i.id)).size).toBe(items.length)
     for (const i of items) expect(norm(i.title).length).toBeGreaterThan(0)
   })
@@ -288,19 +289,19 @@ describe("AC3 期望集从 ADR 派生（不写死）", () => {
   test("派生对 ADR 文本的变化敏感（加一行 ⇒ 期望集变大）", () => {
     const adr = readFileSync(path.join(ROOT, ADR_REL), "utf8")
     // ⚠ 探针用一个**未登记的新 id**（⑰ 已被 D10③′ 登记 ⇒ 用 ⑱）
-    const grown = parseAdrItems(`${adr}\n| ⑱ | **新增项标题** | 描述 |\n`)
-    expect(grown.map((i) => i.id)).toContain("D9⑱")
+    const grown = parseAdrItems(`${adr}\n| ⑲ | **新增项标题** | 描述 |\n`)
+    expect(grown.map((i) => i.id)).toContain("D9⑲")
   })
 })
 
 describe("AC4 加新一行 ⇒ 必红（判别力）", () => {
   test("ADR 多一行而未登记 ⇒ 报对应 id 缺", () => {
     const base = realTexts()
-    // ⚠ 探针 id 必须是**未登记**的（⑰ 已登记 ⇒ 用 ⑱）
-    const v = violations(withOverride({ adr: `${base.adr}\n| ⑱ | **新增项标题** | 描述 |\n` }))
+    // ⚠ 探针 id 必须**未登记**（⑰/⑱ 已登记 ⇒ 用 ⑲）
+    const v = violations(withOverride({ adr: `${base.adr}\n| ⑲ | **新增项标题** | 描述 |\n` }))
     expect(v.length).toBeGreaterThan(0)
     for (const face of ["AC 面", "测试注释", "主题文档"]) {
-      expect(v).toContain(`${face} 缺 D9⑱`)
+      expect(v).toContain(`${face} 缺 D9⑲`)
     }
   })
 })

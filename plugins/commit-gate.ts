@@ -41,10 +41,10 @@ interface ExecResult {
 }
 
 /** 留痕账本（ADR D10①：运行时可区分「真绿」与「baseline 命中」） */
-const NOTICE_LEDGER = path.join(".rddf", "state", "commit-gate-notices.jsonl")
+export const NOTICE_LEDGER = path.join(".rddf", "state", "commit-gate-notices.jsonl")
 
-/** 追加一行留痕（失败不改变判定 —— 留痕不是门禁判据）。 */
-function appendNotice(workRoot: string, line: string): void {
+/** 追加一行留痕（失败不改变判定 —— 留痕不是门禁判据）。导出：单测直接驱动真实分支。 */
+export function appendNotice(workRoot: string, line: string): void {
   try {
     const file = path.join(workRoot, NOTICE_LEDGER)
     mkdirSync(path.dirname(file), { recursive: true })
@@ -52,6 +52,22 @@ function appendNotice(workRoot: string, line: string): void {
   } catch {
     // 留痕失败不改变判定
   }
+}
+
+/** `readDeclaration` 的导出包装（单测注入点；行为与插件内部调用逐字一致）。 */
+export function readDeclarationOrError(workRoot: string): { decl: CommitGateDeclaration | null; error?: string } {
+  return readDeclaration(workRoot)
+}
+
+/**
+ * 未声明 / 声明不可用时的**留痕文案**（单一真源 —— 插件与测试都走这里）。
+ *
+ * - `error` 非空 ⇒ 声明**不可用**（D6 fail-closed：照旧拒）；
+ * - 否则 ⇒ **未声明**（D3：不设门禁 ⇒ 放行）。
+ */
+export function noticeLineForUndeclared(res: { decl: unknown; error?: string }): string {
+  if (res.error) return `声明不可用 ⇒ 本次判定不可得（D6 fail-closed） · ${res.error}`
+  return "未声明 ⇒ 三判据不设门禁（ADR D3）"
 }
 
 /** 巡检载体是否 git-tracked（`git ls-files --error-unmatch`）。 */
@@ -147,9 +163,16 @@ export default Plugin.define({
       // ① 声明（未声明 ⇒ **不设门禁** ⇒ 放行）
       const { decl, error } = readDeclaration(workRoot)
       if (error) {
+        // 声明存在但不可用 ⇒ **D6 fail-closed：照旧拒**（坏的声明 ≠ 未声明）；
+        // 但**先留痕**，让「门禁没生效」在运行轨迹里查得到（检测 ≠ 拦截，ADR D9② 先例）。
+        appendNotice(workRoot, noticeLineForUndeclared({ decl, error }))
         throw new Error(`commit-gate: ${error}`)
       }
-      if (!decl) return
+      if (!decl) {
+        // **未声明 ⇒ 三判据不设门禁 ⇒ 放行**（ADR D3 明文决策）——留一行痕，让 agent 知道「验证没跑」。
+        appendNotice(workRoot, noticeLineForUndeclared({ decl }))
+        return
+      }
 
       // ② 暂存区状态 + 文件清单
       const staged = await run("git", ["diff", "--cached", "--quiet"], workRoot, 30_000)

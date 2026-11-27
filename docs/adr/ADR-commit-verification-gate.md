@@ -216,10 +216,10 @@
 能力面投影：`capabilityBlock()`（`lib/delegate-core.ts:619-627`）按 ask/deny **计数**派生 ⇒ Rev 1 新增 4 条 deny 使分类由 `allow-ask` 变 `allow-ask-and-deny`；Rev 2 再增 4 条（合计 8 条）**不改分类**（派生规则是定性判定：ask>0 且 deny>0）
 ⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。
 
-### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十七项）
+### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十八项）
 
 > 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。
-> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑰`，由该列**派生**，**不在表里另加列**）。
+> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑱`，由该列**派生**，**不在表里另加列**）。
 > **三处载体**（**真源 = 本文 D9 表**；「三处登记」指的是下面三面，**不含本表** —— 本表是判据来源，不是登记面）：
 > ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 免宣称项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；
 > ② **测试注释面** = `tests/commit-gate-d9-registration.test.ts` 的 **JSDoc 头**（首个 `import` 之前）；
@@ -245,6 +245,7 @@
 | ⑮ | **命令词的运行时 / 转义表还原不可静态判定** | Rev 3 已封「引用 / 转义还原」（`"git"` / `g\it` / `$'git'` / `$"git"` / `git c\ommit`）；残余 = ① **参数展开**（`$CMD commit` / `${CMD} commit`）的运行时值不可见；② **转义序列表**（ANSI-C `$'\x67it'` ⇒ bash 解码成 `git`，逐层还原拿不到）⇒ 未验证提交可能落地；缓解：无（读 `process.env` 看似可行，但 shell 可用局部赋值 / `export` 覆盖 ⇒ 静态不可靠；登记为已知面）。⚠ **后果类不止「单条命令词不可识别」**：引号状态判错时后果是**行吞** —— 预处理把后续行当 heredoc 正文**整行删除**（有实证）、或分词器把后续行吞进**未闭合引用**（同类机理推定）⇒ **其后的真命令完全不可见**（比漏判当条更严重，因为被漏掉的是**后续**命令）。实测一例（Rev 2 实施期）：`$'…'` 分支多跳一格 ⇒ `cat <<EOF $'` 的标记行被判成引号平衡 ⇒ heredoc 吞掉含真命令的行 ⇒ fail-open（已修 + 回归用例 + 变红 `C-H2b`）⇒ **判据要按「漏掉其后命令」设计，不能只测单条命令词** |
 | ⑯ | **引号包住的 `git` 子命令走 fail-closed 误拒** | `git "commit" -m x` / `git "push" origin main` / `git -c k=v "commit"` 在 shell 里**去引号后照常执行**，而 `parseGitSubcommandIndex` 默认拒绝 quoted 子命令（Rev 3 还原的是**词值**，**子命令槽位仍按 `quoted` 形态标记拒绝** —— `allowQuotedSub` 默认 `false`；与词值还原无关，别去改 tokenizer）⇒ 门禁判「无法解析 `git` 的子命令 ⇒ 拒绝」⇒ **误拒**（实测含 `git "status"` 一类非提交命令同样被拒）；方向 **fail-closed**（不会让未验证提交落地）⇒ 记作已知误拒面，不记作漏洞；缓解：无（放开子命令会同时放宽「引用包住 / 解释器闭口」的判定面 ⇒ 需单独裁决，另立）。⚠ push 侧不受此影响：`detectForcePush` 用 `allowQuotedSub = true` ⇒ `git "push" --force` 仍被 push-gate 拦。**登记沿革**（V10 机械载体落地**前**，保留作史实）：AC = 归档 proposal 的 Out of Scope（指向本行）；测试注释 = `tests/commit-gate.test.ts` 的「D9⑯ 钉证」用例（断言当前是 fail-closed 拒绝，不是需求）；主题文档 = 本行当时写作 §2.8.7。⚠ **现行三处载体以 D9 前言（上表前的 `:221` 段）为准**：AC 面 = 本 change 的 `## D9 十六项登记（AC 面）` 小节、测试注释 = `tests/commit-gate-d9-registration.test.ts` 的 JSDoc 头、主题文档 = `MULTI-AGENT-DESIGN.md` **§2.8.8** 索引段 —— 本行不再单列一套「三处」 |
 | ⑰ | **baseline 命中放行** | 防「未登记的失败提交」；**不防**宽 `match` 误命中（`"3 fail"` ⊆ `"13 fail"` ⇒ 放过真回归）/ **巡检缺席** ⇒ 单调性失效 / 登记腐坏（条目不再命中却仍在清单）/ 输出措辞漂移 ⇒ 命中不到；**缓解** = `match` **特异性守卫**（去空白后 ≥ 8 字、末尾 token 非通用词）+ **巡检载体必须存在**（缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门）+ 巡检层的**标识集合**比对（数字边界 ⇒ 失败数膨胀必被发现）+ 「可清理」提示 + 运行时留痕（D10①–D10③） |
+| ⑱ | **未声明仓的留痕是尽力而为** | 防「门禁静默缺席却无人知道」；**不防**留痕写不进（无 `.rddf/state/` / 磁盘不可写 / 账本是目录 ⇒ 静默无痕）/ 留痕被人工删除 / 账本无轮转；**缓解** = 留痕只在**未声明或声明不可用**时写一行（已声明且合法 ⇒ 不写），写入失败**静默**（绝不影响判定），doctor `commit-gate` 三面与 `commit-gate-baseline-doctor` 提供**另一条**可见通道（检测 ≠ 拦截，D9② 先例） |
 
 ### D10 SU（2026-11-27）：失败可被 baseline 显式容忍（`known_failures`）
 
@@ -419,7 +420,7 @@
   **变红**：放行 `-a` ⇒ V7 红；放行位置 pathspec ⇒ V7 红；放行 `git commit …; git push --force …` ⇒ V7 红；放行 `git commit -m "$(…)"` ⇒ V7 红；放行 `git commit …; cat .env` ⇒ V7 红。
 - [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。
 - [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。
-- [ ] **V10 免宣称十七项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
+- [ ] **V10 免宣称十八项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。
   **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。
 - [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。
 - [x] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。

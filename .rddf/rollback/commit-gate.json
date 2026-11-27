@@ -16,7 +16,8 @@
     "scripts/commit-gate-baseline-doctor.ts",
     "tests/commit-gate-baseline.test.ts",
     "tests/commit-gate-baseline-doctor.test.ts",
-    "tests/fixtures/commit-gate-known-failures.expected.json"
+    "tests/fixtures/commit-gate-known-failures.expected.json",
+    "tests/commit-gate-undeclared-trace.test.ts"
   ],
   "edits": [
     {
@@ -75,66 +76,6 @@
       "replace": "会改仓库状态的 shell（重定向、`mkdir` / `cp` / `rm`、`git commit` 等）"
     },
     {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "> **2026-11-18 变更**：`git commit` 的审批点从**权限弹窗（ask）**搬到**工具层验证门**（`plugins/commit-gate.ts`，见 `docs/adr/ADR-commit-verification-gate.md`）⇒ §3.4 的纪律对象收窄为 **`git push`**；§4.4.1 的 `git commit` ask 段退役，force-push 收紧为 `deny`（四形态 → **八条**，见 ADR D4）\n",
-      "replace": ""
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "- **pause / commit 契约**：`rdd-builder` 的 P0 / P2.5 是 HARD pause（agent 不替用户拍板）；P2 的 COMMIT GATE 与全局「`git commit` 由工具层验证门决定、`git push` 等用户确认」冲突时**全局规则优先**；",
-      "replace": "- **pause / commit 契约**：`rdd-builder` 的 P0 / P2.5 是 HARD pause（agent 不替用户拍板）；P2 的 COMMIT GATE 与全局「不主动 commit，等用户确认」冲突时**全局规则优先**；"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "—— **已由 `docs/adr/ADR-commit-verification-gate.md` D5 部分闭合**（限**顶层命令串**的 `git commit` 子命令识别）；残余见该 ADR 的 D9（间接提交 / 解析盲区 / 插件缺席）。",
-      "replace": "不在范围。"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "### 3.4 用户侧的批准纪律（宿主「Allow always」的边界）—— 现仅适用 `git push`",
-      "replace": "### 3.4 用户侧的批准纪律（宿主「Allow always」的边界）"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "**2026-11-18 起**：`git commit` **不再有权限弹窗**（审批点迁到工具层验证门，`docs/adr/ADR-commit-verification-gate.md` D1）\n⇒ 本节纪律**只针对 `git push`** 的弹窗。\n\n",
-      "replace": ""
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "§4.4.1 里 `git push` 之所以是 `ask`，是因为 `prompts/build.md` §输出 的「`git push` 等用户确认」**只有在权限层有执行点时才可执行**",
-      "replace": "§4.4.1 里 `git commit` / `git commit *` 之所以是 `ask`，是因为 `prompts/build.md` §输出 的「不要主动 commit —— 等用户确认」**只有在权限层有执行点时才可执行**"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "**纪律（读者是「人」，不是 agent）**：不要对 `git push` 的权限弹窗点 **Allow always**。",
-      "replace": "**纪律（读者是「人」，不是 agent）**：不要对 `git commit` / `git push` 的权限弹窗点 **Allow always**。"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "**历史残留处置（2026-11-18）**：`git commit` 的弹窗虽已取消，但**曾点过 Allow always 的持久化批准仍在**宿主状态库\n⇒ 若将来恢复 `ask` 档，它会**立即命中**（即恢复弹窗但不再询问）⇒ 一次性清除该批准。\n\n",
-      "replace": ""
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "**`git push --force` 的额外一层**：`opencode.jsonc` 已把 force-push **八条**设为 `deny`\n（`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*` ＋ `git push +*` / `git push * +*` / `git push --mirror*` / `git push * --mirror*`\n—— 后四条是 `+refspec` 与 `--mirror` 两种强推形态）\n⇒ `deny` **按设计**不会被 Allow always 放行（这是它相对 `ask` 的价值）；⚠ 但「持久化 allow 与 config `deny` 的优先级」**无源码锚点**（宿主合并算法未查明）⇒ 如实登记为该 ADR 的 D9⑧ ⇒ **工具层再兜一层**（下段）。\n**缓解已落地**：同一插件在工具层对 force push **再兜一层**（`lib/push-gate.ts` + `lib/commit-gate.ts::scanForcePush` 单一真源：\n`git push` 之后出现强推指示符 ⇒ 拒；覆盖 `--force*` / `--mirror*`（**含长选项缩写** `--mirro`）/ 短选项簇（`-uf`）/\n**前导 `+` 的 refspec** / **带引号**形态）⇒ 权限层怎么合并都不影响结果；该兜底是 config 八条的**严格超集**\n（短选项簇与带引号形态 config 的 glob 表达不了）。\n⚠ **引号包住的 `git` 子命令**（`git \"commit\" -m x`）走 **fail-closed 误拒**（`parseGitSubcommandIndex` 的 `quoted` 检查；方向安全，记作已知误拒面）⇒ 见 `docs/adr/ADR-commit-verification-gate.md` **D9⑯**。\n⚠ **跳过带值选项**（`-o` / `--push-option` / `--receive-pack` / `--exec` / `--repo`）⇒ `git push -o +ci origin main`（合法、非强推）**不**误拒\n（**工具层**口径）；⚠ 但 **config 层表达不了「跳带值」** ⇒ 该串在**权限层**就命中 `git push * +*` ⇒ 被 deny（**假阳性**，方向 fail-closed）⇒ 登记为 ADR D4 的已知限制。\n",
-      "replace": "⚠ **引号包住的 `git` 子命令**（`git \"commit\" -m x`）走 **fail-closed 误拒**（`parseGitSubcommandIndex` 的 `quoted` 检查；方向安全，记作已知误拒面）⇒ 见 `docs/adr/ADR-commit-verification-gate.md` **D9⑯**。\n"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "（2026-11-17 核查：`permission` 表 230 行无 `git commit`；2026-11-18 追加核查项：**`git push` 的持久化 allow 与 config `deny` 的优先级**）。",
-      "replace": "（2026-11-17 核查：`permission` 表 230 行无 `git commit`）。"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "**`git commit` 段已退役（2026-11-18）**：此前是「不属不可逆类」的 `ask`（v2.44），目的是让 prompt 的「等用户确认」**有可执行点**。\n现改为 **`allow`** —— 审批点搬到**工具层验证门**（`plugins/commit-gate.ts`）：仓库声明的验证命令全绿 + 暂存区非空 + 暂存内容落在当前角色的写集内 ⇒ 放行；否则**工具层直接拒绝**并给出缺项（`docs/adr/ADR-commit-verification-gate.md`）。\n⚠ **门禁「在场性」体检**（2026-11-20 补，ADR D9②）：插件缺席 ⇒ 门禁**不存在**（不是「放松」，是「没装」）⇒ `lib/commit-gate-doctor.ts` / `scripts/commit-gate-doctor.ts` 问宿主「`commit-gate` 插件是否 `active`」⇒ 未加载 ⇒ **判红**（退出码 1）而不是静默通过；⚠ **检测 ≠ 拦截**（doctor 不拦提交，只让失败可见）＋ **宿主不可达 ⇒ 判定不可得**（skip / 退出码 2，不算失败）。\n\n**新增 `deny`（force push）**：`git push --force*` / `git push -f*` / `git push * --force*` / `git push * -f*`\n—— shell 是**整串前缀匹配** ⇒ flag 在末位的形态也必须显式列出，否则落 catch-all `*: allow`（⇒ 无人值守时直接推出去）；\n且 `deny` **不会**被宿主的 Allow always 放行（这是它相对 `ask` 的价值）。\n**工具层兜底**：`lib/push-gate.ts` 对同一组形态（含短选项簇）在 `tool.execute.before` 再拒一次 ⇒ 不依赖宿主的授权合并顺序（ADR D4 / D9⑧）。⚠ 该兜底**不进** capability 投影（投影按 config 的 ask/deny 计数派生）⇒ 投影说「可以」而工具层拒的情形会有**带指引的错误文案**，方向 fail-safe。\n\n",
-      "replace": "另有一条**不属「不可逆」类**的 `ask`：`git commit` / `git commit *`（v2.44）。它的目的不是拦破坏，而是让 `prompts/build.md` §输出 的「不要主动 commit —— 等用户确认」**有可执行点**（此前 prompt 规则被权限层否决，模型自行 commit）。⚠ 它**有用户侧的批准纪律与不可机械核的残留**，见 §3.4。\n\n"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "**已知残留**：shell 是整串前缀匹配（⇒ §4.4.1 的 force-push `deny` 必须列全**D4 定义的全部形态**（八条，含 flag 在末位者与 `+refspec` / `--mirror`）），",
-      "replace": "**已知残留**：shell 是整串前缀匹配，"
-    },
-    {
       "path": "lib/delegate-core.ts",
       "find": "lines.push(\"3. `git commit` 由工具层验证门决定（验证绿即可提交，不必问用户）；`git push` —— 提交由用户确认后另行发起。\")",
       "replace": "lines.push(\"3. 不要 git commit / git push —— 提交由用户确认后另行发起。\")"
@@ -170,8 +111,38 @@
       "replace": "  })\n\n  test(\"每个受管 agent（front + 五个 subagent）的守卫都含 ADR D3.1 的首参数形态（且都是 deny）\", () => {\n    for (const agent of GUARDED_AGENTS) {"
     },
     {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。\n\n### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十八项）\n\n> 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。\n> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑱`，由该列**派生**，**不在表里另加列**）。\n> **三处载体**（**真源 = 本文 D9 表**；「三处登记」指的是下面三面，**不含本表** —— 本表是判据来源，不是登记面）：\n> ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 免宣称项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；\n> ② **测试注释面** = `tests/commit-gate-d9-registration.test.ts` 的 **JSDoc 头**（首个 `import` 之前）；\n> ③ **主题文档面** = `docs/MULTI-AGENT-DESIGN.md` **§2.8.8** 索引段。",
+      "replace": "⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。\n\n### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十六项）\n\n> 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。\n> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑯`，由该列**派生**，**不在表里另加列**）。\n> **三处载体**（**真源 = 本文 D9 表**；「三处登记」指的是下面三面，**不含本表** —— 本表是判据来源，不是登记面）：\n> ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 十六项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；\n> ② **测试注释面** = `tests/commit-gate-d9-registration.test.ts` 的 **JSDoc 头**（首个 `import` 之前）；\n> ③ **主题文档面** = `docs/MULTI-AGENT-DESIGN.md` **§2.8.8** 索引段。"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。\n\n**SU 2026-11-27（D10）新增后果**\n- **正**：有存量红的仓也能声明门禁 ⇒ 门禁覆盖面扩大；放行是**显式登记**⇒ 审计链完整（谁登记、登记了什么）。\n- **负**：baseline 是**显式放行**的登记 ⇒ 登记不严谨就会放过真回归 ⇒ 单调性守卫（V24）+ 可清理提示是**配套**，不是可选项。\n- **风险 ①（误拒方向）**：命中判定依赖**输出文本**子串匹配 ⇒ 工具输出格式变化可能导致「命中不到」⇒ 退回「照旧拒」（方向安全，但会误拒 ⇒ 需人工更新 `match`）。\n- **风险 ②（误命中方向 · 更危险）**：`match` 过宽 ⇒ **新失败的输出仍含该子串** ⇒ commit 路径**放过真回归**（例：`match: \"3 fail\"`，失败数 3 → 13 后输出 `\"13 fail\"` **仍含** `\"3 fail\"`）⇒ 缓解 = `match` **特异性守卫**（≥8 字、非纯数字/通用词）+ 巡检层按**失败标识/计数**做**集合比对**（不复用子串语义 ⇒ 失败数膨胀会被发现）。\n- **风险 ③（机制在、没人跑）**：**若 fail-closed 未落实** ⇒ 巡检层缺席 ⇒ 「防增」无人执行 ⇒ baseline 只增不减 ⇒ 真回归被放过；⇒ 缓解 = **巡检载体必须存在**（缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门）+ commit 时存在性/绑定检查（D10② 三条硬约束）。⚠ 修复后的口径：**「防增」归声明内容守卫**（非巡检）；巡检缺席时 baseline 根本不适用（字段无效 ⇒ 硬门），故该风险只在「fail-closed 未落地」时成立。\n\n**风险**\n- 门禁依赖插件与声明 ⇒ 任一缺席 ⇒ 静默无门禁（D9①②④）⇒ 层 2 真宿主验 + 守卫 + **在场性体检**（doctor 检出「静默」本身；⚠ **检测 ≠ 拦截**）。",
+      "replace": "⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。\n\n**风险**\n- 门禁依赖插件与声明 ⇒ 任一缺席 ⇒ 静默无门禁（D9①②④）⇒ 层 2 真宿主验 + 守卫 + **在场性体检**（doctor 检出「静默」本身；⚠ **检测 ≠ 拦截**）。"
+    },
+    {
+      "path": "docs/adr/ADR-commit-verification-gate.md",
+      "find": "- [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。\n- [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。\n- [ ] **V10 免宣称十八项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。\n  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。\n- [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。",
+      "replace": "- [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。\n- [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。\n- [ ] **V10 免宣称十六项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。\n  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。\n- [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。⚠ **2026-11-23 订正**：原文写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ 改插件**不再需要重启**；改坏的后果变成「**上一次成功加载的版本继续在跑**」⇒ 门控**不缺席**，但跑的是**旧判定**（依据：`docs/adr/ADR-role-aware-permissions.md` D5⑥）。\n\n> ⚠ **commit-gate 的十八项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。\n\n#### 2.8.8 D9 宣称边界索引（commit-gate，**只索引，不定义语义**）",
+      "replace": "- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。⚠ **2026-11-23 订正**：原文写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ 改插件**不再需要重启**；改坏的后果变成「**上一次成功加载的版本继续在跑**」⇒ 门控**不缺席**，但跑的是**旧判定**（依据：`docs/adr/ADR-role-aware-permissions.md` D5⑥）。\n\n> ⚠ **commit-gate 的十六项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。\n\n#### 2.8.8 D9 宣称边界索引（commit-gate，**只索引，不定义语义**）"
+    },
+    {
+      "path": "docs/MULTI-AGENT-DESIGN.md",
+      "find": "- **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑱** 未声明仓的留痕是尽力而为 ⇒ 见 ADR D9 表（判据真源）\n\n### 2.9 subagent 输入契约（v2.3.0 新增）",
+      "replace": "- **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n\n### 2.9 subagent 输入契约（v2.3.0 新增）"
+    },
+    {
       "path": "tests/commit-gate-d9-registration.test.ts",
-      "find": " * - **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n * - **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n * - **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）\n */\nimport { describe, expect, test } from \"bun:test\"",
+      "find": "/**\n * D9 十七项「三处登记」守卫（⑰ 由 D10 批次补入；①–⑯ 仍由已归档 change 的「十六项」小节承担） —— `ADR-commit-verification-gate` 的 **V10 机械载体**\n *\n * 判据真源：`docs/adr/ADR-commit-verification-gate.md` 的 **D9 表前言**（标识口径 + 三处载体）",
+      "replace": "/**\n * D9 十六项「三处登记」守卫 —— `ADR-commit-verification-gate` 的 **V10 机械载体**\n *\n * 判据真源：`docs/adr/ADR-commit-verification-gate.md` 的 **D9 表前言**（标识口径 + 三处载体）"
+    },
+    {
+      "path": "tests/commit-gate-d9-registration.test.ts",
+      "find": " * - **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n * - **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n * - **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）\n * - **D9⑱** 未声明仓的留痕是尽力而为 ⇒ 见 ADR D9 表（判据真源）\n */\nimport { describe, expect, test } from \"bun:test\"",
       "replace": " * - **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n * - **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n */\nimport { describe, expect, test } from \"bun:test\""
     },
     {
@@ -191,7 +162,7 @@
     },
     {
       "path": "tests/commit-gate-d9-registration.test.ts",
-      "find": "  const expected = parseAdrItems(t.adr)\n\n  // AC3：源侧一致性（恰好 17、id 唯一、标题非空）\n  if (expected.length !== 17) v.push(`ADR D9 表应恰 17 项，实际 ${expected.length} 项`)\n  const ids = expected.map((e) => e.id)\n  if (new Set(ids).size !== ids.length) v.push(\"ADR D9 表的标识不唯一\")",
+      "find": "  const expected = parseAdrItems(t.adr)\n\n  // AC3：源侧一致性（恰好 17、id 唯一、标题非空）\n  if (expected.length !== 18) v.push(`ADR D9 表应恰 18 项，实际 ${expected.length} 项`)\n  const ids = expected.map((e) => e.id)\n  if (new Set(ids).size !== ids.length) v.push(\"ADR D9 表的标识不唯一\")",
       "replace": "  const expected = parseAdrItems(t.adr)\n\n  // AC3：源侧一致性（恰好 16、id 唯一、标题非空）\n  if (expected.length !== 16) v.push(`ADR D9 表应恰 16 项，实际 ${expected.length} 项`)\n  const ids = expected.map((e) => e.id)\n  if (new Set(ids).size !== ids.length) v.push(\"ADR D9 表的标识不唯一\")"
     },
     {
@@ -201,12 +172,12 @@
     },
     {
       "path": "tests/commit-gate-d9-registration.test.ts",
-      "find": "\ndescribe(\"AC3 期望集从 ADR 派生（不写死）\", () => {\n  test(\"ADR 恰 17 项、标识唯一、标题非空\", () => {\n    const items = parseAdrItems(readFileSync(path.join(ROOT, ADR_REL), \"utf8\"))\n    expect(items.length).toBe(17)\n    expect(new Set(items.map((i) => i.id)).size).toBe(items.length)\n    for (const i of items) expect(norm(i.title).length).toBeGreaterThan(0)",
+      "find": "\ndescribe(\"AC3 期望集从 ADR 派生（不写死）\", () => {\n  test(\"ADR 恰 18 项、标识唯一、标题非空\", () => {\n    const items = parseAdrItems(readFileSync(path.join(ROOT, ADR_REL), \"utf8\"))\n    expect(items.length).toBe(18)\n    expect(new Set(items.map((i) => i.id)).size).toBe(items.length)\n    for (const i of items) expect(norm(i.title).length).toBeGreaterThan(0)",
       "replace": "\ndescribe(\"AC3 期望集从 ADR 派生（不写死）\", () => {\n  test(\"ADR 恰 16 项、标识唯一、标题非空\", () => {\n    const items = parseAdrItems(readFileSync(path.join(ROOT, ADR_REL), \"utf8\"))\n    expect(items.length).toBe(16)\n    expect(new Set(items.map((i) => i.id)).size).toBe(items.length)\n    for (const i of items) expect(norm(i.title).length).toBeGreaterThan(0)"
     },
     {
       "path": "tests/commit-gate-d9-registration.test.ts",
-      "find": "  test(\"派生对 ADR 文本的变化敏感（加一行 ⇒ 期望集变大）\", () => {\n    const adr = readFileSync(path.join(ROOT, ADR_REL), \"utf8\")\n    // ⚠ 探针用一个**未登记的新 id**（⑰ 已被 D10③′ 登记 ⇒ 用 ⑱）\n    const grown = parseAdrItems(`${adr}\\n| ⑱ | **新增项标题** | 描述 |\\n`)\n    expect(grown.map((i) => i.id)).toContain(\"D9⑱\")\n  })\n})\n\ndescribe(\"AC4 加新一行 ⇒ 必红（判别力）\", () => {\n  test(\"ADR 多一行而未登记 ⇒ 报对应 id 缺\", () => {\n    const base = realTexts()\n    // ⚠ 探针 id 必须是**未登记**的（⑰ 已登记 ⇒ 用 ⑱）\n    const v = violations(withOverride({ adr: `${base.adr}\\n| ⑱ | **新增项标题** | 描述 |\\n` }))\n    expect(v.length).toBeGreaterThan(0)\n    for (const face of [\"AC 面\", \"测试注释\", \"主题文档\"]) {\n      expect(v).toContain(`${face} 缺 D9⑱`)\n    }\n  })",
+      "find": "  test(\"派生对 ADR 文本的变化敏感（加一行 ⇒ 期望集变大）\", () => {\n    const adr = readFileSync(path.join(ROOT, ADR_REL), \"utf8\")\n    // ⚠ 探针用一个**未登记的新 id**（⑰ 已被 D10③′ 登记 ⇒ 用 ⑱）\n    const grown = parseAdrItems(`${adr}\\n| ⑲ | **新增项标题** | 描述 |\\n`)\n    expect(grown.map((i) => i.id)).toContain(\"D9⑲\")\n  })\n})\n\ndescribe(\"AC4 加新一行 ⇒ 必红（判别力）\", () => {\n  test(\"ADR 多一行而未登记 ⇒ 报对应 id 缺\", () => {\n    const base = realTexts()\n    // ⚠ 探针 id 必须**未登记**（⑰/⑱ 已登记 ⇒ 用 ⑲）\n    const v = violations(withOverride({ adr: `${base.adr}\\n| ⑲ | **新增项标题** | 描述 |\\n` }))\n    expect(v.length).toBeGreaterThan(0)\n    for (const face of [\"AC 面\", \"测试注释\", \"主题文档\"]) {\n      expect(v).toContain(`${face} 缺 D9⑲`)\n    }\n  })",
       "replace": "  test(\"派生对 ADR 文本的变化敏感（加一行 ⇒ 期望集变大）\", () => {\n    const adr = readFileSync(path.join(ROOT, ADR_REL), \"utf8\")\n    const grown = parseAdrItems(`${adr}\\n| ⑰ | **新增项标题** | 描述 |\\n`)\n    expect(grown.map((i) => i.id)).toContain(\"D9⑰\")\n  })\n})\n\ndescribe(\"AC4 加第 ⑰ 行 ⇒ 必红（判别力）\", () => {\n  test(\"ADR 多一行而未登记 ⇒ 报 D9⑰ 缺\", () => {\n    const base = realTexts()\n    const v = violations(withOverride({ adr: `${base.adr}\\n| ⑰ | **新增项标题** | 描述 |\\n` }))\n    expect(v.length).toBeGreaterThan(0)\n    for (const face of [\"AC 面\", \"测试注释\", \"主题文档\"]) {\n      expect(v).toContain(`${face} 缺 D9⑰`)\n    }\n  })"
     },
     {
@@ -218,36 +189,6 @@
       "path": "tests/commit-gate-d9-registration.test.ts",
       "find": "      mkdirSync(path.dirname(active), { recursive: true })\n      mkdirSync(path.dirname(archived), { recursive: true })\n      writeFileSync(active, `# x\\n\\n${AC_HEADINGS[0]}\\n\\n- **D9①** t\\n\\n## 其它\\n`)\n      writeFileSync(archived, `# y\\n\\n${AC_HEADINGS[0]}\\n\\n- **D9②** t\\n`)\n      const found = collectAcFaceFiles(path.join(tmp, \"changes\")).map((f) => path.relative(tmp, f.path)).sort()\n      expect(found).toEqual([path.join(\"changes\", \"archive\", \"2026-01-01-y\", \"proposal.md\"), path.join(\"changes\", \"x\", \"proposal.md\")])",
       "replace": "      mkdirSync(path.dirname(active), { recursive: true })\n      mkdirSync(path.dirname(archived), { recursive: true })\n      writeFileSync(active, `# x\\n\\n${AC_HEADING}\\n\\n- **D9①** t\\n\\n## 其它\\n`)\n      writeFileSync(archived, `# y\\n\\n${AC_HEADING}\\n\\n- **D9②** t\\n`)\n      const found = collectAcFaceFiles(path.join(tmp, \"changes\")).map((f) => path.relative(tmp, f.path)).sort()\n      expect(found).toEqual([path.join(\"changes\", \"archive\", \"2026-01-01-y\", \"proposal.md\"), path.join(\"changes\", \"x\", \"proposal.md\")])"
-    },
-    {
-      "path": "docs/adr/ADR-commit-verification-gate.md",
-      "find": "⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。\n\n### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十七项）\n\n> 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。\n> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑰`，由该列**派生**，**不在表里另加列**）。\n> **三处载体**（**真源 = 本文 D9 表**；「三处登记」指的是下面三面，**不含本表** —— 本表是判据来源，不是登记面）：\n> ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 免宣称项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；\n> ② **测试注释面** = `tests/commit-gate-d9-registration.test.ts` 的 **JSDoc 头**（首个 `import` 之前）；\n> ③ **主题文档面** = `docs/MULTI-AGENT-DESIGN.md` **§2.8.8** 索引段。",
-      "replace": "⇒ **`prompts/build.md` 的 `<!-- capability:build -->` 块**必须同步（逐字比对守卫；plan/front 的 shell 分类不变 ⇒ 不受影响）。\n\n### D9 宣称边界 / 免宣称（**防事故，不防绕过** —— 十六项）\n\n> 按 `ADR-role-aware-permissions` D5 的形态：每项写清「防什么 / 不防什么 / 缓解」，并在 **AC + 测试注释 + 主题文档三处**登记。\n> **标识口径**：`D9` + 本表 `#` 列的原文（`D9①` … `D9⑯`，由该列**派生**，**不在表里另加列**）。\n> **三处载体**（**真源 = 本文 D9 表**；「三处登记」指的是下面三面，**不含本表** —— 本表是判据来源，不是登记面）：\n> ① **AC 面** = 对应 change 的 `proposal.md` 的**行首标题** `## D9 十六项登记（AC 面）` 小节（活跃 change 或 `archive/<date>-<n>`，**各小节并集**；⚠ **判别口径**：同一项只在**一处**小节登记 —— 跨小节重复 ⇒ 按面唯一性判红（归档 proposal 不可回改 ⇒ 新项只能登在**新** change 的同名小节；两个**活跃** change 同时登记同一新项 ⇒ 亦红，需其一归档后合流））；\n> ② **测试注释面** = `tests/commit-gate-d9-registration.test.ts` 的 **JSDoc 头**（首个 `import` 之前）；\n> ③ **主题文档面** = `docs/MULTI-AGENT-DESIGN.md` **§2.8.8** 索引段。"
-    },
-    {
-      "path": "docs/adr/ADR-commit-verification-gate.md",
-      "find": "⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。\n\n**SU 2026-11-27（D10）新增后果**\n- **正**：有存量红的仓也能声明门禁 ⇒ 门禁覆盖面扩大；放行是**显式登记**⇒ 审计链完整（谁登记、登记了什么）。\n- **负**：baseline 是**显式放行**的登记 ⇒ 登记不严谨就会放过真回归 ⇒ 单调性守卫（V24）+ 可清理提示是**配套**，不是可选项。\n- **风险 ①（误拒方向）**：命中判定依赖**输出文本**子串匹配 ⇒ 工具输出格式变化可能导致「命中不到」⇒ 退回「照旧拒」（方向安全，但会误拒 ⇒ 需人工更新 `match`）。\n- **风险 ②（误命中方向 · 更危险）**：`match` 过宽 ⇒ **新失败的输出仍含该子串** ⇒ commit 路径**放过真回归**（例：`match: \"3 fail\"`，失败数 3 → 13 后输出 `\"13 fail\"` **仍含** `\"3 fail\"`）⇒ 缓解 = `match` **特异性守卫**（≥8 字、非纯数字/通用词）+ 巡检层按**失败标识/计数**做**集合比对**（不复用子串语义 ⇒ 失败数膨胀会被发现）。\n- **风险 ③（机制在、没人跑）**：**若 fail-closed 未落实** ⇒ 巡检层缺席 ⇒ 「防增」无人执行 ⇒ baseline 只增不减 ⇒ 真回归被放过；⇒ 缓解 = **巡检载体必须存在**（缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门）+ commit 时存在性/绑定检查（D10② 三条硬约束）。⚠ 修复后的口径：**「防增」归声明内容守卫**（非巡检）；巡检缺席时 baseline 根本不适用（字段无效 ⇒ 硬门），故该风险只在「fail-closed 未落地」时成立。\n\n**风险**\n- 门禁依赖插件与声明 ⇒ 任一缺席 ⇒ 静默无门禁（D9①②④）⇒ 层 2 真宿主验 + 守卫 + **在场性体检**（doctor 检出「静默」本身；⚠ **检测 ≠ 拦截**）。",
-      "replace": "⇒ 回滚必须**三步同批**完成，并跑 `bun test tests/` + `check-upstream-anchors.sh`。\n\n**风险**\n- 门禁依赖插件与声明 ⇒ 任一缺席 ⇒ 静默无门禁（D9①②④）⇒ 层 2 真宿主验 + 守卫 + **在场性体检**（doctor 检出「静默」本身；⚠ **检测 ≠ 拦截**）。"
-    },
-    {
-      "path": "docs/adr/ADR-commit-verification-gate.md",
-      "find": "- [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。\n- [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。\n- [ ] **V10 免宣称十七项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。\n  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。\n- [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。",
-      "replace": "- [ ] **V8 后端会话同样受门禁**（后端按其 `role_class` 的写集判）。\n- [ ] **V9 治理面逐点清单 20 点全部命中**（内容锚点核对）+ 能力面投影块同步（否则投影守卫判红）。**变红**：把 `MAD §2.8.7 D5②` 措辞改回「不在范围」⇒ V9 红。\n- [ ] **V10 免宣称十六项三处登记**（AC + 测试注释 + 主题文档）+ D5② 旧措辞三处同批改 + 父篇 `:43` / 修订行已落改。**变红**：删掉任一处登记 ⇒ V10 红。\n  **机械载体** = `tests/commit-gate-d9-registration.test.ts`：期望集**从本文 D9 表派生**（不写死）+ 区段作用域（只认行首标题 / JSDoc 头 / §2.8.8）+ 行形态与**标题保真** + 按面唯一性 + **「本文加第 ⑰ 行而未登记 ⇒ 必红」的判别力用例**；证据包 = `.rddf/reviews/commit-gate-d9-registration-mutations.md`。✅ **本项的第二子句（D5② 旧措辞三处同批改）已闭合**（2026-11-18）：`openspec/changes/role-aware-permissions/proposal.md`（2026-11-19 起归档于 `openspec/changes/archive/2026-11-19-role-aware-permissions/`）的 D5② 行已同步为「已由本文 D5 部分闭合」措辞（与本主题文档 §2.8.7、`tests/role-exemptions.test.ts` 的文件头**三处同措辞**）。\n- [ ] **V11 层 2**：真宿主触发 `git commit`（验证红）⇒ 观察到受控 Tool.Error；绿侧在**一次性临时 worktree** 里验（不污染本仓）⇒ 观察到放行；**并**实测 force-push 八条 `deny` 规则（Rev 1 四形态 + Rev 2 四形态）命中、`git push origin main` 仍 `ask`、saved approval 与 config `deny` 的优先级。"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。⚠ **2026-11-23 订正**：原文写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ 改插件**不再需要重启**；改坏的后果变成「**上一次成功加载的版本继续在跑**」⇒ 门控**不缺席**，但跑的是**旧判定**（依据：`docs/adr/ADR-role-aware-permissions.md` D5⑥）。\n\n> ⚠ **commit-gate 的十七项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。\n\n#### 2.8.8 D9 宣称边界索引（commit-gate，**只索引，不定义语义**）",
-      "replace": "- **D5⑥** **执行点缺席**（插件未激活 / `--standalone` / 插件文件不在 `plugins/`）⇒ 门控不生效；租约仍剩 `role-switch.sh` 与**派发临界区**两个执行点。⚠ **2026-11-23 订正**：原文写「改插件后未 `service restart`」—— 本机 2026-11-11 起改为**从源码构建**后，插件源码变更会被**热加载**（上游 `packages/core/src/plugin/supervisor.ts` 订阅源码/模块变更并重新激活，100ms 防抖）⇒ 改插件**不再需要重启**；改坏的后果变成「**上一次成功加载的版本继续在跑**」⇒ 门控**不缺席**，但跑的是**旧判定**（依据：`docs/adr/ADR-role-aware-permissions.md` D5⑥）。\n\n> ⚠ **commit-gate 的十六项免宣称不在本节**（判据真源不同）⇒ 见 **§2.8.8**；两节勿混读。\n\n#### 2.8.8 D9 宣称边界索引（commit-gate，**只索引，不定义语义**）"
-    },
-    {
-      "path": "docs/MULTI-AGENT-DESIGN.md",
-      "find": "- **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑰** baseline 命中放行 ⇒ 见 ADR D9 表（判据真源）\n\n### 2.9 subagent 输入契约（v2.3.0 新增）",
-      "replace": "- **D9⑮** 命令词的运行时 / 转义表还原不可静态判定 ⇒ 见 ADR D9 表（判据真源）\n- **D9⑯** 引号包住的 `git` 子命令走 fail-closed 误拒 ⇒ 见 ADR D9 表（判据真源）\n\n### 2.9 subagent 输入契约（v2.3.0 新增）"
-    },
-    {
-      "path": "docs/adr/ADR-commit-verification-gate.md",
-      "find": "| ⑰ | **baseline 命中放行** | 防「未登记的失败提交」；**不防**宽 `match` 误命中（`\"3 fail\"` ⊆ `\"13 fail\"` ⇒ 放过真回归）/ **巡检缺席** ⇒ 单调性失效 / 登记腐坏（条目不再命中却仍在清单）/ 输出措辞漂移 ⇒ 命中不到；**缓解** = `match` **特异性守卫**（去空白后 ≥ 8 字、末尾 token 非通用词）+ **巡检载体必须存在**（缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门）+ 巡检层的**标识集合**比对（数字边界 ⇒ 失败数膨胀必被发现）+ 「可清理」提示 + 运行时留痕（D10①–D10③） |\n",
-      "replace": ""
     }
   ],
   "drill_env": {
@@ -266,11 +207,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "61ae526f6a61c2cbc1d595e940fcfc7d643ee6fe",
-    "at": "2026-11-27",
-    "result": "pass",
-    "content_hash": "e136730f1081a9610a532cd807d12041b145a289a403ac4c0add66b6ea7cdf31"
   }
 }
