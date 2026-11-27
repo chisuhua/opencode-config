@@ -4,8 +4,8 @@
     {
       "mechanism": "commit-gate",
       "adr_primary": "docs/adr/ADR-commit-verification-gate.md",
-      "state": "active",
-      "notes": "commit 工具层验证门；三步回滚（撤放行 / 撤 sessions 过滤 / 兼容读）已清单化并实测。 2026-11-27：治理面措辞同批改动（prompts/build.md §输出 的「未声明 ⇒ 三判据不设门禁」事实化 + 立项路由 / role-switch 用法 / 调研委派可点数触发 / 审查配对补口）⇒ 回滚清单的 step-2 锚点随实现更新 ⇒ 清单内容实质改动 ⇒ 按 ADR D5 撤 last_drill 并退 proving；演练（隔离副本）PASS（基线 0206fa73）⇒ 已回填 last_drill 并转回 active。",
+      "state": "proving",
+      "notes": "commit 工具层验证门；三步回滚（撤放行 / 撤 sessions 过滤 / 兼容读）已清单化并实测。 2026-11-27：治理面措辞同批改动（prompts/build.md §输出 的「未声明 ⇒ 三判据不设门禁」事实化 + 立项路由 / role-switch 用法 / 调研委派可点数触发 / 审查配对补口）⇒ 回滚清单的 step-2 锚点随实现更新 ⇒ 清单内容实质改动 ⇒ 按 ADR D5 撤 last_drill 并退 proving；演练（隔离副本）PASS（基线 0206fa73）⇒ 已回填 last_drill 并转回 active。 **2026-11-27（D10 baseline 实现 · change `commit-gate-baseline-known-failures`）**：清单新增 delete ×4 / edits ×16（巡检脚本 + 两个新测试 + 期望集 + 防增守卫 + D9 多标题与计数）⇒ 清单内容实质改动 ⇒ 按 ADR D5 **撤 last_drill 并退 proving**；下一步：commit #1 → 演练（隔离副本）→ 回填 last_drill 并转回 active（commit #2）。",
       "manifest_ref": "commit-gate",
       "watch": [
         "docs/adr/ADR-commit-verification-gate.md",
@@ -16,7 +16,7 @@
     {
       "mechanism": "plan-topics",
       "adr_primary": "docs/adr/ADR-plan-multi-session-collaboration.md",
-      "state": "active",
+      "state": "proving",
       "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。",
       "manifest_ref": "plan-topics",
       "watch": [
@@ -28,7 +28,7 @@
     {
       "mechanism": "plan-synthesis-offload",
       "adr_primary": "docs/adr/ADR-plan-synthesis-offload.md",
-      "state": "active",
+      "state": "proving",
       "manifest_ref": "plan-synthesis-offload",
       "watch": [
         "scripts/plan-synthesis-check.ts",
@@ -186,6 +186,20 @@
         "lib/role-policy.ts"
       ],
       "notes": "治理面清单**配置化**（B1）已落地（2026-11-23；change = `openspec/changes/archive/2026-11-23-governance-paths-config-migration/`）：清单真源 = `.rddf/config/governance-paths.json`（**政策数据**，归 architect），`lib/role-policy.ts` 只留**兜底默认**（`DEFAULT_GOVERNANCE_PATHS`）+ `resolveGovernancePaths()` 三态解析（读根 = 治理根）+ **机制面禁区**（`lib/` / `plugins/` 永不治理 ⇒ 判定侧结构性排除）。回滚清单 `.rddf/rollback/governance-paths-config.json`（删新配置 + 还原机制/守卫/散文 + 结构化退役本条目）。2026-11-23：drill（隔离副本，基线 `e547f47`）**PASS** ⇒ `last_drill` 已回填 ⇒ 由 `proving` 转 `active`。 2026-11-24：`edits[13]`（原 2914 字符的**整张角色表** pin）拆成 2 条链式 edit（段 B 的差异用整行替换；迁移的差异用门控句片段）⇒ 清单内容变更 ⇒ 按 ADR D5 两段式撤 `last_drill` + 本条目转 `proving` ⇒ 演练 PASS 后回填并转 `active`。 2026-11-24（补）：**段 B（写集机读投影）与本机制客观耦合** —— 迁移前 `ROLE_WRITE_POLICY.architect.allow` 只有两项、迁移后多 `.rddf/config/governance-paths.json` ⇒ 回滚本机制会改真源 ⇒ 段 B 渲染出的 architect 块必然失配 ⇒ 段 B 的产物（architect 块 / 6 角色断言族 / 渲染器单测）**纳入本清单一起退役**（edits 的 e3/e4/e5）。 2026-11-24：拆分后演练（隔离副本，基线 `2cfd04d`）PASS ⇒ 回填 `last_drill` ⇒ 由 `proving` 转 `active`。 2026-11-24（补 2）：**3 条大 find 全部拆完**（`edits[11]` 12768 → 11 条 · `edits[13]` 2914 → 2 条 · `edits[14]` 2657 → 3 条；清单 16 → 29 条，该清单 maxLen 12768 ⇒ 3541）⇒ 语义零损失（等价性校验：拆出的序列依次应用 ⇒ 逐字等于原 replace）⇒ 清单内容再变 ⇒ 再次撤 `last_drill` + 转 `proving` ⇒ 演练 PASS 后回填。 2026-11-24：拆分后演练（隔离副本，基线 `2cfd04d`）PASS ⇒ 回填 `last_drill` ⇒ 由 `proving` 转 `active`。"
+    },
+    {
+      "mechanism": "plan-collaboration-hardening",
+      "adr_primary": "docs/adr/ADR-plan-collaboration-hardening.md",
+      "state": "unmanifested",
+      "watch": [
+        "prompts/plan.md",
+        "prompts/plan-worker.md",
+        "scripts/plan-topic-check.ts",
+        "scripts/plan-synthesis-check.ts",
+        "lib/plan-topics.ts"
+      ],
+      "pending_backlog": ".rddf/rollback/pending/plan-collaboration-hardening.md",
+      "notes": "plan 侧协作机制五项补强的 6 批（P0 回滚登记 / P1 模型配置化 / P2 结算闭环 / P3 目标审查 / P4 动态分解 / P5 结论可追溯）。2026-11-27 建条目：ADR 已 Proposed，机制未落地 ⇒ unmanifested + 债指针。"
     }
   ]
 }
