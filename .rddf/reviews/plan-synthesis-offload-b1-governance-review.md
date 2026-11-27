@@ -66,12 +66,28 @@ critic 对 focus 三问的结论（摘）：
 
 > ⚠ 关于 `1eafb94a` 那次 `test_plan_topics_runtime.bats=fail`：已查证为**抖动**（该用例跑真 `plan` 会话让模型照抄命令，且当时有 429 回落）；`0c36ee02` 与 `68c76242` 均 ok ⇒ 非本批引入的回归。
 
-## 5. 未闭合（如实登记）
+## 5. F3 后续轮（第 4 轮，oracle 复审）：**PASS-WITH-NOTES** —— F3 闭合
+
+用户裁决 **A**（接受「prompt 覆盖工具 NEVER」为先例）后，`prompts/plan.md` 改为授权链三层：
+
+```
+工具 NEVER（上游，不可控）
+  → ADR-plan-synthesis-offload D3:79「纪律裁决（用户已裁）」（真源）
+  → prompts/plan.md 的转译（履行 D3 条规定的代价）
+```
+
+- **oracle 更正我的一处误判**：我曾担心「ADR 无明文先例条目 ⇒ 悬空授权」；实际 `ADR:79` 逐字写有「机制性覆盖算『用户明确要求』…不是禁『按机制设定』」⇒ **授权链无悬空**。`Proposed` 在本仓状态机里 = 已决态，授权效力不依赖 `Accepted`。
+- **新增候选 + 禁猜**：给出实测强模型 `minimax-cn/MiniMax-M3.1-Flash` +「不可用则同档更强」+「先查 `models` 工具」。
+- **note 已闭合**：`:305` 加「**仅合成节点**」限定，封死强模型向普通派发的泛化（唯一有实质后果的一条）。
+- 其余 note（ADR `:79` 补日期 / `:208` 登记 A/B 换档同批改 prompt）为 architect 面的可选追溯项，记入 backlog。
+
+## 6. 未闭合（如实登记）
 
 | 项 | 状态 | 归属 |
 |---|---|---|
-| **F3**（prompt 的 `model` 覆盖 vs 工具 `NEVER`；占位符无候选） | ⏸ **等用户裁决 A/B/C** | 用户 → 视结果回 ADR D3 或改 prompt |
+| ~~**F3**（prompt 的 `model` 覆盖 vs 工具 `NEVER`）~~ | ✅ **已闭合**（用户选 A；oracle 第 4 轮 PASS-WITH-NOTES） | — |
 | **V7**（根上下文降幅 ≤ 60,000） | ⬜ 需新根会话 | 后续批 |
 | **AC14 / V11b**（provider 实际服务模型，响应级） | ⬜ 判据未实现（语义已确认） | 后续批 |
 | ADR 的 Verification 表补 **V4a/V4b/V4c/V5d** + V11b 表述回填 | ⬜ | architect |
+| ADR `:79` 补「2026-11-27 用户复审确认选 A」+ `:208` 登记「A/B 换档同批改 plan.md」 | 📋 backlog（可选追溯） | architect |
 | 父篇前置事实补「catalog 未暴露 vs `permission.rejected`」 | 📋 backlog | architect |
