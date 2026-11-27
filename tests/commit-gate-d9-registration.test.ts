@@ -1,5 +1,5 @@
 /**
- * D9 十六项「三处登记」守卫 —— `ADR-commit-verification-gate` 的 **V10 机械载体**
+ * D9 十七项「三处登记」守卫（⑰ 由 D10 批次补入；①–⑯ 仍由已归档 change 的「十六项」小节承担） —— `ADR-commit-verification-gate` 的 **V10 机械载体**
  *
  * 判据真源：`docs/adr/ADR-commit-verification-gate.md` 的 **D9 表前言**（标识口径 + 三处载体）
  *          与 **V10**（「删掉任一处登记 ⇒ 红」）。

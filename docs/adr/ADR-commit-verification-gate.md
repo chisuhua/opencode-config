@@ -8,9 +8,9 @@
 | Date | 2026-11-18 |
 | Author | architect（主会话） |
 | Parent | `ADR-role-aware-permissions`（其 D5② 免宣称由本文**部分**闭合；其 `:43` 的执行点表述由本文改写）＋ `ADR-class-write-scope-alignment`（能力面投影纪律，引用点 = `lib/delegate-core.ts:619-627` 的 ask/deny 计数派生） |
-| 关联 change | **已归档**（2026-11-18）：`openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/`（Rev 1 + Rev 2 / 2.1 + Rev 3 的实施载体；AC 表 = V1 / V13–V18 的映射）。⚠ Rev 1 批次的 change = `role-aware-permissions`（V2–V12 的载体） |
-| 关联 backlog | **SU 2026-11-27（D10）**：`backlog: add-commit-gate-baseline-known-failures`（rdd-workflow 仓的 improvement 草稿；本 SU 只改**判据语义**，实现另案）； ① `openspec/changes/required-question-commit-confirm/proposal.md`（**已归档** 2026-11-19 ⇒ `openspec/changes/archive/2026-11-19-required-question-commit-confirm/`）的 AC5/AC6 原以「权限层加 ask」为机制结论⇒ **本文反转该档位** ⇒ **该 change 归档时已按本文改写 AC5/AC6**（当时的机制记为历史事实，现行机制以本文为准）；② `prompts/front.md` 的「提交由用户在确认后另行发起」措辞会陈旧（front 的 commit 本就 deny ⇒ 行为不变）|
-| AC 映射 | **V18 → AC0**（tokenizer 词值还原，**排在 V13–V17 之前实施** —— 词值还原是 V13–V15 heredoc 用例所依赖的同一份引号/转义规则，先落它可避免基于旧词值写用例再返工）；**V13 → AC1**、**V14 → AC2a + AC2b**、**V15 → AC3**、**V16 → AC4**、**V17 → AC5**、**V1 → AC6**（Rev 2 / 2.1 / Rev 3 批次，`openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/proposal.md`）；**V2–V12 → `role-aware-permissions` 的 AC2–AC24**（Rev 1 批次）。AC7（回归）/ AC8（证据包）/ AC9（push-gate 前处理对齐）是本 change 的**附加**判据（无对应 V 项） |
+| 关联 change | **已归档**（2026-11-18）：`openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/`（Rev 1 + Rev 2 / 2.1 + Rev 3 的实施载体；AC 表 = V1 / V13–V18 的映射）；**D10 baseline 实现载体**（2026-11-28 归档）：`openspec/changes/archive/2026-11-28-commit-gate-baseline-known-failures/`（AC 表 = **V20–V25** 的映射：V20 → AC1 / V21 → AC1② / V22 → AC2 / V23 → AC3 / V24 → AC5 / V25 → AC4 + AC6；另 AC7 判别力 / AC8 回滚面 / AC9 门）。⚠ Rev 1 批次的 change = `role-aware-permissions`（V2–V12 的载体） |
+| 关联 backlog | **SU 2026-11-27（D10）**：`backlog: add-commit-gate-baseline-known-failures`（rdd-workflow 仓的 improvement 草稿；本 SU 只改**判据语义**，实现另案）—— ⚠ **实现已落地并归档**（2026-11-28，见上行「关联 change」）⇒ 本条 backlog **指针**仅作沿革；其草稿的状态行 / AC 仍是**实施前快照（未同步）**；本仓可点到的落地副本 = `.rddf/improvements/commit-gate-baseline-known-failures.md`； ① `openspec/changes/required-question-commit-confirm/proposal.md`（**已归档** 2026-11-19 ⇒ `openspec/changes/archive/2026-11-19-required-question-commit-confirm/`）的 AC5/AC6 原以「权限层加 ask」为机制结论⇒ **本文反转该档位** ⇒ **该 change 归档时已按本文改写 AC5/AC6**（当时的机制记为历史事实，现行机制以本文为准）；② `prompts/front.md` 的「提交由用户在确认后另行发起」措辞会陈旧（front 的 commit 本就 deny ⇒ 行为不变）|
+| AC 映射 | **V18 → AC0**（tokenizer 词值还原，**排在 V13–V17 之前实施** —— 词值还原是 V13–V15 heredoc 用例所依赖的同一份引号/转义规则，先落它可避免基于旧词值写用例再返工）；**V13 → AC1**、**V14 → AC2a + AC2b**、**V15 → AC3**、**V16 → AC4**、**V17 → AC5**、**V1 → AC6**（Rev 2 / 2.1 / Rev 3 批次，`openspec/changes/archive/2026-11-18-commit-gate-force-push-heredoc/proposal.md`）；**V2–V12 → `role-aware-permissions` 的 AC2–AC24**（Rev 1 批次）。AC7（回归）/ AC8（证据包）/ AC9（push-gate 前处理对齐）是本 change 的**附加**判据（无对应 V 项）；**D10 批次**：**V20 → AC1**、**V21 → AC1②**（无专属 AC ⇒ 落 AC1 的第二子句）、**V22 → AC2**、**V23 → AC3**、**V24 → AC5**、**V25 → AC4 + AC6**（另 AC7 判别力 / AC8 回滚面 / AC9 门） |
 | 审稿报告 | `.rddf/reviews/commit-verification-gate-review.md`（oracle → critic 输出誊写；oracle 轮逐条应答在同文件，**不进正文**） |
 | 修订 | **SU 2026-11-27（D10）**：D2① 追加**显式容忍**口径（失败且命中 `known_failures` ⇒ 视为通过；未命中仍拒）—— 决策与依据见 **D10**（含 D10④ 两个必答题的答案与实测数字），本行只留指针。2026-11-18：oracle / critic 的逐轮处置见审稿报告（§1–§2.4）；本文只保留**结论**。**Rev 2（2026-11-18，用户裁决）**：强推形状补 `+refspec` / `--mirror`（D4 / D9⑬）；heredoc 预处理改单遍跨行引号感知（D5 第 0 步 / D9⑫）；新增 D9⑭（删除类未纳入）；计数以 D4 为**唯一定义处**。Rev 2 的审查与逐条处置见审稿报告 §7（**不进正文**）。⚠ **Verification 勾选口径**：只勾**有证据**的项 —— V1 / V13–V18 的证据在审稿报告 §9（本批）与 §4.1（变红演练）；V2–V12 的证据在 §4 / §4.2（Rev 1 批次）⇒ 保持未勾（归档批统一核对），**不**在本文声称「已全部验证」。**Rev 3（2026-11-18，用户裁决并入本批）**：规划期实测发现**命令词的引用 / 转义**形态漏判（`g\it commit` / `$'git' commit` / `$"git" commit` ⇒ bash 真的执行 `git commit`，门禁判 `isCommit: false`）⇒ D5③ 扩为「**引用 / 转义还原后也算命令词**」、D9 新增 ⑮、Verification 增 V18。**Rev 3 收尾（归档前补登）**：D9 新增 ⑯（引号包住的 `git` 子命令 ⇒ fail-closed 误拒，方向安全）并把 ⑮ 的后果类补成两类（单条命令词不可识别 / **行吞** —— 后者会让**其后**的真命令完全不可见）。**2026-11-18（实施）**：D9 前言 / V10 / ⑯ 行补「标识口径 + 三处载体 + 机械载体」（change `commit-gate-d9-three-place-registration`；**不改任何决策内容**）；**2026-11-20（实施）**：回滚路径步骤 1/2 **清单化**（`.rddf/rollback/commit-gate.json`）并在隔离副本实测通过 ⇒ V12 勾选；步骤 2 的覆盖面补全（含同一批措辞的其它投影）＋登记保留项（D9⑯ 指针行）。**事实性补登，不改决策** |
 
@@ -425,12 +425,31 @@
 - [x] **V12 回滚路径可执行**：三步回滚后 `bun test tests/` 绿 + anchors 绿 + 文档与配置一致。
   **证据（2026-11-20）**：清单 = `.rddf/rollback/commit-gate.json`（`delete` 9 件 + `edits` 29 条，其中**步骤 1/2** = 25 条逐段回退）⇒ `bun scripts/rollback-drill.ts .rddf/rollback/commit-gate.json` **PASS**（隔离 clone：`bun test tests/` **809 pass / 0 fail**；`check-upstream-anchors.sh` **29/29** —— 后者校验的是**上游源码**语义锚点，与本仓回滚无关，此处仅记「同批复跑」）。「文档与配置一致」= **1 个仍然活着的守卫**（AC23：`capability:build` 机读块 == 配置投影）+ **3 项由清单同批编辑达成的结构自洽**（MAD 与 `role-exemptions` 的 D5② 同措辞 / 版本摘要行移除 / 落点完整性块移除）⇒ 后者是**编辑动作**，不是机械判据。
   ⚠ **未覆盖（如实登记）**：drill 基于 **HEAD**（`git clone` 只含已提交内容）⇒ 未提交改动不参与；「文档与配置一致」是**结构性**判据（守卫 + `find` 唯一性），不证明语义正确。
-- [ ] **V20 baseline 命中 ⇒ 放行**：声明带 `known_failures` 且该命令失败、输出含 `match` ⇒ 放行，且门禁输出一行**非抛错**留痕（`baseline 命中: <command> / match=<…>` ⇒ 运行时可区分「真绿」与「baseline 命中」）。**变红**：命中即拒 ⇒ V20 红；命中但**不留痕** ⇒ V20 红。
-- [ ] **V21 未命中仍拒**：失败但输出**不含** `match` ⇒ 拒（错误仍指名失败命令 + 输出尾部）。**变红**：未命中也放行 ⇒ V21 红。
-- [ ] **V22 默认不变**：**无** `known_failures` 的声明 ⇒ 行为与 SU 前**逐字相同**（任一非 0 ⇒ 拒）。**变红**：把「无条目」当命中 ⇒ V22 红。
-- [ ] **V23 绑定与边界**：`known_failures.command` 与 `verify_commands` 任一条**不逐字相等** ⇒ 该条目**无效**（不放行）；baseline **不豁免** D2②（暂存区为空）/ D2③（越写集）。**变红**：不匹配也放行 ⇒ V23 红。
-- [ ] **V24 单调性巡检（两条独立判据）**：① **防腐坏**：巡检层断言 `known_failures` ⊆ 实际失败集合；不再命中的条目 ⇒ 「可清理」提示。**变红**：去掉 ⊆ 断言 ⇒ V24① 红。② **防增长**：**声明内容守卫**逐项相等断言 `known_failures` 清单（改清单 ⇒ 守卫红）；使用方仓由巡检载体承担同职。**变红**：只实现 ⊆ 而不做声明内容守卫 ⇒ V24② 红（⚠ 只实现 ⊆ 时，「制造新失败 + 登记对应条目」仍能通过 ⇒ 「不能增」落空）。
-- [ ] **V25 巡检存在性与 D9⑰ 登记义务**：① 声明含 `known_failures` ⇒ 巡检载体**必须存在**（守卫断言）⇒ **baseline 绑定巡检守卫 command ⇒ 红**（否则该守卫的失败输出会被自己命中吞掉 ⇒「缺席」永远不可见）；**巡检守卫与其它 `verify_command` 共享合并输出 ⇒ 红**（吞没机理的专属钉；否则另案把巡检守卫并进其它命令时各条 V 判据均不会红）；**巡检缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门**（不是「声明作废 ⇒ 放行」）。② **实现另案**落地时，本 SU 的 D10③′ 面登记为 **D9⑰**（ADR 表（真源）+ 三处载体同批）⇒ 未登记 ⇒ 守卫红。**变红**：把「巡检缺席」做成「字段无效」以外的处理（⇒ 仍放行）⇒ V25 红；另案落地而 D9⑰ 未四面登记 ⇒ V25 红。
+  **证据（2026-11-28，D10 baseline 实现落地后补登 · V20–V25 组级说明）**：实现载体 = `openspec/changes/archive/2026-11-28-commit-gate-baseline-known-failures/`；验收报告 = `.rddf/reviews/commit-gate-baseline-known-failures-verify.md`；门 = `bun test tests/` ⇒ **1377 pass / 0 fail**（**归档前**实测：`openspec validate commit-gate-baseline-known-failures --strict` ⇒ valid —— change 已归档 ⇒ 该 change-id 形式不再解析，故此处记归档前的可复现形式）；回滚面（AC8）= 四步顺序实测完成（commit `4cbf5c0` → 隔离副本演练 → 回填 `last_drill` → 再 commit `973b451`）。
+
+  **逐条证据映射**（V ↔ AC ↔ 用例 / 变异）：
+
+  | V | AC | 用例 / 变异 | 覆盖强度 |
+  |---|---|---|---|
+  | V20 | AC1 | `tests/commit-gate-baseline.test.ts`：命中 ⇒ `matched: true` + `pattern` | 逻辑层**直接**；**接线层间接**（见下方未覆盖登记） |
+  | V21 | AC1② | 同文件「未命中 ⇒ 拒」 | 直接 |
+  | V22 | AC2 | 同文件「无 `known_failures` ⇒ 行为不变」 | 直接 |
+  | V23 | AC3 | 同文件（无效条目 / 特异性 / 超时按未命中 / 不豁免 D2②③ / 畸形声明兜底） | 直接；⚠ **「不匹配也放行」的变红子句未实测** |
+  | V24① | AC5 | `tests/commit-gate-baseline-doctor.test.ts`（膨胀必被发现 + 可清理 + 防增守卫） | 直接；⚠ **「去掉 ⊆ 断言」的变红子句未实测**（实测的是「复用子串」「去数字边界」） |
+  | V24② | AC5 | `tests/config-guards.test.ts` + `tests/fixtures/commit-gate-known-failures.expected.json` | 直接；⚠ **「只实现 ⊆ 而不做声明内容守卫」的变红子句未实测** |
+  | V25① | AC4 | `tests/commit-gate-baseline.test.ts`（巡检缺席 ⇒ 字段无效；**注入层**事实） | 逻辑层**直接**；**接线层间接**（见下） |
+  | V25② | AC6 | `tests/commit-gate-d9-registration.test.ts`（D9⑰ 四面齐备；删 ADR 行 ⇒ 计数 16≠17 ⇒ 红） | 直接 |
+  | 判别力 | AC7 | 7 条变异逐条实测必红（恒放行 / 不留痕 / 无条目当命中 / 去特异性 / 超时当命中 / 巡检复用子串 / 巡检缺席仍放行） | 直接 |
+
+  **⚠ 未覆盖（如实登记，同 V12 的写法）**：① **接线层无用例** —— `plugins/commit-gate.ts` 的 notice 构造与落盘（`:210` / `:230-232`）与巡检事实取用 / fail-closed（`:83-90` / `:193-197`）只有**逻辑层**覆盖（`tests/commit-gate-baseline.test.ts` 手工注入 notice 与 tracked 事实）⇒ **V20(b) 与 V25① 的执行点为间接覆盖**；D9② 已登记过同形态的坑（「纯逻辑测试覆盖不到接线层 ⇒ 接线层覆盖见 `tests/commit-gate-plugin.test.ts`」）⇒ 补 `tests/commit-gate-plugin-baseline.test.ts` 属**另案**（另案还须同步 `.rddf/rollback/commit-gate.json` 的 `edits` 并重跑回滚演练）。② 归档 change 的 `tasks.md` 声明过的 `tests/commit-gate-plugin-baseline.test.ts` **未落地** ⇒ AC7②「不留痕 ⇒ 红」的变异**施加在哪一层**未写明。
+- [x] **V20 baseline 命中 ⇒ 放行**：声明带 `known_failures` 且该命令失败、输出含 `match` ⇒ 放行，且门禁输出一行**非抛错**留痕（`baseline 命中: <command> / match=<…>` ⇒ 运行时可区分「真绿」与「baseline 命中」）。**变红**：命中即拒 ⇒ V20 红；命中但**不留痕** ⇒ V20 红。
+- [x] **V21 未命中仍拒**：失败但输出**不含** `match` ⇒ 拒（错误仍指名失败命令 + 输出尾部）。**变红**：未命中也放行 ⇒ V21 红。
+- [x] **V22 默认不变**：**无** `known_failures` 的声明 ⇒ 行为与 SU 前**逐字相同**（任一非 0 ⇒ 拒）。**变红**：把「无条目」当命中 ⇒ V22 红。
+- [x] **V23 绑定与边界**：`known_failures.command` 与 `verify_commands` 任一条**不逐字相等** ⇒ 该条目**无效**（不放行）；baseline **不豁免** D2②（暂存区为空）/ D2③（越写集）。**变红**：不匹配也放行 ⇒ V23 红。
+- [x] **V24 单调性巡检（两条独立判据）**：① **防腐坏**：巡检层断言 `known_failures` ⊆ 实际失败集合；不再命中的条目 ⇒ 「可清理」提示。**变红**：去掉 ⊆ 断言 ⇒ V24① 红。② **防增长**：**声明内容守卫**逐项相等断言 `known_failures` 清单（改清单 ⇒ 守卫红）；使用方仓由巡检载体承担同职。**变红**：只实现 ⊆ 而不做声明内容守卫 ⇒ V24② 红（⚠ 只实现 ⊆ 时，「制造新失败 + 登记对应条目」仍能通过 ⇒ 「不能增」落空）。
+- [x] **V25 巡检存在性与 D9⑰ 登记义务**：① 声明含 `known_failures` ⇒ 巡检载体**必须存在**（守卫断言）⇒ **baseline 绑定巡检守卫 command ⇒ 红**（否则该守卫的失败输出会被自己命中吞掉 ⇒「缺席」永远不可见）；**巡检守卫与其它 `verify_command` 共享合并输出 ⇒ 红**（吞没机理的专属钉；否则另案把巡检守卫并进其它命令时各条 V 判据均不会红）；**巡检缺席 ⇒ `known_failures` 字段无效 ⇒ 退回 D2① 硬门**（不是「声明作废 ⇒ 放行」）。② **实现另案**落地时，本 SU 的 D10③′ 面登记为 **D9⑰**（ADR 表（真源）+ 三处载体同批）⇒ 未登记 ⇒ 守卫红。**变红**：把「巡检缺席」做成「字段无效」以外的处理（⇒ 仍放行）⇒ V25 红；另案落地而 D9⑰ 未四面登记 ⇒ V25 红。
+
+
 - [x] **V13 heredoc 跨行引号 ⇒ 不得漏判**：`bash -c "line1\n<<'EOF'\n" ; git commit -m x` ⇒ **拒**（理由应为「单独成段」/解释器闭口，**不是**「暂存区为空」）。**变红**：退回逐行 `stripHeredocs` ⇒ V13 红。
 - [x] **V14 heredoc 正文仍是数据 ⇒ 不得误拒**：`git commit -F - <<'MSG' … MSG` ⇒ **放行**；标记行尾部保留（`… <<'MSG'` 之后的 `&& …` 仍参与判定）；正文含 `git commit` 且段首 `bash x.sh` ⇒ **不拦**。**变红**：不剥离正文 ⇒ V14 红。
 - [x] **V15 跨行引号合法提交 ⇒ 放行**：`git commit -m "a\nb"` ⇒ 放行；`"bash" -c …`（引号包住的解释器名）⇒ 仍拒。

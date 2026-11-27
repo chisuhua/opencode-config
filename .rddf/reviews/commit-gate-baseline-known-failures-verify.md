@@ -3,7 +3,7 @@
 > **验收对象**：本 change 的**实现**（治理仓 `~/.config/opencode` 的**工作树**，尚未提交 —— 见 AC8/AC9 的阻塞）
 > **验收时间**：2026-11-27
 > **执行角色**：builder（角色内建 verifier 契约 · **本地验收路径**）
-> **判据来源**：`openspec/changes/commit-gate-baseline-known-failures/proposal.md` 的 `## 验收标准`（AC1–AC9）
+> **判据来源**：`openspec/changes/archive/2026-11-28-commit-gate-baseline-known-failures/proposal.md` 的 `## 验收标准`（AC1–AC9；该 change 已于 2026-11-28 归档）
 > ⇒ 逐条映射到 ADR `docs/adr/ADR-commit-verification-gate.md` 的 **D10 + Verification V20–V25**（唯一真源）
 
 ## 实现清单（本轮改动）
@@ -57,4 +57,4 @@
 
 ## 已用轮次
 
-**1 / 3**（`RDDF_VERIFIER_MAX_LOOPS=3`）。失败项：**0**（AC8 第二步 / AC9 全仓门为 **blocked**，非 implementation_gap）。
+**1 / 3**（`RDDF_VERIFIER_MAX_LOOPS=3`）。失败项：**0**。**勘误（2026-11-28，措辞订正）**：本段原文写「AC8 第二步 / AC9 全仓门为 **blocked**（取证不可用 ⇒ 非 implementation_gap）」，与本报告 §逐条判定 的 AC8 / AC9 行「已完成」相矛盾 ⇒ 订正为：AC8 第二步 / AC9 全仓门在**初稿时**判为 **blocked**（取证不可用 ⇒ 非 implementation_gap）；后经补证 —— 回滚面四步完成（commit `4cbf5c0` → 隔离副本演练 → 回填 `last_drill` → 再 commit `973b451`）、全仓门补证后全绿（`1377 pass / 0 fail`）—— 已转 **已完成**（**不再**是 blocked）。**权威源**：本文件 §逐条判定 的 AC8 / AC9 行；**原文位置**：本文件 §已用轮次 段（本段首句即原文引用）。

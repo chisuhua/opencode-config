@@ -124,7 +124,7 @@ D2① 是**硬门**：任一验证命令非 0 ⇒ **拒绝提交** ⇒ **有存�
 | `tests/commit-gate-baseline-doctor.test.ts`（新） | 巡检层用例（集合比对 / 膨胀发现 / 可清理 / 无提取器） |
 | `docs/adr/ADR-commit-verification-gate.md`（治理面） | D9 表 + ⑰ 行 + 「十六项 → 十七项」措辞（architect 落笔） |
 | `docs/MULTI-AGENT-DESIGN.md`（治理面） | §2.8.8 索引行 + ⑰ 行 + 措辞（architect 落笔） |
-| `openspec/changes/commit-gate-baseline-known-failures/proposal.md` | **AC 面**（D9 登记 ①–⑰） |
+| `openspec/changes/archive/2026-11-28-commit-gate-baseline-known-failures/proposal.md` | **AC 面**（D9 登记 ①–⑰） |
 | `.rddf/rollback/commit-gate.json` + `registry.json` | 回滚清单同批 + `last_drill` 回填 |
 | `.rddf/improvements/commit-gate-baseline-known-failures.md` | 本文件（载体） |
 
