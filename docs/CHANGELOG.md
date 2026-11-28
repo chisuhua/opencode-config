@@ -10,6 +10,16 @@
 
 ---
 
+> **v2.79 违规码闭集的第三份手抄副本收口（主题文档改「计数 + 引用真源」+ 计数由守卫钉住）（2026-11-28）**：
+> **旧问题**：`docs/architecture/plan-topics-topic-model.md` §4 把 23 码**逐条枚举**了一份（第三份副本），而该文档**无守卫读取** ⇒ 闭集扩容时**静默陈旧**（ADR 的 D7 SU-2 把它记成「仍未闭合的连带项」）。
+> **做法**：该段改为「**计数 + 引用真源**」—— 真源 = `lib/plan-topics.ts` 的**运行期常量** `VIOLATION_CODES`（联合类型由其派生）；按用途分组保留（结构 / 内容 / 缓存 / 取消 / 在飞与 fence / 结算门 / 目标审查 / CLI），**不再复制清单**；剩下唯一可陈旧的是那个**计数** ⇒ 新增断言把它钉在 `VIOLATION_CODES.length` 上（`tests/plan-topics.test.ts`），正则**兼容回滚态**（回滚会把该行还原成「（20 个）：…」的旧形态）。
+> **回滚面（本批踩过一次坑，复审抓出后已修）**：`edits[23]` 的 `find` **必须覆盖「闭集行 + 结算门段」两段**（原 1442 字符）—— 因为 `replace` 只给回 20 码单行 ⇒ 回滚的净效果本就包含**删掉结算门 prose**（对应 ADR 回滚步骤 ②「撤结算两码 + grandfather 与结算段」）。第一版把 `find` 缩成 1 行（271 字符）⇒ 回滚只把闭集行换回、结算门段**留在文里**，而该段点名的 `settlement_*` 在回滚后的闭集里已不存在 ⇒ **静默改掉回滚语义**，且 drill 因无断言对着段而**假绿**。修法：`find` = 新闭集行 + 原结算门段（**1173 字符**），`replace` 不动。
+> **演练（含副本核实）**：drill **PASS**（基线 `ed8a004`）后**保留副本**核对三件事：回滚后文档的 `settlement_` 命中 **0** ／ 闭集行回到「（20 个）」／ 回滚后闭集 20 码 ⇒ 三者自洽。ADR 的 D7 SU-2 同步该连带项的闭合状态（**只改实施对账、不动决策**）。
+> **仍未做（下一批）**：§4 的结算门段里还手抄着 `synth_*` 可修复码清单（`synth_conclusion_layer_missing` / `synth_heavy_item_not_in_conclusion` / `synth_brief_no_ruling_set` / `synth_ruling_not_propagated` / 「V6 三码」）—— 这是与「违规码闭集」并列的**第四份手抄副本**（`REPAIRABLE_SYNTH_CODES` 的运行期副本），「V6 三码」连枚举行都没有、扩容即静默陈旧，当前**无断言钉它**；本批只收口「违规码闭集」⇒ 记入下一批。
+> **闸门**：`bun test tests/` **1395 pass / 1 skip / 0 fail**（1396 tests / 43 files）；`scripts/check-upstream-anchors.sh` **31/31**；`bun scripts/rollback-registry.ts` **PASS**（16 active / 0 proving / 0 unmanifested / 3 exempt）。
+
+---
+
 > **v2.78 plan 侧补两个既有缺口的执行面 + 回滚演练顺序耦合的登记（2026-11-28）**：
 > **缺口 A（机制缺口）`add` 的 `--deps` 建错没有修正通道**：CLI 的子命令闭集里**无改 `deps` 的入口**（父手改 `graph.json` 破写锁协议 ⇒ 不做）⇒ 在 `prompts/plan.md` 写成**规范操作**：**未 done** ⇒ `cancel`（`--reason` 写明「deps 建错」⇒ **留作审计痕迹、不是清场**：cancelled 短路 ⇒ 它**不再要求交付物**）+ **用新 id `add` 重建**（旧 id 已在图里 ⇒ `add` 拒复用；重建的 deps 必须指向**活**节点）；**已 done** ⇒ `cancel` 硬拒（禁止完成后取消）⇒ 走「追问（节点已 done）」路径；**有活跃下游** ⇒ `--cascade` 后**被级联的下游也要用新 id 重建**（deps 指向新 id），而 `--detach` **只删边、没有 CLI 能把边加回** ⇒ 摘边后下游**不再等**该节点而**图仍是绿的**（`cancelled_dep_active` 那道闸正是被它拆掉的）⇒ 只在「下游本就与本节点无依赖关系」时才用。
 > **缺口 B（决策未落）ADR D5 第三子句「metis 结论必须落 `TOPIC.md`」此前无 prompt 载体** ⇒ 补载体：落进**既有**的 `## 前提与证伪条件`（**不新增 TOPIC.md 节** ⇒ 与 D5「固定三节」不冲突；**不加检查器码** ⇒ 判据面不变，⚠ 属 **prompt 义务、无机判** —— `topic_goal_unreviewed` 只判三节在场非空）；**双落点职责分明**（plan 文档「待用户澄清」保留**用户裁决入口**；TOPIC.md 那份每条标注「**未裁决 ⇒ 仅作前提候选 + 各自证伪条件，不得当依据**」）；落地形态要求**列表条目追加、勿用 `###` 子标题**（任何级别标题都会截断该节正文 ⇒ 空节 ⇒ `topic_goal_unreviewed` **误报红**）。
