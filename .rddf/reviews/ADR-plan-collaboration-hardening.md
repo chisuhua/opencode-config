@@ -2,7 +2,7 @@
 
 > 由 architect 在收口时从审查者输出誊写（审查者只读，不写盘）。
 > 审查对象：`docs/adr/ADR-plan-collaboration-hardening.md`
-> 最终状态：**Proposed**（2026-11-27）
+> 最终状态：**Accepted**（2026-11-28；实现已落地 + 独立验收 + change 已归档 ⇒ `openspec/changes/archive/2026-11-28-plan-collaboration-hardening/`）
 
 ## 0. 判定汇总
 
@@ -13,6 +13,7 @@
 | 3 | critic（第 2 轮，复审） | **APPROVE** / `mergeable: yes` / `scope_exceeded: false` | BLOCKER 2/2 闭合，1 NIT（已修） |
 
 预算：oracle 1 轮 + critic 2 轮（第 2 轮为 BLOCKER 复审，只验闭合）。无第 3 轮。
+⚠ **本汇总只覆盖 v1 首轮**：v2 / v3 定向修订各自追加审级 —— v2 = oracle 只审 delta（**APPROVE**，未跑 critic）；v3 = oracle **PASS-WITH-NOTES**（6/6 闭合）+ **critic 第 3 轮**（经用户批准）`APPROVE_WITH_CONDITIONS`（2 条 SHOULD_FIX 已修，0 未闭合 BLOCKER）。逐条见 §5 / §6。
 
 ## 1. oracle（第 1 轮）判定：BLOCK
 
@@ -61,7 +62,7 @@ finding 与处置：
 - **P0 未落地前 `bun scripts/rollback-registry.ts` 为红**（M1），属实且已登记（P0 + V13）；该两处文件在 `.rddf/rollback/**`，不属 architect 写集，只能由 builder 落。
 - **backlog（不返工）**：`tests/plan-topics.test.ts` 的 `allowed` 集只列 15 码（20 码时代起即不完备，子集断言不拦截扩容）。
 - **backlog（新）**：`plan-topic-check` 以 subprocess 调 `plan-synthesis-check` 复核自述 `synthesis_check_exit` —— 堵「父谎报 exit」的唯一机械路径，不在本批。
-- **关联 change**：`backlog: plan-collaboration-hardening`（planner 立项后回填 change 名与 AC 映射）。
+- **关联 change**：**已归档**（2026-11-28）：`openspec/changes/archive/2026-11-28-plan-collaboration-hardening/`（AC1–AC13 登记于其 `proposal.md`；沿革 = `backlog: plan-collaboration-hardening` 占位起步）。
 
 ## 5. v2 定向修订（2026-11-27，实施期触发）
 

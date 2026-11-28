@@ -6,7 +6,7 @@
 - **验证路径**：**本地验收**（1–5 步）。`rddf rdd-verify --dry-run` ⇒ `No eligible changes to verify (empty queue)`（本仓无 `.rddf/state/iteration.json`、change 无 `tasks.md` ⇒ P3 archive gate 不触发）⇒ 按 `rdd-verifier` 分流三条件未命中，走本地路径
 - **判据来源（优先级序）**：
   1. 用户 2026-11-27 明确指示（V10b 取「现在就让 `v7-probe` 真绿」；V10c 取「补『判据生效前已结算』豁免条款」）
-  2. `openspec/changes/plan-collaboration-hardening/proposal.md` §验收标准（AC1–AC13，AC↔V 映射）
+  2. `openspec/changes/archive/2026-11-28-plan-collaboration-hardening/proposal.md` §验收标准（AC1–AC13，AC↔V 映射）
   3. `docs/adr/ADR-plan-collaboration-hardening.md` §Verification（**V1–V13 判据真源**，含 v3 修订的 V8(f)/V10c）
   4. 本次变更自身的声明（commit 无、diff 承诺见 ADR D1–D6）
 

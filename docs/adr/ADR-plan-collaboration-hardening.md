@@ -2,15 +2,16 @@
 
 ## 元数据
 
-- **Status**: Proposed
+- **Status**: **Accepted**（2026-11-28）—— **已实施 + 已验收 + 已归档**（实现载体 = P0–P5 + v3 grandfather；验收报告 = `.rddf/reviews/plan-collaboration-hardening-verify.md`）。轮次与判定见下方「审稿」行
 - **Date**: 2026-11-27
 - **Author**: architect
 - **Parent**: `ADR-plan-multi-session-collaboration`（topic / node / graph）、`ADR-plan-synthesis-offload`（合成外置 + V4/V5）
-- **关联 change**: `backlog: plan-collaboration-hardening`（planner 立项后回填 change 名与 AC 编号）
-- **AC 映射**: 见 `openspec/changes/plan-collaboration-hardening/proposal.md` §验收标准（V→AC 一一映射；**V10 拆 AC10a/b/c**、**V11 为观察项**）
+- **关联 change**: **已归档**（2026-11-28）：`openspec/changes/archive/2026-11-28-plan-collaboration-hardening/`（AC1–AC13 登记于其 `proposal.md`；本 ADR 的 D1–D6 = 实现面，P0–P5 + v3 grandfather = 批序）。⚠ **沿革**：本 change 由 `backlog: plan-collaboration-hardening` 占位起步（planner 立项 → 实施 → 2026-11-28 归档）
+- **AC 映射**: 见 `openspec/changes/archive/2026-11-28-plan-collaboration-hardening/proposal.md` §验收标准（V→AC 一一映射：**V1→AC1 / V2→AC2 / V3→AC3 / V4→AC4 / V5→AC5 / V6→AC6 / V7→AC7 / V8→AC8 / V9→AC9 / V10→AC10a·b·c / V11→AC11（观察项）/ V12→AC12 / V13→AC13**）。⚠ **AC4 / AC10b 为「实质 pass」**：判据口径偏差见验收报告 §4.3（AC4 实为 6 类拒绝 + 成环在 `add` 路径不可达；AC10b 的追加节点实为 `m4`）—— 本 ADR 的 V4「五类」/ V10b「m2」判据正文**保持不改**（另案）
 - **判据真源**: 本 ADR §Verification
 - **范围**: 只改 plan 侧协作机制的**配置面 / 判据面 / prompt 面**；不改 delegate 通道、不改 `plan-worker` 权限模板、不动 `scope-check`、不新增 agent
-- **审稿**: 轮次、判定与 finding 闭合证据见 `.rddf/reviews/ADR-plan-collaboration-hardening.md`（当前：无未闭合 BLOCKER）
+- **审稿**: 轮次、判定与 finding 闭合证据见 `.rddf/reviews/ADR-plan-collaboration-hardening.md`（v1 首轮 + v2 / v3 定向修订各自一轮；末次 = critic 第 3 轮 `APPROVE_WITH_CONDITIONS`，**0 未闭合 BLOCKER**）
+- **元数据同步（2026-11-28）**: 据实订正（**纯事实同步，不改决策**）：Status 转 `Accepted`、关联 change 回填归档路径、AC 映射回填、指针同步；除本元数据表外，D1–D6 与 §Verification 判据正文**均未动**
 - **v2 定向修订（2026-11-27，实施期触发）**: 触发源 = 实施期 metis 复核（`design_drift`，凭据 `feedback-20261127-001`）⇒ 修 5 项：V10 拆 **V10a/b/c**（并要求真追加 m2）、D4 加**精确记录形状 + `model_id` 第 7 字段**、D1 配置缺失改 **fail-closed**（删「回落查 models」）、**P4 依赖 P3**、V11 降为**观察指标**。
 - **v3 定向修订（2026-11-27，V10c 实施触发）**: 触发源 = `build-worker-design` 在 `--phase final` 下报 `settlement_missing`，而其实测失败集含**可修复码**（`synth_brief_no_ruling_set`，判据生效前既有）⇒ v2 的豁免条款（要求「全不可修复」）不成立；且实测 `cancel` **硬拒已 done 节点**（`禁止「完成后取消」`）⇒ 无法用「撤销合成」收口。修 3 项：D4 加 **grandfather 规则**（可豁免性由 attempt `finished_at` 派生，不新增父自述字段）、V8 加用例 **(f)**、V10c 改写为 grandfather 路径；选项对比表加第 **7** 行。
 
@@ -219,6 +220,8 @@ model_id: opencode-go/kimi-k3.1-pro#high
 5. **grandfather 是宽限期而非豁免面**：只作用于「答案节点闭合早于 2026-11-27」的历史 topic；日期由 attempt 台账派生，但父可手改 `graph.json` 伪造（同 D2 既有残余，不新增面）。⚠ 豁免面**随判据扩容自动扩大**（历史 topic 今天重跑 check 新增的可修复码也一并被宽限，V10c 已显式接受）；`note` 义务不参与机判。
 
 ## Verification（可勾选验收判据）
+
+> ⚠ **本清单保持「前瞻判据」形态、勾选框不勾**（同 `ADR-commit-verification-gate` 的「只勾有证据的项 / 不在本文声称已全部验证」口径）：V1–V13 的实测证据在 `.rddf/reviews/plan-collaboration-hardening-verify.md`（13 条 AC 逐条取证）与归档 change 的 `tasks.md`（P0–P5 + grandfather 勾选清单）；**AC4 / AC10b 的字面偏差**（6 类拒绝 + 成环不可达 / 追加节点实为 `m4`）见验收报告 §4.3。
 
 - [ ] V1 `plan-models.json` 存在且 `schema_version=1`；`prompts/plan.md` 合成段**不再含具体模型 ID**。
 - [ ] V2 `plan-models.json` 在 `governance-paths.json` 的 `paths[]`；`tests/config-guards.test.ts` 仍绿。

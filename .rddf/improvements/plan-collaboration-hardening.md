@@ -10,8 +10,8 @@ feedback_status: resolved
 # plan-collaboration-hardening — plan 侧协作机制的五项补强
 
 > 5 段草稿（Why / What Changes / Acceptance / Capabilities / Impact）。planner 产出。
-> 决策依据：`docs/adr/ADR-plan-collaboration-hardening.md`（**Proposed，v2 定向修订**，D1–D6；oracle 第 1 轮 BLOCK → 修 → critic 2 轮 **APPROVE**；v2 由实施期 metis `design_drift` 触发，oracle 只审 delta **APPROVE**，**未跑 critic 第 3 轮**（预算用尽，需用户批准）；报告 `.rddf/reviews/ADR-plan-collaboration-hardening.md`）
-> 关联 change：`openspec/changes/plan-collaboration-hardening/`（本次立项）
+> 决策依据：`docs/adr/ADR-plan-collaboration-hardening.md`（**Accepted，v3**（含 v2 / v3 定向修订），D1–D6；审级：oracle 第 1 轮 BLOCK → 全修 → critic 第 1 轮 REJECT → 第 2 轮复审 **APPROVE**；v2 由实施期 metis `design_drift` 触发 ⇒ oracle 只审 delta **APPROVE**；v3（V10c grandfather）⇒ oracle **PASS-WITH-NOTES**（6/6 闭合）+ **critic 第 3 轮**（经用户批准）`APPROVE_WITH_CONDITIONS`（2 条 SHOULD_FIX 已修，0 未闭合 BLOCKER）；报告 `.rddf/reviews/ADR-plan-collaboration-hardening.md`）
+> 关联 change：`openspec/changes/archive/2026-11-28-plan-collaboration-hardening/`（本次立项；2026-11-28 归档）
 > ⚠ **本路径未启用 `rdd-planner` / `rdd-builder`**：canonical 前置不存在（`.rddf/state/.arch-handoff.json` 与 `.rddf/state/.planner-handoff.json` 均缺失）⇒ 走**内置流程**（本目录的 `proposal.md` 由 planner 起草；`design.md` / `tasks.md` 归 builder）。先例：`openspec/changes/plan-synthesis-offload/`。
 
 ## metis 结论（2026-11-27，planner 侧固定审稿人；6 节全文摘要）
@@ -92,7 +92,7 @@ V7 Probe B 实测（`ses_de4e553c7ffe0VKqZLpLFbvM6o`）—— 根上下文增量
 
 ## Acceptance
 
-**判据真源 = `docs/adr/ADR-plan-collaboration-hardening.md` 的 `## Verification` 章（V1–V13 为唯一真源）**。**AC 的唯一登记处 = `openspec/changes/plan-collaboration-hardening/proposal.md` 的 `## 验收标准`**；下表只是索引（避免两处各写一套）。
+**判据真源 = `docs/adr/ADR-plan-collaboration-hardening.md` 的 `## Verification` 章（V1–V13 为唯一真源）**。**AC 的唯一登记处 = `openspec/changes/archive/2026-11-28-plan-collaboration-hardening/proposal.md` 的 `## 验收标准`**；下表只是索引（避免两处各写一套）。
 
 | AC | V | 一句话 |
 |---|---|---|

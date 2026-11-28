@@ -64,6 +64,6 @@
 
 - [x] ADR 审稿（oracle 治理面 PASS-WITH-NOTES 6/6 闭合；critic 第 3 轮 APPROVE_WITH_CONDITIONS，2 条 SHOULD_FIX 已修，0 BLOCKER）⇒ `.rddf/reviews/ADR-plan-collaboration-hardening.md`
 - [x] 验收（13 条 AC 逐条取证）⇒ `.rddf/reviews/plan-collaboration-hardening-verify.md`
-- [x] 实施期门禁（每批）：`bun test tests/plan-topics*.test.ts tests/plan-synthesis.test.ts tests/config-guards.test.ts tests/rollback-registry.test.ts tests/plan-models-check.test.ts` 全绿 + `openspec validate plan-collaboration-hardening` exit 0
+- [x] 实施期门禁（每批）：`bun test tests/plan-topics*.test.ts tests/plan-synthesis.test.ts tests/config-guards.test.ts tests/rollback-registry.test.ts tests/plan-models-check.test.ts` 全绿 + `openspec validate plan-collaboration-hardening` exit 0（⚠ **归档后该 change 不再在册** ⇒ `openspec validate` 不再解析它（CLI 只校验在册 change）；归档时的形态校验记录在 `.rddf/reviews/plan-collaboration-hardening-verify.md` §1）
 - [x] 本 change 的回滚清单（`.rddf/rollback/plan-collaboration-hardening.json`）⇒ registry 条目由 `unmanifested` 转 `proving` → 演练 PASS → `active`
-- [ ] **归档**（`openspec archive plan-collaboration-hardening`）：待全仓门绿 + 清单演练回填后执行
+- [x] **归档**（`openspec archive plan-collaboration-hardening` → `openspec/changes/archive/2026-11-28-plan-collaboration-hardening/`）：全仓门绿（1391 pass / 0 fail）+ 本机制清单演练 PASS 并回填 `last_drill` 后执行
