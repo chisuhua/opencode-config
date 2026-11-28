@@ -10,6 +10,17 @@
 
 ---
 
+> **v2.78 plan 侧补两个既有缺口的执行面 + 回滚演练顺序耦合的登记（2026-11-28）**：
+> **缺口 A（机制缺口）`add` 的 `--deps` 建错没有修正通道**：CLI 的子命令闭集里**无改 `deps` 的入口**（父手改 `graph.json` 破写锁协议 ⇒ 不做）⇒ 在 `prompts/plan.md` 写成**规范操作**：**未 done** ⇒ `cancel`（`--reason` 写明「deps 建错」⇒ **留作审计痕迹、不是清场**：cancelled 短路 ⇒ 它**不再要求交付物**）+ **用新 id `add` 重建**（旧 id 已在图里 ⇒ `add` 拒复用；重建的 deps 必须指向**活**节点）；**已 done** ⇒ `cancel` 硬拒（禁止完成后取消）⇒ 走「追问（节点已 done）」路径；**有活跃下游** ⇒ `--cascade` 后**被级联的下游也要用新 id 重建**（deps 指向新 id），而 `--detach` **只删边、没有 CLI 能把边加回** ⇒ 摘边后下游**不再等**该节点而**图仍是绿的**（`cancelled_dep_active` 那道闸正是被它拆掉的）⇒ 只在「下游本就与本节点无依赖关系」时才用。
+> **缺口 B（决策未落）ADR D5 第三子句「metis 结论必须落 `TOPIC.md`」此前无 prompt 载体** ⇒ 补载体：落进**既有**的 `## 前提与证伪条件`（**不新增 TOPIC.md 节** ⇒ 与 D5「固定三节」不冲突；**不加检查器码** ⇒ 判据面不变，⚠ 属 **prompt 义务、无机判** —— `topic_goal_unreviewed` 只判三节在场非空）；**双落点职责分明**（plan 文档「待用户澄清」保留**用户裁决入口**；TOPIC.md 那份每条标注「**未裁决 ⇒ 仅作前提候选 + 各自证伪条件，不得当依据**」）；落地形态要求**列表条目追加、勿用 `###` 子标题**（任何级别标题都会截断该节正文 ⇒ 空节 ⇒ `topic_goal_unreviewed` **误报红**）。
+> **第二处真源**：图形态子句（下游必须一并用新 id 重建）同步登记到 `docs/architecture/plan-topics-topic-model.md` §10「已知边界」⇒ **不是 prompt 单点真源**；ADR 加 **D7 SU-2**（只记实施对账、**不改决策**）：「`allowed` 白名单不完备」的 backlog **已闭合**（运行期真源 + 完备性断言）；主题文档里的手抄闭集副本**仍未闭合**。
+> **回滚面**：两份清单共 **4 处 `find`** 随文本更新（`plan-collaboration-hardening` edits[17]/[19]、`plan-topics` edits[5]/[8]）⇒ 清单内容实质改动 ⇒ 同批重跑 drill ⇒ 两份均 PASS（overlay 基线 `f5a32d2`、base 基线 `ac4d9e4`）。
+> ⚠ **本批实测出的演练顺序耦合**（已登记进 registry notes）：base（`plan-topics`）的回滚会**删掉** overlay（`plan-collaboration-hardening`）条目 `watch[]` 指向的文件 ⇒ overlay 条目若处于 `proving`，base 的 drill 副本里 **M7 必红**（watch 路径不存在）⇒ **必须先跑 overlay 的演练并把它转回 `active`，再跑 base 的演练**。
+> **闸门**：`bun test tests/` **1394 pass / 1 skip / 0 fail**（1395 tests / 43 files）；`scripts/check-upstream-anchors.sh` **31/31**；`bun scripts/rollback-registry.ts` **PASS**（16 active / 0 proving / 0 unmanifested / 3 exempt）。
+> ⚠ **已知项（下批顺带，本批不做）**：① `--detach` 的适用条件宜改成可执行形式（现文「下游本就与本节点无依赖关系」字面会与 CLI 前置条件「`--detach` 目标必须是活跃下游」相冲；最坏只是 CLI 干净拒绝）；② 重建**顺序**补一句（`add` 拒「deps 指向不存在的节点」⇒ 下游重建必须在新节点 `add` 之后）；③ 标签字面对齐（`prompts/plan.md` 的 `:217` 与 `:43` 同一规则两版措辞）。三项都落在这两行上 ⇒ 任何改动都要连带刷新 4 处 `find` 并走一轮完整 drill 往返 ⇒ 与下次触碰该文件的改动同批做。
+
+---
+
 > **v2.77 违规码闭集改为运行期真源 + 完备性断言（2026-11-28）**（闭合 v2.76 的「仍未做 ④ 判据弱点」）：
 > **旧问题**：`tests/plan-topics.test.ts` 的 `allowed` 白名单是**手抄的 15 码快照**（闭集实为 23）⇒ ① 白名单是**子集断言**，闭集扩容后**不会红**（缺码只是放行）；② 快照与真源**各改各的** ⇒ 漂移无声。
 > **做法**：`lib/plan-topics.ts` 把闭集从「纯类型联合」改为**运行期常量** `VIOLATION_CODES`（`as const`），联合类型由其派生（`ViolationCode = (typeof VIOLATION_CODES)[number]`）⇒ **单一真源、类型与运行期不可能漂移**。⚠ 为什么不能停在类型层：本仓**无 `tsc` 门禁**（`bun test` 只做类型擦除）⇒ 纯类型的一致性断言**不产生任何运行期保护**。
