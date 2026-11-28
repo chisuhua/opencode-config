@@ -10,6 +10,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import {
   PlanTopicError,
+  VIOLATION_CODES,
   assertAcyclic,
   assertDepsExist,
   assertUniqueNodeIds,
@@ -28,6 +29,8 @@ import {
 
 const ROOT = path.resolve(import.meta.dir, "..")
 const CLI = path.join(ROOT, "scripts", "plan-topic-check.ts")
+/** 码的**发射点**（完备性断言的扫描面）：库 + CLI。改动发射形态时这里要同步。 */
+const CODE_EMITTER_FILES = ["lib/plan-topics.ts", "scripts/plan-topic-check.ts"]
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -393,14 +396,73 @@ describe("CLI 退出码与 --json", () => {
     const payload = JSON.parse(r.stdout) as { ok: boolean; violations: Array<{ code: string }> }
     expect(payload.ok).toBe(false)
     expect(Array.isArray(payload.violations)).toBe(true)
-    const allowed = new Set([
-      "schema_invalid", "invalid_node_id", "duplicate_node_id", "cycle", "dangling_dep",
-      "duplicate_dep", "orphan_node_dir", "missing_brief", "cache_behind", "cache_ahead",
-      "brief_tampered", "missing_deliverable", "out_of_scope", "empty_topic", "git_error",
-    ])
+    const allowed = new Set<string>(VIOLATION_CODES)
     for (const v of payload.violations) expect(allowed.has(v.code)).toBe(true)
   })
 })
+
+// ── 闭集判据（运行期真源 + 完备性）──────────────────────────────────────────
+//
+// ⚠ **为什么这一组存在**：此前 `allowed` 是**手抄的 15 码快照**（闭集实为 23）⇒ ① 闭集扩容后
+//   断言**不会红**（白名单是子集断言，缺码只是放行）；② 快照与真源**各改各的** ⇒ 漂移无声。
+//   现在闭集取自**运行期真源**（`VIOLATION_CODES`）⇒ 白名单不可能再陈旧；
+//   再加一条**完备性**断言（发射点 ⊆ 闭集）⇒ 「发射了新码却忘了进闭集」当场变红。
+describe("闭集判据（运行期真源 + 完备性）", () => {
+  test("闭集无重复且形态规范", () => {
+    const codes = [...VIOLATION_CODES]
+    expect(new Set(codes).size).toBe(codes.length) // 无重复
+    for (const c of codes) expect(c).toMatch(/^[a-z][a-z0-9_]*$/)
+  })
+
+  test("完备性：发射点的码字面量全部在闭集内（漏进闭集 ⇒ 变红）", () => {
+    const srcs = CODE_EMITTER_FILES.map((rel) => readFileSync(path.join(ROOT, rel), "utf8"))
+    expect(codesOutsideClosedSet(srcs, new Set<string>(VIOLATION_CODES))).toEqual([])
+    // ⚠ 反向自证：扫描器**确实扫到了东西**（否则上面那个空数组是假绿）
+    const emitted = new Set(srcs.flatMap(extractEmittedCodes))
+    expect(emitted.has("schema_invalid")).toBe(true) // 抛错形态
+    expect(emitted.has("cache_behind")).toBe(true) // 三元 + 码集合形态
+    expect(emitted.size).toBeGreaterThanOrEqual(12)
+  })
+
+  test("判别力自证：闭集外的码确实会被抓出来（fixture，不触真仓）", () => {
+    const closed = new Set<string>(VIOLATION_CODES)
+    // ① 违规对象字面量
+    expect(codesOutsideClosedSet(['{ code: "nope_1" }'], closed)).toEqual(["nope_1"])
+    // ② 三元发射
+    expect(codesOutsideClosedSet(['code: a ? "nope_2" : "nope_3"'], closed)).toEqual(["nope_2", "nope_3"])
+    // ③ 抛错码
+    expect(codesOutsideClosedSet(['new PlanTopicError("nope_4", "…")'], closed)).toEqual(["nope_4"])
+    // ④ 码集合成员
+    expect(codesOutsideClosedSet(['new Set<ViolationCode>(["nope_5"])'], closed)).toEqual(["nope_5"])
+    // ⑤ 闭集内的码**不该**被误报
+    expect(codesOutsideClosedSet(['{ code: "git_error" }'], closed)).toEqual([])
+  })
+})
+
+/** 从源码里抽出「码发射点」的字面量（发射形态变了 ⇒ 这里要同步） */
+function extractEmittedCodes(src: string): string[] {
+  const out: string[] = []
+  // ① 违规对象字面量：code: "x"
+  for (const m of src.matchAll(/\bcode:\s*"([a-z][a-z0-9_]*)"/g)) out.push(m[1]!)
+  // ② 三元发射：code: <cond> ? "x" : "y"
+  for (const m of src.matchAll(/\bcode:[^\n]*?\?\s*"([a-z][a-z0-9_]*)"\s*:\s*"([a-z][a-z0-9_]*)"/g)) {
+    out.push(m[1]!, m[2]!)
+  }
+  // ③ 抛错码：new PlanTopicError("x", …)
+  for (const m of src.matchAll(/new PlanTopicError\(\s*"([a-z][a-z0-9_]*)"/g)) out.push(m[1]!)
+  // ④ 码集合：new Set<ViolationCode>([ … ])
+  for (const m of src.matchAll(/new Set<ViolationCode>\(\s*\[([\s\S]*?)\]\s*\)/g)) {
+    for (const s of m[1]!.matchAll(/"([a-z][a-z0-9_]*)"/g)) out.push(s[1]!)
+  }
+  return out
+}
+
+/** 找出「发射了闭集外的码」——抽成函数，好让判别力可用 fixture 自证（不靠人工变异） */
+function codesOutsideClosedSet(srcs: string[], closed: ReadonlySet<string>): string[] {
+  const emitted = new Set<string>()
+  for (const src of srcs) for (const c of extractEmittedCodes(src)) emitted.add(c)
+  return [...emitted].filter((c) => !closed.has(c)).sort()
+}
 
 // ── ready（D2 判据 2 的载体）────────────────────────────────────────────────
 

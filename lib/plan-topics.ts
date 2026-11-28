@@ -74,31 +74,42 @@ export interface Graph {
   nodes: Node[]
 }
 
-/** 违规码闭集（contract；CLI 的 --json 与守卫断言都依赖它） */
-export type ViolationCode =
-  | "schema_invalid"
-  | "invalid_node_id"
-  | "duplicate_node_id"
-  | "cycle"
-  | "dangling_dep"
-  | "duplicate_dep"
-  | "orphan_node_dir"
-  | "missing_brief"
-  | "cache_behind"
-  | "cache_ahead"
-  | "brief_tampered"
-  | "missing_deliverable"
-  | "cancelled_unattributed"
-  | "cancelled_open_attempt"
-  | "cancelled_dep_active"
-  | "duplicate_open_attempt"
-  | "stale_inputs"
-  | "out_of_scope"
-  | "empty_topic"
-  | "git_error"
-  | "settlement_missing"
-  | "settlement_failed_not_superseded"
-  | "topic_goal_unreviewed"
+/**
+ * 违规码闭集（contract；CLI 的 --json 与守卫断言都依赖它）。
+ *
+ * ⚠ **运行期唯一真源**：联合类型由本数组派生（`ViolationCode = (typeof VIOLATION_CODES)[number]`）
+ * ⇒ 新增码只改这一处，**类型与运行期集合不可能漂移**。
+ * ⚠ 为什么不用「类型 + 手抄数组」两份：本仓**没有 `tsc` 门禁**（`bun test` 只做类型擦除）⇒ 纯类型层的一致性
+ *   断言**不产生任何运行期保护**；两份清单迟早漂移，而漂移后的闭集会让守卫断言**静默放行**新码。
+ *   导出运行期常量后，`tests/plan-topics.test.ts` 的闭集断言直接引用本数组 ⇒ 白名单不可能再是陈旧快照。
+ */
+export const VIOLATION_CODES = [
+  "schema_invalid",
+  "invalid_node_id",
+  "duplicate_node_id",
+  "cycle",
+  "dangling_dep",
+  "duplicate_dep",
+  "orphan_node_dir",
+  "missing_brief",
+  "cache_behind",
+  "cache_ahead",
+  "brief_tampered",
+  "missing_deliverable",
+  "cancelled_unattributed",
+  "cancelled_open_attempt",
+  "cancelled_dep_active",
+  "duplicate_open_attempt",
+  "stale_inputs",
+  "out_of_scope",
+  "empty_topic",
+  "git_error",
+  "settlement_missing",
+  "settlement_failed_not_superseded",
+  "topic_goal_unreviewed",
+] as const
+
+export type ViolationCode = (typeof VIOLATION_CODES)[number]
 
 export interface Violation {
   code: ViolationCode
