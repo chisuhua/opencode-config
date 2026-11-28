@@ -152,31 +152,32 @@ describe("baseline 命中面（放行 + 留痕）", () => {
 })
 
 describe("巡检缺席面（字段整体无效 ⇒ 退回硬门）", () => {
-  // ⚠ **钉住缺陷**（2026-11-28，接线层用例首次跑出来）：`evaluateCommitGate` 的**拒绝分支**
-  //   不回传 `notices`（`lib/commit-gate.ts` 只在 allowed 分支带 `notices: input.notices`）
-  //   ⇒ 插件在拒绝路径上**收集到的 notice 一条都不落账本**（`outcome.notices ?? []` 恒空）。
-  //   后果：巡检缺席这类「声明不可用」只有抛错、没有留痕 ⇒ D9② 的「检测 ≠ 拦截」在拒绝路径上失效。
-  //   ⚠ 本仓对「已签批 ADR 的既有实现」只改判据不改行为 ⇒ 该修复**另案**（要同步
-  //   `.rddf/rollback/commit-gate.json` 的 edits 并重跑其演练）；此处按现状钉住，避免用例假绿。
-  test("缺 inspection ⇒ 拒（当前不留痕 —— 钉住缺陷，见文件头说明）", async () => {
+  // ⚠ 这三条同时是**「拒绝路径也要留痕」**的判据：`evaluateCommitGate` 的拒绝分支
+  //   **必须**回传 `notices`（`lib/commit-gate.ts`）⇒ 插件在拒绝路径上把 notice 落进账本。
+  //   历史：2026-11-28 接线层用例首次跑出来时这里是**红的**（拒绝分支不回传 notices ⇒
+  //   「声明不可用」只有抛错、没有留痕 ⇒ D9② 的「检测 ≠ 拦截」在拒绝路径上失效）⇒ 同批修复。
+  test("缺 inspection ⇒ 拒，且留痕指名「缺少 inspection」", async () => {
     const dir = makeRepo({ omitInspection: true })
     const hook = await loadHook(dir)
     await expect(hook(event(dir, "git commit -m x"))).rejects.toThrow()
-    expect(ledger(dir)).toBe("")
+    expect(ledger(dir)).toContain("缺少 inspection")
+    expect(ledger(dir)).not.toContain("baseline 命中")
   })
 
-  test("carrier 未 git-tracked ⇒ 拒（当前不留痕 —— 钉住缺陷）", async () => {
+  test("carrier 未 git-tracked ⇒ 拒，且留痕指名「未 git-tracked」", async () => {
     const dir = makeRepo({ carrierMode: "untracked" })
     const hook = await loadHook(dir)
     await expect(hook(event(dir, "git commit -m x"))).rejects.toThrow()
-    expect(ledger(dir)).toBe("")
+    expect(ledger(dir)).toContain("未 git-tracked")
+    expect(ledger(dir)).not.toContain("baseline 命中")
   })
 
-  test("carrier 是 symlink ⇒ 拒（当前不留痕 —— 钉住缺陷）", async () => {
+  test("carrier 是 symlink ⇒ 拒，且留痕指名「symlink」", async () => {
     const dir = makeRepo({ carrierMode: "symlink" })
     const hook = await loadHook(dir)
     await expect(hook(event(dir, "git commit -m x"))).rejects.toThrow()
-    expect(ledger(dir)).toBe("")
+    expect(ledger(dir)).toContain("symlink")
+    expect(ledger(dir)).not.toContain("baseline 命中")
   })
 })
 

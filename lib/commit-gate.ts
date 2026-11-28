@@ -1174,25 +1174,37 @@ export interface GateOutcome {
 }
 
 /** 三判据的组合（顺序 = **先便宜后昂贵**：暂存 → 写集 → 验证；语义与 ADR D2 一致）。 */
+/**
+ * 门禁判定 + **留痕回传**。
+ *
+ * ⚠ `notices` 在**两条路径上都要回传**（放行 / 拒绝）：插件侧靠 `outcome.notices` 落账本
+ * （`.rddf/state/commit-gate-notices.jsonl`）⇒ 拒绝路径若不回传，「声明不可用」这类情形
+ * 就只有抛错、没有留痕 ⇒ D9② 的「检测 ≠ 拦截」在拒绝路径上失效（2026-11-28 接线层用例实查发现）。
+ */
 export function evaluateCommitGate(input: GateInput): GateOutcome {
   if (!input.declaration) return { allowed: true }
   if (input.stagedState === "failed") {
-    return { allowed: false, reason: "commit-gate: 无法判定暂存区状态（`git diff --cached` 失败 / 非 git 目录）⇒ 拒绝（fail-closed）" }
+    return {
+      allowed: false,
+      reason: "commit-gate: 无法判定暂存区状态（`git diff --cached` 失败 / 非 git 目录）⇒ 拒绝（fail-closed）",
+      notices: input.notices,
+    }
   }
   if (input.stagedState === "empty") {
-    return { allowed: false, reason: "commit-gate: 暂存区为空 ⇒ 请先 `git add` 再提交" }
+    return { allowed: false, reason: "commit-gate: 暂存区为空 ⇒ 请先 `git add` 再提交", notices: input.notices }
   }
   if (input.writeSetViolations.length > 0) {
     const v = input.writeSetViolations[0]!
     return {
       allowed: false,
       reason: `commit-gate: 暂存内容越出当前角色的写集 ⇒ 拒绝：${v.file}（${v.reason}）`,
+      notices: input.notices,
     }
   }
   if (!input.verification.ok) {
     const cmd = input.verification.failedCommand?.join(" ") ?? "(未知命令)"
     const tail = input.verification.outputTail ? `\n--- 输出尾部 ---\n${input.verification.outputTail}` : ""
-    return { allowed: false, reason: `commit-gate: 验证命令失败 ⇒ 拒绝提交：\n$ ${cmd}${tail}` }
+    return { allowed: false, reason: `commit-gate: 验证命令失败 ⇒ 拒绝提交：\n$ ${cmd}${tail}`, notices: input.notices }
   }
   return { allowed: true, notices: input.notices }
 }

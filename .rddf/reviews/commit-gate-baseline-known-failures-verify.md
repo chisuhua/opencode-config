@@ -62,7 +62,8 @@
 - **现象**：`lib/commit-gate.ts` 的 `evaluateCommitGate` 只在 **allowed 分支**回传 `notices`（`{ allowed: true, notices: input.notices }`），四个**拒绝分支**只回 `{ allowed: false, reason }` ⇒ 插件在拒绝路径上 `outcome.notices ?? []` 恒空 ⇒ **收集到的 notice 一条都不落账本**。
 - **后果**：巡检缺席（缺 `inspection` / carrier 未 tracked / carrier 是 symlink）这类「声明不可用」**只有抛错、没有留痕** ⇒ D9② 登记的「检测 ≠ 拦截」在拒绝路径上失效（运行时查不到「门禁为何用硬门」）。
 - **边界**：D10 的判据只要求**命中路径**留痕（`baseline 命中 ⇒ 放行，且门禁输出一行非抛错留痕`）⇒ 命中路径**合规**；缺口在**拒绝路径**，属实现的意图与落盘不一致（插件确实 `notices.push` 了巡检理由）。
-- **处置**：本用例按现状**钉住缺陷**（三条「拒 + 当前不留痕」用例并在文件头写明原因），**不改**已签批 ADR 的既有实现；修复另案（`evaluateCommitGate` 的拒绝分支回传 `notices` ⇒ 同步 `.rddf/rollback/commit-gate.json` 的 `edits` + 重跑其演练）。
+- **处置**：**已修**（2026-11-28 同批）：`lib/commit-gate.ts` 的 `evaluateCommitGate` **四个拒绝分支一律回传 `notices`** ⇒ 插件在拒绝路径上也落账本 ⇒ 三条用例从「钉住缺陷（当前不留痕）」转为**正向判据**（拒 + 留痕指名「缺少 inspection」/「未 git-tracked」/「symlink」）。
+  ⚠ **回滚面无需同步**：`commit-gate.json` 对 `lib/commit-gate.ts` / `plugins/commit-gate.ts` 用的是 `delete[]`（回滚即整文件退役）**而非内容 pin** ⇒ 改实现不产生 find 漂移 ⇒ 无需重跑该清单的演练。
 
 ## 已用轮次
 

@@ -442,7 +442,7 @@
   | V25② | AC6 | `tests/commit-gate-d9-registration.test.ts`（D9⑰ 四面齐备；删 ADR 行 ⇒ 计数 16≠17 ⇒ 红） | 直接 |
   | 判别力 | AC7 | 7 条变异逐条实测必红（恒放行 / 不留痕 / 无条目当命中 / 去特异性 / 超时当命中 / 巡检复用子串 / 巡检缺席仍放行） | 直接 |
 
-  **⚠ 未覆盖（如实登记，同 V12 的写法）**：① **接线层无用例** —— `plugins/commit-gate.ts` 的 notice 构造与落盘（`:210` / `:230-232`）与巡检事实取用 / fail-closed（`:83-90` / `:193-197`）只有**逻辑层**覆盖（`tests/commit-gate-baseline.test.ts` 手工注入 notice 与 tracked 事实）⇒ **V20(b) 与 V25① 的执行点为间接覆盖**；D9② 已登记过同形态的坑（「纯逻辑测试覆盖不到接线层 ⇒ 接线层覆盖见 `tests/commit-gate-plugin.test.ts`」）⇒ 补 `tests/commit-gate-plugin-baseline.test.ts` 属**另案**（另案还须同步 `.rddf/rollback/commit-gate.json` 的 `edits` 并重跑回滚演练）。② 归档 change 的 `tasks.md` 声明过的 `tests/commit-gate-plugin-baseline.test.ts` **未落地** ⇒ AC7②「不留痕 ⇒ 红」的变异**施加在哪一层**未写明。
+  **⚠ 未覆盖（如实登记，同 V12 的写法）**：① **接线层已补用例（2026-11-28）** —— 新增 `tests/commit-gate-plugin-baseline.test.ts`（真实 git 仓 + 直接 import 插件）：命中放行 + notice 串格式 + 账本落盘 / 未命中仍拒 / 巡检缺席三态（缺 `inspection` / carrier 未 tracked / carrier 是 symlink）/ 条目绑定巡检命令 ⇒ **V20(b) 与 V25① 的执行点由间接覆盖转为直接覆盖**；同批修掉一处接线层缺口（`evaluateCommitGate` 的拒绝分支不回传 `notices` ⇒ 拒绝路径上的 notice 一条不落账本 ⇒ 「声明不可用」只有抛错没有留痕）⇒ 四条拒绝分支一律回传 `notices`。② AC7②「不留痕 ⇒ 红」的变异**已落到插件层**：接线层用例断言账本里确有 `baseline 命中: <argv> / match=<pattern>` 一行 ⇒ 不留痕即红。
 - [x] **V20 baseline 命中 ⇒ 放行**：声明带 `known_failures` 且该命令失败、输出含 `match` ⇒ 放行，且门禁输出一行**非抛错**留痕（`baseline 命中: <command> / match=<…>` ⇒ 运行时可区分「真绿」与「baseline 命中」）。**变红**：命中即拒 ⇒ V20 红；命中但**不留痕** ⇒ V20 红。
 - [x] **V21 未命中仍拒**：失败但输出**不含** `match` ⇒ 拒（错误仍指名失败命令 + 输出尾部）。**变红**：未命中也放行 ⇒ V21 红。
 - [x] **V22 默认不变**：**无** `known_failures` 的声明 ⇒ 行为与 SU 前**逐字相同**（任一非 0 ⇒ 拒）。**变红**：把「无条目」当命中 ⇒ V22 红。
