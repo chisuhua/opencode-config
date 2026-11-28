@@ -26,32 +26,53 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EPOCH="${RECORD_EPOCH:-2026-11-19}"
 MODE="${1:-check}"
 FAILS=0
-TOUCHED=""
 
 note_fail() { printf '%s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
 is_git_repo() { git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
 
 # 一次 git log + 一次 git status 预计算「自 EPOCH 起被动过的文件」（不要逐文件跑 git）
+#
+# ⚠ **2026-11-28 优化（语义不变）**：原先把命中集写成临时文件、`touched()` 每次 `grep -qxF`
+#   扫一遍该文件 ⇒ 每个被检文件一次进程 + 一次全表扫 ⇒ 仓库变大后线性变慢（C3 / C7 各要扫
+#   全仓 md）。改成 **关联数组**（bash ≥ 4）：查表 O(1)、零进程、且不再泄漏临时文件。
+#   谓词逐字不变：命中集 = `git log --since` 的文件 ∪ `git status` 的文件（都取绝对路径）。
+declare -A TOUCHED_SET=()
+# ⚠ **两种态必须分开**（2026-11-28 优化时踩到的语义坑，原实现的「空临时文件」把两者分开了）：
+#   0 = 不是 git 仓库 ⇒ 「全部新」（自测假树 / 归档快照）
+#   1 = 是 git 仓库 ⇒ 一律按命中集判**成员资格**（命中集为空 ⇒ 一个都不算）
+TOUCHED_IS_GIT=0
 precompute_touched() {
     local root="$1"
-    TOUCHED=""
+    TOUCHED_SET=()
+    TOUCHED_IS_GIT=0
     if is_git_repo "$root"; then
-        TOUCHED="$(mktemp)"
-        git -C "$root" log --since="$EPOCH 00:00:00" --name-only --format= 2>/dev/null \
-            | sed '/^$/d' | sed "s#^#$root/#" | sort -u > "$TOUCHED"
-        git -C "$root" status --porcelain 2>/dev/null \
-            | awk '{ $1=""; sub(/^ +/, ""); n=split($0, a, " -> "); print a[n] }' \
-            | sed "s#^#$root/#" | sort -u >> "$TOUCHED"
-        sort -u -o "$TOUCHED" "$TOUCHED"
+        TOUCHED_IS_GIT=1
+        local f
+        while IFS= read -r f; do
+            [[ -n "$f" ]] && TOUCHED_SET["$f"]=1
+        done < <(
+            {
+                git -C "$root" log --since="$EPOCH 00:00:00" --name-only --format= 2>/dev/null \
+                    | sed '/^$/d' | sed "s#^#$root/#"
+                git -C "$root" status --porcelain 2>/dev/null \
+                    | awk '{ $1=""; sub(/^ +/, ""); n=split($0, a, " -> "); print a[n] }' \
+                    | sed "s#^#$root/#"
+            } | sort -u
+        )
     fi
 }
 
 # 非 git 目录（自测用的假树 / 归档快照）⇒ 视为"全部新"（**不能变成"全部跳过"**）
 touched() {
     local f="$1"
-    [[ -z "$TOUCHED" ]] && return 0
-    grep -qxF -- "$f" "$TOUCHED"
+    [[ "$TOUCHED_IS_GIT" -eq 0 ]] && return 0
+    [[ -n "${TOUCHED_SET[$f]:-}" ]]
 }
+
+# C1 的临时目录（`mktemp -d`：尊重 TMPDIR，任何退出路径都由 trap 收走）
+TMPDIR_C1=""
+cleanup_c1_tmp() { [[ -n "${TMPDIR_C1:-}" ]] && rm -rf "$TMPDIR_C1"; }
+trap cleanup_c1_tmp EXIT
 
 # 判据空转保护：每个 check 都记一次被检查文件数；全程为 0 ⇒ 判据恒绿 ⇒ 直接红
 SEEN=0
@@ -59,7 +80,9 @@ seen() { SEEN=$((SEEN + 1)); }
 
 # ── C1 判据可机判 ────────────────────────────────────────────
 check_c1() {
-    local root="$1" d props row lit hits d_abs
+    local root="$1" d props row lit d_abs set_id
+    # ① 收集（字面量 / include 集 / 所属 change 目录）
+    local -a p_lit=() p_set=() p_dir=()
     while IFS= read -r d; do
         props="$d/proposal.md"
         [[ -f "$props" ]] || continue
@@ -69,24 +92,97 @@ check_c1() {
         d_abs="$d"
         while IFS= read -r row; do
             grep -q '逐字' <<<"$row" || continue
-            local -a inc=(--include='*.md' --include='*.ts' --include='*.sh' --include='*.json' --include='*.jsonc')
+            set_id=3
             if grep -qE '测试源码|源码|代码文件|代码里' <<<"$row"; then
-                inc=(--include='*.ts' --include='*.sh' --include='*.json' --include='*.jsonc')
+                set_id=2
             elif grep -qE '文档|报告|prompt' <<<"$row"; then
-                inc=(--include='*.md')
+                set_id=1
             fi
             while IFS= read -r lit; do
                 [[ -n "$lit" ]] || continue
                 grep -qE '<[^>]*>|…|\.\.\.' <<<"$lit" && continue
-                # ⚠ **排除守卫自身的文件**：本脚本的 --selftest 夹具里含有这些字面量，
-                #   不排除就会**自己满足自己**（"判据匹配到自身" 是本会话第 4 条教训）。
-                hits="$(grep -rlF "${inc[@]}" --exclude-dir=.git --exclude-dir=node_modules \
-                          --exclude=verify_record_discipline.sh --exclude=record-discipline.test.ts \
-                          -e "$lit" "$root" 2>/dev/null | grep -v "^$d_abs/" | head -1)"
-                [[ -n "$hits" ]] || note_fail "${props}: 「逐字」字面量在语料(${inc[*]})里找不到 → $lit"
+                p_lit+=("$lit"); p_set+=("$set_id"); p_dir+=("$d_abs")
             done < <(grep -o '`[^`]*`' <<<"$row" | tr -d '`')
         done < <(grep -E '^\| \*{0,2}AC[0-9]+' "$props")
     done < <(find "$root/openspec/changes" -maxdepth 2 -mindepth 1 -type d 2>/dev/null | sort)
+
+    # ② **每个 include 集只扫一次全仓**（2026-11-28 优化，谓词逐字不变）：
+    #    原实现对「每个 AC 行 × 每个字面量」各跑一次 `grep -rlF <整个仓库>`（实测本仓 76 次整树
+    #    扫描 ⇒ 冷缓存下 20~45s）；这里降到 **3 次**（按 include 集），再对候选文件逐个提取命中
+    #    字面量。候选集合 = 「含该集任一字面量」的文件 = 原逐字面量扫描结果的并集 ⇒ 等价。
+    #    ⚠ 排除项与原来逐字一致：.git / node_modules / 本守卫脚本自身 / `record-discipline.test.ts`
+    #      （后两者含 --selftest 夹具里的同一批字面量 ⇒ 不排除会「自己满足自己」）。
+    local -a inc1=(--include='*.md')
+    local -a inc2=(--include='*.ts' --include='*.sh' --include='*.json' --include='*.jsonc')
+    local -a inc3=(--include='*.md' --include='*.ts' --include='*.sh' --include='*.json' --include='*.jsonc')
+    TMPDIR_C1="$(mktemp -d)"; local tmpc="$TMPDIR_C1"
+    : > "$tmpc/map"
+    local -A lit_of_set=()
+    local i=0
+    while (( i < ${#p_lit[@]} )); do
+        lit_of_set["${p_set[i]}|${p_lit[i]}"]=1
+        i=$((i+1))
+    done
+    local sid k
+    for sid in 1 2 3; do
+        local -a use=()
+        case "$sid" in 1) use=("${inc1[@]}");; 2) use=("${inc2[@]}");; *) use=("${inc3[@]}");; esac
+        local -a ls=()
+        for k in "${!lit_of_set[@]}"; do
+            [[ "${k%%|*}" == "$sid" ]] && ls+=("${k#*|}")
+        done
+        (( ${#ls[@]} > 0 )) || continue
+        # ⚠ **重叠字面量回退**：同集内若存在「一个是另一个的子串」，`grep -o` 的多模式同起点只输出
+        #   **最长**者 ⇒ 短字面量缺行 ⇒ 步③判「找不到」⇒ **假红**。该集改用逐字面量校验（与原实现
+        #   逐字等价）；无重叠时走候选文件快路径。
+        local overlap=0 a b
+        for a in "${ls[@]}"; do
+            for b in "${ls[@]}"; do
+                [[ "$a" == "$b" ]] && continue
+                if [[ "$b" == *"$a"* ]]; then overlap=1; break 2; fi
+            done
+        done
+        if (( overlap )); then
+            local ol oh
+            for ol in "${ls[@]}"; do
+                oh="$(grep -rlF "${use[@]}" --exclude-dir=.git --exclude-dir=node_modules \
+                       --exclude=verify_record_discipline.sh --exclude=record-discipline.test.ts \
+                       -e "$ol" "$root" 2>/dev/null || true)"
+                while IFS= read -r cf; do
+                    [[ -n "$cf" ]] && printf '%s\t%s\t%s\n' "$ol" "$sid" "$cf" >> "$tmpc/map"
+                done <<< "$oh"
+            done
+            continue
+        fi
+        printf '%s\n' "${ls[@]}" > "$tmpc/lit$sid"
+        grep -rlF "${use[@]}" --exclude-dir=.git --exclude-dir=node_modules \
+            --exclude=verify_record_discipline.sh --exclude=record-discipline.test.ts \
+            -f "$tmpc/lit$sid" "$root" 2>/dev/null > "$tmpc/cand$sid" || true
+        local cf m
+        while IFS= read -r cf; do
+            [[ -n "$cf" ]] || continue
+            while IFS= read -r m; do
+                printf '%s\t%s\t%s\n' "$m" "$sid" "$cf" >> "$tmpc/map"
+            done < <(grep -oF -f "$tmpc/lit$sid" "$cf" 2>/dev/null | sort -u)
+        done < "$tmpc/cand$sid"
+        rm -f "$tmpc/lit$sid" "$tmpc/cand$sid"
+    done
+
+    # ③ 判定：命中文件里**没有**一个在该 change 目录之外 ⇒ 判据找不到（原口径 `grep -v "^$d_abs/"`）
+    #    ⚠ 已知边界（如实登记）：`$tmpc/map` 用 `\t` 分列 ⇒ 若**字面量或文件名含制表符**，awk 字段
+    #      会错位 ⇒ 可能把「找到」判成「找不到」（**方向安全**：只会假红，不会假绿）。本仓实测 0 条。
+    i=0
+    while (( i < ${#p_lit[@]} )); do
+        lit="${p_lit[i]}"; set_id="${p_set[i]}"; d_abs="${p_dir[i]}"
+        local -a use=()
+        case "$set_id" in 1) use=("${inc1[@]}");; 2) use=("${inc2[@]}");; *) use=("${inc3[@]}");; esac
+        if ! awk -F'\t' -v l="$lit" -v s="$set_id" -v dd="$d_abs" \
+             '$1==l && $2==s && index($3, dd "/")!=1 {found=1} END{exit !found}' "$tmpc/map"; then
+            note_fail "${d_abs}/proposal.md: 「逐字」字面量在语料(${use[*]})里找不到 → $lit"
+        fi
+        i=$((i+1))
+    done
+    rm -rf "$tmpc"; TMPDIR_C1=""
 }
 
 # ── C2 勾选要有证据 ─────────────────────────────────────────
@@ -197,8 +293,7 @@ run_all() {
     check_c1 "$root"; check_c2 "$root"; check_c3 "$root"; check_c4 "$root"
     check_c5 "$root"; check_c6 "$root"; check_c7 "$root"
     (( SEEN > 0 )) || note_fail "扫描根为空：7 条判据全部空转（判据恒绿）"
-    [[ -n "$TOUCHED" ]] && rm -f "$TOUCHED"
-    TOUCHED=""
+    TOUCHED_SET=(); TOUCHED_IS_GIT=0
 }
 
 # ── 判别力自测：每条判据都必须能报出反例 ────────────────────
@@ -249,6 +344,53 @@ EOF
 const s = "git rev-parse HEAD"
 EOF
     expect_silent check_c1 "C1 字面量真实存在" "$tmp/c1b"
+
+    # C1(c) **目录排除**：md 集字面量只出现在自身 `proposal.md` 里（自引用）⇒ 仍须报红
+    #     （若把 `index($3, dd "/") != 1` 的目录排除删掉，本例会静默 —— 这正是原先的自测盲区）
+    mkdir -p "$tmp/c1c/openspec/changes/x"
+    cat > "$tmp/c1c/openspec/changes/x/proposal.md" <<'EOF'
+# x
+
+## 验收标准
+
+| AC | 判据 |
+|---|---|
+| AC1 | 文档须写 `SELF_ONLY_LITERAL_XYZ`（逐字） |
+EOF
+    expect_reports check_c1 "C1 字面量只在自身 change 目录（目录排除生效）" "$tmp/c1c"
+
+    # C1(d) **重叠字面量**：短字面量只以「被长字面量包含」的形式出现 ⇒ 原口径算「找到」⇒ 不误报
+    #     （若用 `grep -o` 的最长匹配归属，短者会缺行 ⇒ 假红；本例钉住回退逻辑）
+    mkdir -p "$tmp/c1d/openspec/changes/x" "$tmp/c1d/tests"
+    cat > "$tmp/c1d/openspec/changes/x/proposal.md" <<'EOF'
+# x
+
+## 验收标准
+
+| AC | 判据 |
+|---|---|
+| AC1 | 测试源码含 `OVERLAP_LONG_TOKEN` 与 `OVERLAP_LONG`（逐字） |
+EOF
+    cat > "$tmp/c1d/tests/a.ts" <<'EOF'
+const s = "OVERLAP_LONG_TOKEN"
+EOF
+    expect_silent check_c1 "C1 重叠字面量（短者只被长者包含）" "$tmp/c1d"
+
+    # C1(e) md 集字面量在他处存在 ⇒ 静默
+    mkdir -p "$tmp/c1e/openspec/changes/x" "$tmp/c1e/docs"
+    cat > "$tmp/c1e/openspec/changes/x/proposal.md" <<'EOF'
+# x
+
+## 验收标准
+
+| AC | 判据 |
+|---|---|
+| AC1 | 文档须写 `ELSEWHERE_TOKEN_ABC`（逐字） |
+EOF
+    cat > "$tmp/c1e/docs/a.md" <<'EOF'
+ELSEWHERE_TOKEN_ABC
+EOF
+    expect_silent check_c1 "C1 md 集字面量在他处存在" "$tmp/c1e"
 
     # C2
     mkdir -p "$tmp/c2/openspec/changes/y" "$tmp/c2/.rddf/reviews"
