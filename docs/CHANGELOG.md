@@ -10,6 +10,15 @@
 
 ---
 
+> **v2.77 违规码闭集改为运行期真源 + 完备性断言（2026-11-28）**（闭合 v2.76 的「仍未做 ④ 判据弱点」）：
+> **旧问题**：`tests/plan-topics.test.ts` 的 `allowed` 白名单是**手抄的 15 码快照**（闭集实为 23）⇒ ① 白名单是**子集断言**，闭集扩容后**不会红**（缺码只是放行）；② 快照与真源**各改各的** ⇒ 漂移无声。
+> **做法**：`lib/plan-topics.ts` 把闭集从「纯类型联合」改为**运行期常量** `VIOLATION_CODES`（`as const`），联合类型由其派生（`ViolationCode = (typeof VIOLATION_CODES)[number]`）⇒ **单一真源、类型与运行期不可能漂移**。⚠ 为什么不能停在类型层：本仓**无 `tsc` 门禁**（`bun test` 只做类型擦除）⇒ 纯类型的一致性断言**不产生任何运行期保护**。
+> **断言**：白名单改为直接引用 `VIOLATION_CODES`；新增**完备性**断言 —— 扫 `lib/plan-topics.ts` + `scripts/plan-topic-check.ts` 的**全部码发射点**（`code: "x"` / `new PlanTopicError("x", …)` / 三元发射 / `new Set<ViolationCode>([…])` 码集合）⇒ **发射了闭集外的码当场变红**；判别力用 **fixture 自证**（闭集外的码确实被抓出、闭集内的码不误报），不依赖人工变异。⚠ **覆盖面如实登记**：该断言的覆盖面 = **两个文件 × 四种发射形态**（`CODE_EMITTER_FILES` + `extractEmittedCodes`）⇒ **新增第三个发射文件、或改用常量/变量发射码 ⇒ 覆盖面会静默缩小**（同步义务已在 `tests/plan-topics.test.ts` 的常量与函数注释里留痕）。
+> **回滚面**：清单 `.rddf/rollback/plan-collaboration-hardening.json` 第 5 条 edit 的 find 串随闭集表示形态更新（联合类型形态 → 数组形态，**回滚语义不变**：仍是「删这三个码」）⇒ 按「改被 `edits` pin 的文件 ⇒ 刷新清单 + 重跑演练」同批重跑 drill（基线 `9d98f2d`）⇒ **PASS** ⇒ 回填 `last_drill` 并把 registry 条目转回 `active`（过渡态按既有口径先转 `proving`、撤证据）。
+> **闸门**：`bun test tests/` **1394 pass / 1 skip / 0 fail**（1395 tests / 43 files）；`scripts/check-upstream-anchors.sh` **31/31**；`bun scripts/rollback-registry.ts` **PASS**（census：16 active / 0 proving / 0 unmanifested / 3 exempt）。
+
+---
+
 > **v2.76 plan 侧协作五项补强落地 + commit-gate 拒答留痕修复 + 记录纪律守卫性能改造（2026-11-28）**：
 > **结算闭环（D4，违规码 +2；连同 D5 的 +1 ⇒ 闭集 20→23）**：`plan-topic-check` 新增 `settlement_missing` / `settlement_failed_not_superseded` —— `TOPIC.md` 必须写 `## 结算记录`（yaml 围栏 + 7 必填键）；失败集「任一可修复码 ⇒ 必须 supersede」，未分类码 fail-closed。⚠ 收尾条件里的阻断数**显式排除本门两码自身**（否则首跑变红 ⇒ 次跑恒绿）。
 > **grandfather（ADR v3 / V8(f)）**：判据生效日 `SETTLEMENT_CRITERIA_SINCE = 2026-11-27`，可豁免性由答案节点 attempt 的 `max(finished_at)` **派生**（不新增父自述字段）；**无已闭合 attempt ⇒ 不适用**；`gap_reason` 的抽码集合须覆盖「可修复码 ∪ 未分类码」。
