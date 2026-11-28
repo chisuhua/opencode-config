@@ -16,8 +16,8 @@
     {
       "mechanism": "plan-topics",
       "adr_primary": "docs/adr/ADR-plan-multi-session-collaboration.md",
-      "state": "proving",
-      "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。 2026-11-27（plan-collaboration-hardening 落地同批）：`prompts/plan.md` 的两节被改写 ⇒ 清单两条 find 已同步刷新（472→594 / 961→1738 字符）。**演练**：回滚后 `tests/plan-topics-{add,goal-review,settlement}.test.ts` 与 `tests/plan-synthesis.test.ts` 仍 import 已删的 `lib/plan-topics.ts` / `tests/helpers/plan-topic-fixture.ts` ⇒ 需在清单补 3 条 `delete`（或同批撤新增测试的引用）后才可回填 last_drill。 2026-11-27：清单补齐（delete / 孤儿段 / watch 收窄）后 drill PASS（基线 `1edc020`）⇒ 回填 last_drill 并转回 active。 2026-11-28（第三批）：`prompts/plan.md` 补「`add` 建错 `--deps` ⇒ cancel + 换 id 重建」规范操作 +「metis 结论落 TOPIC.md」载体 ⇒ 4 处 `find` 随文本更新 ⇒ 清单内容实质改动 ⇒ 同批重跑 drill。 过渡态：撤 `last_drill` 并把条目转 `proving`（证据可缺失），演练 PASS 后回填证据并转回 `active`。",
+      "state": "active",
+      "notes": "plan 侧多会话协作（plan-worker + topic checker）的退役脚本。 2026-11-27（plan-collaboration-hardening 落地同批）：`prompts/plan.md` 的两节被改写 ⇒ 清单两条 find 已同步刷新（472→594 / 961→1738 字符）。**演练**：回滚后 `tests/plan-topics-{add,goal-review,settlement}.test.ts` 与 `tests/plan-synthesis.test.ts` 仍 import 已删的 `lib/plan-topics.ts` / `tests/helpers/plan-topic-fixture.ts` ⇒ 需在清单补 3 条 `delete`（或同批撤新增测试的引用）后才可回填 last_drill。 2026-11-27：清单补齐（delete / 孤儿段 / watch 收窄）后 drill PASS（基线 `1edc020`）⇒ 回填 last_drill 并转回 active。 2026-11-28（第三批）：`prompts/plan.md` 补「`add` 建错 `--deps` ⇒ cancel + 换 id 重建」规范操作 +「metis 结论落 TOPIC.md」载体 ⇒ 4 处 `find` 随文本更新 ⇒ 清单内容实质改动 ⇒ 同批重跑 drill。 过渡态：撤 `last_drill` 并把条目转 `proving`（证据可缺失），演练 PASS 后回填证据并转回 `active`。 2026-11-28（第三批）：`prompts/plan.md` 的两处补充 ⇒ 本清单 4 处 `find`（edits[5]/[8] 等）随文本更新 ⇒ 清单内容实质改动 ⇒ 同批重跑 drill。 ⚠ **演练顺序有耦合**（本批实测踩到）：base（plan-topics）的回滚会**删掉** overlay（plan-collaboration-hardening）条目 `watch[]` 指向的文件 ⇒ 若 overlay 条目此刻处于 `proving`，base 的 drill 副本里 M7 必红（watch 路径不存在）⇒ **必须先跑 overlay 的演练并把它转回 `active`，再跑 base 的演练**。 同批演练（隔离副本，基线 `ac4d9e4`）PASS ⇒ 回填 `last_drill`（content_hash `98f23980…`）并转回 `active`。",
       "manifest_ref": "plan-topics",
       "watch": [
         "lib/plan-topics.ts",
