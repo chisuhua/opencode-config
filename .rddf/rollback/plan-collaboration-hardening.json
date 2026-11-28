@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "mechanism": "plan-collaboration-hardening",
+  "adr": "docs/adr/ADR-plan-collaboration-hardening.md",
+  "notes": "覆盖面 = ADR-plan-collaboration-hardening 的 P0–P5 + v3 grandfather：① **删本机制新建的文件**（模型配置 `plan-models.json` + 校验脚本 + 三个新测试 + 本 ADR + 两份审稿/验收报告 + improvement 草稿 + change 三件 + 债指针 + 本清单）；② **逐段回退 11 个被改动的既有文件**（`lib/plan-topics.ts` 结算两码 + grandfather + 目标审查码、`scripts/plan-topic-check.ts` 的 `add` 子命令、`scripts/plan-synthesis-check.ts` 的 V6 三码、`prompts/plan.md` / `prompts/plan-worker.md` 的纪律段、主题文档 §4/§5/§10、两个测试文件与 fixture、`governance-paths.json` 的自纳入条目、`build-worker-design/TOPIC.md` 的结算记录块）；③ **移除 registry 里的本机制条目**（回滚后 ADR 与条目一起消失 ⇒ M1/M2 自洽）。⚠ **刻意保留**：`.rddf/plan-topics/v7-probe/**`（V7 探针产物 = 本 ADR 的**决策证据**，非机制产物 ⇒ 回滚不删；其中的结算记录随结算门失效成为惰性文本）。⚠ **与 ADR §回滚面 的差异**：ADR 写「③ 删除本 ADR 文件」—— 本清单确实删它，但**同时**移除 registry 条目（否则 M1「registry 指向的 ADR 不存在」红）；ADR 未写这一条，属清单侧的细化。 ⚠ **债指针已随清单落地而删除**（`.rddf/rollback/pending/plan-collaboration-hardening.md`）：M7 要求「债文件存在 ⇒ 必有 unmanifested 条目」，本机制已有清单 ⇒ 条目转 `proving` ⇒ 该文件成为孤儿 ⇒ 删除（债已由本清单偿还，覆盖面见本 `notes`）。",
+  "delete": [
+    "plan-models.json",
+    "scripts/plan-models-check.sh",
+    "tests/plan-models-check.test.ts",
+    "tests/plan-topics-add.test.ts",
+    "tests/plan-topics-goal-review.test.ts",
+    "tests/plan-topics-settlement.test.ts",
+    "docs/adr/ADR-plan-collaboration-hardening.md",
+    ".rddf/reviews/ADR-plan-collaboration-hardening.md",
+    ".rddf/reviews/plan-collaboration-hardening-verify.md",
+    ".rddf/improvements/plan-collaboration-hardening.md",
+    "openspec/changes/plan-collaboration-hardening/proposal.md",
+    "openspec/changes/plan-collaboration-hardening/tasks.md",
+    "openspec/changes/plan-collaboration-hardening/.openspec.yaml",
+    ".rddf/rollback/plan-collaboration-hardening.json"
+  ],
+  "edits": [
+    {
+      "path": "lib/plan-topics.ts",
+      "find": "  if (phase === \"final\") {\n    out.push(...assertNoStaleInputs(safeGraph, topicDir))\n    // 结算门（ADR-plan-collaboration-hardening D4）：必须**最后**算 —— `blockingBefore` 取\n    // 「其余阻断项」的数量，天然排除本门两码自身（防「首跑变红 ⇒ 次跑前提自毁 ⇒ 恒绿」）。\n    out.push(...assertSettlement(safeGraph, topicDir, derived, out.filter(isBlocking).length))\n  } else {\n    // 目标审查门（D5）：只在**派发前**截面要求（已收尾的 topic 不会被这条打红）\n    out.push(...assertTopicGoalReviewed(topicDir, dispatchableNodes(safeGraph, topicDir)))\n  }\n",
+      "replace": "  if (phase === \"final\") out.push(...assertNoStaleInputs(safeGraph, topicDir))\n"
+    },
+    {
+      "path": "lib/plan-topics.ts",
+      "find": "      (c) => !REPAIRABLE_SYNTH_CODES.has(c) && !UNREPAIRABLE_SYNTH_CODES.has(c) && !UNREACHABLE_SYNTH_CODES.has(c),\n    )\n    if (repairable.length > 0 && !(grandfather && repairableCovered)) {\n      return [\n        {\n          code: \"settlement_failed_not_superseded\",\n          detail: `失败集含可修复码 ${repairable.join(\",\")} ⇒ 必须追加更大的合成节点并跑通（不得 accept-with-gap${\n            grandfather ? \"；grandfather 适用但 gap_reason 未覆盖这些码\" : \"\"\n          }）`,\n        },\n      ]\n    }\n    if (unknown.length > 0) {\n      // fail-closed：未分类码一律按不可修复处理，但必须显式写进 gap_reason\n      // grandfather 下同样要求逐码覆盖（V8(f)：可修复码 ∪ 未分类码 ⊆ gap_reason 的码集合）\n      if (rec.action !== \"accept-with-gap\" || !rec.gap_reason || (grandfather && !unknown.every((c) => reasonCodes.has(c)))) {\n        return [\n          {\n            code: \"settlement_failed_not_superseded\",\n            detail: `未分类失败码 ${unknown.join(\",\")} ⇒ 按不可修复处理：须 action=accept-with-gap + gap_reason`,\n          },\n        ]\n      }\n    } else if (rec.action !== \"accept-with-gap\" || !rec.gap_reason) {\n      return [\n        {\n          code: \"settlement_failed_not_superseded\",\n          detail: `exit≠0 但 action=${rec.action}${rec.gap_reason ? \"\" : \" 且未给 gap_reason\"}（不可修复失败集须 accept-with-gap + 理由）`,\n        },\n      ]\n    }\n  }\n  return []\n}\n\n/** `TOPIC.md` 的目标审查三节（ADR-plan-collaboration-hardening D5） */\nexport const TOPIC_GOAL_SECTIONS = [\"前提与证伪条件\", \"非目标\", \"目标审查结论\"] as const\n\n/** 取 `## <title>` 小节正文（到下一个**任何级别**标题为止），剥围栏代码块；空 ⇒ false */\nexport function topicSectionHasBody(topicMd: string, title: string): boolean {\n  const lines = topicMd.split(/\\r?\\n/)\n  const start = lines.findIndex((l) => l.trim() === `## ${title}`)\n  if (start < 0) return false\n  let inFence = false\n  for (let i = start + 1; i < lines.length; i++) {\n    const t = lines[i].trim()\n    if (/^```/.test(t)) {\n      inFence = !inFence\n      continue\n    }\n    if (!inFence && /^#{1,6}\\s/.test(t)) break // 下一个标题\n    if (!inFence && t.length > 0) return true\n  }\n  return false\n}\n\n/**\n * 目标审查门（ADR-plan-collaboration-hardening D5 / V9）—— **仅 `--phase dispatch` 且存在可派节点**。\n * 三节任一缺失或为空 ⇒ 阻断；`TOPIC.md` 整体缺失 ⇒ 视同三节全缺。\n */\nexport function assertTopicGoalReviewed(topicDir: string, ready: string[]): Violation[] {\n  if (ready.length === 0) return []\n  const md = readIfExists(path.join(topicDir, \"TOPIC.md\"))\n  const missing = TOPIC_GOAL_SECTIONS.filter((s) => md === undefined || !topicSectionHasBody(md, s))\n  if (missing.length === 0) return []\n  return [\n    {\n      code: \"topic_goal_unreviewed\",\n      detail: `TOPIC.md 缺或空：${missing.map((s) => `## ${s}`).join(\" / \")}（有可派节点 ⇒ 目标审查必须先落文件）`,\n    },\n  ]\n}\n\n",
+      "replace": ""
+    },
+    {
+      "path": "lib/plan-topics.ts",
+      "find": "/**\n * 答案节点是否「在判据生效前已结算」—— grandfather 的唯一判据（ADR D4 / V8(f)）。\n *\n * 取**最后一次已闭合 attempt** 的 `finished_at`（`max` 时间序，不取数组末条），比 UTC 日期\n * **严格早于** `SETTLEMENT_CRITERIA_SINCE`。无已闭合 attempt ⇒ `false`（fail-closed：\n * `deriveStatus` 不看 attempts，父可手写 RESULT 而不 `claim` ⇒ 不存在「已结算」这一事实）。\n */\nexport function isSettledBeforeCriteria(g: Graph, answerId: string): boolean {\n  const node = g.nodes.find((n) => n.id === answerId)\n  if (!node) return false\n  // 只认 ISO 日期前缀：空串 / 畸形值若被当「很早」，会静默放开豁免（fail-closed）\n  const closed = node.attempts\n    .map((a) => a.finished_at)\n    .filter((x): x is string => typeof x === \"string\" && /^\\d{4}-\\d{2}-\\d{2}/.test(x))\n  if (closed.length === 0) return false\n  const last = closed.reduce((best, cur) => (cur > best ? cur : best))\n  return last.slice(0, 10) < SETTLEMENT_CRITERIA_SINCE\n}\n\n/**\n * 结算门：有**非 cancelled** 合成节点 ∧ 已收尾（全终态 ∧ 无在飞 ∧ 其余阻断数 = 0）∧ 记录不合规 ⇒ 违规。\n *\n * ⚠ `blockingBefore` 由调用方在**推入本门两码之前**计算 ⇒ 天然排除自身（ADR D4 的反自毁要求）。\n * ⚠ 未分类的 `synth_*` 码按**不可修复**处理（fail-closed：必须写 `gap_reason`）。\n */\nexport function assertSettlement(\n  g: Graph,\n  topicDir: string,\n  derived: Map<string, Status>,\n  blockingBefore: number,\n): Violation[] {\n  const answer = answerSynthNodeId(g.nodes)\n  if (answer === null) return []\n\n  const allTerminal = g.nodes.every((n) => {\n    const s = derived.get(n.id)\n    return s === \"done\" || s === \"cancelled\"\n  })\n  const anyInFlight = g.nodes.some((n) => !n.cancelled && isInFlight(n))\n  if (!allTerminal || anyInFlight || blockingBefore > 0) return []\n\n  const rec = parseSettlementRecord(readIfExists(path.join(topicDir, \"TOPIC.md\")) ?? \"\")\n  if (rec === null) {\n    return [{ code: \"settlement_missing\", detail: \"缺 `## 结算记录`（含一个 yaml 围栏块）—— 有合成节点且已收尾时必填\" }]\n  }\n  const missing = SETTLEMENT_REQUIRED_KEYS.filter((k) => !rec[k])\n  if (missing.length > 0) {\n    return [{ code: \"settlement_missing\", detail: `结算记录缺必填字段：${missing.join(\", \")}` }]\n  }\n  const exit = Number.parseInt(rec.synthesis_check_exit, 10)\n  if (!Number.isFinite(exit)) {\n    return [{ code: \"settlement_missing\", detail: `synthesis_check_exit 不是整数：${rec.synthesis_check_exit}` }]\n  }\n  if (rec.answer_node !== answer) {\n    return [\n      {\n        code: \"settlement_failed_not_superseded\",\n        detail: `记录过期：answer_node=${rec.answer_node} ≠ 当前答案节点 ${answer}（追加合成节点后须重写记录）`,\n      },\n    ]\n  }\n  if (exit !== 0) {\n    const codes = (rec.blocking ?? \"\").match(/synth_[a-z_]+/g) ?? []\n    const repairable = codes.filter((c) => REPAIRABLE_SYNTH_CODES.has(c))\n    // grandfather：判据生效前已结算 ⇒ 可修复码不再强制 supersede，但 gap_reason 须覆盖它们\n    const grandfather = isSettledBeforeCriteria(g, answer)\n    const reasonCodes = new Set((rec.gap_reason ?? \"\").match(/synth_[a-z_]+/g) ?? [])\n    const repairableCovered = repairable.every((c) => reasonCodes.has(c))\n    const unknown = codes.filter(\n",
+      "replace": ""
+    },
+    {
+      "path": "lib/plan-topics.ts",
+      "find": "// ── 结算门（ADR-plan-collaboration-hardening D4 / V7·V8）──────────────────────\n\n/** 合成节点 id 形状（与 `plan-synthesis-check` 的 `isSynthId` 同口径） */\nexport const SYNTH_ID_RE = /^m[1-9][0-9]*$/\n\n/** 结算门两码 —— 收尾条件里的「阻断数 = 0」必须**排除它们自身**（否则首跑变红 ⇒ 次跑恒绿） */\nexport const SETTLEMENT_CODES: ReadonlySet<ViolationCode> = new Set<ViolationCode>([\n  \"settlement_missing\",\n  \"settlement_failed_not_superseded\",\n])\n\n/** 合成侧**可修复**：重做合成（追加更大的 `m<n>`）能修 ⇒ 必须 supersede，不得 accept-with-gap */\nexport const REPAIRABLE_SYNTH_CODES: ReadonlySet<string> = new Set([\n  \"synth_conclusion_layer_missing\",\n  \"synth_heavy_item_not_in_conclusion\",\n  \"synth_brief_no_ruling_set\",\n  \"synth_ruling_not_propagated\",\n  \"synth_conclusion_no_chain\",\n  \"synth_evidence_unresolvable\",\n  \"synth_reasoning_missing\",\n])\n\n/** 结构性**不可修复**（上游属性 / 图形态）⇒ 允许 `accept-with-gap` + `gap_reason` */\nexport const UNREPAIRABLE_SYNTH_CODES: ReadonlySet<string> = new Set([\n  \"synth_token_missing\",\n  \"synth_id_ambiguous\",\n  \"synth_dep_on_synth\",\n  \"synth_dep_union_incomplete\",\n  \"synth_dep_union_extra\",\n  \"synth_answer_dep_incomplete\",\n  \"synth_graph_error\",\n])\n\n/** 结算门**不可达**（门的前提已排除：不存在可用的非 cancelled 合成节点） */\nexport const UNREACHABLE_SYNTH_CODES: ReadonlySet<string> = new Set([\"synth_answer_missing\"])\n\n/** D4 判据生效日（ADR-plan-collaboration-hardening v3 的 grandfather 分界线，UTC 日期） */\nexport const SETTLEMENT_CRITERIA_SINCE = \"2026-11-27\"\n\n/** `## 结算记录` 的必填键（缺任一 ⇒ 视同无记录） */\nexport const SETTLEMENT_REQUIRED_KEYS = [\n  \"checked_at\",\n  \"synthesis_check_exit\",\n  \"blocking\",\n  \"answer_node\",\n  \"action\",\n  \"model_resolution\",\n  \"model_id\",\n] as const\n\n/**\n * 解析 `TOPIC.md` 的 `## 结算记录`：取该节之后**第一个** `yaml` 围栏块，逐行 `key: value`。\n * 不吃 YAML 库（本库无依赖）；值里含 `:` / `[]` / `×` 一律原样保留。\n */\nexport function parseSettlementRecord(topicMd: string): Record<string, string> | null {\n  const lines = topicMd.split(/\\r?\\n/)\n  let i = lines.findIndex((l) => l.trim() === \"## 结算记录\")\n  if (i < 0) return null\n  let j = i + 1\n  while (j < lines.length) {\n    const t = lines[j].trim()\n    if (/^##\\s/.test(t)) return null // 到下一个二级标题仍未见到围栏块 ⇒ 无记录\n    if (/^```ya?ml$/i.test(t)) break\n    j++\n  }\n  if (j >= lines.length) return null\n  const body: string[] = []\n  for (let k = j + 1; k < lines.length; k++) {\n    if (/^```$/.test(lines[k].trim())) break\n    body.push(lines[k])\n  }\n  const rec: Record<string, string> = {}\n  for (const raw of body) {\n    const m = /^([a-z_]+):[ ]?(.*)$/.exec(raw.trim())\n    if (m) rec[m[1]] = m[2].trim()\n  }\n  return Object.keys(rec).length > 0 ? rec : null\n}\n\n/** 当前答案节点 = 非 cancelled 合成节点里整数后缀最大者（与 synthesis-check 的 `answerNodeId` 同口径） */\nexport function answerSynthNodeId(nodes: Node[]): string | null {\n  const synth = nodes.filter((n) => !n.cancelled && SYNTH_ID_RE.test(n.id))\n  if (synth.length === 0) return null\n  return synth.reduce((best, n) => (parseInt(n.id.slice(1), 10) > parseInt(best.id.slice(1), 10) ? n : best)).id\n}\n\n",
+      "replace": ""
+    },
+    {
+      "path": "lib/plan-topics.ts",
+      "find": "  | \"settlement_missing\"\n  | \"settlement_failed_not_superseded\"\n  | \"topic_goal_unreviewed\"\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-topic-check.ts",
+      "find": "    case \"add\":\n      return cmdAdd(opts)\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-topic-check.ts",
+      "find": "/**\n * `add` —— 按结论**增量加节点**（ADR-plan-collaboration-hardening D2 / V4）。\n *\n * 为什么要有这条（而不是让父手改 `graph.json`）：手写崩溃会留下 torn 文件（全 topic exit 3），\n * 且绕开短锁（与并发 claim/close 相撞）。本命令取同一个 graph 短锁、原子写、并做 fail-fast 校验：\n * 已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 —— 一律拒绝。\n */\nfunction cmdAdd(opts: Options): number {\n  const [topicDir, nodeId] = opts.positional\n  if (!topicDir) usage(\"add 需要 <topic-dir>\")\n  if (!nodeId) usage(\"add 需要 <node-id>\")\n  if (!opts.title || opts.title.trim().length === 0) usage(\"add 需要非空 --title\")\n\n  const root = repoRootOf(topicDir)\n  const slug = path.basename(path.resolve(topicDir))\n  const release = acquireGraphLock(root, slug)\n  try {\n    const g = loadGraph(topicDir)\n    try {\n      assertValidNodeId(nodeId)\n    } catch (e) {\n      if (e instanceof PlanTopicError) {\n        process.stderr.write(`${e.code}: ${e.message}\\n`)\n        return 1\n      }\n      throw e\n    }\n    if (g.nodes.some((n) => n.id === nodeId)) {\n      process.stderr.write(`节点已存在，不得重复添加：${nodeId}\\n`)\n      return 1\n    }\n    const deps = opts.deps ?? []\n    if (new Set(deps).size !== deps.length) {\n      process.stderr.write(`deps 有重复：${deps.join(\",\")}\\n`)\n      return 1\n    }\n    for (const d of deps) {\n      const dep = g.nodes.find((n) => n.id === d)\n      if (!dep) {\n        process.stderr.write(`deps 指向不存在的节点：${d}\\n`)\n        return 1\n      }\n      if (dep.cancelled) {\n        process.stderr.write(`deps 指向已取消的节点：${d}（cancelled_dep_active 会让图恒红）\\n`)\n        return 1\n      }\n    }\n    const node: Node = {\n      id: nodeId,\n      title: opts.title.trim(),\n      deps,\n      owner: opts.owner ?? \"child\",\n      status: \"pending\",\n      progress: \"todo\",\n      attempts: [],\n      deliverables: [`nodes/${nodeId}/RESULT.md`],\n    }\n    const next: Graph = { ...g, nodes: [...g.nodes, node] }\n    try {\n      assertAcyclic(next)\n    } catch (e) {\n      if (e instanceof PlanTopicError) {\n        process.stderr.write(`${e.code}: ${e.message}\\n`)\n        return 1\n      }\n      throw e\n    }\n    writeGraphAtomic(topicDir, next)\n    emitJson({ ok: true, node: node.id, deps: node.deps, owner: node.owner, deliverables: node.deliverables })\n    return 0\n  } catch (e) {\n    if (e instanceof PlanTopicError) {\n      process.stderr.write(`${e.code}: ${e.message}\\n`)\n      return 3\n    }\n    throw e\n  } finally {\n    release()\n  }\n}\n\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-topic-check.ts",
+      "find": "    } else if (a === \"--title\") {\n      const v = argv[++i]\n      if (!v) usage(\"--title 缺少值\")\n      opts.title = v\n    } else if (a.startsWith(\"--title=\")) opts.title = a.slice(\"--title=\".length)\n    else if (a === \"--deps\") {\n      const v = argv[++i]\n      if (v === undefined) usage(\"--deps 缺少值\")\n      opts.deps = v === \"\" ? [] : v.split(\",\").map((x) => x.trim()).filter(Boolean)\n    } else if (a.startsWith(\"--deps=\")) {\n      const v = a.slice(\"--deps=\".length)\n      opts.deps = v === \"\" ? [] : v.split(\",\").map((x) => x.trim()).filter(Boolean)\n    } else if (a === \"--owner\") {\n      const v = argv[++i]\n      if (v !== \"parent\" && v !== \"child\") usage(\"--owner 只能是 parent|child\")\n      opts.owner = v\n    } else if (a.startsWith(\"--owner=\")) {\n      const v = a.slice(\"--owner=\".length)\n      if (v !== \"parent\" && v !== \"child\") usage(\"--owner 只能是 parent|child\")\n      opts.owner = v\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-topic-check.ts",
+      "find": "      \"plan-topic-check add <topic-dir> <node-id> --title <text> [--deps a,b] [--owner parent|child]\",\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-topic-check.ts",
+      "find": "  title?: string\n  deps?: string[]\n  owner?: \"parent\" | \"child\"\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-topic-check.ts",
+      "find": "  assertAcyclic,\n  assertValidNodeId,\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-synthesis-check.ts",
+      "find": "  // V6：结论级证据链 / 推断链（ADR-plan-collaboration-hardening D3）\n  if (ansResult !== null) {\n    violations.push(...checkConclusionChains(topicDir, answer, ansResult, contents, opts))\n  }\n\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-synthesis-check.ts",
+      "find": "        severity,\n      })\n      continue\n    }\n    const nodeRefs = [...evLine.matchAll(NODE_REF_RE)].map((m) => `n${m[1]}`).filter((id) => contentIds.includes(id))\n    const scope = nodeRefs.length > 0 ? nodeRefs : contentIds\n    const upstream = new Map<string, string>()\n    for (const id of scope) {\n      const t = readIfExists(path.join(topicDir, \"nodes\", id, \"RESULT.md\"))\n      if (t !== null) upstream.set(id, t)\n    }\n    for (const t of tokenRefs) {\n      const re = new RegExp(`${escapeRe(t.path)}:${t.line}(?:-\\\\d+)?`)\n      const hit = [...upstream.values()].some((t) => re.test(t))\n      if (!hit) {\n        out.push({\n          code: \"synth_evidence_unresolvable\",\n          node: answerId,\n          detail: `${d.token} 的证据 \\`${t.path}:${t.line}\\` 在${scope.length === 1 ? ` ${scope[0]}` : \"上游\"}的 RESULT.md 中不存在（字面比对）`,\n          severity,\n        })\n      }\n    }\n  }\n  return out\n",
+      "replace": ""
+    },
+    {
+      "path": "scripts/plan-synthesis-check.ts",
+      "find": "}\n\n\n// ── V6：结论级证据链 / 推断链（ADR-plan-collaboration-hardening D3）────────────\n\n/** C token：`C1` / `C12`；`AC1`、`C10a` 都不算（两侧词边界都收） */\nexport const C_TOKEN_RE = /(?<![A-Za-z0-9_])C[1-9][0-9]?(?![0-9A-Za-z])/g\n/** 定义行：行首 `**C<n>【` */\nconst C_DEF_LINE_RE = /^\\*\\*C([1-9][0-9]?)【/\n/** `path:line` / `path:start-end` —— 比对只看 `path:start` */\nconst PATH_LINE_RE = /([A-Za-z0-9_][A-Za-z0-9_.\\/-]*\\.[A-Za-z0-9]+):(\\d+)(?:-\\d+)?/g\n/** 证据链里的节点回指：`n3 §3` / `n3§` */\nconst NODE_REF_RE = /n(\\d+)\\s*§/g\n/** 「紧跟」容差：C 定义行之后 3 行内必须出现证据链与推断链 */\nconst CHAIN_WINDOW = 3\n\nfunction escapeRe(s: string): string {\n  return s.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\")\n}\n\n/**\n * V6 三码：`synth_conclusion_no_chain` / `synth_evidence_unresolvable` / `synth_reasoning_missing`。\n * 与 `synth_token_missing` 同档：默认 `info`，`--strict-token` 下升 `blocking`。\n * ⚠ 只验**引用完整性与格式**，不验证据是否支持结论（ADR §已知不可机判）。\n */\nexport function checkConclusionChains(\n  topicDir: string,\n  answerId: string,\n  ansResult: string,\n  contentIds: string[],\n  opts: CheckOptions,\n): Violation[] {\n  const severity = opts.strictToken ? \"blocking\" : \"info\"\n  const out: Violation[] = []\n  const section = sectionBody(ansResult, /结论/)\n  if (section === null) {\n    out.push({\n      code: \"synth_conclusion_no_chain\",\n      node: answerId,\n      detail: \"答案节点缺 `## 结论` 小节（V6 要求每条结论带 `C<n>` + 证据链 + 推断链）\",\n      severity,\n    })\n    return out\n  }\n  const lines = section.split(/\\r?\\n/)\n  const defs: Array<{ token: string; at: number }> = []\n  for (let i = 0; i < lines.length; i++) {\n    const m = C_DEF_LINE_RE.exec(lines[i].trim())\n    if (m) defs.push({ token: `C${m[1]}`, at: i })\n  }\n  if (defs.length === 0) {\n    out.push({\n      code: \"synth_conclusion_no_chain\",\n      node: answerId,\n      detail: \"`## 结论` 内没有任何 `**C<n>【…】**` 定义（零 C token 不算通过）\",\n      severity,\n    })\n    return out\n  }\n  for (const d of defs) {\n    const win = lines.slice(d.at + 1, d.at + 1 + CHAIN_WINDOW)\n    const evLine = win.find((l) => l.includes(\"证据链\"))\n    const rsLine = win.find((l) => l.includes(\"推断链\"))\n    if (!evLine || !rsLine) {\n      out.push({\n        code: \"synth_conclusion_no_chain\",\n        node: answerId,\n        detail: `${d.token} 定义后 ${CHAIN_WINDOW} 行内缺${!evLine ? \"「证据链」\" : \"\"}${!evLine && !rsLine ? \"与\" : \"\"}${!rsLine ? \"「推断链」\" : \"\"}`,\n        severity,\n      })\n      continue\n    }\n    if (!/[⇒→]/.test(rsLine)) {\n      out.push({\n        code: \"synth_reasoning_missing\",\n        node: answerId,\n        detail: `${d.token} 的推断链不含 \\`⇒\\` / \\`→\\`（无法区分「列出事实」与「作出推理」）`,\n        severity,\n      })\n    }\n    // ⚠ 带 /g 的 String.match 返回**字符串数组**（不是 match 对象）⇒ 必须用 matchAll 取捕获组\n    const tokenRefs = [...evLine.matchAll(PATH_LINE_RE)].map((x) => ({ path: x[1], line: x[2] }))\n    if (tokenRefs.length === 0) {\n      out.push({\n        code: \"synth_evidence_unresolvable\",\n        node: answerId,\n        detail: `${d.token} 的证据链没有任何 \\`path:line\\`（不可追溯）`,\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "5. **结论级证据链**：`## 结论` 里每条写成 `**C<n>【判定】** <一句话>` —— **必须在行首**（不加 `- ` 列表符号），`n` 限 **C1–C99**；其后 **3 行内**必须有「证据链」行（`C1 ← n3 §3 ← \\`path:startline\\``，该路径必须在**证据链回指的那个节点**的 `RESULT.md` 里**字面存在**）与「推断链」行（含 `⇒` / `→`）。零 C token 不算通过。\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "- **收工前必须写 `## 结算记录`**（`TOPIC.md`，父写）：该节后紧跟**一个** ```yaml 围栏块，逐行 `key: value`，**7 个必填键** —— `checked_at` / `synthesis_check_exit`（`plan-synthesis-check` 的 exit 码）/ `blocking`（**原样照抄 check 输出的全部 blocking 码**——漏抄可修复码会把失败集洗成「全不可修复」而被 `accept-with-gap` 放行）/ `answer_node` / `action`（`accept` | `accept-with-gap` | `supersede:<m-id>`）/ `model_resolution`（`config` | `none`）/ `model_id`（实际派发的模型）。缺任一 ⇒ `settlement_missing` 阻断。\n  - **失败集含任一可修复码**（`synth_conclusion_layer_missing` / `synth_heavy_item_not_in_conclusion` / `synth_brief_no_ruling_set` / `synth_ruling_not_propagated` / V6 三码（`synth_conclusion_no_chain` / `synth_evidence_unresolvable` / `synth_reasoning_missing`））⇒ **必须追加更大的合成节点并跑通（exit 0）后再写记录**（`action: supersede:m2`）；**不得**用 `accept-with-gap` 绕过。\n  - **只有全为不可修复码**（`synth_token_missing` / `synth_id_ambiguous` / `synth_dep_*` / `synth_answer_dep_incomplete` / `synth_graph_error` / **任何未分类的新码**，fail-closed）才允许 `action: accept-with-gap` + 必填 `gap_reason`。\n  - **例外（判据生效前已结算的 topic）**：答案节点最后一次闭合 attempt 的 `finished_at`（**UTC 日期**，取 `max(finished_at)`）**严格早于** `2026-11-27` ⇒ 含可修复码也可 `accept-with-gap`，但 `gap_reason` 抽出的码集合（`/synth_[a-z_]+/g`）必须覆盖 `blocking` 里的**可修复码与未分类码**（漏列任一 ⇒ 仍阻断）；无已闭合 attempt ⇒ 不适用。\n  - ⚠ **顺序**：先追加合成节点 → 复核通过 → **再**写记录。写完记录再追加 ⇒ `answer_node` 立刻过期 ⇒ `settlement_failed_not_superseded`。\n- 复核：`bun scripts/plan-synthesis-check.ts .rddf/plan-topics/<topic> --strict-token`（**V4/V5/V6** 判据；**新 topic 必开 `--strict-token`** —— 否则「标了却没带 token」（`synth_token_missing`）与 V6 三码都只报 `info`、不拦，`exit=0` 会让结算门放行；**无合成节点时默认 exit 0**）。\n",
+      "replace": "- 复核：`bun scripts/plan-synthesis-check.ts .rddf/plan-topics/<topic> --strict-token`（V4/V5 判据；**新 topic 必开 `--strict-token`** —— 否则「标了却没带 token」只报 info、不拦；**无合成节点时默认 exit 0**）。\n"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "  - ⚠ **不要猜模型 ID，也不要在本文件里写死**：**从全局配置读** `~/.config/opencode/plan-models.json` 的 `synthesis.model`（形如 `<provider>/<model>#<variant>`），**直接**作为 `model=` 入参。⚠ 模型 ID 的单一真源就是那个配置文件 —— 本文件抄一份就会漂移（2026-11-27 实测：这里曾写死过一个具体模型名，与实际派发用的模型不一致 ⇒ 已删）。\n  - **派发前跑一次** `bash scripts/plan-models-check.sh`（schema 校验 + 与 `opencode models` 比对）；**exit≠0 ⇒ 不得派发**。⚠ `exit=0` 还须确认 `--json` 的 `models_checked == \"ok\"`（`skipped` / 未比对都**不算**通过）；**非离线排障不得带 `--skip-models`**。配置缺失 / 不可读 / 字段非法 ⇒ **停手补配置**（最小模板见 `ADR-plan-collaboration-hardening` D1），**不得**回落成「猜一个模型」—— 那会让单一真源失效。\n  - **spawn 失败**（provider 拒识该模型 / 变体不可用 / 模型下架）⇒ **同回合 `close`** 该 attempt，再按 `synthesis.fallback[]` 顺序换模型**重新 `claim`** 后派发。**不得**留着未闭合 attempt 等下次 —— `claim`→`spawn` 无补偿（`ADR-plan-multi-session-collaboration` 残留 #18）。`fallback[]` **全序失败 ⇒ 停手**：**若有悬挂 attempt（`close` 未执行 / 父崩溃）才** `reap --confirm`，否则直接写 `blocked` 说明需要换哪个模型。\n  - 依据：弱模型（`plan-worker` 的默认档，即 `content.model: null` 时用的那个）实测会丢掉上游标为「最重」的项。\n",
+      "replace": "  - ⚠ **不要猜模型 ID**：先用 `models` 工具查（筛 chat 类）。当前实测的强模型 = **`minimax-cn/MiniMax-M3.1-Flash`**（即 ADR A/B 对照的 A 档）；该模型不可用时，用同档或更强的 chat 模型。\n  - 依据：弱模型（`plan-worker` 默认档 `opencode-go/deepseek-v4.1-flash`）实测会丢掉上游标为「最重」的项。\n"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "- **按结论加节点（`add`）**：父是唯一写者 —— `bun scripts/plan-topic-check.ts add <topic> <id> --title <t> --deps a,b`（原子写 + graph 短锁 + fail-fast：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 **一律拒**）→ **随后你写 `BRIEF.md`**（`add` 只写图；BRIEF 未写时它不在 `ready` 里）。\n- **追问**：节点**未** done ⇒ 改它的 `BRIEF.md`（追加一节）→ 重新 `claim`（新 attempt；老 attempt 变 `stale_inputs`，你写 `inputs_reviewed` 复核）→ 派发。节点**已** done ⇒ 改 BRIEF **无效**（`claim` 硬拒 done、D9 不支持重开）⇒ 用 `add` 建**新节点**（`deps` 含它），BRIEF 写全新契约并显式引用旧节点的 `RESULT.md`。⚠ 节点**在飞**时 `claim` 会硬拒 ⇒ 先 `close`（或 `reap --confirm`）再改 BRIEF 重新 `claim`。**追问（新一轮）禁止用 `resume` 替代新 `claim`**（`resume` 不追加 attempt ⇒ 台账不可归因；一会话一 node ⇒ 破单一写者 + 上下文污染）；`resume` 只用于**同一 attempt 内**的续接。\n",
+      "replace": ""
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "- **fork（先登记后 spawn）**：`claim` 返回的 `precheck.exit≠0` ⇒ **先修再 spawn**（`claim` 只留痕不拒，是残留 #17 的协议债）。先 `ready` 拿可派节点 → **对每个要派的节点先跑 `claim`**（登记 attempt + 输入投影快照；已有未闭合 attempt ⇒ 拒绝 ⇒ 同一节点不会被派两次）→ 再同一轮内多次 `subagent(agent=\"plan-worker\", background=true)`。**不要**自己猜依赖是否满足，也**不要**绕过 `claim` 手写 `graph.json`。\n",
+      "replace": "- **fork（先登记后 spawn）**：先 `ready` 拿可派节点 → **对每个要派的节点先跑 `claim`**（登记 attempt + 输入投影快照；已有未闭合 attempt ⇒ 拒绝 ⇒ 同一节点不会被派两次）→ 再同一轮内多次 `subagent(agent=\"plan-worker\", background=true)`。**不要**自己猜依赖是否满足，也**不要**绕过 `claim` 手写 `graph.json`。\n"
+    },
+    {
+      "path": "prompts/plan.md",
+      "find": "| `TOPIC.md` | 父（你） | 目标、边界、全局约束 + **目标审查三节**（`## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`；**有可派节点时必填**，缺 ⇒ `topic_goal_unreviewed`）+ **`## 结算记录`**（有合成节点且已收尾时必填） |\n",
+      "replace": "| `TOPIC.md` | 父（你） | 目标、边界、全局约束 |\n"
+    },
+    {
+      "path": "prompts/plan-worker.md",
+      "find": "   - **BRIEF 若要求结论级证据链**（合成节点会要求）：`## 结论` 每条写成 `**C<n>【判定】** …`（**行首、不加列表符号**，`n` 限 C1–C99），其后 **3 行内**给「证据链」（`C1 ← n2 §3 ← \\`path:startline\\``）与「推断链」（含 `⇒` / `→`）；`path:startline` 必须在**证据链回指的那个节点**的 `RESULT.md` 里字面存在。\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/architecture/plan-topics-topic-model.md",
+      "find": "- **交付信号不可机判**（见 §6 定位）；「本轮要什么」的解释权仍留在父的上下文，但**目标审查有三节结构载体**（`ADR-plan-collaboration-hardening` D5）：`TOPIC.md` 的 `## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`，`--phase dispatch` 在**存在可派节点**时要求三节在场且非空（`topic_goal_unreviewed`）⇒ 判的是「写下来了」，**不判**前提真假或目标对错。\n",
+      "replace": "- **交付信号不可机判**（见 §6 定位）；不存在「本轮目标集合」载体 —— 「本轮要什么」的解释权留在父的上下文。\n"
+    },
+    {
+      "path": "docs/architecture/plan-topics-topic-model.md",
+      "find": "| `add <topic> <node> --title <t> [--deps a,b] [--owner …]` | 按结论**增量加节点**（原子写 + graph 短锁） | 拒：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 |\n",
+      "replace": ""
+    },
+    {
+      "path": "docs/architecture/plan-topics-topic-model.md",
+      "find": "**违规码闭集**（23 个）：结构 `schema_invalid` / `invalid_node_id` / `duplicate_node_id` / `cycle` / `dangling_dep` / `duplicate_dep` / `orphan_node_dir`；内容 `missing_brief` / `missing_deliverable` / `brief_tampered`；缓存 `cache_ahead` / `cache_behind`；取消 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；在飞与 fence `duplicate_open_attempt` / `stale_inputs`；**结算门** `settlement_missing` / `settlement_failed_not_superseded`；**目标审查** `topic_goal_unreviewed`（仅 `dispatch` 且有可派节点）；CLI `out_of_scope` / `empty_topic` / `git_error`。\n\n**结算门**（`ADR-plan-collaboration-hardening` D4，**仅 `final` 口径**）：存在**非 cancelled** 合成节点（`^m[1-9][0-9]*$`）∧ 已收尾（全终态 ∧ 无在飞 ∧ **其余**阻断数 = 0，天然排除本门两码自身）⇒ 要求 `TOPIC.md` 的 `## 结算记录`（`yaml` 围栏块 + 7 必填键：`checked_at` / `synthesis_check_exit` / `blocking` / `answer_node` / `action` / `model_resolution` / `model_id`）。\n- `settlement_missing`：记录缺失或字段不全。\n- `settlement_failed_not_superseded`：记录 `answer_node` ≠ 当前答案节点（过期）；或 `exit≠0` 且失败集含**任一可修复码**（`synth_conclusion_layer_missing` / `synth_heavy_item_not_in_conclusion` / `synth_brief_no_ruling_set` / `synth_ruling_not_propagated` / V6 三码）⇒ 必须追加更大的合成节点；全不可修复（含**未分类码**，fail-closed）⇒ 须 `action: accept-with-gap` + `gap_reason`。\n- **grandfather 例外（判据生效前已结算）**：答案节点 `max(finished_at)` 的 UTC 日期**严格早于** `2026-11-27`（`SETTLEMENT_CRITERIA_SINCE`）⇒ 含可修复码也可 `accept-with-gap`，但 `gap_reason` 抽出的码集合（`/synth_[a-z_]+/g`）必须覆盖 `blocking` 里的可修复码与未分类码；**无已闭合 attempt ⇒ 不适用**。\n",
+      "replace": "**违规码闭集**（20 个）：结构 `schema_invalid` / `invalid_node_id` / `duplicate_node_id` / `cycle` / `dangling_dep` / `duplicate_dep` / `orphan_node_dir`；内容 `missing_brief` / `missing_deliverable` / `brief_tampered`；缓存 `cache_ahead` / `cache_behind`；取消 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；在飞与 fence `duplicate_open_attempt` / `stale_inputs`；CLI `out_of_scope` / `empty_topic` / `git_error`。\n"
+    },
+    {
+      "path": "docs/architecture/plan-topics-topic-model.md",
+      "find": "| `TOPIC.md` | 目标、边界、全局约束 + **目标审查三节**（`## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`）+ **`## 结算记录`**（有合成节点且收尾时） |\n",
+      "replace": "| `TOPIC.md` | 父 | 目标、边界、全局约束 |\n"
+    },
+    {
+      "path": "tests/helpers/plan-topic-fixture.ts",
+      "find": "  writeFileSync(path.join(topic, \"TOPIC.md\"), TOPIC_MD)\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/helpers/plan-topic-fixture.ts",
+      "find": "\n/**\n * 默认 `TOPIC.md` —— 必须含目标审查三节（`ADR-plan-collaboration-hardening` D5：`--phase dispatch`\n * 在有可派节点时要求三节在场且非空）。要测「缺三节」的负向用例请自行覆盖或删除该文件。\n */\nexport const TOPIC_MD = [\n  \"# 主题\",\n  \"\",\n  \"## 目标\",\n  \"\",\n  \"回答一个真实问题。\",\n  \"\",\n  \"## 前提与证伪条件\",\n  \"\",\n  \"- 前提：本仓存在该机制。证伪条件：`grep` 零命中。\",\n  \"\",\n  \"## 非目标\",\n  \"\",\n  \"- 不改实现代码。\",\n  \"\",\n  \"## 目标审查结论\",\n  \"\",\n  \"- 2026-11-27 / planner：前提已逐条列出，暂未证伪。\",\n  \"\",\n].join(\"\\n\")\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/helpers/plan-topic-fixture.ts",
+      "find": "  writeFileSync(path.join(d, \"TOPIC.md\"), TOPIC_MD)\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/plan-synthesis.test.ts",
+      "find": "    expect(v6(d)).toContain(\"synth_conclusion_no_chain\")\n  })\n})\n",
+      "replace": ""
+    },
+    {
+      "path": "tests/plan-synthesis.test.ts",
+      "find": "\n// ── V6：结论级证据链 / 推断链（ADR-plan-collaboration-hardening D3）────────────\ndescribe(\"V6 结论级证据链 / 推断链\", () => {\n  const V6_CODES = new Set([\"synth_conclusion_no_chain\", \"synth_evidence_unresolvable\", \"synth_reasoning_missing\"])\n  const v6 = (dir: string, strict = true) =>\n    checkSynthesis(dir, { strictToken: strict })\n      .violations.filter((v) => V6_CODES.has(v.code))\n      .map((v) => v.code)\n\n  const N1_RESULT = `# RESULT\n\n## 结论\n\n- 见 \\`scripts/plan-topic-check.ts:437-465\\` 的守卫。\n\n## STATUS: COMPLETE\n`\n\n  function topicWith(conclusion: string): string {\n    return makeTopic({\n      nodes: [{ id: \"n1\" }, { id: \"m1\", deps: [\"n1\"] }],\n      brief: { m1: BRIEF_OK },\n      result: {\n        n1: N1_RESULT,\n        m1: `# RESULT\n\n## 结论\n\n${conclusion}\n\n## 各节点结论的合并\n\n| n1 | 略 |\n\n## 父的裁决汇总\n\n- R1：略\n- R2：略\n\n## 反哺清单\n\n- 无\n\n## 不声称的东西\n\n- 无\n\n## STATUS: COMPLETE\n`,\n      },\n    })\n  }\n\n  const GOOD = `**C1【判定】** 守卫在 claim 之前。\n- 证据链：C1 ← n1 §结论 ← \\`scripts/plan-topic-check.ts:437\\`\n- 推断链：F1（守卫先于 attempt 写入）⇒ F2（失败即拒）⇒ C1\n`\n\n  test(\"正例：C 定义 + 证据链（上游字面存在）+ 推断链带 ⇒ ⇒ 无 V6 码\", () => {\n    expect(v6(topicWith(GOOD))).toEqual([])\n  })\n\n  test(\"零 C 定义 ⇒ synth_conclusion_no_chain（默认 info 不阻断，strict 升 blocking）\", () => {\n    const d = topicWith(\"合成完成，无 C token。\")\n    expect(v6(d)).toContain(\"synth_conclusion_no_chain\")\n    expect(BLOCKING(d, { strictToken: true })).toContain(\"synth_conclusion_no_chain\")\n    expect(BLOCKING(d)).not.toContain(\"synth_conclusion_no_chain\")\n  })\n\n  test(\"`C10a` 不算 C token（词边界两侧都收）\", () => {\n    const d = topicWith(\"**C10a【判定】** 这不是合法 token。\\n- 证据链：x\\n- 推断链：y ⇒ z\\n\")\n    expect(v6(d)).toContain(\"synth_conclusion_no_chain\")\n  })\n\n  test(\"C 定义后 3 行内缺「推断链」⇒ no_chain\", () => {\n    const d = topicWith(\"**C1【判定】** x\\n- 证据链：C1 ← n1 §结论 ← `scripts/plan-topic-check.ts:437`\\n\")\n    expect(v6(d)).toContain(\"synth_conclusion_no_chain\")\n  })\n\n  test(\"证据 `path:line` 上游不存在 ⇒ synth_evidence_unresolvable\", () => {\n    const d = topicWith(\n      \"**C1【判定】** x\\n- 证据链：C1 ← n1 §结论 ← `scripts/nope.ts:9999`\\n- 推断链：F1 ⇒ C1\\n\",\n    )\n    expect(v6(d)).toContain(\"synth_evidence_unresolvable\")\n  })\n\n  test(\"推断链不含 ⇒ / → ⇒ synth_reasoning_missing\", () => {\n    const d = topicWith(\n      \"**C1【判定】** x\\n- 证据链：C1 ← n1 §结论 ← `scripts/plan-topic-check.ts:437`\\n- 推断链：F1 然后 C1\\n\",\n    )\n    expect(v6(d)).toContain(\"synth_reasoning_missing\")\n  })\n\n  test(\"区间写法 `path:437-465` 也能被 `path:437` 对上（比对只取 startline）\", () => {\n    const d = topicWith(\n      \"**C1【判定】** x\\n- 证据链：C1 ← n1 §结论 ← `scripts/plan-topic-check.ts:437-465`\\n- 推断链：F1 ⇒ C1\\n\",\n    )\n    expect(v6(d)).toEqual([])\n  })\n\n  test(\"缺 `## 结论` 小节 ⇒ no_chain\", () => {\n    const d = makeTopic({\n      nodes: [{ id: \"n1\" }, { id: \"m1\", deps: [\"n1\"] }],\n      brief: { m1: BRIEF_OK },\n      result: { n1: N1_RESULT, m1: `# RESULT\\n\\n## 各节点结论的合并\\n\\n略\\n\\n## STATUS: COMPLETE\\n` },\n    })\n",
+      "replace": ""
+    },
+    {
+      "path": ".rddf/config/governance-paths.json",
+      "find": "    \".rddf/config/governance-paths.json\",\n    \"plan-models.json\"\n",
+      "replace": "    \".rddf/config/governance-paths.json\"\n"
+    },
+    {
+      "path": ".rddf/config/governance-paths.json",
+      "find": "  \"updated_at\": \"2026-11-27\",\n  \"updated_by\": \"builder（ADR-plan-collaboration-hardening D1：模型 ID 单一真源自纳入治理面）\",\n",
+      "replace": "  \"updated_at\": \"2026-11-23\",\n  \"updated_by\": \"builder（ADR D5.1 落初值；此后归 architect 自主维护）\",\n"
+    },
+    {
+      "path": ".rddf/plan-topics/build-worker-design/TOPIC.md",
+      "find": "\n## 结算记录\n\n```yaml\nchecked_at: 2026-11-27T09:30:00Z\nsynthesis_check_exit: 1\nblocking: [synth_brief_no_ruling_set]\nanswer_node: m2\naction: accept-with-gap\ngap_reason: 合成与结算发生在判据生效日（2026-11-27）之前（m2 闭合于 2026-11-26T13:04:24Z）⇒ 按 D4 grandfather 不再重做；synth_brief_no_ruling_set（合成 BRIEF 缺 `## 根裁决集`，该字段在 `ADR-plan-synthesis-offload` D4 审查后补，本 topic 的 BRIEF 写在其之前）为历史产物，未修。\nmodel_resolution: none\nmodel_id: unknown（2026-11-26 合成，早于 plan-models.json 与 model 留痕）\nnote: --strict-token 口径另报 synth_token_missing（n3/n7）×2 与 synth_conclusion_no_chain（V6 三码，判据生效后新增面）；本记录按默认口径记 exit 与 blocking\n```\n",
+      "replace": ""
+    },
+    {
+      "path": ".rddf/rollback/registry.json",
+      "find": "    },\n    {\n      \"mechanism\": \"plan-collaboration-hardening\",\n      \"adr_primary\": \"docs/adr/ADR-plan-collaboration-hardening.md\",\n      \"state\": \"proving\",\n      \"notes\": \"plan 侧协作机制五项补强的 6 批（P0 回滚登记 / P1 模型配置化 / P2 结算闭环 / P3 目标审查 / P4 动态分解 / P5 结论可追溯）。2026-11-27 建条目：ADR 已 Proposed，机制未落地 ⇒ unmanifested + 债指针。 ⚠ watch 不收 `scripts/plan-synthesis-check.ts`（归 `plan-synthesis-offload`；该机制回滚会删它，列入本条目会触发 M7「watch 路径不存在」）。 watch 暂只登记 `prompts/plan.md`：其余三个锚点（`prompts/plan-worker.md` / `scripts/plan-topic-check.ts` / `lib/plan-topics.ts`）会被 `plan-topics` 的回滚删除，登记它们会在其演练中触发 M7；写本机制清单时一并回填完整 watch。 2026-11-28：本机制的回滚清单已写（`.rddf/rollback/plan-collaboration-hardening.json`，delete 15 件 + edits 34 条）⇒ 条目由 `unmanifested` 转 `proving`（按 ADR D5 撤 `pending_backlog` 指针 —— 债已由清单偿还）；演练（隔离副本）PASS 后回填 `last_drill` 并转 `active`。\",\n      \"watch\": [\n        \"prompts/plan.md\",\n        \"prompts/plan-worker.md\",\n        \"scripts/plan-topic-check.ts\",\n        \"scripts/plan-synthesis-check.ts\",\n        \"lib/plan-topics.ts\"\n      ],\n      \"manifest_ref\": \"plan-collaboration-hardening\"\n    }\n",
+      "replace": "    }\n"
+    }
+  ],
+  "drill_env": {
+    "seed_files": [
+      {
+        "path": ".rddf/state/role.json",
+        "content": "{\n  \"current_role\": \"general\",\n  \"updated_at\": \"2026-11-20T00:00:00Z\"\n}\n"
+      }
+    ]
+  },
+  "verify": {
+    "commands": [
+      [
+        "bun",
+        "test",
+        "tests/"
+      ]
+    ]
+  }
+}
