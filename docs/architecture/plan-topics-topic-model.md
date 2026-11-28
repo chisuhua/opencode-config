@@ -72,7 +72,7 @@ status    = 门控有效值：progress=complete ∧ deps 全 done ∧ deliverabl
 | 阶段 `--phase` | `dispatch`（默认之外的另一截面）/ `final`（默认） | 只作用于 `violations` 与退出码：`dispatch` 只对**已到期**节点要 BRIEF、只对 `progress=complete` 节点要交付物、**不产生** `stale_inputs` |
 | 严重度 | 阻断 / `info`（`cache_behind`） | `info` 不改变退出码；`--json` 每条违规带 `severity`，`ok` 只看阻断项 |
 
-**违规码闭集**（23 个）：结构 `schema_invalid` / `invalid_node_id` / `duplicate_node_id` / `cycle` / `dangling_dep` / `duplicate_dep` / `orphan_node_dir`；内容 `missing_brief` / `missing_deliverable` / `brief_tampered`；缓存 `cache_ahead` / `cache_behind`；取消 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；在飞与 fence `duplicate_open_attempt` / `stale_inputs`；**结算门** `settlement_missing` / `settlement_failed_not_superseded`；**目标审查** `topic_goal_unreviewed`（仅 `dispatch` 且有可派节点）；CLI `out_of_scope` / `empty_topic` / `git_error`。
+**违规码闭集**（23 个；真源 = `lib/plan-topics.ts` 的**运行期常量** `VIOLATION_CODES`，联合类型由其派生 ⇒ **本表不再复制清单**）：按用途分组为 结构 / 内容 / 缓存（`cache_behind` 属 `info`）/ 取消 / 在飞与 fence / **结算门**（D4）/ **目标审查**（D5，仅 `dispatch` 且有可派节点）/ CLI；**逐码取值以真源为准**（⚠ 计数由 `tests/plan-topics.test.ts` 与本文件比对，防静默陈旧）。
 
 **结算门**（`ADR-plan-collaboration-hardening` D4，**仅 `final` 口径**）：存在**非 cancelled** 合成节点（`^m[1-9][0-9]*$`）∧ 已收尾（全终态 ∧ 无在飞 ∧ **其余**阻断数 = 0，天然排除本门两码自身）⇒ 要求 `TOPIC.md` 的 `## 结算记录`（`yaml` 围栏块 + 7 必填键：`checked_at` / `synthesis_check_exit` / `blocking` / `answer_node` / `action` / `model_resolution` / `model_id`）。
 - `settlement_missing`：记录缺失或字段不全。

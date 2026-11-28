@@ -130,7 +130,7 @@
     },
     {
       "path": "docs/architecture/plan-topics-topic-model.md",
-      "find": "**违规码闭集**（23 个）：结构 `schema_invalid` / `invalid_node_id` / `duplicate_node_id` / `cycle` / `dangling_dep` / `duplicate_dep` / `orphan_node_dir`；内容 `missing_brief` / `missing_deliverable` / `brief_tampered`；缓存 `cache_ahead` / `cache_behind`；取消 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；在飞与 fence `duplicate_open_attempt` / `stale_inputs`；**结算门** `settlement_missing` / `settlement_failed_not_superseded`；**目标审查** `topic_goal_unreviewed`（仅 `dispatch` 且有可派节点）；CLI `out_of_scope` / `empty_topic` / `git_error`。\n\n**结算门**（`ADR-plan-collaboration-hardening` D4，**仅 `final` 口径**）：存在**非 cancelled** 合成节点（`^m[1-9][0-9]*$`）∧ 已收尾（全终态 ∧ 无在飞 ∧ **其余**阻断数 = 0，天然排除本门两码自身）⇒ 要求 `TOPIC.md` 的 `## 结算记录`（`yaml` 围栏块 + 7 必填键：`checked_at` / `synthesis_check_exit` / `blocking` / `answer_node` / `action` / `model_resolution` / `model_id`）。\n- `settlement_missing`：记录缺失或字段不全。\n- `settlement_failed_not_superseded`：记录 `answer_node` ≠ 当前答案节点（过期）；或 `exit≠0` 且失败集含**任一可修复码**（`synth_conclusion_layer_missing` / `synth_heavy_item_not_in_conclusion` / `synth_brief_no_ruling_set` / `synth_ruling_not_propagated` / V6 三码）⇒ 必须追加更大的合成节点；全不可修复（含**未分类码**，fail-closed）⇒ 须 `action: accept-with-gap` + `gap_reason`。\n- **grandfather 例外（判据生效前已结算）**：答案节点 `max(finished_at)` 的 UTC 日期**严格早于** `2026-11-27`（`SETTLEMENT_CRITERIA_SINCE`）⇒ 含可修复码也可 `accept-with-gap`，但 `gap_reason` 抽出的码集合（`/synth_[a-z_]+/g`）必须覆盖 `blocking` 里的可修复码与未分类码；**无已闭合 attempt ⇒ 不适用**。\n",
+      "find": "**违规码闭集**（23 个；真源 = `lib/plan-topics.ts` 的**运行期常量** `VIOLATION_CODES`，联合类型由其派生 ⇒ **本表不再复制清单**）：按用途分组为 结构 / 内容 / 缓存（`cache_behind` 属 `info`）/ 取消 / 在飞与 fence / **结算门**（D4）/ **目标审查**（D5，仅 `dispatch` 且有可派节点）/ CLI；**逐码取值以真源为准**（⚠ 计数由 `tests/plan-topics.test.ts` 与本文件比对，防静默陈旧）。",
       "replace": "**违规码闭集**（20 个）：结构 `schema_invalid` / `invalid_node_id` / `duplicate_node_id` / `cycle` / `dangling_dep` / `duplicate_dep` / `orphan_node_dir`；内容 `missing_brief` / `missing_deliverable` / `brief_tampered`；缓存 `cache_ahead` / `cache_behind`；取消 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；在飞与 fence `duplicate_open_attempt` / `stale_inputs`；CLI `out_of_scope` / `empty_topic` / `git_error`。\n"
     },
     {
@@ -198,11 +198,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "f5a32d295224deed632a8fe43c7c5cd740dd3a27",
-    "at": "2026-11-28",
-    "result": "pass",
-    "content_hash": "0ee3ee1ccfab27adf3e99d6337f554121273ff409ba9aedf152f0c87ff15ce76"
   }
 }

@@ -437,6 +437,15 @@ describe("闭集判据（运行期真源 + 完备性）", () => {
     // ⑤ 闭集内的码**不该**被误报
     expect(codesOutsideClosedSet(['{ code: "git_error" }'], closed)).toEqual([])
   })
+
+  test("主题文档的闭集**计数**与真源一致（防第三份手抄副本静默陈旧）", () => {
+    // 主题文档已改成「计数 + 引用真源」（不再复制清单）⇒ 唯一可陈旧的就是这个计数
+    // ⇒ 由本断言把它钉在运行期真源上；⚠ 正则兼容回滚态（回滚把该行还原成「（20 个）：…」的旧形态）
+    const doc = readFileSync(path.join(ROOT, "docs/architecture/plan-topics-topic-model.md"), "utf8")
+    const m = /\*\*违规码闭集\*\*（(\d+) 个/.exec(doc)
+    expect(m, "主题文档缺「违规码闭集（N 个…」段 ⇒ 指针被删了？").not.toBeNull()
+    expect(Number(m![1])).toBe(VIOLATION_CODES.length)
+  })
 })
 
 /** 从源码里抽出「码发射点」的字面量（发射形态变了 ⇒ 这里要同步） */
