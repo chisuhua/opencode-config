@@ -10,6 +10,22 @@
 
 ---
 
+> **v2.76 plan 侧协作五项补强落地 + commit-gate 拒答留痕修复 + 记录纪律守卫性能改造（2026-11-28）**：
+> **结算闭环（D4，违规码 +2；连同 D5 的 +1 ⇒ 闭集 20→23）**：`plan-topic-check` 新增 `settlement_missing` / `settlement_failed_not_superseded` —— `TOPIC.md` 必须写 `## 结算记录`（yaml 围栏 + 7 必填键）；失败集「任一可修复码 ⇒ 必须 supersede」，未分类码 fail-closed。⚠ 收尾条件里的阻断数**显式排除本门两码自身**（否则首跑变红 ⇒ 次跑恒绿）。
+> **grandfather（ADR v3 / V8(f)）**：判据生效日 `SETTLEMENT_CRITERIA_SINCE = 2026-11-27`，可豁免性由答案节点 attempt 的 `max(finished_at)` **派生**（不新增父自述字段）；**无已闭合 attempt ⇒ 不适用**；`gap_reason` 的抽码集合须覆盖「可修复码 ∪ 未分类码」。
+> **目标审查（D5）**：`TOPIC.md` 三节（前提与证伪条件 / 非目标 / 目标审查结论）+ `topic_goal_unreviewed`（**仅 `--phase dispatch` 且 ready 非空**；`TOPIC.md` 缺失 ⇒ 视同三节全缺）。
+> **动态分解（D2）**：`plan-topic-check add`（原子写 + graph 短锁 + **可达拒绝 5 类** + 用法错误 exit 2；**成环 `add` 制造不出来** ⇒ `assertAcyclic` 只防既有坏图）+ **追问分流**（未 done ⇒ 改 BRIEF + 新 `claim`；已 done ⇒ `add` 新节点；**禁止用 `resume` 替代新 `claim`**）。
+> **结论可追溯（D3 / V6）**：合成稿每条结论 `**C<n>【判定】**` + 3 行内证据链 / 推断链；三码默认 `info`、`--strict-token` 升 `blocking`。
+> **模型配置化（D1）**：全局 `plan-models.json`（本仓根即治理根）+ `scripts/plan-models-check.sh` **fail-closed**（配置缺失 exit 2；无 CLI / 输出为空 / 非零退出 / 超时 exit 1）；合成派发段不再写死模型 ID。
+> **commit-gate 留痕修复**：`evaluateCommitGate` 的**四个拒绝分支**此前不回传 `notices` ⇒ 拒绝路径上收集到的 notice **一条都不落账本**（「声明不可用」只有抛错、没有留痕）⇒ 现一律回传；新增接线层用例 `tests/commit-gate-plugin-baseline.test.ts`（命中放行 + 留痕 / 未命中仍拒 / 巡检缺席三态 / 条目绑定巡检命令），V20(b) / V25① 由**间接覆盖转直接覆盖**。
+> **记录纪律守卫性能**：C1 从「每个 AC 行 × 每个字面量各扫一次全仓」（实测 **76 次整树 grep**）改为「**每个 include 集只扫一次**」⇒ C1 **14~16s → 3~5s**（C1 单段；整脚本空载 ~20s）；`touched()` 改关联数组（O(1)、零进程），并把「非 git 仓库」与「git 但命中集为空」两态分开（否则判据会过松）；wrapper 超时随之 300s → 120s → **按实测分布定 240s**（空载 ~20s / 高负载实测撞到 119.14s）。**判据语义逐字不变**：等价性按「候选集合 = 含该集任一字面量的文件 = 原逐字面量扫描结果的并集」论证（见 `tests/verify_record_discipline.sh` 的 C1 注释）+ **变异验证两条**（删目录排除 / 删重叠回退 ⇒ 各有一条自测变红）+ 补三例自测（自引用 / 重叠字面量 / 他处存在）。
+> **ADR**：`ADR-plan-collaboration-hardening` Proposed → **Accepted**（实现 + 独立验收 + change 归档），并加 **D7 SU** 对账 V4 类数 / V10b 节点 id / V13 registry 态（**判据谓词未改**，另立范围才改正文）；`ADR-commit-verification-gate` 勾选 V20–V25 并补接线层证据。
+> **归档 change**：plan-collaboration-hardening、commit-gate-baseline-known-failures、unmanifested-commit-gate-trace。
+> **闸门**：`bun test tests/` **1391 pass / 1 skip / 0 fail**（1392 tests / 43 files）；`scripts/check-upstream-anchors.sh` **31/31**；`bun scripts/rollback-registry.ts` **PASS**（census：16 active / 0 proving / 0 unmanifested / 3 exempt）。
+> ⚠ **仍未做（按阻塞类型分开记）**：① **转交后续批** —— `plan-synthesis-offload` 的 AC14/V11b 判据（响应级 `session_message.model` 查询载体未实现；ADR 的 V11b 行已回填「待后续批」）；② **环境阻塞** —— 同 change 的 V7 根上下文降幅实测（需**新根会话**，本会话根已吸收全部材料不可归因）；③ **机制缺口** —— `add` 建错 `--deps` 无修正通道（只能 cancel + 换 id）；④ **判据弱点** —— `tests/plan-topics.test.ts` 的 `allowed` 是**白名单 15/23 的旧码集快照**（该 fixture 产不出新三码 ⇒ 不会红，但也不会因闭集扩容而报警）；⑤ **决策未落** —— ADR D5 第三子句「metis 结论必须落 `TOPIC.md`」**无 prompt 载体**（`prompts/plan.md` 只有 metis 的调用顺序与失败标注）。
+
+---
+
 > **v2.75 plan-topics D9「取消语义」/ D10「在飞与 fence」/ D11「收敛判据」+ D5「每会话一文件」的代码实现批（2026-11-26）**：
 > **D9（cancel）**：`plan-topic-check cancel <topic> <node> --reason <text> [--cascade|--detach <id>…]` 落地；schema 增 `cancelled{by,reason,at}`；派生 **`cancelled` 短路**（优先于 `done`）；三个新违规码 `cancelled_unattributed` / `cancelled_open_attempt` / `cancelled_dep_active`；**禁止「完成后取消」**由 CLI 硬拒。
 > **D10（在飞与 fence）**：`claim` / `close` / `reap --confirm` 三个 CLI + **per-topic 写锁**（`mkdir` 原子 + 硬超时，不按 mtime 判死）+ `stale_inputs`（输入漂移，仅 `final` 口径）+ `inputs_reviewed` 豁免 + `precheck.graph_rev`（图结构溯源哈希）；`ready --json` 增 `in_flight[{node,started_at,liveness_stale}]`。
