@@ -7,11 +7,11 @@
 - **Author**: architect
 - **Parent**: `ADR-plan-multi-session-collaboration`（topic / node / graph）、`ADR-plan-synthesis-offload`（合成外置 + V4/V5）
 - **关联 change**: **已归档**（2026-11-28）：`openspec/changes/archive/2026-11-28-plan-collaboration-hardening/`（AC1–AC13 登记于其 `proposal.md`；本 ADR 的 D1–D6 = 实现面，P0–P5 + v3 grandfather = 批序）。⚠ **沿革**：本 change 由 `backlog: plan-collaboration-hardening` 占位起步（planner 立项 → 实施 → 2026-11-28 归档）
-- **AC 映射**: 见 `openspec/changes/archive/2026-11-28-plan-collaboration-hardening/proposal.md` §验收标准（V→AC 一一映射：**V1→AC1 / V2→AC2 / V3→AC3 / V4→AC4 / V5→AC5 / V6→AC6 / V7→AC7 / V8→AC8 / V9→AC9 / V10→AC10a·b·c / V11→AC11（观察项）/ V12→AC12 / V13→AC13**）。⚠ **AC4 / AC10b 为「实质 pass」**：判据口径偏差见验收报告 §4.3（AC4 实为 6 类拒绝 + 成环在 `add` 路径不可达；AC10b 的追加节点实为 `m4`）—— 本 ADR 的 V4「五类」/ V10b「m2」判据正文**保持不改**（另案）
+- **AC 映射**: 见 `openspec/changes/archive/2026-11-28-plan-collaboration-hardening/proposal.md` §验收标准（V→AC 一一映射：**V1→AC1 / V2→AC2 / V3→AC3 / V4→AC4 / V5→AC5 / V6→AC6 / V7→AC7 / V8→AC8 / V9→AC9 / V10→AC10a·b·c / V11→AC11（观察项）/ V12→AC12 / V13→AC13**）。⚠ **AC4 / AC10b 为「实质 pass」**：口径偏差见 **D7 SU** 与验收报告 §4.3（AC4 = **5 类可达拒绝 + 用法错误 exit 2 + 成环不可达**；AC10b 的追加节点实为 `m4`）—— 本 ADR 的 V4「五类」/ V10b「m2」判据正文**保持不改**（另案）
 - **判据真源**: 本 ADR §Verification
 - **范围**: 只改 plan 侧协作机制的**配置面 / 判据面 / prompt 面**；不改 delegate 通道、不改 `plan-worker` 权限模板、不动 `scope-check`、不新增 agent
 - **审稿**: 轮次、判定与 finding 闭合证据见 `.rddf/reviews/ADR-plan-collaboration-hardening.md`（v1 首轮 + v2 / v3 定向修订各自一轮；末次 = critic 第 3 轮 `APPROVE_WITH_CONDITIONS`，**0 未闭合 BLOCKER**）
-- **元数据同步（2026-11-28）**: 据实订正（**纯事实同步，不改决策**）：Status 转 `Accepted`、关联 change 回填归档路径、AC 映射回填、指针同步；除本元数据表外，D1–D6 与 §Verification 判据正文**均未动**
+- **元数据同步（2026-11-28）**: 据实订正（**纯事实同步，不改决策**）：Status 转 `Accepted`、关联 change 回填归档路径、AC 映射回填、指针同步；除本元数据表外，D1–D6 与 §Verification 判据正文**均未动**（另加 **D7 SU** 声明 V4 / V10b / V13 的操作口径，判据谓词仍未改）
 - **v2 定向修订（2026-11-27，实施期触发）**: 触发源 = 实施期 metis 复核（`design_drift`，凭据 `feedback-20261127-001`）⇒ 修 5 项：V10 拆 **V10a/b/c**（并要求真追加 m2）、D4 加**精确记录形状 + `model_id` 第 7 字段**、D1 配置缺失改 **fail-closed**（删「回落查 models」）、**P4 依赖 P3**、V11 降为**观察指标**。
 - **v3 定向修订（2026-11-27，V10c 实施触发）**: 触发源 = `build-worker-design` 在 `--phase final` 下报 `settlement_missing`，而其实测失败集含**可修复码**（`synth_brief_no_ruling_set`，判据生效前既有）⇒ v2 的豁免条款（要求「全不可修复」）不成立；且实测 `cancel` **硬拒已 done 节点**（`禁止「完成后取消」`）⇒ 无法用「撤销合成」收口。修 3 项：D4 加 **grandfather 规则**（可豁免性由 attempt `finished_at` 派生，不新增父自述字段）、V8 加用例 **(f)**、V10c 改写为 grandfather 路径；选项对比表加第 **7** 行。
 
@@ -67,7 +67,7 @@
 
 | 动作 | 规则 | 依据 |
 |---|---|---|
-| 加节点 | 父是唯一写者：新增 `plan-topic-check add <topic> <id> --title <t> --deps <…> [--owner child]`。提供**原子写**（手写崩溃 = torn graph.json ⇒ 全 topic exit 3）、**短锁**（与并发 claim/close 串行）、**fail-fast 校验**（拒：已存在 id / 非法 id / deps 指向不存在节点 / **deps 指向 cancelled 节点** / 成环）。随后父写 `BRIEF.md` | `prompts/plan.md:218`；`scripts/plan-topic-check.ts:437-465`（claim 的守卫与原子写体例）；`lib/plan-topics.ts:609-613`（`cancelled_dep_active` 两口径皆阻断 ⇒ 进图即恒红） |
+| 加节点 | 父是唯一写者：新增 `plan-topic-check add <topic> <id> --title <t> --deps <…> [--owner child]`（**实装另有 deps 重复一类拒绝 + 用法错误 exit 2，见 D7 SU**）。提供**原子写**（手写崩溃 = torn graph.json ⇒ 全 topic exit 3）、**短锁**（与并发 claim/close 串行）、**fail-fast 校验**（拒：已存在 id / 非法 id / deps 指向不存在节点 / **deps 指向 cancelled 节点** / 成环）。随后父写 `BRIEF.md` | `prompts/plan.md:218`；`scripts/plan-topic-check.ts:437-465`（claim 的守卫与原子写体例）；`lib/plan-topics.ts:609-613`（`cancelled_dep_active` 两口径皆阻断 ⇒ 进图即恒红） |
 | 追问（节点**未** done） | 前提：该节点**无未闭合 attempt**（在飞时 `claim` 被拒，`scripts/plan-topic-check.ts:437-439`）。父改 BRIEF（追加一节）→ 重新 `claim`（新 attempt，`brief_sha256` 变 ⇒ 老 attempt 变 `stale_inputs`）→ 派发 → close | `prompts/plan.md:274` |
 | 追问（节点**已** done） | **改 BRIEF 无效**（`deriveStatus` 只看 TODO/RESULT/deps/deliverables；claim 硬拒 done；D9 不支持重开）⇒ 追问 = **`add` 新节点，`deps` 含该节点** | `scripts/plan-topic-check.ts:442-445`；`ADR-plan-multi-session-collaboration.md:130` |
 | 复用 worker 会话 | **禁止**。`resume` 不追加 attempt（`prompts/plan.md:270`）⇒ 新节点无 `claim` 快照；一 worker 会话绑定一 node（`prompts/plan-worker.md:9`、`:22`）⇒ 破单一写者 + 上下文污染 | 本节推理 + 上两条事实 |
@@ -167,6 +167,16 @@ model_id: opencode-go/kimi-k3.1-pro#high
 5. 不给 `claim` 加 re-open 语义（撞 D9；追问用 add 分流）。
 6. 不碰 delegate 通道与全局 3 槽；本批不加「`plan-topic-check` subprocess 复核自述 exit」（见 §已知不可机判）。
 
+### D7 SU（2026-11-28，实施对账｜**不改决策**）
+
+实现落地并验收后逐条对账，三处**判据字面**与实况不一致。**不动 §Verification 的谓词**，本节只声明**操作口径**（口径细节与证据见 `.rddf/reviews/plan-collaboration-hardening-verify.md` §4.3；改谓词须另立范围）：
+
+- **V4（类数与成环）**：`add` 的**可达拒绝 5 类**（已存在 id / 非法 id / deps 不存在 / deps 指向 cancelled / **deps 重复**）+ **用法错误 exit 2**（缺 `--title` / `--owner` 非法）⇒ 「五类」**保留为下限**，不因新增 deps 重复而改写。**成环 `add` 制造不出来**（新节点的 deps 只能指已有节点，自依赖先被「deps 不存在」拒）⇒ `assertAcyclic` 是**防既有坏图**的防御性复检（原语有单测；`add` 路径无环集成用例）。
+- **V10b（节点 id）**：**机判的两件是** `answer_node == 最大非 cancelled 合成节点` ∧ `synthesis_check_exit == 0`（`lib/plan-topics.ts` 结算门）⇒ `m2` 实测失败后写 `m4` 是**唯一能过门的写法**（仍写 `m2` 会报「记录过期」）。`action: supersede:<id>` **只是审计字段、取值不被校验**（`exit==0` 时门直接放行）—— 不得据它声称「supersede 语义已被机判」。
+- **V13（registry 态）**：条目已由 `unmanifested` 转 **`active`**（清单在盘 + `last_drill` 新鲜），债指针按 M7 必删（`pending_backlog` 只属 `unmanifested`）⇒ 按 **`active`** 验收是**更严**的一侧；「`unmanifested`」是 **AC13 验收时点 → 2026-11-28 演练后转 `active` 的过渡态**。
+
+以上三处均**不收窄**判据（V4 更严 / V10b 是门强制 / V13 更严）⇒ 不构成 fail-open。
+
 ## 回滚面
 
 **本 ADR 落盘即刻触发 `rollback-registry` 的 M1**（`lib/rollback-registry.ts:328-332`：`docs/adr/` 全集必须被 registry 覆盖；实测当前 `✗ [M1] ADR-plan-collaboration-hardening.md：ADR 未被 registry 覆盖`）。按 **P0 前置**补两处（均在 `.rddf/rollback/**`，**不在 architect 写集** ⇒ 由 builder 在 P0 同批补）：
@@ -221,23 +231,23 @@ model_id: opencode-go/kimi-k3.1-pro#high
 
 ## Verification（可勾选验收判据）
 
-> ⚠ **本清单保持「前瞻判据」形态、勾选框不勾**（同 `ADR-commit-verification-gate` 的「只勾有证据的项 / 不在本文声称已全部验证」口径）：V1–V13 的实测证据在 `.rddf/reviews/plan-collaboration-hardening-verify.md`（13 条 AC 逐条取证）与归档 change 的 `tasks.md`（P0–P5 + grandfather 勾选清单）；**AC4 / AC10b 的字面偏差**（6 类拒绝 + 成环不可达 / 追加节点实为 `m4`）见验收报告 §4.3。
+> **勾选口径**（同 `ADR-commit-verification-gate`：**只勾有证据的项**）：V1–V10c / V12 / V13 均有实测证据（`.rddf/reviews/plan-collaboration-hardening-verify.md` 逐条取证 + 归档 change 的 `tasks.md`）⇒ 已勾；**V11 是观察指标、不设判定线** ⇒ 保持不勾。三处**字面与实况的差异**（V4 类数 / V10b 节点 id / V13 registry 态）见 **D7 SU**。
 
-- [ ] V1 `plan-models.json` 存在且 `schema_version=1`；`prompts/plan.md` 合成段**不再含具体模型 ID**。
-- [ ] V2 `plan-models.json` 在 `governance-paths.json` 的 `paths[]`；`tests/config-guards.test.ts` 仍绿。
-- [ ] V3 `plan-models-check.sh`：schema 非法 / `synthesis.model` 不在 `opencode models` 输出中 / **配置文件缺失** 三类均 exit≠0（**fail-closed：文件缺失不得放行**）；合法配置 exit 0（3 负向 + 1 正向），且缺配置时 prompt 的处置是「停下补配置」而非回落。
-- [ ] V4 `add`：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / 成环 **五类均拒**；合法调用（**fixture 前提：BRIEF 已写 + 三节在场**）后 `check --phase dispatch` exit 0，且无 `.tmp-*` 残留。
-- [ ] V5 追问分流：未 done 节点改 BRIEF 后 `check --phase final` 报 `stale_inputs`（指名 `brief`），写 `inputs_reviewed` 后消失；已 done 节点走 `add` 新节点（正向用例）；在飞节点 `claim` 被拒。
-- [ ] V6 V6 三码：零 C 定义 ⇒ `synth_conclusion_no_chain`；证据 `path:startline` 上游不存在 ⇒ `synth_evidence_unresolvable`；推断链无 `⇒` ⇒ `synth_reasoning_missing`；`C10a` **不**被识别为 C token。**负向用例须带 `--strict-token`**。
-- [ ] V7 `settlement_missing`：含非 cancelled 合成节点 ∧ `ADR-plan-multi-session-collaboration` D11 ②③ ∧ 排除自身后零阻断 ∧ 无记录 ⇒ blocking；补记录后消失；全 cancelled 合成节点 ⇒ 不报；**断言未使用 `reportTopic().converged`**。
-- [ ] V8 `settlement_failed_not_superseded`：(a) `answer_node` ≠ 当前答案节点 ⇒ blocking；(b) `exit≠0` 且失败集含**任一可修复码** ⇒ blocking（grandfather 适用时除外，见 (f)）；(c) 追加 m2 且 `exit==0` 后消失；(d) 全为不可修复码 + `accept-with-gap` + `gap_reason` ⇒ 不阻断；(e) 未分类码 ⇒ 按不可修复处理；**(f) grandfather**：答案节点 `max(finished_at)` 的 UTC 日期 **< `2026-11-27`** ∧ `exit≠0` ∧ 含可修复码 ∧ `action: accept-with-gap` ∧ `gap_reason` 的码集合 ⊇（可修复码 ∪ 未分类码）⇒ 不阻断；**负向四例**：漏列任一需列码 / 改用 `action: accept` / 闭合于 2026-11-27 及之后 / **答案节点无已闭合 attempt** ⇒ 均 blocking。
-- [ ] V9 `topic_goal_unreviewed`：存在 ready 节点 ∧ 三节任一缺失 ⇒ blocking；补齐后消失；三个存量 topic（ready 均为空）不因此变红；`TOPIC.md` 缺失 ⇒ 同码。
-- [ ] V10a 回归：`v7-probe` 在 `--phase final` 报 `settlement_missing`（含非 cancelled 合成节点 ∧ D11 ②③ ∧ 排除自身零阻断 ∧ 无记录）。
-- [ ] V10b 闭环：给 `v7-probe` **真追加** `m2`（强模型 + BRIEF 点名要求 6 个上游「最重」项全进 `§反哺清单`）并跑通 `plan-synthesis-check` exit 0 ⇒ 写结算记录（`action: supersede:m2`、`model_id` 实填）后 `--phase final` exit 0。⚠ **不得用 `accept-with-gap` 绕过**（失败集含可修复码）。
-- [ ] V10c 覆盖：`build-worker-design`（答案节点 `m2`，最后一次闭合 `2026-11-26` ⇒ 早于判据生效日）按 **grandfather 路径**补结算记录后 `--phase final` exit 0，**不重做合成**。记录须：`synthesis_check_exit` 照抄实际值（默认口径实测 `1`）、`blocking` 原样照抄 check 输出、`action: accept-with-gap`、`gap_reason` **逐码列出**被豁免的可修复码，并在 `note` 注明 `--strict-token` 口径下另报的码（V6 三码 / `synth_token_missing` 属判据生效后新增面）。失败集若含判据生效后**新增**的可修复码，同样按 grandfather 处理（同一条规则，不按码龄分叉）。
+- [x] V1 `plan-models.json` 存在且 `schema_version=1`；`prompts/plan.md` 合成段**不再含具体模型 ID**。
+- [x] V2 `plan-models.json` 在 `governance-paths.json` 的 `paths[]`；`tests/config-guards.test.ts` 仍绿。
+- [x] V3 `plan-models-check.sh`：schema 非法 / `synthesis.model` 不在 `opencode models` 输出中 / **配置文件缺失** 三类均 exit≠0（**fail-closed：文件缺失不得放行**）；合法配置 exit 0（3 负向 + 1 正向），且缺配置时 prompt 的处置是「停下补配置」而非回落。
+- [x] V4 `add`：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / 成环 **五类均拒**；合法调用（**fixture 前提：BRIEF 已写 + 三节在场**）后 `check --phase dispatch` exit 0，且无 `.tmp-*` 残留。
+- [x] V5 追问分流：未 done 节点改 BRIEF 后 `check --phase final` 报 `stale_inputs`（指名 `brief`），写 `inputs_reviewed` 后消失；已 done 节点走 `add` 新节点（正向用例）；在飞节点 `claim` 被拒。
+- [x] V6 V6 三码：零 C 定义 ⇒ `synth_conclusion_no_chain`；证据 `path:startline` 上游不存在 ⇒ `synth_evidence_unresolvable`；推断链无 `⇒` ⇒ `synth_reasoning_missing`；`C10a` **不**被识别为 C token。**负向用例须带 `--strict-token`**。
+- [x] V7 `settlement_missing`：含非 cancelled 合成节点 ∧ `ADR-plan-multi-session-collaboration` D11 ②③ ∧ 排除自身后零阻断 ∧ 无记录 ⇒ blocking；补记录后消失；全 cancelled 合成节点 ⇒ 不报；**断言未使用 `reportTopic().converged`**。
+- [x] V8 `settlement_failed_not_superseded`：(a) `answer_node` ≠ 当前答案节点 ⇒ blocking；(b) `exit≠0` 且失败集含**任一可修复码** ⇒ blocking（grandfather 适用时除外，见 (f)）；(c) 追加 m2 且 `exit==0` 后消失（**实况为 `m4`，见 D7 SU**）；(d) 全为不可修复码 + `accept-with-gap` + `gap_reason` ⇒ 不阻断；(e) 未分类码 ⇒ 按不可修复处理；**(f) grandfather**：答案节点 `max(finished_at)` 的 UTC 日期 **< `2026-11-27`** ∧ `exit≠0` ∧ 含可修复码 ∧ `action: accept-with-gap` ∧ `gap_reason` 的码集合 ⊇（可修复码 ∪ 未分类码）⇒ 不阻断；**负向四例**：漏列任一需列码 / 改用 `action: accept` / 闭合于 2026-11-27 及之后 / **答案节点无已闭合 attempt** ⇒ 均 blocking。
+- [x] V9 `topic_goal_unreviewed`：存在 ready 节点 ∧ 三节任一缺失 ⇒ blocking；补齐后消失；三个存量 topic（ready 均为空）不因此变红；`TOPIC.md` 缺失 ⇒ 同码。
+- [x] V10a 回归：`v7-probe` 在 `--phase final` 报 `settlement_missing`（含非 cancelled 合成节点 ∧ D11 ②③ ∧ 排除自身零阻断 ∧ 无记录）。
+- [x] V10b 闭环：给 `v7-probe` **真追加** `m2`（强模型 + BRIEF 点名要求 6 个上游「最重」项全进 `§反哺清单`）并跑通 `plan-synthesis-check` exit 0 ⇒ 写结算记录（`action: supersede:m2`、`model_id` 实填）后 `--phase final` exit 0。⚠ **不得用 `accept-with-gap` 绕过**（失败集含可修复码）。
+- [x] V10c 覆盖：`build-worker-design`（答案节点 `m2`，最后一次闭合 `2026-11-26` ⇒ 早于判据生效日）按 **grandfather 路径**补结算记录后 `--phase final` exit 0，**不重做合成**。记录须：`synthesis_check_exit` 照抄实际值（默认口径实测 `1`）、`blocking` 原样照抄 check 输出、`action: accept-with-gap`、`gap_reason` **逐码列出**被豁免的可修复码，并在 `note` 注明 `--strict-token` 口径下另报的码（V6 三码 / `synth_token_missing` 属判据生效后新增面）。失败集若含判据生效后**新增**的可修复码，同样按 grandfather 处理（同一条规则，不按码龄分叉）。
 - [ ] V11（**观察指标，不作 gate**）成本：同口径重跑一次（新根会话 + 同 8 内容 + 1 合成 + 排除探针量测段 + `model_id` 一致），记录根增量并与 `62,720` 并列报告；**不设 ≥10% 判定线**（单样本不可判）。
-- [ ] V12 判据面同步：`ViolationCode` 闭集 = 23；`plan-topics-topic-model.md` §4/§5/§10 快照与本文一致（P3 后 §10 `:138` 重写、P4 后 §5 加 `add` 行）。
-- [ ] V13 回滚面：registry 存在 `plan-collaboration-hardening` 条目（`state=unmanifested`）+ `pending/plan-collaboration-hardening.md` 在盘；`bun scripts/rollback-registry.ts` 无 M1。
+- [x] V12 判据面同步：`ViolationCode` 闭集 = 23；`plan-topics-topic-model.md` §4/§5/§10 快照与本文一致（P3 后 §10 `:138` 重写、P4 后 §5 加 `add` 行）。
+- [x] V13 回滚面：registry 存在 `plan-collaboration-hardening` 条目（`state=unmanifested`）+ `pending/plan-collaboration-hardening.md` 在盘；`bun scripts/rollback-registry.ts` 无 M1。
 
 ## 已知不可机判清单（如实登记）
 
@@ -261,7 +271,7 @@ model_id: opencode-go/kimi-k3.1-pro#high
 | **P1 配置面** | `plan-models.json` + `plan-models-check.sh` + `prompts/plan.md:305-308` 改读 + spawn 失败处置行 | `governance-paths.json` 自纳入；`config-guards.test.ts` |
 | **P2 结算闭环** | `TOPIC.md ## 结算记录` 约定 + 两码 + **grandfather（`SETTLEMENT_CRITERIA_SINCE` + 日期派生）** + 负向 fixture | `lib/plan-topics.ts` 闭集 + `tests/plan-topics.test.ts` + `tests/plan-topics-settlement.test.ts` + `plan-topics-topic-model.md` §4/§5 + **`prompts/plan.md` 的结算记录段（记录义务 + grandfather 例外）** |
 | **P3 目标审查** | `TOPIC.md` 三节 + `topic_goal_unreviewed` + 存量 topic 补写指引 | 闭集与测试 + `plan-topics-topic-model.md` **§10 `:138` 重写** + `prompts/plan.md` TOPIC 模板段 |
-| **P4 动态分解** | `add` 子命令（5 类拒绝）+ 追问分流写进 prompt（含禁止复用 worker 会话） | `tests/plan-topics-lifecycle.test.ts` + `plan-topics-topic-model.md` **§5 命令面加 `add` 行** + `prompts/plan.md` fork/join 段 |
+| **P4 动态分解** | `add` 子命令（**可达拒绝 5 类** + 用法错误 exit 2；deps 重复一类见 D7 SU）+ 追问分流写进 prompt（含禁止复用 worker 会话） | `tests/plan-topics-lifecycle.test.ts` + `plan-topics-topic-model.md` **§5 命令面加 `add` 行** + `prompts/plan.md` fork/join 段 |
 | **P5 可追溯** | `plan-worker` token 纪律 + 合成 BRIEF 第 4 条 + V6 三码 | `prompts/plan-worker.md`、`prompts/plan.md` 合成 BRIEF 段、`tests/plan-synthesis.test.ts` |
 
 > P1/P2 对应「已实测失效」两条，建议同批；P0 是 P1 起的**前置**（仓库回绿）。
