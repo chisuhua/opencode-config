@@ -43,8 +43,8 @@
 
 ## 未做 / 遗留
 
-- [ ] **AC14 / V11b**（provider 实际服务模型，响应级 `session_message.model`）**判据未实现** —— 语义已在 ADR 实施记录确认（2026-11-26），但本批只落了 V4/V5 载体 ⇒ **转交后续批**；ADR 的 V11b 行现仍写「待 B1 实现」⇒ 需 architect 回填为「待后续批」以免指针悬空（critic SF②）
-- [ ] **V7**（根上下文降幅 ≤ 60,000 tokens）需**新根会话**实测（本会话根已吸收全部材料 ⇒ 不可归因）
-- [ ] **V9**（P7 锚点）已绿 —— 与 ADR 的「B1 步骤 ①」对应，可视为 AC11 达成
-- [ ] 父篇前置事实补「subagent 会话侧 = catalog 未暴露（与 `permission.rejected` 是两条拒绝路径）」（architect 面）
-- [ ] `design.md` 新增的子编号 **V4a / V4b / V4c / V5d** 需同步进 ADR 的 Verification 表（architect 面）
+- [ ] **AC14 / V11b**（provider 实际服务模型，响应级 `session_message.model`）**判据未实现**（⚠ **阻塞类型：转交后续批** —— ADR 的 V11b 行已回填「判据待后续批」，无悬空指针；实现需新增 `session_message` 查询载体，属**新批**范围） —— 语义已在 ADR 实施记录确认（2026-11-26），但本批只落了 V4/V5 载体 ⇒ **转交后续批**；ADR 的 V11b 行现仍写「待 B1 实现」⇒ 需 architect 回填为「待后续批」以免指针悬空（critic SF②）
+- [ ] **V7**（根上下文降幅 ≤ 60,000 tokens）需**新根会话**实测（⚠ **阻塞类型：环境** —— 本会话根已吸收全部材料 ⇒ 不可归因；须在**新根会话**按同口径重跑 8 内容 + 1 合成并排除探针量测段）
+- [x] **V9**（P7 锚点）已绿 —— 与 ADR 的「B1 步骤 ①」对应，可视为 AC11 达成。**证据（2026-11-28 复核）**：`bash scripts/check-upstream-anchors.sh` ⇒ `PASS [P7 每次派发可覆盖模型（override 优先于 agent 配置）]` + `RESULT: OK（31/31 个语义锚点全部命中）`
+- [x] 父篇前置事实补「subagent 会话侧 = catalog 未暴露（与 `permission.rejected` 是两条拒绝路径）」（architect 面）。**证据（2026-11-28 复核）**：`docs/adr/ADR-plan-multi-session-collaboration.md:14` 的前置事实①已含「**（2026-11-27 V12 探针实测补充）** … `subagent` / `delegate*` 是 **catalog 未暴露** … 与 `shell` 的 `permission.rejected` 是**两条不同的拒绝路径**」
+- [x] `design.md` 新增的子编号 **V4a / V4b / V4c / V5d** 需同步进 ADR 的 Verification 表（architect 面）。**证据（2026-11-28 复核）**：`docs/adr/ADR-plan-synthesis-offload.md` 的 Verification 表已有 `| **V4a** |` / `| **V4b** |` / `| **V4c** |` / `| **V5d** |` 四行（`grep -cE '^\| \*\*V(4a|4b|4c|5d)\*\* \|'` ⇒ 4）
