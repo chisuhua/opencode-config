@@ -2,7 +2,7 @@
   "version": 1,
   "mechanism": "commit-gate",
   "adr": "docs/adr/ADR-commit-verification-gate.md",
-  "notes": "覆盖面 = 三步回滚的**完整清单**（ADR-commit-verification-gate「回滚路径」+ V12）：步骤 1（opencode.jsonc.opencode-go 档位）+ 步骤 2（prompts/build.md、docs/MULTI-AGENT-DESIGN.md、同批措辞的其它投影，**以及断言这些措辞的守卫** —— `tests/config-guards.test.ts` 的 build shell 断言 allow ⇒ ask）+ 步骤 3（机制文件 9 件删除 + 守卫期望同批的另外 4 条 edits：EXPECTED 3 项 + 落点完整性整块）。⚠ **计数口径**：步骤 1 = 1 条、步骤 2 = 24 条、步骤 3 = 4 条（合计 29）。ADR 把「守卫期望同批」描述为**横跨三步**（它能断言的是步骤 1 的档位与步骤 2 的措辞）⇒ 与上表计数不冲突，只是同一批编辑的两种视角。步骤 1/2 一律**逐段**改（ADR 形态约束）：整文件还原会连带回退门禁之后的无关变更（演练实验 B/F 实测 11 红 / 8+ 红），且 opencode.jsonc 是符号链接 ⇒ 改的是目标文件 opencode.jsonc.opencode-go。⚠ **保留项（drill 实测得出，不是偏好）**：① tests/commit-gate-d9-registration.test.ts（V10 载体；删 ⇒『V10 载体存在』红，实验 D）；② .rddf/commit-gate.json（门禁声明；删 ⇒『缺门禁声明』红，实验 G）；③ MAD §2.8.8（D9 索引段）—— 本 ADR 保留 ⇒ 三处登记仍成立；④ MAD §3.4 的 **D9⑯ 指针行**（`commit-gate-d9-registration.test.ts` 的 AC5 以『§2.8.8 之外仍提到 D9⑯』为前提 ⇒ 删则该用例红）。⑤ 父篇 ADR 的 2026-11-18 修订行回退到原状时**顺带修掉一个表格断裂**（`:43` 修订行尾多出一个 `|`）。⚠ 与 `.rddf/commit-gate.json`（门禁**声明**）**同名不同义**：本文件是**回滚清单**。\n\n**2026-11-27（D10 baseline 实现 · change `commit-gate-baseline-known-failures`）**：\n· `delete` +4：`scripts/commit-gate-baseline-doctor.ts` / `tests/commit-gate-baseline.test.ts` / `tests/commit-gate-baseline-doctor.test.ts` / `tests/fixtures/commit-gate-known-failures.expected.json`。\n· `edits` +16：`tests/config-guards.test.ts`（防增守卫）/ `tests/commit-gate-d9-registration.test.ts`（多标题 + 计数 17）/ `docs/MULTI-AGENT-DESIGN.md`（§2.8.8 ⑰ 行）/ ADR 中的**小锚点**。\n· ⚠ **ADR 的 D10 段与 SU 元数据不在回滚面**：那是**决策**（Status Accepted）—— 回滚「机制」不撤销决策；要撤决策走 ADR 的 SU 逆转流程，不在本清单。\n· ⚠ **drill / `last_drill` 待回填**：四步顺序要求「commit → drill → 回填 → 再 commit」，而当前仓库提交被门禁拦（并行会话的在途改动使全仓 `bun test tests/` 红，非本 change 引起）⇒ 解封后同批完成。",
+  "notes": "覆盖面 = 三步回滚的**完整清单**（ADR-commit-verification-gate「回滚路径」+ V12）：步骤 1（opencode.jsonc.opencode-go 档位）+ 步骤 2（prompts/build.md、docs/MULTI-AGENT-DESIGN.md、同批措辞的其它投影，**以及断言这些措辞的守卫** —— `tests/config-guards.test.ts` 的 build shell 断言 allow ⇒ ask）+ 步骤 3（机制文件 9 件删除 + 守卫期望同批的另外 4 条 edits：EXPECTED 3 项 + 落点完整性整块）。⚠ **计数口径**：步骤 1 = 1 条、步骤 2 = 24 条、步骤 3 = 4 条（合计 29）。ADR 把「守卫期望同批」描述为**横跨三步**（它能断言的是步骤 1 的档位与步骤 2 的措辞）⇒ 与上表计数不冲突，只是同一批编辑的两种视角。步骤 1/2 一律**逐段**改（ADR 形态约束）：整文件还原会连带回退门禁之后的无关变更（演练实验 B/F 实测 11 红 / 8+ 红），且 opencode.jsonc 是符号链接 ⇒ 改的是目标文件 opencode.jsonc.opencode-go。⚠ **保留项（drill 实测得出，不是偏好）**：① tests/commit-gate-d9-registration.test.ts（V10 载体；删 ⇒『V10 载体存在』红，实验 D）；② .rddf/commit-gate.json（门禁声明；删 ⇒『缺门禁声明』红，实验 G）；③ MAD §2.8.8（D9 索引段）—— 本 ADR 保留 ⇒ 三处登记仍成立；④ MAD §3.4 的 **D9⑯ 指针行**（`commit-gate-d9-registration.test.ts` 的 AC5 以『§2.8.8 之外仍提到 D9⑯』为前提 ⇒ 删则该用例红）。⑤ 父篇 ADR 的 2026-11-18 修订行回退到原状时**顺带修掉一个表格断裂**（`:43` 修订行尾多出一个 `|`）。⚠ 与 `.rddf/commit-gate.json`（门禁**声明**）**同名不同义**：本文件是**回滚清单**。\n\n**2026-11-27（D10 baseline 实现 · change `commit-gate-baseline-known-failures`）**：\n· `delete` +4：`scripts/commit-gate-baseline-doctor.ts` / `tests/commit-gate-baseline.test.ts` / `tests/commit-gate-baseline-doctor.test.ts` / `tests/fixtures/commit-gate-known-failures.expected.json`。\n· `edits` +16：`tests/config-guards.test.ts`（防增守卫）/ `tests/commit-gate-d9-registration.test.ts`（多标题 + 计数 17）/ `docs/MULTI-AGENT-DESIGN.md`（§2.8.8 ⑰ 行）/ ADR 中的**小锚点**。\n· ⚠ **ADR 的 D10 段与 SU 元数据不在回滚面**：那是**决策**（Status Accepted）—— 回滚「机制」不撤销决策；要撤决策走 ADR 的 SU 逆转流程，不在本清单。\n· ⚠ **drill / `last_drill` 待回填**：四步顺序要求「commit → drill → 回填 → 再 commit」，而当前仓库提交被门禁拦（并行会话的在途改动使全仓 `bun test tests/` 红，非本 change 引起）⇒ 解封后同批完成。 2026-11-28：新增接线层用例 `tests/commit-gate-plugin-baseline.test.ts`（baseline 命中放行 + 留痕 / 未命中仍拒 / 巡检缺席三态 / 条目绑定巡检命令）⇒ 回滚面补该文件的 delete 条目。",
   "delete": [
     "plugins/commit-gate.ts",
     "lib/commit-gate.ts",
@@ -17,7 +17,8 @@
     "tests/commit-gate-baseline.test.ts",
     "tests/commit-gate-baseline-doctor.test.ts",
     "tests/fixtures/commit-gate-known-failures.expected.json",
-    "tests/commit-gate-undeclared-trace.test.ts"
+    "tests/commit-gate-undeclared-trace.test.ts",
+    "tests/commit-gate-plugin-baseline.test.ts"
   ],
   "edits": [
     {
@@ -237,11 +238,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "c14358d8b301dcccefc13b8de0eeb7703e3488e6",
-    "at": "2026-11-28",
-    "result": "pass",
-    "content_hash": "323030af5c7ce196c1f88d494eb7b5f2348f6c3c6fd07b00a857a9f61b6de9fa"
   }
 }

@@ -55,6 +55,15 @@
 
 `TODO` / `FIXME` / `MUTATION` / `console.log` 在改动文件中 ⇒ **零残留**（notice 走账本，不走 console）。
 
+## 补记（2026-11-28）：接线层用例首次跑出的**留痕缺口**（钉住缺陷）
+
+新增 `tests/commit-gate-plugin-baseline.test.ts`（baseline 的**接线层**用例：命中放行 + 留痕 / 未命中仍拒 / 巡检缺席三态 / 条目绑定巡检命令）⇒ 跑出**一处实现缺口**：
+
+- **现象**：`lib/commit-gate.ts` 的 `evaluateCommitGate` 只在 **allowed 分支**回传 `notices`（`{ allowed: true, notices: input.notices }`），四个**拒绝分支**只回 `{ allowed: false, reason }` ⇒ 插件在拒绝路径上 `outcome.notices ?? []` 恒空 ⇒ **收集到的 notice 一条都不落账本**。
+- **后果**：巡检缺席（缺 `inspection` / carrier 未 tracked / carrier 是 symlink）这类「声明不可用」**只有抛错、没有留痕** ⇒ D9② 登记的「检测 ≠ 拦截」在拒绝路径上失效（运行时查不到「门禁为何用硬门」）。
+- **边界**：D10 的判据只要求**命中路径**留痕（`baseline 命中 ⇒ 放行，且门禁输出一行非抛错留痕`）⇒ 命中路径**合规**；缺口在**拒绝路径**，属实现的意图与落盘不一致（插件确实 `notices.push` 了巡检理由）。
+- **处置**：本用例按现状**钉住缺陷**（三条「拒 + 当前不留痕」用例并在文件头写明原因），**不改**已签批 ADR 的既有实现；修复另案（`evaluateCommitGate` 的拒绝分支回传 `notices` ⇒ 同步 `.rddf/rollback/commit-gate.json` 的 `edits` + 重跑其演练）。
+
 ## 已用轮次
 
 **1 / 3**（`RDDF_VERIFIER_MAX_LOOPS=3`）。失败项：**0**。**勘误（2026-11-28，措辞订正）**：本段原文写「AC8 第二步 / AC9 全仓门为 **blocked**（取证不可用 ⇒ 非 implementation_gap）」，与本报告 §逐条判定 的 AC8 / AC9 行「已完成」相矛盾 ⇒ 订正为：AC8 第二步 / AC9 全仓门在**初稿时**判为 **blocked**（取证不可用 ⇒ 非 implementation_gap）；后经补证 —— 回滚面四步完成（commit `4cbf5c0` → 隔离副本演练 → 回填 `last_drill` → 再 commit `973b451`）、全仓门补证后全绿（`1377 pass / 0 fail`）—— 已转 **已完成**（**不再**是 blocked）。**权威源**：本文件 §逐条判定 的 AC8 / AC9 行；**原文位置**：本文件 §已用轮次 段（本段首句即原文引用）。
