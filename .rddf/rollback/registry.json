@@ -190,7 +190,7 @@
       "mechanism": "plan-collaboration-hardening",
       "adr_primary": "docs/adr/ADR-plan-collaboration-hardening.md",
       "state": "proving",
-      "notes": "plan 侧协作机制五项补强的 6 批（P0 回滚登记 / P1 模型配置化 / P2 结算闭环 / P3 目标审查 / P4 动态分解 / P5 结论可追溯）。2026-11-27 建条目：ADR 已 Proposed，机制未落地 ⇒ unmanifested + 债指针。 ⚠ watch 不收 `scripts/plan-synthesis-check.ts`（归 `plan-synthesis-offload`；该机制回滚会删它，列入本条目会触发 M7「watch 路径不存在」）。 watch 暂只登记 `prompts/plan.md`：其余三个锚点（`prompts/plan-worker.md` / `scripts/plan-topic-check.ts` / `lib/plan-topics.ts`）会被 `plan-topics` 的回滚删除，登记它们会在其演练中触发 M7；写本机制清单时一并回填完整 watch。 2026-11-28：本机制的回滚清单已写（`.rddf/rollback/plan-collaboration-hardening.json`，delete 15 件 + edits 34 条）⇒ 条目由 `unmanifested` 转 `proving`（按 ADR D5 撤 `pending_backlog` 指针 —— 债已由清单偿还）；演练（隔离副本）PASS 后回填 `last_drill` 并转 `active`。",
+      "notes": "plan 侧协作机制五项补强的 6 批（P0 回滚登记 / P1 模型配置化 / P2 结算闭环 / P3 目标审查 / P4 动态分解 / P5 结论可追溯）。2026-11-27 建条目：ADR 已 Proposed，机制未落地 ⇒ unmanifested + 债指针。 2026-11-28：本机制的回滚清单已写（`.rddf/rollback/plan-collaboration-hardening.json`，delete 7 件 + edits 33 条 + `retire[]` 退役本条目）⇒ 条目由 `unmanifested` 转 `proving`（按 ADR D5 撤 `pending_backlog` 指针 —— 债已由清单偿还；债指针文件同步删除，否则 M7「债文件存在但无对应 unmanifested 条目」红）。 口径：清单**只回滚机制产物**，**决策记录留存**（ADR / 审稿与验收报告 / improvement / change 三件一律不删），与本仓既有清单（`plan-delegate` / `delegate-slot-kernel`）同口径。",
       "watch": [
         "prompts/plan.md",
         "prompts/plan-worker.md",

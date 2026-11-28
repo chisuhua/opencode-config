@@ -2,7 +2,7 @@
   "version": 1,
   "mechanism": "plan-collaboration-hardening",
   "adr": "docs/adr/ADR-plan-collaboration-hardening.md",
-  "notes": "覆盖面 = ADR-plan-collaboration-hardening 的 P0–P5 + v3 grandfather：① **删本机制新建的文件**（模型配置 `plan-models.json` + 校验脚本 + 三个新测试 + 本 ADR + 两份审稿/验收报告 + improvement 草稿 + change 三件 + 债指针 + 本清单）；② **逐段回退 11 个被改动的既有文件**（`lib/plan-topics.ts` 结算两码 + grandfather + 目标审查码、`scripts/plan-topic-check.ts` 的 `add` 子命令、`scripts/plan-synthesis-check.ts` 的 V6 三码、`prompts/plan.md` / `prompts/plan-worker.md` 的纪律段、主题文档 §4/§5/§10、两个测试文件与 fixture、`governance-paths.json` 的自纳入条目、`build-worker-design/TOPIC.md` 的结算记录块）；③ **移除 registry 里的本机制条目**（回滚后 ADR 与条目一起消失 ⇒ M1/M2 自洽）。⚠ **刻意保留**：`.rddf/plan-topics/v7-probe/**`（V7 探针产物 = 本 ADR 的**决策证据**，非机制产物 ⇒ 回滚不删；其中的结算记录随结算门失效成为惰性文本）。⚠ **与 ADR §回滚面 的差异**：ADR 写「③ 删除本 ADR 文件」—— 本清单确实删它，但**同时**移除 registry 条目（否则 M1「registry 指向的 ADR 不存在」红）；ADR 未写这一条，属清单侧的细化。 ⚠ **债指针已随清单落地而删除**（`.rddf/rollback/pending/plan-collaboration-hardening.md`）：M7 要求「债文件存在 ⇒ 必有 unmanifested 条目」，本机制已有清单 ⇒ 条目转 `proving` ⇒ 该文件成为孤儿 ⇒ 删除（债已由本清单偿还，覆盖面见本 `notes`）。",
+  "notes": "覆盖面 = ADR-plan-collaboration-hardening 的 P0–P5 + v3 grandfather：① **删本机制的产物**（模型配置 `plan-models.json` + 校验脚本 + 三个新测试 + 本清单自身）；② **逐段回退 11 个被改动的既有文件**（`lib/plan-topics.ts` 结算两码 + grandfather + 目标审查码、`scripts/plan-topic-check.ts` 的 `add` 子命令、`scripts/plan-synthesis-check.ts` 的 V6 三码、`prompts/plan.md` / `prompts/plan-worker.md` 的纪律段、主题文档 §4/§5/§10、两个测试文件与 fixture、`governance-paths.json` 的自纳入条目、`build-worker-design/TOPIC.md` 的结算记录块）；③ **退役 registry 条目**（`retire[]` 结构化转态 ⇒ 条目转 `retired` 并撤 `watch[]` / `manifest_ref`）。⚠ **决策记录留存**（与本仓既有清单同口径，如 `plan-delegate` / `delegate-slot-kernel`）：本 ADR、审稿与验收报告、improvement 草稿、change 三件**一律不删** ⇒ 回滚的是**机制**，不是「记录」；ADR §回滚面 里「③ 删除本 ADR 文件」一条按本清单口径**作废**（删 ADR 会让 M1「registry 指向的 ADR 不存在」红，除非连带删条目 —— 而 `retire[]` 是结构化转态、不删条目）。⚠ **刻意保留**：`.rddf/plan-topics/v7-probe/**`（V7 探针产物 = 本 ADR 的**决策证据**，非机制产物 ⇒ 回滚不删；其中的结算记录随结算门失效成为惰性文本）。⚠ **债指针已随清单落地而删除**（`.rddf/rollback/pending/plan-collaboration-hardening.md`）：M7 要求「债文件存在 ⇒ 必有 unmanifested 条目」，本机制已有清单 ⇒ 条目转 `proving` ⇒ 该文件成为孤儿 ⇒ 删除（债已由本清单偿还，覆盖面见本 `notes`）。",
   "delete": [
     "plan-models.json",
     "scripts/plan-models-check.sh",
@@ -10,13 +10,6 @@
     "tests/plan-topics-add.test.ts",
     "tests/plan-topics-goal-review.test.ts",
     "tests/plan-topics-settlement.test.ts",
-    "docs/adr/ADR-plan-collaboration-hardening.md",
-    ".rddf/reviews/ADR-plan-collaboration-hardening.md",
-    ".rddf/reviews/plan-collaboration-hardening-verify.md",
-    ".rddf/improvements/plan-collaboration-hardening.md",
-    "openspec/changes/plan-collaboration-hardening/proposal.md",
-    "openspec/changes/plan-collaboration-hardening/tasks.md",
-    "openspec/changes/plan-collaboration-hardening/.openspec.yaml",
     ".rddf/rollback/plan-collaboration-hardening.json"
   ],
   "edits": [
@@ -184,12 +177,10 @@
       "path": ".rddf/plan-topics/build-worker-design/TOPIC.md",
       "find": "\n## 结算记录\n\n```yaml\nchecked_at: 2026-11-27T09:30:00Z\nsynthesis_check_exit: 1\nblocking: [synth_brief_no_ruling_set]\nanswer_node: m2\naction: accept-with-gap\ngap_reason: 合成与结算发生在判据生效日（2026-11-27）之前（m2 闭合于 2026-11-26T13:04:24Z）⇒ 按 D4 grandfather 不再重做；synth_brief_no_ruling_set（合成 BRIEF 缺 `## 根裁决集`，该字段在 `ADR-plan-synthesis-offload` D4 审查后补，本 topic 的 BRIEF 写在其之前）为历史产物，未修。\nmodel_resolution: none\nmodel_id: unknown（2026-11-26 合成，早于 plan-models.json 与 model 留痕）\nnote: --strict-token 口径另报 synth_token_missing（n3/n7）×2 与 synth_conclusion_no_chain（V6 三码，判据生效后新增面）；本记录按默认口径记 exit 与 blocking\n```\n",
       "replace": ""
-    },
-    {
-      "path": ".rddf/rollback/registry.json",
-      "find": "    },\n    {\n      \"mechanism\": \"plan-collaboration-hardening\",\n      \"adr_primary\": \"docs/adr/ADR-plan-collaboration-hardening.md\",\n      \"state\": \"proving\",\n      \"notes\": \"plan 侧协作机制五项补强的 6 批（P0 回滚登记 / P1 模型配置化 / P2 结算闭环 / P3 目标审查 / P4 动态分解 / P5 结论可追溯）。2026-11-27 建条目：ADR 已 Proposed，机制未落地 ⇒ unmanifested + 债指针。 ⚠ watch 不收 `scripts/plan-synthesis-check.ts`（归 `plan-synthesis-offload`；该机制回滚会删它，列入本条目会触发 M7「watch 路径不存在」）。 watch 暂只登记 `prompts/plan.md`：其余三个锚点（`prompts/plan-worker.md` / `scripts/plan-topic-check.ts` / `lib/plan-topics.ts`）会被 `plan-topics` 的回滚删除，登记它们会在其演练中触发 M7；写本机制清单时一并回填完整 watch。 2026-11-28：本机制的回滚清单已写（`.rddf/rollback/plan-collaboration-hardening.json`，delete 15 件 + edits 34 条）⇒ 条目由 `unmanifested` 转 `proving`（按 ADR D5 撤 `pending_backlog` 指针 —— 债已由清单偿还）；演练（隔离副本）PASS 后回填 `last_drill` 并转 `active`。\",\n      \"watch\": [\n        \"prompts/plan.md\",\n        \"prompts/plan-worker.md\",\n        \"scripts/plan-topic-check.ts\",\n        \"scripts/plan-synthesis-check.ts\",\n        \"lib/plan-topics.ts\"\n      ],\n      \"manifest_ref\": \"plan-collaboration-hardening\"\n    }\n",
-      "replace": "    }\n"
     }
+  ],
+  "retire": [
+    "plan-collaboration-hardening"
   ],
   "drill_env": {
     "seed_files": [
