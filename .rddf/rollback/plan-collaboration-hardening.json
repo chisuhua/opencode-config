@@ -100,7 +100,7 @@
     },
     {
       "path": "prompts/plan.md",
-      "find": "- **按结论加节点（`add`）**：父是唯一写者 —— `bun scripts/plan-topic-check.ts add <topic> <id> --title <t> --deps a,b`（原子写 + graph 短锁 + fail-fast：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 **一律拒**）→ **随后你写 `BRIEF.md`**（`add` 只写图；BRIEF 未写时它不在 `ready` 里）。\n- **追问**：节点**未** done ⇒ 改它的 `BRIEF.md`（追加一节）→ 重新 `claim`（新 attempt；老 attempt 变 `stale_inputs`，你写 `inputs_reviewed` 复核）→ 派发。节点**已** done ⇒ 改 BRIEF **无效**（`claim` 硬拒 done、D9 不支持重开）⇒ 用 `add` 建**新节点**（`deps` 含它），BRIEF 写全新契约并显式引用旧节点的 `RESULT.md`。⚠ 节点**在飞**时 `claim` 会硬拒 ⇒ 先 `close`（或 `reap --confirm`）再改 BRIEF 重新 `claim`。**追问（新一轮）禁止用 `resume` 替代新 `claim`**（`resume` 不追加 attempt ⇒ 台账不可归因；一会话一 node ⇒ 破单一写者 + 上下文污染）；`resume` 只用于**同一 attempt 内**的续接。\n",
+      "find": "- **按结论加节点（`add`）**：父是唯一写者 —— `bun scripts/plan-topic-check.ts add <topic> <id> --title <t> --deps a,b`（原子写 + graph 短锁 + fail-fast：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 **一律拒**）→ **随后你写 `BRIEF.md`**（`add` 只写图；BRIEF 未写时它不在 `ready` 里）。⚠ **`--deps` 建错没有修正通道**（CLI 无改 `deps` 的子命令；手改 `graph.json` **不做** —— 协议级锁只串行化 CLI 写者，手改仍能绕 ⇒ 绕出来的图没人认）⇒ **规范操作**：① **未 done** ⇒ `cancel` 它（`--reason` 写明「deps 建错」⇒ **留作审计痕迹、不是清场**：cancelled 短路 ⇒ 它**不再要求交付物**）+ **用新 id `add` 重建**（旧 id 已在图里 ⇒ `add` 拒复用；重建的 deps 必须指向**活**节点 ⇒ `add` 拒「deps 指向已取消节点」）；② **已 done** ⇒ `cancel` 硬拒（禁止完成后取消）⇒ 走「追问（节点已 done）」路径（`add` 新节点 + 新契约）；③ **有活跃下游** ⇒ `cancel` 要求先消解：`--cascade` ⇒ **被级联的下游也要用新 id 重建**（deps 指向新 id）；`--detach` **只删边、没有 CLI 能把边加回** ⇒ 摘边后下游**不再等**这个节点而**图仍是绿的**（`cancelled_dep_active` 那道闸正是被它拆掉的）⇒ **只在「下游本就与本节点无依赖关系」时才用 `--detach`**。\n- **追问**：节点**未** done ⇒ 改它的 `BRIEF.md`（追加一节）→ 重新 `claim`（新 attempt；老 attempt 变 `stale_inputs`，你写 `inputs_reviewed` 复核）→ 派发。节点**已** done ⇒ 改 BRIEF **无效**（`claim` 硬拒 done、D9 不支持重开）⇒ 用 `add` 建**新节点**（`deps` 含它），BRIEF 写全新契约并显式引用旧节点的 `RESULT.md`。⚠ 节点**在飞**时 `claim` 会硬拒 ⇒ 先 `close`（或 `reap --confirm`）再改 BRIEF 重新 `claim`。**追问（新一轮）禁止用 `resume` 替代新 `claim`**（`resume` 不追加 attempt ⇒ 台账不可归因；一会话一 node ⇒ 破单一写者 + 上下文污染）；`resume` 只用于**同一 attempt 内**的续接。\n",
       "replace": ""
     },
     {
@@ -110,7 +110,7 @@
     },
     {
       "path": "prompts/plan.md",
-      "find": "| `TOPIC.md` | 父（你） | 目标、边界、全局约束 + **目标审查三节**（`## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`；**有可派节点时必填**，缺 ⇒ `topic_goal_unreviewed`）+ **`## 结算记录`**（有合成节点且已收尾时必填） |\n",
+      "find": "| `TOPIC.md` | 父（你） | 目标、边界、全局约束 + **目标审查三节**（`## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`；**有可派节点时必填**，缺 ⇒ `topic_goal_unreviewed`）+ **`## 结算记录`**（有合成节点且已收尾时必填）+ **metis 结论**（走多会话协作时**必落**，**分解前**写 ⇒ 落进 `## 前提与证伪条件`：**列表条目追加、勿用 `###` 子标题**（任何级别标题都会截断该节正文 ⇒ 空节 ⇒ `topic_goal_unreviewed` **误报红**）；每条标注「**未裁决 ⇒ 仅作前提候选，不得当依据**」；⚠ **prompt 义务，无机判** —— `topic_goal_unreviewed` 只判三节在场非空，**不判** metis 是否落盘；ADR D5） |\n",
       "replace": "| `TOPIC.md` | 父（你） | 目标、边界、全局约束 |\n"
     },
     {
@@ -198,11 +198,5 @@
         "tests/"
       ]
     ]
-  },
-  "last_drill": {
-    "sha": "9d98f2dfa6162b8c06cfa722533a80e22d338601",
-    "at": "2026-11-28",
-    "result": "pass",
-    "content_hash": "af057fedd9dbeea018e70a69d3df34174aa8e182f3eb70f039510d5bb8f2d5c8"
   }
 }

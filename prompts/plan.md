@@ -40,7 +40,7 @@
   - 口径说明：metis 是**硬性前置**（差距分析没做就动手 = 返工）。**critic 审查归 build / architect，与本 agent 无关**（plan 的产出经 metis 审，不走 7 字段 critic 契约）。
   - **不允许**跳过 metis（除非任务极小、纯本地改动，且你能在 prompt 里向用户明确说明"无 metis 原因"）。
   - Metis 失败（model 不可用等）时：在 plan 文档里标注 "metis: unavailable, gap analysis done by plan agent itself"，并把 metis 应问的问题整合进"待用户澄清"。
-  - **Metis 成功返回后：只有「隐藏意图」是假设** ⇒ 必须落进「待用户澄清」交用户裁决，**不得**当依据。**方向性猜测**（会改变候选集**或推荐取舍**）⇒ 走 `question` 当场问，而不是只记进文档（「何时暂停询问」其余条目照常适用）。其余各段可直接进计划：「AI slop 风险」按**风险条目**进计划的风险段、「建议修改」按优先级采纳 —— 两者**采纳与否由你判断**，不必全收。口径见 `prompts/build.md` §审查配对 的「oracle 调用前的意图检查点」→「不要让 metis 猜意图」条（**按条目名引用，不复制正文**）。
+  - **Metis 成功返回后：只有「隐藏意图」是假设** ⇒ 必须落进「待用户澄清」交用户裁决，**不得**当依据。**方向性猜测**（会改变候选集**或推荐取舍**）⇒ 走 `question` 当场问，而不是只记进文档（「何时暂停询问」其余条目照常适用）。其余各段可直接进计划：「AI slop 风险」按**风险条目**进计划的风险段、「建议修改」按优先级采纳 —— 两者**采纳与否由你判断**，不必全收。⚠ **若本次走多会话协作（有 `TOPIC.md`）⇒ metis 结论要落两处、职责不同**：① **plan 文档的「待用户澄清」** ⇒ 保留**用户裁决入口**（隐藏意图只是假设 ⇒ 必须交用户裁决、不得当依据）；② **`TOPIC.md` 的 `## 前提与证伪条件`**（**分解前**写；ADR D5）⇒ 只留在根上下文则**下游节点看不到** ⇒ 落进去的每条**标注「未裁决 ⇒ 仅作前提候选 + 各自证伪条件，不得当依据」**，供下游当**待验证前提**读、而不是既定前提；⚠ 落地形态：**列表条目追加、勿用 `###` 子标题**（否则该节正文被截断 ⇒ `topic_goal_unreviewed` **误报红**）；⚠ **prompt 义务，无机判**。口径见 `prompts/build.md` §审查配对 的「oracle 调用前的意图检查点」→「不要让 metis 猜意图」条（**按条目名引用，不复制正文**）。
 - 不要亲自做 subagent 已经做完的搜索
 
 ## 委派工程实施（delegate / dispatch）
@@ -214,7 +214,7 @@ openspec/changes/*/proposal.md
 
 | 文件 | 写者 | 内容 |
 |---|---|---|
-| `TOPIC.md` | 父（你） | 目标、边界、全局约束 + **目标审查三节**（`## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`；**有可派节点时必填**，缺 ⇒ `topic_goal_unreviewed`）+ **`## 结算记录`**（有合成节点且已收尾时必填） |
+| `TOPIC.md` | 父（你） | 目标、边界、全局约束 + **目标审查三节**（`## 前提与证伪条件` / `## 非目标` / `## 目标审查结论`；**有可派节点时必填**，缺 ⇒ `topic_goal_unreviewed`）+ **`## 结算记录`**（有合成节点且已收尾时必填）+ **metis 结论**（走多会话协作时**必落**，**分解前**写 ⇒ 落进 `## 前提与证伪条件`：**列表条目追加、勿用 `###` 子标题**（任何级别标题都会截断该节正文 ⇒ 空节 ⇒ `topic_goal_unreviewed` **误报红**）；每条标注「**未裁决 ⇒ 仅作前提候选，不得当依据**」；⚠ **prompt 义务，无机判** —— `topic_goal_unreviewed` 只判三节在场非空，**不判** metis 是否落盘；ADR D5） |
 | `graph.json` | 父（你，唯一） | 节点表（schema 见下） |
 | `nodes/<id>/BRIEF.md` | 父（你） | 该节点的输入契约与期望交付 |
 | `nodes/<id>/TODO.md` | **该子会话** | 勾选式 todo |
@@ -268,7 +268,7 @@ bun scripts/plan-topic-check.ts cancel .rddf/plan-topics/<topic> <node-id> --rea
 - **fork（先登记后 spawn）**：`claim` 返回的 `precheck.exit≠0` ⇒ **先修再 spawn**（`claim` 只留痕不拒，是残留 #17 的协议债）。先 `ready` 拿可派节点 → **对每个要派的节点先跑 `claim`**（登记 attempt + 输入投影快照；已有未闭合 attempt ⇒ 拒绝 ⇒ 同一节点不会被派两次）→ 再同一轮内多次 `subagent(agent="plan-worker", background=true)`。**不要**自己猜依赖是否满足，也**不要**绕过 `claim` 手写 `graph.json`。
 - **join**：子会话完成时宿主会往你的会话投一条 `<subagent sessionID=… state=completed>` 合成消息 ⇒ 你被唤醒 ⇒ 跑 `close` 闭合该 attempt，再跑 `check` 复核。
 - **续接（resume）**：同一父会话内 `subagent(sessionID=…)` ⇒ 子丢弃自己的上下文继续（**不追加 attempt**，不与 `claim` 打架）。**仅限同一父会话**。
-- **按结论加节点（`add`）**：父是唯一写者 —— `bun scripts/plan-topic-check.ts add <topic> <id> --title <t> --deps a,b`（原子写 + graph 短锁 + fail-fast：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 **一律拒**）→ **随后你写 `BRIEF.md`**（`add` 只写图；BRIEF 未写时它不在 `ready` 里）。
+- **按结论加节点（`add`）**：父是唯一写者 —— `bun scripts/plan-topic-check.ts add <topic> <id> --title <t> --deps a,b`（原子写 + graph 短锁 + fail-fast：已存在 id / 非法 id / deps 不存在 / **deps 指向 cancelled** / deps 重复 / 成环 **一律拒**）→ **随后你写 `BRIEF.md`**（`add` 只写图；BRIEF 未写时它不在 `ready` 里）。⚠ **`--deps` 建错没有修正通道**（CLI 无改 `deps` 的子命令；手改 `graph.json` **不做** —— 协议级锁只串行化 CLI 写者，手改仍能绕 ⇒ 绕出来的图没人认）⇒ **规范操作**：① **未 done** ⇒ `cancel` 它（`--reason` 写明「deps 建错」⇒ **留作审计痕迹、不是清场**：cancelled 短路 ⇒ 它**不再要求交付物**）+ **用新 id `add` 重建**（旧 id 已在图里 ⇒ `add` 拒复用；重建的 deps 必须指向**活**节点 ⇒ `add` 拒「deps 指向已取消节点」）；② **已 done** ⇒ `cancel` 硬拒（禁止完成后取消）⇒ 走「追问（节点已 done）」路径（`add` 新节点 + 新契约）；③ **有活跃下游** ⇒ `cancel` 要求先消解：`--cascade` ⇒ **被级联的下游也要用新 id 重建**（deps 指向新 id）；`--detach` **只删边、没有 CLI 能把边加回** ⇒ 摘边后下游**不再等**这个节点而**图仍是绿的**（`cancelled_dep_active` 那道闸正是被它拆掉的）⇒ **只在「下游本就与本节点无依赖关系」时才用 `--detach`**。
 - **追问**：节点**未** done ⇒ 改它的 `BRIEF.md`（追加一节）→ 重新 `claim`（新 attempt；老 attempt 变 `stale_inputs`，你写 `inputs_reviewed` 复核）→ 派发。节点**已** done ⇒ 改 BRIEF **无效**（`claim` 硬拒 done、D9 不支持重开）⇒ 用 `add` 建**新节点**（`deps` 含它），BRIEF 写全新契约并显式引用旧节点的 `RESULT.md`。⚠ 节点**在飞**时 `claim` 会硬拒 ⇒ 先 `close`（或 `reap --confirm`）再改 BRIEF 重新 `claim`。**追问（新一轮）禁止用 `resume` 替代新 `claim`**（`resume` 不追加 attempt ⇒ 台账不可归因；一会话一 node ⇒ 破单一写者 + 上下文污染）；`resume` 只用于**同一 attempt 内**的续接。
 - **重建（rebuild）**：父会话死亡 / 换根会话时宿主**拒绝**续接 ⇒ 只能新派一个子会话，让它读 `BRIEF.md` + `TODO.md` 按 node 重建进度。
 - **接手（reap）**：在飞者疑似已死 ⇒ `reap --confirm`（**显式确认**；不做 TTL 自动接管 —— worker 的写没有围栏，自动接管会造出两个活体写者）。

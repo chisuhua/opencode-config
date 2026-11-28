@@ -149,6 +149,8 @@ summary   = { done[], cancelled[{id,reason,at}], in_flight[{node,started_at,live
 - **两个字段不被消费**：`attempts[].baseline`（死字段，全仓无写入点）与 `precheck`（`claim` 写、checker 从不读 ⇒「派发前 check 必须 exit 0 才派」无机械强制）⇒ 处置见 ADR 残留 #16 / #17。
 - **合成产物的位置 = 合成节点自己的 `RESULT.md`**（`ADR-plan-synthesis-offload` D2）：当 topic 需要一份跨节点的合并产物时，**在 `graph.json` 里加一个「合成节点」**（id 形状 `^m[1-9][0-9]*$`，`deps` = 全部内容节点），由子会话产出 `nodes/<m-id>/RESULT.md` ⇒ 父的写面**不变**（§1 表无需新增一行）⇒ 合成稿**仍在 topic 树内** ⇒ **仍不进** `PLAN_REF_ROOTS` ⇒ 「讨论稿 ≠ 可执行计划」的性质保持。父可读该文件作为 topic 级答案（成本 = 合成稿体积，非全部子产出体积）。⚠ **作者 = 合成节点，背书 = 父的采纳判断**（后者不可机判，与 §6 的「调度信号非交付信号」一致）。⚠ **父不修订合成稿**（修订 ⇒ 双写者）；合成质量不达标时走**追加式**（新增 `m2`，`m1` 留作审计痕迹；惯例取最新非 cancelled 的合成节点为答案 —— **「最新」按 `^m[1-9][0-9]*$` 的整数后缀取最大**，见 §1）。⚠ **合成 BRIEF 必须承载根持有的裁决/澄清/约束**（合成只读 `nodes/*/RESULT.md`，根上下文不进 BRIEF 就进不了合成 ⇒ `§父的裁决汇总` 无从落实；可机判形式 = `## 根裁决集` 的 slug 集合包含，见 §1 与 ADR D4）。⚠ **起用阈值**：**总量 ≳ 50 KB 为主**、节点数 ≥ 4 为辅助（ADR D7，粗口径）。⇒ 处置见 `ADR-plan-multi-session-collaboration` 残留 #19（**已闭合**）。
 
+- **`add` 的 `--deps` 建错没有修正通道**（CLI 子命令闭集里无改 `deps` 的入口；父手改 `graph.json` 破写锁协议 ⇒ 不做）⇒ **规范操作 = `cancel` + 用新 id 重建**：被 cancel 的节点**留作审计痕迹**（cancelled 短路 ⇒ 它不再要求交付物）；⚠ **下游回不去** —— `--detach` **只删边、没有 CLI 能把边加回** ⇒ 摘边后下游**不再等**该节点、而**图仍是绿的**（`cancelled_dep_active` 那道闸正是被它拆掉的）⇒ 下游要么 `--cascade` 后**一并用新 id 重建**（deps 指向新 id），要么确认「本就与本节点无依赖关系」才 `--detach`；已 `done` 的节点 `cancel` 硬拒 ⇒ 走「追问（已 done）」路径（`add` 新节点）。
+
 ## 11. 代码地图
 
 | 面 | 路径 |
